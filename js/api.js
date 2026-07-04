@@ -25,6 +25,13 @@ export const api = {
   async enrichLoan(id, card) {
     ensure(); return unwrap(await client.rpc('enrich_loan_card', { p_token:token(), p_id:id, p_external_id:card.id, p_image:card.image }));
   },
+  async savePushSubscription(subscription) {
+    ensure();
+    return unwrap(await client.rpc('save_push_subscription', {
+      p_token:token(), p_endpoint:subscription.endpoint,
+      p_p256dh:subscription.keys?.p256dh, p_auth:subscription.keys?.auth
+    }));
+  },
   subscribe(callback) {
     ensure();
     if (realtimeChannel) client.removeChannel(realtimeChannel);

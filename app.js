@@ -3,6 +3,7 @@ import { api } from './js/api.js';
 import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
+import { enablePushNotifications, pushSupported } from './js/push.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -151,7 +152,7 @@ function loanCard(l) {
 }
 
 function teamView() {
-  const supported = 'Notification' in window;
+  const supported = pushSupported();
   const granted = supported && Notification.permission === 'granted';
   const notificationState = !supported ? 'Non supportate' : granted ? 'Attive' : 'Da attivare';
   return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications" ${granted ? 'disabled' : ''}>Attiva</button></section>${MEMBERS.map(m => `<div class="card user"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div></div>`).join('')}`;
@@ -221,10 +222,10 @@ async function logout() {
 }
 
 async function enableNotifications() {
-  if (!('Notification' in window)) return toast('Notifiche non supportate su questo dispositivo');
-  const permission = await Notification.requestPermission();
-  toast(permission === 'granted' ? 'Notifiche attivate' : 'Notifiche non autorizzate');
-  render();
+  try {
+    await enablePushNotifications();
+    toast('Notifiche push attivate'); render();
+  } catch (error) { toast(error.message); }
 }
 
 function actionableIds() {
