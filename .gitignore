@@ -1,0 +1,7 @@
+.agents/
+.chrome-test/
+node_modules/
+.netlify/
+.env
+.env.*
+!.env.example
