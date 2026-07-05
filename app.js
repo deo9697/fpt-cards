@@ -3,7 +3,7 @@ import { api } from './js/api.js';
 import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
-import { enablePushNotifications, pushSupported } from './js/push.js';
+import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -153,9 +153,9 @@ function loanCard(l) {
 
 function teamView() {
   const supported = pushSupported();
-  const granted = supported && Notification.permission === 'granted';
-  const notificationState = !supported ? 'Non supportate' : granted ? 'Attive' : 'Da attivare';
-  return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications" ${granted ? 'disabled' : ''}>Attiva</button></section>${MEMBERS.map(m => `<div class="card user"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div></div>`).join('')}`;
+  const configured = supported && pushConfigured();
+  const notificationState = !supported ? 'Non supportate' : configured ? 'Push attive anche ad app chiusa' : 'Da configurare su questo dispositivo';
+  return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${MEMBERS.map(m => `<div class="card user"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div></div>`).join('')}`;
 }
 
 function bind() {

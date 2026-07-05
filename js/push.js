@@ -4,6 +4,10 @@ export function pushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
+export function pushConfigured() {
+  return localStorage.getItem('fpt-push-configured') === 'true';
+}
+
 export async function enablePushNotifications() {
   if (!pushSupported()) throw new Error('Notifiche push non supportate su questo dispositivo');
   const permission = await Notification.requestPermission();
@@ -23,6 +27,7 @@ export async function enablePushNotifications() {
     });
   }
   await api.savePushSubscription(subscription.toJSON());
+  localStorage.setItem('fpt-push-configured', 'true');
   return subscription;
 }
 
