@@ -2,5 +2,10 @@
   publish = "."
   functions = "netlify/functions"
 
+[build.environment]
+  # Questi valori sono pubblici per definizione e compaiono legittimamente nel frontend.
+  # Le chiavi private e la service-role restano sottoposte al secrets scanner.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,VAPID_PUBLIC_KEY,VAPID_SUBJECT"
+
 [functions]
   node_bundler = "esbuild"
