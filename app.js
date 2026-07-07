@@ -4,7 +4,7 @@ import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
-import { initEasterEgg, triggerRickroll } from './js/easter-egg.js';
+import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -52,13 +52,13 @@ function pageContent() {
 }
 
 function newLoanView() {
-  const others = MEMBERS.filter(m => m.id !== state.currentUser);
+  const recipients = MEMBERS;
   const game = GAMES[state.game];
   const hint = state.game === 'yugioh' ? 'Nome italiano o inglese...' : 'Nome inglese o codice carta...';
   return `<div class="section-heading"><div><h2>Nuovo prestito</h2><p>${game.name}</p></div><span class="game-pill ${state.game}">${game.mark}</span></div><div class="card"><form id="loan-form"><label for="card-name">Cerca nel catalogo ${game.short}</label><div class="catalog-search"><input id="card-name" autocomplete="off" placeholder="${hint}"><div id="card-suggestions" class="suggestions"></div></div>
     <div class="add-manual"><input id="quantity" aria-label="Quantità" type="number" min="1" max="99" value="1"><button type="button" class="btn secondary" id="add-manual-card">Aggiungi</button></div>
     <div class="draft-list">${draftCards.length ? draftCards.map((c, i) => `<div class="draft-card">${c.image ? `<img src="${c.image}" alt="">` : '<span class="draft-placeholder">▧</span>'}<div><strong>${esc(c.name)}</strong><small>${c.quantity} copie</small></div><button type="button" data-remove-card="${i}" aria-label="Rimuovi">×</button></div>`).join('') : '<p>Nessuna carta aggiunta</p>'}</div>
-    <label for="borrower">A chi la stai dando?</label><select id="borrower" required><option value="">Seleziona un membro</option>${others.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
+    <label for="borrower">A chi la stai dando?</label><select id="borrower" required><option value="">Seleziona un membro</option>${recipients.map(m => `<option value="${m.id}">${m.name}${m.id === state.currentUser ? ' (tu)' : ''}</option>`).join('')}</select>
     <label for="notes">Note facoltative</label><textarea id="notes" rows="3" placeholder="Edizione, rarità, condizioni..."></textarea><button class="btn wide" type="submit" ${draftCards.length ? '' : 'disabled'}>Invia ${draftCards.length || ''} ${draftCards.length === 1 ? 'carta' : 'carte'}</button></form></div>
     <p class="notice">Il destinatario dovrà accettare prima che il prestito risulti attivo.</p>`;
 }
@@ -287,7 +287,7 @@ async function createLoan(e) {
   try {
     const borrower = document.querySelector('#borrower').value;
     if (borrower === state.currentUser) {
-      void triggerRickroll('Hai provato a prestare una carta a te stesso.');
+      triggerRickrollVideo();
       return toast('Non puoi prestare una carta a te stesso');
     }
     const notes = document.querySelector('#notes').value.trim();

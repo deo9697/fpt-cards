@@ -27,6 +27,19 @@ export async function triggerRickroll(message = 'Hai trovato il segreto.') {
   }
 }
 
+export function triggerRickrollVideo() {
+  if (audio) { audio.pause(); audio.currentTime = 0; }
+  document.querySelector('#rickroll-video')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'rickroll-video';
+  overlay.className = 'rickroll-video';
+  overlay.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/Aq5WXmQQooo?autoplay=1&controls=0&rel=0&playsinline=1" title="F.P.T surprise" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe><div class="rickroll-video-label"><strong>Auto-prestito rilevato</strong><small>Decisione discutibile.</small></div><button type="button" aria-label="Chiudi">×</button>`;
+  document.body.append(overlay);
+  const close = overlay.querySelector('button');
+  close.addEventListener('click', () => overlay.remove());
+  window.setTimeout(() => close.classList.add('ready'), 8000);
+}
+
 async function primeAudio() {
   if (primed || !audio) return;
   try {
