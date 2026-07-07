@@ -4,6 +4,7 @@ import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
+import { initEasterEgg, triggerRickroll } from './js/easter-egg.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -285,6 +286,10 @@ async function createLoan(e) {
   e.preventDefault();
   try {
     const borrower = document.querySelector('#borrower').value;
+    if (borrower === state.currentUser) {
+      void triggerRickroll('Hai provato a prestare una carta a te stesso.');
+      return toast('Non puoi prestare una carta a te stesso');
+    }
     const notes = document.querySelector('#notes').value.trim();
     await api.createMany(draftCards, borrower, notes, state.game);
     draftCards = []; await loadCloudLoans(); saveState(); page = 'loans'; render(); toast('Prestito multiplo registrato');
@@ -351,6 +356,7 @@ async function updateLoan(id, action) {
 }
 
 async function start() {
+  initEasterEgg();
   if (state.currentUser) {
     try { await loadCloudLoans(); startRealtime(); }
     catch { state.currentUser = null; state.role = null; state.loans = []; saveState(); }
