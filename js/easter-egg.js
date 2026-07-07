@@ -9,20 +9,17 @@ export function initEasterEgg() {
   audio.preload = 'auto';
   audio.volume = 0.85;
   document.addEventListener('pointerdown', primeAudio, { once:true, capture:true });
-  window.setTimeout(() => triggerRickroll('Sei rimasto qui abbastanza a lungo.'), FIVE_MINUTES);
+  window.setTimeout(triggerRickroll, FIVE_MINUTES);
 }
 
-export async function triggerRickroll(message = 'Hai trovato il segreto.') {
+export async function triggerRickroll() {
   if (!audio) initEasterEgg();
-  showSurprise(message);
   try {
     audio.muted = false;
     audio.currentTime = 0;
     await audio.play();
     primed = true;
   } catch {
-    const panel = document.querySelector('#rickroll');
-    panel?.classList.add('needs-tap');
     document.addEventListener('pointerdown', retryPlayback, { once:true, capture:true });
   }
 }
@@ -62,18 +59,5 @@ async function retryPlayback() {
   try {
     audio.muted = false;
     await audio.play();
-    document.querySelector('#rickroll')?.classList.remove('needs-tap');
   } catch {}
-}
-
-function showSurprise(message) {
-  document.querySelector('#rickroll')?.remove();
-  const panel = document.createElement('aside');
-  panel.id = 'rickroll';
-  panel.className = 'rickroll';
-  panel.innerHTML = `<div class="rick-avatar">?</div><div><strong>F.P.T secret unlocked</strong><small>${message}</small><em>Tocca se l'audio non parte</em></div><button type="button" aria-label="Ferma e chiudi">×</button>`;
-  panel.querySelector('button').addEventListener('click', () => {
-    audio.pause(); audio.currentTime = 0; panel.remove();
-  });
-  document.body.append(panel);
 }
