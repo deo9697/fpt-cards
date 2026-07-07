@@ -17,7 +17,7 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .shell { width: min(760px, 100%); min-height: 100vh; margin: 0 auto; padding: 20px 16px 100px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-.brand img { width: 48px; height: 48px; }
+.brand img { width: 52px; height: 52px; border-radius: 14px; object-fit: cover; box-shadow: 0 7px 18px #0007; }
 .brand h1 { margin: 0; font-size: 1.35rem; letter-spacing: .04em; }
 .brand p, .muted { color: var(--muted); }
 .brand p { margin: 1px 0 0; font-size: .85rem; }

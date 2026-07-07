@@ -27,7 +27,7 @@ window.addEventListener('pwa-install-change', () => { if (state.currentUser) ren
 
 function loginView() {
   return `<main class="shell"><section class="login">
-    <div class="brand"><img src="icon.svg" alt=""><div><h1>F.P.T Cards</h1><p>Le carte del team, sempre sotto controllo</p></div></div>
+    <div class="brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1><p>Le carte del team, sempre sotto controllo</p></div></div>
     <div class="card"><h2>Accedi</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai un PIN personale.</p>
       <form id="login-form"><label for="member">Membro del team</label><select id="member" required><option value="">Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
       <label for="pin">PIN di 4 cifre</label><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" required>
@@ -297,7 +297,7 @@ async function showLoanNotification(count) {
   const registration = await navigator.serviceWorker?.ready;
   if (registration) registration.showNotification('F.P.T Cards', {
     body: count === 1 ? 'Hai una nuova richiesta da gestire' : `Hai ${count} nuove richieste da gestire`,
-    icon: 'icon.svg', badge: 'icon.svg', tag: 'fpt-loans', renotify: true
+    icon: 'icon-192.png', badge: 'icon-192.png', tag: 'fpt-loans', renotify: true
   });
 }
 
