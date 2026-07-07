@@ -48,7 +48,7 @@ function pageContent() {
 
 function newLoanView() {
   const others = MEMBERS.filter(m => m.id !== state.currentUser);
-  return `<h2>Nuovo prestito</h2><div class="card"><form id="loan-form"><label for="card-name">Cerca nel catalogo Yu-Gi-Oh!</label><div class="catalog-search"><input id="card-name" autocomplete="off" placeholder="Scrivi almeno 3 lettere..."><div id="card-suggestions" class="suggestions"></div></div>
+  return `<h2>Nuovo prestito</h2><div class="card"><form id="loan-form"><label for="card-name">Cerca nel catalogo Yu-Gi-Oh!</label><div class="catalog-search"><input id="card-name" autocomplete="off" placeholder="Nome italiano o inglese..."><div id="card-suggestions" class="suggestions"></div></div>
     <div class="add-manual"><input id="quantity" aria-label="Quantità" type="number" min="1" max="99" value="1"><button type="button" class="btn secondary" id="add-manual-card">Aggiungi</button></div>
     <div class="draft-list">${draftCards.length ? draftCards.map((c, i) => `<div class="draft-card">${c.image ? `<img src="${c.image}" alt="">` : '<span class="draft-placeholder">▧</span>'}<div><strong>${esc(c.name)}</strong><small>${c.quantity} copie</small></div><button type="button" data-remove-card="${i}" aria-label="Rimuovi">×</button></div>`).join('') : '<p>Nessuna carta aggiunta</p>'}</div>
     <label for="borrower">A chi la stai dando?</label><select id="borrower" required><option value="">Seleziona un membro</option>${others.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
