@@ -6,7 +6,6 @@ import { dashboardView } from './js/dashboard.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
-import { installMode, requestInstall } from './js/install.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -23,7 +22,6 @@ function render() {
   document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
   bind();
 }
-window.addEventListener('pwa-install-change', () => { if (state.currentUser) render(); });
 
 function loginView() {
   return `<main class="shell"><section class="login">
@@ -53,7 +51,7 @@ function pageContent() {
   if (page === 'new') return newLoanView();
   if (page === 'loans') return loansView();
   if (page === 'team') return teamView();
-  return dashboardView(state, state.game, installMode());
+  return dashboardView(state, state.game);
 }
 
 function newLoanView() {
@@ -193,7 +191,6 @@ function bind() {
   document.querySelector('#clear-filters')?.addEventListener('click', () => { loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' }; render(); });
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
-  document.querySelector('#install-app')?.addEventListener('click', installApp);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
 }
 
@@ -206,13 +203,6 @@ function secretRickroll() {
     return;
   }
   secretTapTimer = window.setTimeout(() => { secretTaps = 0; }, 1800);
-}
-
-async function installApp() {
-  const result = await requestInstall();
-  if (result === 'ios') return toast('Su iPhone: Condividi → Aggiungi alla schermata Home');
-  if (result === 'manual') return toast('Apri il menu del browser → Installa app');
-  if (result === 'accepted') toast('Installazione avviata');
 }
 
 function closeGameMenu() { gameMenuOpen = false; render(); }

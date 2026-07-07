@@ -1,7 +1,7 @@
 import { member, esc, initials } from './core.js';
 import { icon } from './icons.js';
 
-export function dashboardView(state, game = 'yugioh', install = null) {
+export function dashboardView(state, game = 'yugioh') {
   const me = member(state.currentUser);
   const personal = state.loans.filter(l => l.game === game && (l.owner === me.id || l.borrower === me.id));
   const active = personal.filter(l => l.status !== 'returned');
@@ -14,8 +14,6 @@ export function dashboardView(state, game = 'yugioh', install = null) {
   );
   return `<section class="dashboard">
     <div class="welcome-card"><div><span>${greeting()}</span><h2>${me.name.split(' ')[0]}</h2><p>${attention.length ? `Hai ${attention.length} ${attention.length === 1 ? 'azione' : 'azioni'} da completare` : 'Tutto sotto controllo'}</p></div><button type="button" class="welcome-avatar member-${me.id}" data-rick-secret aria-label="Profilo">${initials(me.name)}</button></div>
-
-    ${install ? `<section class="install-card"><div class="install-icon">${icon('download')}</div><div><strong>Installa F.P.T Cards</strong><small>${install === 'ios' ? 'Aggiungila alla schermata Home' : install === 'manual' ? 'Installala dal menu del browser' : 'Aprila più velocemente, come una vera app'}</small></div><button class="btn small" id="install-app">Installa</button></section>` : ''}
 
     ${attention.length ? `<section class="attention-card"><div class="dashboard-title"><div><span class="eyebrow">Richiede attenzione</span><h3>Azioni in sospeso</h3></div><b>${attention.length}</b></div>${attention.slice(0,3).map(attentionRow).join('')}<button class="text-action" data-quick="attention">Gestisci tutte</button></section>` : ''}
 
