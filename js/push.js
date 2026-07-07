@@ -14,10 +14,10 @@ export async function enablePushNotifications() {
   if (permission !== 'granted') throw new Error('Permesso notifiche non concesso');
 
   const registration = await navigator.serviceWorker.ready;
-  const keyResponse = await fetch('/.netlify/functions/push-public-key');
-  if (!keyResponse.ok) throw new Error('Servizio push Netlify non ancora configurato');
+  const keyResponse = await fetch('/api/push-public-key');
+  if (!keyResponse.ok) throw new Error('Servizio push Vercel non ancora configurato');
   const { publicKey } = await keyResponse.json();
-  if (!publicKey) throw new Error('Chiave VAPID pubblica mancante su Netlify');
+  if (!publicKey) throw new Error('Chiave VAPID pubblica mancante su Vercel');
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
