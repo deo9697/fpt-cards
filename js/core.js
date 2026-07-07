@@ -2,7 +2,15 @@ export const MEMBERS = [
   { id: 'daniele', name: 'Daniele de Oliveira', role: 'admin' },
   { id: 'cristian-arlia', name: 'Cristian Arlia', role: 'guest' },
   { id: 'cristian-spadafora', name: 'Cristian Spadafora', role: 'guest' },
-  { id: 'cristofer', name: 'Cristofer Marincolo', role: 'guest' }
+  { id: 'cristofer', name: 'Cristofer Marincolo', role: 'guest' },
+  { id: 'giuseppe-ventre', name: 'Giuseppe Ventre', role: 'guest' },
+  { id: 'antonio-donato', name: 'Antonio Donato', role: 'guest' },
+  { id: 'vittorio-oro-jackson', name: 'Vittorio Oro Jackson', role: 'guest' },
+  { id: 'mirco-sposato', name: 'Mirco Sposato', role: 'guest' },
+  { id: 'ivo-scalercio', name: 'Ivo Scalercio', role: 'guest' },
+  { id: 'antonello-napolitano', name: 'Antonello Napolitano', role: 'guest' },
+  { id: 'matteo-scorza', name: 'Matteo Scorza', role: 'guest' },
+  { id: 'vincenzo-de-marco', name: 'Vincenzo De Marco', role: 'guest' }
 ];
 
 const STATE_KEY = 'fpt-cards-state-v2';
