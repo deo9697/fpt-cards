@@ -266,7 +266,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 @keyframes rick-in { from { opacity: 0; transform: translateY(18px) scale(.94); } }
 @keyframes rick-pulse { to { transform: rotate(7deg) scale(1.06); } }
 .rickroll-video { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; overflow: hidden; background: #03040a; animation: rick-video-in .2s ease both; }
-.rickroll-video iframe { width: 100vw; height: 100vh; border: 0; pointer-events: none; }
+.rickroll-video video { width: 100vw; height: 100vh; border: 0; object-fit: contain; background: #03040a; pointer-events: none; }
+.rickroll-video.needs-tap::after { content: 'Tocca per avviare'; position: absolute; top: 50%; left: 50%; padding: 10px 15px; border-radius: 12px; background: #080b19dd; color: white; transform: translate(-50%, -50%); }
 .rickroll-video-label { position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); padding: 9px 14px; border: 1px solid #ffffff22; border-radius: 12px; background: #080b19cc; text-align: center; backdrop-filter: blur(12px); transform: translateX(-50%); }
 .rickroll-video-label strong, .rickroll-video-label small { display: block; white-space: nowrap; }
 .rickroll-video-label small { color: var(--muted); }
