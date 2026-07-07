@@ -1,4 +1,4 @@
-import { MEMBERS, GAMES, state, saveState, member, initials, esc, formatDate } from './js/core.js';
+import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
@@ -6,6 +6,7 @@ import { dashboardView } from './js/dashboard.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
+import { watchConnectivity, online } from './js/connectivity.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -15,6 +16,8 @@ let enrichingImages = false;
 let gameMenuOpen = false;
 let secretTaps = 0;
 let secretTapTimer;
+let appLoading = false;
+let cloudError = '';
 const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
@@ -35,10 +38,11 @@ function loginView() {
 }
 
 function appView() {
-  const u = member(state.currentUser);
+  const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && l.status === 'pending') || (l.owner === state.currentUser && l.status === 'return_pending'))).length;
   return `<main class="shell"><header class="topbar"><button class="menu-trigger" id="game-menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}</button><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
+    ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
     <div class="menu-backdrop ${gameMenuOpen ? 'open' : ''}" id="menu-backdrop"></div>
     <aside class="game-menu ${gameMenuOpen ? 'open' : ''}" aria-hidden="${!gameMenuOpen}" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div><button id="game-menu-close" aria-label="Chiudi">×</button></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside>
     ${pageContent()}
@@ -48,10 +52,15 @@ function appView() {
 }
 
 function pageContent() {
+  if (appLoading) return loadingView();
   if (page === 'new') return newLoanView();
   if (page === 'loans') return loansView();
   if (page === 'team') return teamView();
   return dashboardView(state, state.game);
+}
+
+function loadingView() {
+  return `<section class="loading-view" aria-label="Caricamento"><div class="skeleton hero"></div><div class="skeleton line"></div><div class="skeleton grid"></div></section>`;
 }
 
 function newLoanView() {
@@ -116,11 +125,13 @@ function loanListRow(l) {
   const presentation = loanPresentation(l, outgoing, incoming, owner, borrower);
   let buttons = '';
   const isAdmin = state.role === 'admin';
+  const remaining = Math.max(0, l.quantity - (l.returnedQuantity || 0));
   if (l.status === 'pending' && !outgoing) buttons = `<button class="btn small" data-action="accept" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject" data-id="${l.id}">Rifiuta</button>`;
-  if (l.status === 'active' && !outgoing) buttons = `<button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button>`;
-  if (l.status === 'return_pending' && outgoing) buttons = `<button class="btn small" data-action="confirm-return" data-id="${l.id}">Conferma resa</button>`;
+  if (l.status === 'active' && !outgoing) buttons = `<div class="partial-return"><input type="number" min="1" max="${remaining}" value="${remaining}" data-return-qty="${l.id}" aria-label="Quantità da restituire"><button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button></div>`;
+  if (l.status === 'return_pending' && outgoing) buttons = `<button class="btn small" data-action="confirm-return" data-id="${l.id}">Conferma ${l.pendingReturnQuantity || remaining} pz</button>`;
   if (isAdmin && !buttons) buttons = `<button class="btn secondary danger small" data-action="admin-delete" data-id="${l.id}">Elimina</button>`;
-  const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt=""><em>${l.quantity}</em></div>` : `<div class="loan-qty">${l.quantity}<small>pz</small></div>`;
+  const shownQuantity = l.status === 'returned' ? l.quantity : remaining;
+  const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt=""><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
   const memberMarker = person ? `<i class="member-dot ${person.id}"></i>` : '';
   return `<details class="loan-row ${presentation.kind}"><summary>${visual}<div class="loan-main"><strong>${esc(l.cardName)}</strong><span class="direction-line"><b class="direction-tag ${presentation.kind}">${presentation.direction}</b> ${memberMarker}${presentation.person}</span><small class="next-action ${presentation.urgent ? 'urgent' : ''}">${presentation.action}</small></div><span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></summary><div class="loan-detail"><div class="ownership"><span><small>Proprietario</small><b>${owner.name}</b></span><span>→</span><span><small>Consegnata a</small><b>${borrower.name}</b></span></div><span>Registrato il ${formatDate(l.createdAt)}</span>${l.notes ? `<p>${esc(l.notes)}</p>` : '<p>Nessuna nota</p>'}${buttons ? `<div class="actions loan-actions">${buttons}</div>` : ''}</div></details>`;
 }
@@ -165,7 +176,10 @@ function teamView() {
   const supported = pushSupported();
   const configured = supported && pushConfigured();
   const notificationState = !supported ? 'Non supportate' : configured ? 'Push attive anche ad app chiusa' : 'Da configurare su questo dispositivo';
-  return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${MEMBERS.map(m => `<div class="card user"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div></div>`).join('')}`;
+  const admin = state.role === 'admin';
+  const manager = admin ? `<section class="card member-manager"><div class="dashboard-title"><div><span class="eyebrow">Amministrazione</span><h3>Gestione membri</h3></div></div><form id="member-form"><input id="new-member-name" maxlength="100" placeholder="Nome e cognome" required><button class="btn small" type="submit">Aggiungi</button></form></section>` : '';
+  const rows = MEMBERS.map(m => `<div class="card team-member-row"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`).join('');
+  return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${manager}<div class="team-list">${rows}</div>`;
 }
 
 function bind() {
@@ -191,6 +205,9 @@ function bind() {
   document.querySelector('#clear-filters')?.addEventListener('click', () => { loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' }; render(); });
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
+  document.querySelector('#member-form')?.addEventListener('submit', addMember);
+  document.querySelectorAll('[data-member-action]').forEach(button => button.addEventListener('click', () => manageMember(button.dataset.memberAction, button.dataset.memberId)));
+  document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
 }
 
@@ -234,19 +251,57 @@ function quickNavigate(target) {
   render();
 }
 
+async function loadMembers() {
+  const items = await api.members();
+  state.members = items;
+  setMembers(items);
+}
+
+async function addMember(event) {
+  event.preventDefault();
+  const name = document.querySelector('#new-member-name').value.trim();
+  const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (name.length < 2 || !slug) return toast('Inserisci un nome valido');
+  try {
+    await api.manageMember('add', slug, name);
+    await loadMembers(); render(); toast('Membro aggiunto');
+  } catch (error) { toast(error.message); }
+}
+
+async function manageMember(action, slug) {
+  const target = member(slug);
+  if (!target) return;
+  if (action === 'deactivate' && !confirm(`Disattivare ${target.name}?`)) return;
+  if (action === 'reset-pin' && !confirm(`Azzerare il PIN di ${target.name}?`)) return;
+  try {
+    await api.manageMember(action, slug);
+    await loadMembers(); render();
+    toast(action === 'deactivate' ? 'Membro disattivato' : 'PIN azzerato');
+  } catch (error) { toast(error.message); }
+}
+
+async function retryCloud() {
+  appLoading = true; cloudError = ''; render();
+  try { await loadMembers(); await loadCloudLoans(); saveState(); }
+  catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
+  finally { appLoading = false; render(); }
+}
+
 async function login(e) {
   e.preventDefault();
   const id = document.querySelector('#member').value;
   const pin = document.querySelector('#pin').value;
   if (!/^\d{4}$/.test(pin)) return toast('Inserisci un PIN di 4 cifre');
   try {
+    const submit = e.submitter;
+    if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
     state.role = profile.role;
     await loadCloudLoans();
     startRealtime();
     saveState(); render();
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message); render(); }
 }
 
 async function logout() {
@@ -293,7 +348,8 @@ async function showLoanNotification(count) {
 
 async function loadCloudLoans() {
   const data = await api.loans();
-  state.loans = data.map(l => ({ id:l.id, cardName:l.card_name, quantity:l.quantity, owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:l.card_image, externalId:l.card_external_id, game:l.game || 'yugioh' }));
+  state.loans = data.map(l => ({ id:l.id, cardName:l.card_name, quantity:l.quantity, owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:l.card_image, externalId:l.card_external_id, game:l.game || 'yugioh', returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0 }));
+  cloudError = '';
   void enrichMissingImages();
 }
 
@@ -366,15 +422,32 @@ async function updateLoan(id, action) {
   const l = state.loans.find(x => x.id === id);
   if (!l) return;
   try {
-    await api.transition(id, action); await loadCloudLoans(); saveState(); render(); toast('Prestito aggiornato');
+    if (action === 'return') {
+      const quantity = Number(document.querySelector(`[data-return-qty="${id}"]`)?.value);
+      await api.returnQuantity(id, quantity);
+    } else await api.transition(id, action);
+    await loadCloudLoans(); saveState(); render(); toast('Prestito aggiornato');
   } catch (error) { toast(error.message); }
 }
 
 async function start() {
   initEasterEgg();
+  appLoading = Boolean(state.currentUser);
+  render();
+  watchConnectivity(async connected => {
+    if (!connected || !state.currentUser) { render(); return; }
+    try { await loadMembers(); await loadCloudLoans(); saveState(); cloudError = ''; }
+    catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
+    render();
+  });
+  try { await loadMembers(); } catch {}
   if (state.currentUser) {
-    try { await loadCloudLoans(); startRealtime(); }
-    catch { state.currentUser = null; state.role = null; state.loans = []; saveState(); }
+    appLoading = true; render();
+    try { await loadCloudLoans(); startRealtime(); saveState(); }
+    catch (error) {
+      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.loans = []; saveState(); }
+      else cloudError = online() ? (error.message || 'Sincronizzazione non riuscita') : '';
+    } finally { appLoading = false; }
   }
   void registerAutoUpdates();
   render();

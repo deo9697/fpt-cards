@@ -13,6 +13,7 @@ function unwrap(result) { if (result.error) throw result.error; return result.da
 
 export const api = {
   configured,
+  async members() { ensure(); return unwrap(await client.rpc('list_login_members')); },
   async login(slug, pin) { ensure(); return unwrap(await client.rpc('login_member', { p_slug:slug, p_pin:pin, p_token:token() })); },
   async logout() { if (client) await client.rpc('logout_member', { p_token:token() }); localStorage.removeItem(TOKEN_KEY); },
   async loans() { ensure(); return unwrap(await client.rpc('list_team_loans', { p_token:token() })); },
@@ -24,6 +25,12 @@ export const api = {
   },
   async enrichLoan(id, card) {
     ensure(); return unwrap(await client.rpc('enrich_loan_card', { p_token:token(), p_id:id, p_external_id:card.id, p_image:card.image }));
+  },
+  async manageMember(action, slug, name = null) {
+    ensure(); return unwrap(await client.rpc('admin_manage_member', { p_token:token(), p_action:action, p_slug:slug, p_name:name }));
+  },
+  async returnQuantity(id, quantity) {
+    ensure(); return unwrap(await client.rpc('return_loan_quantity', { p_token:token(), p_id:id, p_quantity:quantity }));
   },
   async savePushSubscription(subscription) {
     ensure();

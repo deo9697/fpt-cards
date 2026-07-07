@@ -133,6 +133,24 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .notification-setting { display: flex; align-items: center; justify-content: space-between; }
 .notification-setting strong, .notification-setting small { display: block; }
 .notification-setting small { margin-top: 2px; color: var(--muted); font-size: .75rem; }
+.member-manager { padding: 14px; }
+.member-manager form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 11px; }
+.team-list { display: grid; gap: 8px; }
+.team-member-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 0; padding: 11px 13px; }
+.team-member-row strong, .team-member-row small { display: block; }
+.team-member-row small { color: var(--muted); font-size: .72rem; }
+.member-admin-actions { display: flex; gap: 6px; }
+.partial-return { display: flex; align-items: center; gap: 7px; }
+.partial-return input { width: 72px; padding: 8px 9px; }
+.connection-banner { display: flex; justify-content: center; align-items: center; gap: 8px; margin: -7px 0 13px; padding: 8px 12px; border-radius: 11px; color: var(--muted); background: #ffffff08; font-size: .78rem; }
+.connection-banner.offline { color: #ffd27a; background: #f4b94212; }
+.connection-banner.error { color: #ffb0ba; background: #ff647712; }
+.connection-banner button { border: 0; background: transparent; color: var(--accent); font-weight: 750; }
+.loading-view { display: grid; gap: 12px; }
+.skeleton { overflow: hidden; border-radius: 18px; background: #18203d; position: relative; }
+.skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff0c, transparent); transform: translateX(-100%); animation: skeleton-wave 1.15s infinite; }
+.skeleton.hero { height: 135px; }.skeleton.line { height: 54px; }.skeleton.grid { height: 280px; }
+@keyframes skeleton-wave { to { transform: translateX(100%); } }
 .filter-chips { display: flex; gap: 7px; overflow-x: auto; padding: 10px 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
 .chip { flex: none; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; background: transparent; color: var(--muted); font-size: .78rem; }
 .chip.active { border-color: var(--accent); background: #f4b94218; color: var(--accent); }
@@ -260,3 +278,4 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .rickroll-video > button.ready { visibility: visible; opacity: 1; }
 @keyframes rick-video-in { from { opacity: 0; transform: scale(1.03); } }
 @media (max-width: 430px) { .stats { gap: 6px; } .stat { padding-inline: 4px; } .filter-grid { grid-template-columns: 1fr 1fr; gap: 7px; } .filter-grid select { padding-inline: 8px; font-size: .84rem; } .loan-row summary { grid-template-columns: 48px minmax(0, 1fr); } .loan-row summary > .badge { grid-column: 2; justify-self: start; } .loan-detail { padding-left: 72px; } }
+@media (max-width: 560px) { .team-member-row { grid-template-columns: 42px 1fr; } .member-admin-actions { grid-column: 1 / -1; } .member-admin-actions .btn { flex: 1; } }

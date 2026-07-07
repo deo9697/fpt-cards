@@ -12,10 +12,17 @@ export const MEMBERS = [
   { id: 'matteo-scorza', name: 'Matteo Scorza', role: 'guest' },
   { id: 'vincenzo-de-marco', name: 'Vincenzo De Marco', role: 'guest' }
 ];
+export function setMembers(items) {
+  if (!Array.isArray(items) || !items.length) return;
+  MEMBERS.splice(0, MEMBERS.length, ...items.map(item => ({
+    id:item.slug || item.id, name:item.full_name || item.name, role:item.role || 'guest'
+  })));
+}
 
 const STATE_KEY = 'fpt-cards-state-v2';
 export const state = JSON.parse(localStorage.getItem(STATE_KEY) || 'null') || { currentUser: null, role: null, loans: [] };
 if (!state.game) state.game = 'yugioh';
+if (Array.isArray(state.members) && state.members.length) setMembers(state.members);
 export const GAMES = {
   yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', mark:'Y' },
   onepiece: { id:'onepiece', name:'One Piece Card Game', short:'One Piece', mark:'OP' }

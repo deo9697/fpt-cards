@@ -5,8 +5,8 @@ export function dashboardView(state, game = 'yugioh') {
   const me = member(state.currentUser);
   const personal = state.loans.filter(l => l.game === game && (l.owner === me.id || l.borrower === me.id));
   const active = personal.filter(l => l.status !== 'returned');
-  const lent = active.filter(l => l.owner === me.id).reduce((sum, l) => sum + l.quantity, 0);
-  const received = active.filter(l => l.borrower === me.id).reduce((sum, l) => sum + l.quantity, 0);
+  const lent = active.filter(l => l.owner === me.id).reduce((sum, l) => sum + remaining(l), 0);
+  const received = active.filter(l => l.borrower === me.id).reduce((sum, l) => sum + remaining(l), 0);
   const completed = personal.filter(l => l.status === 'returned').length;
   const attention = personal.filter(l =>
     (l.borrower === me.id && l.status === 'pending') ||
@@ -31,6 +31,7 @@ function greeting() {
   return hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
 }
 function metric(symbol, value, label, color) { return `<article class="metric ${color}"><div>${symbol}</div><strong>${value}</strong><span>${label}</span></article>`; }
+function remaining(loan) { return Math.max(0, loan.quantity - (loan.returnedQuantity || 0)); }
 function attentionRow(l) {
   const from = member(l.owner), to = member(l.borrower);
   const text = l.status === 'pending' ? `${to.name} deve accettare` : `${from.name} deve confermare la resa`;
