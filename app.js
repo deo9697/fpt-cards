@@ -211,6 +211,7 @@ function secretRickroll() {
 async function installApp() {
   const result = await requestInstall();
   if (result === 'ios') return toast('Su iPhone: Condividi → Aggiungi alla schermata Home');
+  if (result === 'manual') return toast('Apri il menu del browser → Installa app');
   if (result === 'accepted') toast('Installazione avviata');
 }
 
