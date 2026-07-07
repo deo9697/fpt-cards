@@ -19,8 +19,8 @@ export const api = {
   async create(cardName, quantity, borrower, notes) {
     ensure(); return unwrap(await client.rpc('create_team_loan', { p_token:token(), p_card_name:cardName, p_quantity:quantity, p_borrower_slug:borrower, p_notes:notes }));
   },
-  async createMany(cards, borrower, notes) {
-    ensure(); return unwrap(await client.rpc('create_team_loans', { p_token:token(), p_cards:cards.map(c => ({ name:c.name, quantity:c.quantity, image:c.image || '', externalId:c.id || '' })), p_borrower_slug:borrower, p_notes:notes }));
+  async createMany(cards, borrower, notes, game) {
+    ensure(); return unwrap(await client.rpc('create_team_loans', { p_token:token(), p_cards:cards.map(c => ({ name:c.name, quantity:c.quantity, image:c.image || '', externalId:c.id || '' })), p_borrower_slug:borrower, p_notes:notes, p_game:game }));
   },
   async enrichLoan(id, card) {
     ensure(); return unwrap(await client.rpc('enrich_loan_card', { p_token:token(), p_id:id, p_external_id:card.id, p_image:card.image }));

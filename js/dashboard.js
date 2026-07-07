@@ -1,14 +1,14 @@
 import { member, esc, initials } from './core.js';
 import { icon } from './icons.js';
 
-export function dashboardView(state) {
+export function dashboardView(state, game = 'yugioh') {
   const me = member(state.currentUser);
-  const personal = state.loans.filter(l => l.owner === me.id || l.borrower === me.id);
+  const personal = state.loans.filter(l => l.game === game && (l.owner === me.id || l.borrower === me.id));
   const active = personal.filter(l => l.status !== 'returned');
   const lent = active.filter(l => l.owner === me.id).reduce((sum, l) => sum + l.quantity, 0);
   const received = active.filter(l => l.borrower === me.id).reduce((sum, l) => sum + l.quantity, 0);
   const completed = personal.filter(l => l.status === 'returned').length;
-  const attention = state.loans.filter(l =>
+  const attention = personal.filter(l =>
     (l.borrower === me.id && l.status === 'pending') ||
     (l.owner === me.id && l.status === 'return_pending')
   );

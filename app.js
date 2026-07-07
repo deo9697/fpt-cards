@@ -1,4 +1,4 @@
-import { MEMBERS, state, saveState, member, initials, esc, formatDate } from './js/core.js';
+import { MEMBERS, GAMES, state, saveState, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { searchCards, findCard } from './js/cards.js';
 import { icon } from './js/icons.js';
@@ -10,6 +10,7 @@ let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let draftCards = [];
 let cardSearchTimer;
 let enrichingImages = false;
+let gameMenuOpen = false;
 const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
@@ -31,8 +32,11 @@ function loginView() {
 
 function appView() {
   const u = member(state.currentUser);
-  const notifications = state.loans.filter(l => (l.borrower === state.currentUser && l.status === 'pending') || (l.owner === state.currentUser && l.status === 'return_pending')).length;
-  return `<main class="shell"><header class="topbar"><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
+  const game = GAMES[state.game];
+  const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && l.status === 'pending') || (l.owner === state.currentUser && l.status === 'return_pending'))).length;
+  return `<main class="shell"><header class="topbar"><button class="menu-trigger" id="game-menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}</button><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
+    <div class="menu-backdrop ${gameMenuOpen ? 'open' : ''}" id="menu-backdrop"></div>
+    <aside class="game-menu ${gameMenuOpen ? 'open' : ''}" aria-hidden="${!gameMenuOpen}"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Scegli il gioco</h2></div><button id="game-menu-close" aria-label="Chiudi">×</button></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Gioco attivo' : 'Apri sezione'}</small></span><b>›</b></button>`).join('')}</div></aside>
     ${pageContent()}
     ${page !== 'new' ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav">${[['home','home','Home'],['new','plus','Presta'],['loans','swap','Prestiti'],['team','team','Team']].map(([id,iconName,label]) => `<button data-page="${id}" class="${page === id ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`).join('')}</nav>
@@ -43,12 +47,14 @@ function pageContent() {
   if (page === 'new') return newLoanView();
   if (page === 'loans') return loansView();
   if (page === 'team') return teamView();
-  return dashboardView(state);
+  return dashboardView(state, state.game);
 }
 
 function newLoanView() {
   const others = MEMBERS.filter(m => m.id !== state.currentUser);
-  return `<h2>Nuovo prestito</h2><div class="card"><form id="loan-form"><label for="card-name">Cerca nel catalogo Yu-Gi-Oh!</label><div class="catalog-search"><input id="card-name" autocomplete="off" placeholder="Nome italiano o inglese..."><div id="card-suggestions" class="suggestions"></div></div>
+  const game = GAMES[state.game];
+  const hint = state.game === 'yugioh' ? 'Nome italiano o inglese...' : 'Nome inglese o codice carta...';
+  return `<div class="section-heading"><div><h2>Nuovo prestito</h2><p>${game.name}</p></div><span class="game-pill ${state.game}">${game.mark}</span></div><div class="card"><form id="loan-form"><label for="card-name">Cerca nel catalogo ${game.short}</label><div class="catalog-search"><input id="card-name" autocomplete="off" placeholder="${hint}"><div id="card-suggestions" class="suggestions"></div></div>
     <div class="add-manual"><input id="quantity" aria-label="Quantità" type="number" min="1" max="99" value="1"><button type="button" class="btn secondary" id="add-manual-card">Aggiungi</button></div>
     <div class="draft-list">${draftCards.length ? draftCards.map((c, i) => `<div class="draft-card">${c.image ? `<img src="${c.image}" alt="">` : '<span class="draft-placeholder">▧</span>'}<div><strong>${esc(c.name)}</strong><small>${c.quantity} copie</small></div><button type="button" data-remove-card="${i}" aria-label="Rimuovi">×</button></div>`).join('') : '<p>Nessuna carta aggiunta</p>'}</div>
     <label for="borrower">A chi la stai dando?</label><select id="borrower" required><option value="">Seleziona un membro</option>${others.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
@@ -60,7 +66,7 @@ function loansView() {
   const base = loanBase();
   const relevant = filteredLoans();
   const others = MEMBERS.filter(m => m.id !== state.currentUser);
-  return `<div class="section-heading"><div><h2>Prestiti</h2><p>Gestisci le carte scambiate nel team</p></div><span class="total-pill">${base.length} totali</span></div>
+  return `<div class="section-heading"><div><h2>Prestiti</h2><p>${GAMES[state.game].name}</p></div><span class="total-pill">${base.length} totali</span></div>
     <section class="card loan-manager">
       <div class="loan-toolbar"><div class="search-field"><span aria-hidden="true">${icon('search')}</span><input id="loan-query" aria-label="Cerca carta" value="${esc(loanFilters.query)}" placeholder="Cerca una carta..."></div>
       <div class="filter-grid"><div><label for="loan-direction">Movimento</label><select id="loan-direction">
@@ -78,7 +84,7 @@ function loansView() {
 
 function loanBase() {
   return [...state.loans]
-    .filter(l => l.owner === state.currentUser || l.borrower === state.currentUser)
+    .filter(l => l.game === state.game && (l.owner === state.currentUser || l.borrower === state.currentUser))
     .reverse();
 }
 
@@ -161,6 +167,10 @@ function teamView() {
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#logout')?.addEventListener('click', logout);
+  document.querySelector('#game-menu-trigger')?.addEventListener('click', () => { gameMenuOpen = !gameMenuOpen; render(); });
+  document.querySelector('#game-menu-close')?.addEventListener('click', closeGameMenu);
+  document.querySelector('#menu-backdrop')?.addEventListener('click', closeGameMenu);
+  document.querySelectorAll('[data-game]').forEach(b => b.addEventListener('click', () => selectGame(b.dataset.game)));
   document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => { page = b.dataset.page; render(); }));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
   document.querySelectorAll('[data-member-shortcut]').forEach(b => b.addEventListener('click', () => { loanFilters.member = b.dataset.memberShortcut; page = 'loans'; render(); }));
@@ -177,6 +187,14 @@ function bind() {
   document.querySelector('#clear-filters')?.addEventListener('click', () => { loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' }; render(); });
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
+}
+
+function closeGameMenu() { gameMenuOpen = false; render(); }
+function selectGame(game) {
+  if (!GAMES[game]) return;
+  state.game = game; gameMenuOpen = false; page = 'home'; draftCards = [];
+  loanFilters = { direction:'all', member:'all', query:'', status:'all' };
+  saveState(); render();
 }
 
 function refreshLoanRows() {
@@ -259,7 +277,7 @@ async function showLoanNotification(count) {
 
 async function loadCloudLoans() {
   const data = await api.loans();
-  state.loans = data.map(l => ({ id:l.id, cardName:l.card_name, quantity:l.quantity, owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:l.card_image, externalId:l.card_external_id }));
+  state.loans = data.map(l => ({ id:l.id, cardName:l.card_name, quantity:l.quantity, owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:l.card_image, externalId:l.card_external_id, game:l.game || 'yugioh' }));
   void enrichMissingImages();
 }
 
@@ -268,7 +286,7 @@ async function createLoan(e) {
   try {
     const borrower = document.querySelector('#borrower').value;
     const notes = document.querySelector('#notes').value.trim();
-    await api.createMany(draftCards, borrower, notes);
+    await api.createMany(draftCards, borrower, notes, state.game);
     draftCards = []; await loadCloudLoans(); saveState(); page = 'loans'; render(); toast('Prestito multiplo registrato');
   } catch (error) { toast(error.message); }
 }
@@ -278,7 +296,7 @@ async function addManualCard() {
   const name = input.value.trim();
   if (!name) return toast('Inserisci il nome della carta');
   const quantity = Number(document.querySelector('#quantity').value) || 1;
-  const match = await findCard(name);
+  const match = await findCard(name, state.game);
   draftCards.push(match
     ? { id:match.id, name:match.name, quantity, image:match.image }
     : { name, quantity, image:'' });
@@ -295,7 +313,7 @@ function onCardSearch(e) {
   cardSearchTimer = setTimeout(async () => {
     const box = document.querySelector('#card-suggestions');
     if (!box) return;
-    const results = await searchCards(query);
+    const results = await searchCards(query, state.game);
     box.innerHTML = results.map(c => `<button type="button" data-card-result data-id="${c.id}" data-name="${esc(c.name)}" data-image="${c.image}">${c.image ? `<img src="${c.image}" alt="">` : ''}<span><strong>${esc(c.name)}</strong><small>${esc(c.type)}</small></span></button>`).join('');
     box.querySelectorAll('[data-card-result]').forEach(b => b.addEventListener('click', () => addCatalogCard(b)));
   }, 350);
@@ -303,14 +321,14 @@ function onCardSearch(e) {
 
 async function enrichMissingImages() {
   if (enrichingImages) return;
-  const missing = state.loans.filter(l => !l.image && !unresolvedCards.has(l.cardName.toLowerCase())).slice(0, 8);
+  const missing = state.loans.filter(l => l.game === state.game && !l.image && !unresolvedCards.has(`${l.game}:${l.cardName.toLowerCase()}`)).slice(0, 8);
   if (!missing.length) return;
   enrichingImages = true;
   let changed = false;
   try {
     for (const loan of missing) {
-      const card = await findCard(loan.cardName);
-      if (!card?.image) { unresolvedCards.add(loan.cardName.toLowerCase()); continue; }
+      const card = await findCard(loan.cardName, loan.game);
+      if (!card?.image) { unresolvedCards.add(`${loan.game}:${loan.cardName.toLowerCase()}`); continue; }
       await api.enrichLoan(loan.id, card);
       loan.image = card.image;
       loan.externalId = card.id;
