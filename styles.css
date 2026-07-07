@@ -171,6 +171,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .welcome-card h2 { margin: 1px 0; font-size: 1.45rem; }
 .welcome-card p { margin: 0; color: var(--muted); font-size: .85rem; }
 .welcome-avatar { z-index: 1; display: grid; place-items: center; width: 50px; height: 50px; border: 3px solid #ffffff18; border-radius: 17px; color: #15101d; font-size: .95rem; font-weight: 850; box-shadow: 0 7px 16px #0005; }
+.welcome-avatar:active { transform: scale(.94); }
 .dashboard-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .dashboard-title h3 { margin: 2px 0 0; font-size: 1rem; }
 .dashboard-title > button { border: 0; background: transparent; color: var(--accent); font-size: .78rem; }

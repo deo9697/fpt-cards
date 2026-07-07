@@ -14,6 +14,8 @@ let draftCards = [];
 let cardSearchTimer;
 let enrichingImages = false;
 let gameMenuOpen = false;
+let secretTaps = 0;
+let secretTapTimer;
 const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
@@ -192,6 +194,18 @@ function bind() {
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#install-app')?.addEventListener('click', installApp);
+  document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
+}
+
+function secretRickroll() {
+  window.clearTimeout(secretTapTimer);
+  secretTaps += 1;
+  if (secretTaps >= 5) {
+    secretTaps = 0;
+    triggerRickrollVideo();
+    return;
+  }
+  secretTapTimer = window.setTimeout(() => { secretTaps = 0; }, 1800);
 }
 
 async function installApp() {

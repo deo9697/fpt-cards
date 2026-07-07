@@ -13,7 +13,7 @@ export function dashboardView(state, game = 'yugioh', install = null) {
     (l.owner === me.id && l.status === 'return_pending')
   );
   return `<section class="dashboard">
-    <div class="welcome-card"><div><span>${greeting()}</span><h2>${me.name.split(' ')[0]}</h2><p>${attention.length ? `Hai ${attention.length} ${attention.length === 1 ? 'azione' : 'azioni'} da completare` : 'Tutto sotto controllo'}</p></div><div class="welcome-avatar member-${me.id}">${initials(me.name)}</div></div>
+    <div class="welcome-card"><div><span>${greeting()}</span><h2>${me.name.split(' ')[0]}</h2><p>${attention.length ? `Hai ${attention.length} ${attention.length === 1 ? 'azione' : 'azioni'} da completare` : 'Tutto sotto controllo'}</p></div><button type="button" class="welcome-avatar member-${me.id}" data-rick-secret aria-label="Profilo">${initials(me.name)}</button></div>
 
     ${install ? `<section class="install-card"><div class="install-icon">${icon('download')}</div><div><strong>Installa F.P.T Cards</strong><small>${install === 'ios' ? 'Aggiungila alla schermata Home' : 'Aprila più velocemente, come una vera app'}</small></div><button class="btn small" id="install-app">Installa</button></section>` : ''}
 
