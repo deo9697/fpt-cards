@@ -5,6 +5,7 @@ import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
+import { registerAutoUpdates } from './js/pwa-update.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -361,7 +362,7 @@ async function start() {
     try { await loadCloudLoans(); startRealtime(); }
     catch { state.currentUser = null; state.role = null; state.loans = []; saveState(); }
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+  void registerAutoUpdates();
   render();
 }
 start();
