@@ -274,7 +274,9 @@ function secretRickroll() {
 function closeGameMenu() { gameMenuOpen = false; render(); }
 function selectGame(game) {
   if (!GAMES[game]) return;
-  state.game = game; gameMenuOpen = false; page = 'home'; draftCards = [];
+  const changed = state.game !== game;
+  state.game = game; gameMenuOpen = false;
+  if (changed) draftCards = [];
   loanFilters = { direction:'all', member:'all', query:'', status:'all' };
   saveState(); render();
 }
