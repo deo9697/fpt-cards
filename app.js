@@ -7,6 +7,7 @@ import { enablePushNotifications, pushSupported, pushConfigured } from './js/pus
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
+import { prepareUi, paintWithTransition, animateInterface } from './js/ui-motion.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -22,8 +23,12 @@ const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
 function render() {
-  document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
-  bind();
+  const ui = prepareUi(state.game || 'yugioh', page, Boolean(state.currentUser));
+  paintWithTransition(ui, () => {
+    document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
+    bind();
+    requestAnimationFrame(() => animateInterface(ui));
+  });
 }
 
 function loginView() {
@@ -45,7 +50,7 @@ function appView() {
     ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
     <div class="menu-backdrop ${gameMenuOpen ? 'open' : ''}" id="menu-backdrop"></div>
     <aside class="game-menu ${gameMenuOpen ? 'open' : ''}" aria-hidden="${!gameMenuOpen}" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div><button id="game-menu-close" aria-label="Chiudi">×</button></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside>
-    ${pageContent()}
+    <section class="page-stage" aria-live="polite">${pageContent()}</section>
     ${page !== 'new' ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav">${[['home','home','Home'],['new','plus','Presta'],['loans','swap','Prestiti'],['team','team','Team']].map(([id,iconName,label]) => `<button data-page="${id}" class="${page === id ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`).join('')}</nav>
   </main>`;
