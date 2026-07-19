@@ -2,16 +2,6 @@ const CHECK_INTERVAL = 10 * 60 * 1000;
 
 export async function registerAutoUpdates() {
   if (!('serviceWorker' in navigator)) return;
-  const wasControlled = Boolean(navigator.serviceWorker.controller);
-  let reloading = false;
-
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!wasControlled || reloading) return;
-    if (document.body.dataset.page === 'login') return;
-    reloading = true;
-    location.reload();
-  });
-
   try {
     const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none' });
     const check = () => registration.update().catch(() => {});

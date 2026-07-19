@@ -249,9 +249,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .nav button.active { color: var(--accent); }
 .menu-trigger { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 13px; background: #ffffff05; color: var(--text); }
 .game-switcher { position: relative; flex: none; }
-.game-switcher > summary { list-style: none; cursor: pointer; }
-.game-switcher > summary::-webkit-details-marker { display: none; }
-.game-switcher[open] .game-menu { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
+.game-switcher > .menu-trigger { cursor: pointer; }
+.game-switcher.open .game-menu { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
 .menu-trigger .icon { width: 21px; height: 21px; }
 .game-menu { position: fixed; z-index: 21; top: 78px; left: max(12px, calc((100vw - 760px) / 2 + 16px)); width: 300px; padding: 14px; visibility: hidden; border: 1px solid #465382aa; border-radius: 20px; background: #0d142df8; box-shadow: 0 22px 55px #0009; opacity: 0; transform: translateY(-8px) scale(.97); transform-origin: top left; transition: opacity .16s, transform .18s cubic-bezier(.2,.8,.2,1), visibility .18s; }
 .game-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 3px 11px; }
@@ -392,15 +391,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .connection-banner { border: 1px solid #ffffff0c; backdrop-filter: blur(12px); }
 
 @media (max-width: 520px) {
-  body::before { background-size: 58px 101px; opacity: .15; }
+  body::before, body::after { display: none; }
   .shell { padding-inline: 12px; padding-bottom: 118px; }
-  .topbar { top: max(5px, env(safe-area-inset-top)); min-height: 58px; padding: 7px 8px; }
+  .topbar { top: max(5px, env(safe-area-inset-top)); min-height: 58px; padding: 7px 8px; backdrop-filter: none; }
   .topbar .btn.small { padding-inline: 10px; }
   .user strong { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .game-menu { top: 80px; }
   .game-menu { backdrop-filter: none; }
   .welcome-card { min-height: 126px; padding: 17px; }
   .welcome-card h2 { font-size: 1.48rem; }
-  .nav { bottom: max(7px, env(safe-area-inset-bottom)); width: calc(100% - 14px); border-radius: 20px; }
+  .nav { bottom: max(7px, env(safe-area-inset-bottom)); width: calc(100% - 14px); border-radius: 20px; backdrop-filter: none; }
   .fab { right: 16px; bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .card, .summary-card, .attention-card, .suggestions, .profile-picker-options, .connection-banner { backdrop-filter: none; }
+  .loan-thumb::after { animation: none; opacity: .18; }
 }

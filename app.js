@@ -7,7 +7,6 @@ import { enablePushNotifications, pushSupported, pushConfigured } from './js/pus
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
-import { prepareUi, paintWithTransition, animateInterface } from './js/ui-motion.js';
 
 let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
@@ -26,20 +25,16 @@ function toast(message) { const el = document.querySelector('#toast'); el.textCo
 
 function render() {
   if (!state.currentUser && document.querySelector('.login .card:not(.login-loading)')) return;
-  const currentSwitcher = document.querySelector('.game-switcher');
-  if (currentSwitcher) gameMenuOpen = currentSwitcher.open;
   if (!state.currentUser) {
     const memberField = document.querySelector('#member');
     const pinField = document.querySelector('#pin');
     if (memberField) loginDraft.member = memberField.value;
     if (pinField) loginDraft.pin = pinField.value;
   }
-  const ui = prepareUi(state.game || 'yugioh', page, Boolean(state.currentUser));
-  paintWithTransition(ui, () => {
-    document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
-    bind();
-    requestAnimationFrame(() => animateInterface(ui));
-  });
+  document.body.dataset.game = state.game || 'yugioh';
+  document.body.dataset.page = state.currentUser ? page : 'login';
+  document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
+  bind();
 }
 
 function loginView() {
@@ -64,7 +59,7 @@ function appView() {
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && l.status === 'pending') || (l.owner === state.currentUser && l.status === 'return_pending'))).length;
-  return `<main class="shell"><header class="topbar"><details class="game-switcher" ${gameMenuOpen ? 'open' : ''}><summary class="menu-trigger" aria-label="Scegli gioco">${icon('menu')}</summary><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside></details><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
+  return `<main class="shell"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}</button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside></div><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
     ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
     <section class="page-stage" aria-live="polite">${pageContent()}</section>
     ${page !== 'new' ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
@@ -235,12 +230,12 @@ function bind() {
   document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
   document.querySelector('#logout')?.addEventListener('click', logout);
   const gameSwitcher = document.querySelector('.game-switcher');
-  gameSwitcher?.querySelector('summary')?.addEventListener('click', event => {
-    event.preventDefault();
-    gameMenuOpen = !gameSwitcher.open;
-    gameSwitcher.open = gameMenuOpen;
+  gameSwitcher?.querySelector('.menu-trigger')?.addEventListener('click', event => {
+    event.stopPropagation();
+    gameMenuOpen = !gameMenuOpen;
+    gameSwitcher.classList.toggle('open', gameMenuOpen);
+    event.currentTarget.setAttribute('aria-expanded', String(gameMenuOpen));
   });
-  gameSwitcher?.addEventListener('toggle', event => { gameMenuOpen = event.currentTarget.open; });
   document.querySelectorAll('[data-game]').forEach(b => b.addEventListener('click', () => selectGame(b.dataset.game)));
   document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => { page = b.dataset.page; render(); }));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
@@ -545,4 +540,4 @@ setInterval(async () => {
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
     if (!editing) render();
   } catch {}
-}, 30000);
+}, 120000);
