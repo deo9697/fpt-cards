@@ -161,6 +161,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .chip { flex: none; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; background: transparent; color: var(--muted); font-size: .78rem; }
 .chip.active { border-color: var(--accent); background: #f4b94218; color: var(--accent); }
 .catalog-search { position: relative; }
+#card-name { position: relative; z-index: 2; pointer-events: auto; touch-action: manipulation; user-select: text; -webkit-user-select: text; }
 .suggestions { position: absolute; z-index: 6; top: calc(100% + 5px); width: 100%; overflow: hidden; border-radius: 14px; background: #0b1025; box-shadow: 0 16px 40px #000a; }
 .suggestions button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; }
 .suggestions button:hover { background: var(--panel-2); }
