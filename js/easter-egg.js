@@ -8,7 +8,7 @@ export function initEasterEgg() {
   audio = new Audio(AUDIO_URL);
   audio.preload = 'auto';
   audio.volume = 0.85;
-  document.addEventListener('pointerdown', primeAudio, { once:true, capture:true });
+  document.addEventListener('pointerdown', primeAudio, { capture:true });
   window.setTimeout(triggerRickroll, FIVE_MINUTES);
 }
 
@@ -43,8 +43,9 @@ export function triggerRickrollVideo() {
   window.setTimeout(() => close.classList.add('ready'), 8000);
 }
 
-async function primeAudio() {
+async function primeAudio(event) {
   if (primed || !audio) return;
+  if (event?.target?.closest?.('input, select, textarea, button, label, form')) return;
   try {
     audio.muted = true;
     await audio.play();
@@ -52,6 +53,7 @@ async function primeAudio() {
     audio.currentTime = 0;
     audio.muted = false;
     primed = true;
+    document.removeEventListener('pointerdown', primeAudio, { capture:true });
   } catch {}
 }
 

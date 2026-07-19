@@ -27,7 +27,10 @@ export function animateInterface({ changed }) {
 
   if (changed) {
     const stage = document.querySelector('.page-stage, .login');
-    if (stage) animate(stage, { opacity:[0, 1], transform:['translateY(9px)', 'translateY(0)'] }, { duration:.34, ease:'ease-out' });
+    if (stage) {
+      const keyframes = stage.matches('.login') ? { opacity:[0, 1] } : { opacity:[0, 1], transform:['translateY(9px)', 'translateY(0)'] };
+      animate(stage, keyframes, { duration:.34, ease:'ease-out' });
+    }
 
     document.querySelectorAll('.page-stage > .section-heading, .dashboard > *, .page-stage > .card, .team-list > *').forEach((node, index) => {
       animate(node, { opacity:[0, 1], transform:['translateY(12px) scale(.985)', 'translateY(0) scale(1)'] }, {

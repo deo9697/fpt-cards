@@ -50,6 +50,13 @@ function loginView() {
   </section></main>`;
 }
 
+function loginLoadingView() {
+  return `<main class="shell"><section class="login">
+    <div class="brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1><p>Le carte del team, sempre sotto controllo</p></div></div>
+    <div class="card login-loading"><div class="skeleton line"></div><div class="skeleton line"></div><div class="skeleton line"></div></div>
+  </section></main>`;
+}
+
 function appView() {
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
@@ -272,24 +279,6 @@ async function loadMembers() {
   setMembers(items);
 }
 
-function syncLoginMembers() {
-  const select = document.querySelector('#member');
-  if (!select) return;
-  const desired = MEMBERS.map(item => `${item.id}:${item.name}`).join('|');
-  const current = [...select.options].slice(1).map(option => `${option.value}:${option.textContent}`).join('|');
-  if (desired === current) return;
-
-  const update = () => {
-    const selected = select.value || loginDraft.member;
-    select.innerHTML = `<option value="">Seleziona il tuo nome</option>${MEMBERS.map(item => `<option value="${item.id}">${item.name}</option>`).join('')}`;
-    if (MEMBERS.some(item => item.id === selected)) select.value = selected;
-    loginDraft.member = select.value;
-  };
-
-  if (document.activeElement === select) select.addEventListener('blur', update, { once:true });
-  else update();
-}
-
 async function addMember(event) {
   event.preventDefault();
   const name = document.querySelector('#new-member-name').value.trim();
@@ -340,7 +329,10 @@ async function login(e) {
     loginDraft = { member:'', pin:'' };
     saveState();
   } catch (error) {
-    toast(error.message || 'Accesso non riuscito');
+    const message = /fetch|network|failed to fetch/i.test(error.message || '')
+      ? 'Database non raggiungibile. Controlla che il progetto Supabase sia attivo.'
+      : (error.message || 'Accesso non riuscito');
+    toast(message);
   } finally {
     loginPending = false;
     render();
@@ -475,22 +467,28 @@ async function updateLoan(id, action) {
 
 async function start() {
   initEasterEgg();
-  appLoading = Boolean(state.currentUser);
-  render();
   watchConnectivity(async connected => {
-    if (!state.currentUser) {
-      if (connected) {
-        try { await loadMembers(); syncLoginMembers(); } catch {}
-      }
-      return;
-    }
+    if (!state.currentUser) return;
     if (!connected) { render(); return; }
     try { await loadMembers(); await loadCloudLoans(); saveState(); cloudError = ''; }
     catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
     render();
   });
+  if (!state.currentUser) {
+    document.body.dataset.game = state.game || 'yugioh';
+    document.body.dataset.page = 'login';
+    document.querySelector('#app').innerHTML = loginLoadingView();
+    await Promise.race([
+      loadMembers().catch(() => {}),
+      new Promise(resolve => window.setTimeout(resolve, 2500))
+    ]);
+    render();
+    void registerAutoUpdates();
+    return;
+  }
+  appLoading = true;
+  render();
   try { await loadMembers(); } catch {}
-  if (!state.currentUser) syncLoginMembers();
   if (state.currentUser) {
     appLoading = true; render();
     try { await loadCloudLoans(); startRealtime(); saveState(); }
@@ -500,7 +498,7 @@ async function start() {
     } finally { appLoading = false; }
   }
   void registerAutoUpdates();
-  if (state.currentUser) render();
+  render();
 }
 start();
 setInterval(async () => {
