@@ -19,10 +19,18 @@ let secretTaps = 0;
 let secretTapTimer;
 let appLoading = false;
 let cloudError = '';
+let loginPending = false;
+let loginDraft = { member:'', pin:'' };
 const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
 function render() {
+  if (!state.currentUser) {
+    const memberField = document.querySelector('#member');
+    const pinField = document.querySelector('#pin');
+    if (memberField) loginDraft.member = memberField.value;
+    if (pinField) loginDraft.pin = pinField.value;
+  }
   const ui = prepareUi(state.game || 'yugioh', page, Boolean(state.currentUser));
   paintWithTransition(ui, () => {
     document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
@@ -35,9 +43,9 @@ function loginView() {
   return `<main class="shell"><section class="login">
     <div class="brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1><p>Le carte del team, sempre sotto controllo</p></div></div>
     <div class="card"><h2>Accedi</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai un PIN personale.</p>
-      <form id="login-form"><label for="member">Membro del team</label><select id="member" required><option value="">Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
-      <label for="pin">PIN di 4 cifre</label><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" required>
-      <button class="btn wide" type="submit">Continua</button></form>
+      <form id="login-form"><label for="member">Membro del team</label><select id="member" required><option value="">Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+      <label for="pin">PIN di 4 cifre</label><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${esc(loginDraft.pin)}" placeholder="••••" required>
+      <button class="btn wide" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : 'Continua'}</button></form>
     </div><p class="notice">${api.configured ? 'PIN protetto e sincronizzazione del team attivi.' : 'Supabase non configurato.'}</p>
   </section></main>`;
 }
@@ -189,6 +197,8 @@ function teamView() {
 
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
+  document.querySelector('#member')?.addEventListener('change', event => { loginDraft.member = event.target.value; });
+  document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
   document.querySelector('#logout')?.addEventListener('click', logout);
   document.querySelector('#game-menu-trigger')?.addEventListener('click', () => { gameMenuOpen = !gameMenuOpen; render(); });
   document.querySelector('#game-menu-close')?.addEventListener('click', closeGameMenu);
@@ -294,19 +304,29 @@ async function retryCloud() {
 
 async function login(e) {
   e.preventDefault();
+  if (loginPending) return;
   const id = document.querySelector('#member').value;
   const pin = document.querySelector('#pin').value;
+  if (!id) return toast('Seleziona il tuo profilo');
   if (!/^\d{4}$/.test(pin)) return toast('Inserisci un PIN di 4 cifre');
+  loginDraft = { member:id, pin };
+  loginPending = true;
   try {
     const submit = e.submitter;
     if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
+    await loadCloudLoans();
     state.currentUser = profile.slug;
     state.role = profile.role;
-    await loadCloudLoans();
     startRealtime();
-    saveState(); render();
-  } catch (error) { toast(error.message); render(); }
+    loginDraft = { member:'', pin:'' };
+    saveState();
+  } catch (error) {
+    toast(error.message || 'Accesso non riuscito');
+  } finally {
+    loginPending = false;
+    render();
+  }
 }
 
 async function logout() {

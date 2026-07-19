@@ -13,14 +13,11 @@ export function prepareUi(game, page, loggedIn) {
   return { changed, initial };
 }
 
-export function paintWithTransition({ changed, initial }, paint) {
-  if (!changed || initial || reducedMotion() || !document.startViewTransition) {
-    paint();
-    return;
-  }
-
-  document.activeViewTransition?.skipTransition();
-  document.startViewTransition(paint);
+export function paintWithTransition(_ui, paint) {
+  // Il DOM deve essere aggiornato subito: form nativi e tastiere mobile possono
+  // perdere selezione/focus se l'update viene rinviato dalla View Transition API.
+  // Motion gestisce comunque l'animazione visiva dopo il paint.
+  paint();
 }
 
 export function animateInterface({ changed }) {
