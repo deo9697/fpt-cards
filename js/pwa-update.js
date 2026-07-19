@@ -7,6 +7,7 @@ export async function registerAutoUpdates() {
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!wasControlled || reloading) return;
+    if (document.body.dataset.page === 'login') return;
     reloading = true;
     location.reload();
   });

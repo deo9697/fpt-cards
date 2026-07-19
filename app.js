@@ -272,6 +272,24 @@ async function loadMembers() {
   setMembers(items);
 }
 
+function syncLoginMembers() {
+  const select = document.querySelector('#member');
+  if (!select) return;
+  const desired = MEMBERS.map(item => `${item.id}:${item.name}`).join('|');
+  const current = [...select.options].slice(1).map(option => `${option.value}:${option.textContent}`).join('|');
+  if (desired === current) return;
+
+  const update = () => {
+    const selected = select.value || loginDraft.member;
+    select.innerHTML = `<option value="">Seleziona il tuo nome</option>${MEMBERS.map(item => `<option value="${item.id}">${item.name}</option>`).join('')}`;
+    if (MEMBERS.some(item => item.id === selected)) select.value = selected;
+    loginDraft.member = select.value;
+  };
+
+  if (document.activeElement === select) select.addEventListener('blur', update, { once:true });
+  else update();
+}
+
 async function addMember(event) {
   event.preventDefault();
   const name = document.querySelector('#new-member-name').value.trim();
@@ -460,12 +478,19 @@ async function start() {
   appLoading = Boolean(state.currentUser);
   render();
   watchConnectivity(async connected => {
-    if (!connected || !state.currentUser) { render(); return; }
+    if (!state.currentUser) {
+      if (connected) {
+        try { await loadMembers(); syncLoginMembers(); } catch {}
+      }
+      return;
+    }
+    if (!connected) { render(); return; }
     try { await loadMembers(); await loadCloudLoans(); saveState(); cloudError = ''; }
     catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
     render();
   });
   try { await loadMembers(); } catch {}
+  if (!state.currentUser) syncLoginMembers();
   if (state.currentUser) {
     appLoading = true; render();
     try { await loadCloudLoans(); startRealtime(); saveState(); }
@@ -475,7 +500,7 @@ async function start() {
     } finally { appLoading = false; }
   }
   void registerAutoUpdates();
-  render();
+  if (state.currentUser) render();
 }
 start();
 setInterval(async () => {
