@@ -12,6 +12,7 @@ let page = 'home';
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let draftCards = [];
 let cardSearchTimer;
+let cardSearchSequence = 0;
 let enrichingImages = false;
 let gameMenuOpen = false;
 let secretTaps = 0;
@@ -458,10 +459,12 @@ function addCatalogCard(button) {
 function onCardSearch(e) {
   clearTimeout(cardSearchTimer);
   const query = e.target.value;
+  const sequence = ++cardSearchSequence;
   cardSearchTimer = setTimeout(async () => {
     const box = document.querySelector('#card-suggestions');
     if (!box) return;
     const results = await searchCards(query, state.game);
+    if (sequence !== cardSearchSequence || box !== document.querySelector('#card-suggestions')) return;
     box.innerHTML = results.map(c => `<button type="button" data-card-result data-id="${c.id}" data-name="${esc(c.name)}" data-image="${c.image}">${c.image ? `<img src="${c.image}" alt="">` : ''}<span><strong>${esc(c.name)}</strong><small>${esc(c.type)}</small></span></button>`).join('');
     box.querySelectorAll('[data-card-result]').forEach(b => b.addEventListener('click', () => addCatalogCard(b)));
   }, 350);
