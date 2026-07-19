@@ -25,6 +25,7 @@ const unresolvedCards = new Set();
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 
 function render() {
+  if (!state.currentUser && document.querySelector('.login .card:not(.login-loading)')) return;
   if (!state.currentUser) {
     const memberField = document.querySelector('#member');
     const pinField = document.querySelector('#pin');
@@ -43,7 +44,7 @@ function loginView() {
   return `<main class="shell"><section class="login">
     <div class="brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1><p>Le carte del team, sempre sotto controllo</p></div></div>
     <div class="card"><h2>Accedi</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai un PIN personale.</p>
-      <form id="login-form"><label for="member">Membro del team</label><select id="member" required><option value="">Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+      <form id="login-form"><label id="member-label">Membro del team</label><div class="profile-picker"><button class="profile-picker-trigger" id="member-picker-trigger" type="button" aria-labelledby="member-label" aria-expanded="false" aria-controls="member-picker-options"><span>${loginDraft.member ? esc(member(loginDraft.member)?.name || 'Seleziona il tuo nome') : 'Seleziona il tuo nome'}</span><b aria-hidden="true">⌄</b></button><input id="member" type="hidden" value="${esc(loginDraft.member)}"><div class="profile-picker-options" id="member-picker-options" role="listbox" aria-label="Profili del team" hidden>${MEMBERS.map(m => `<button type="button" role="option" aria-selected="${m.id === loginDraft.member}" class="${m.id === loginDraft.member ? 'selected' : ''}" data-login-member="${m.id}"><span class="mini-avatar member-${m.id}">${initials(m.name)}</span><strong>${esc(m.name)}</strong><i aria-hidden="true">✓</i></button>`).join('')}</div></div>
       <label for="pin">PIN di 4 cifre</label><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${esc(loginDraft.pin)}" placeholder="••••" required>
       <button class="btn wide" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : 'Continua'}</button></form>
     </div><p class="notice">${api.configured ? 'PIN protetto e sincronizzazione del team attivi.' : 'Supabase non configurato.'}</p>
@@ -204,7 +205,33 @@ function teamView() {
 
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
-  document.querySelector('#member')?.addEventListener('change', event => { loginDraft.member = event.target.value; });
+  const pickerTrigger = document.querySelector('#member-picker-trigger');
+  const pickerOptions = document.querySelector('#member-picker-options');
+  pickerTrigger?.addEventListener('click', () => {
+    const opening = pickerOptions.hasAttribute('hidden');
+    pickerOptions.toggleAttribute('hidden', !opening);
+    pickerTrigger.setAttribute('aria-expanded', String(opening));
+  });
+  document.querySelectorAll('[data-login-member]').forEach(button => button.addEventListener('click', () => {
+    loginDraft.member = button.dataset.loginMember;
+    document.querySelector('#member').value = loginDraft.member;
+    pickerTrigger.querySelector('span').textContent = member(loginDraft.member)?.name || 'Profilo selezionato';
+    pickerTrigger.setAttribute('aria-expanded', 'false');
+    pickerOptions.setAttribute('hidden', '');
+    document.querySelectorAll('[data-login-member]').forEach(option => {
+      const selected = option.dataset.loginMember === loginDraft.member;
+      option.classList.toggle('selected', selected);
+      option.setAttribute('aria-selected', String(selected));
+    });
+    document.querySelector('#pin')?.focus();
+  }));
+  document.querySelector('#login-form')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pickerOptions && !pickerOptions.hasAttribute('hidden')) {
+      pickerOptions.setAttribute('hidden', '');
+      pickerTrigger?.setAttribute('aria-expanded', 'false');
+      pickerTrigger?.focus();
+    }
+  });
   document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
   document.querySelector('#logout')?.addEventListener('click', logout);
   document.querySelector('#game-menu-trigger')?.addEventListener('click', () => { gameMenuOpen = !gameMenuOpen; render(); });
@@ -325,6 +352,7 @@ async function login(e) {
     await loadCloudLoans();
     state.currentUser = profile.slug;
     state.role = profile.role;
+    initEasterEgg();
     startRealtime();
     loginDraft = { member:'', pin:'' };
     saveState();
@@ -335,7 +363,11 @@ async function login(e) {
     toast(message);
   } finally {
     loginPending = false;
-    render();
+    if (state.currentUser) render();
+    else {
+      const submit = document.querySelector('#login-form .btn[type="submit"]');
+      if (submit) { submit.disabled = false; submit.textContent = 'Continua'; }
+    }
   }
 }
 
@@ -466,7 +498,6 @@ async function updateLoan(id, action) {
 }
 
 async function start() {
-  initEasterEgg();
   watchConnectivity(async connected => {
     if (!state.currentUser) return;
     if (!connected) { render(); return; }
@@ -487,6 +518,7 @@ async function start() {
     return;
   }
   appLoading = true;
+  initEasterEgg();
   render();
   try { await loadMembers(); } catch {}
   if (state.currentUser) {

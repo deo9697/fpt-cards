@@ -22,6 +22,7 @@ export function paintWithTransition(_ui, paint) {
 
 export function animateInterface({ changed }) {
   if (reducedMotion()) return;
+  if (document.body.dataset.page === 'login') return;
   const animate = animator();
   if (!animate) return;
 
