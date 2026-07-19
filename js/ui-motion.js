@@ -42,9 +42,4 @@ export function animateInterface({ changed }) {
     });
   }
 
-  if (document.querySelector('.game-menu.open')) {
-    document.querySelectorAll('.game-menu.open .game-options > button').forEach((node, index) => {
-      animate(node, { opacity:[0, 1], transform:['translateX(-8px)', 'translateX(0)'] }, { duration:.24, delay:index * .04, ease:'ease-out' });
-    });
-  }
 }

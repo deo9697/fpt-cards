@@ -26,6 +26,8 @@ function toast(message) { const el = document.querySelector('#toast'); el.textCo
 
 function render() {
   if (!state.currentUser && document.querySelector('.login .card:not(.login-loading)')) return;
+  const currentSwitcher = document.querySelector('.game-switcher');
+  if (currentSwitcher) gameMenuOpen = currentSwitcher.open;
   if (!state.currentUser) {
     const memberField = document.querySelector('#member');
     const pinField = document.querySelector('#pin');
@@ -62,10 +64,8 @@ function appView() {
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && l.status === 'pending') || (l.owner === state.currentUser && l.status === 'return_pending'))).length;
-  return `<main class="shell"><header class="topbar"><button class="menu-trigger" id="game-menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}</button><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
+  return `<main class="shell"><header class="topbar"><details class="game-switcher" ${gameMenuOpen ? 'open' : ''}><summary class="menu-trigger" aria-label="Scegli gioco">${icon('menu')}</summary><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside></details><div class="user"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${u.name}</strong><small>${game.short} · F.P.T Team</small></div></div><button class="btn secondary small" id="logout">Esci</button></header>
     ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
-    <div class="menu-backdrop ${gameMenuOpen ? 'open' : ''}" id="menu-backdrop"></div>
-    <aside class="game-menu ${gameMenuOpen ? 'open' : ''}" aria-hidden="${!gameMenuOpen}" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div><button id="game-menu-close" aria-label="Chiudi">×</button></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside>
     <section class="page-stage" aria-live="polite">${pageContent()}</section>
     ${page !== 'new' ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav">${[['home','home','Home'],['new','plus','Presta'],['loans','swap','Prestiti'],['team','team','Team']].map(([id,iconName,label]) => `<button data-page="${id}" class="${page === id ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`).join('')}</nav>
@@ -234,9 +234,13 @@ function bind() {
   });
   document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
   document.querySelector('#logout')?.addEventListener('click', logout);
-  document.querySelector('#game-menu-trigger')?.addEventListener('click', () => { gameMenuOpen = !gameMenuOpen; render(); });
-  document.querySelector('#game-menu-close')?.addEventListener('click', closeGameMenu);
-  document.querySelector('#menu-backdrop')?.addEventListener('click', closeGameMenu);
+  const gameSwitcher = document.querySelector('.game-switcher');
+  gameSwitcher?.querySelector('summary')?.addEventListener('click', event => {
+    event.preventDefault();
+    gameMenuOpen = !gameSwitcher.open;
+    gameSwitcher.open = gameMenuOpen;
+  });
+  gameSwitcher?.addEventListener('toggle', event => { gameMenuOpen = event.currentTarget.open; });
   document.querySelectorAll('[data-game]').forEach(b => b.addEventListener('click', () => selectGame(b.dataset.game)));
   document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => { page = b.dataset.page; render(); }));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
@@ -271,7 +275,6 @@ function secretRickroll() {
   secretTapTimer = window.setTimeout(() => { secretTaps = 0; }, 1800);
 }
 
-function closeGameMenu() { gameMenuOpen = false; render(); }
 function selectGame(game) {
   if (!GAMES[game]) return;
   const changed = state.game !== game;
