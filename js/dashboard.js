@@ -13,11 +13,11 @@ export function dashboardView(state, game = 'yugioh') {
     (l.owner === me.id && l.status === 'return_pending')
   );
   return `<section class="dashboard">
-    <div class="welcome-card"><div><span>F.P.T · Team Card Exchange</span><small>${greeting()}</small><h2>${me.name.split(' ')[0]}</h2><p>${attention.length ? `Hai ${attention.length} ${attention.length === 1 ? 'azione' : 'azioni'} da completare` : 'Registro in ordine · tutto sotto controllo'}</p></div><button type="button" class="welcome-avatar member-${me.id}" data-rick-secret aria-label="Profilo">${initials(me.name)}</button></div>
+    <div class="welcome-card"><div><span>${greeting()}</span><h2>${me.name.split(' ')[0]}</h2><p>${attention.length ? `Hai ${attention.length} ${attention.length === 1 ? 'azione' : 'azioni'} da completare` : 'Tutto sotto controllo'}</p></div><button type="button" class="welcome-avatar member-${me.id}" data-rick-secret aria-label="Profilo">${initials(me.name)}</button></div>
 
     ${attention.length ? `<section class="attention-card"><div class="dashboard-title"><div><span class="eyebrow">Richiede attenzione</span><h3>Azioni in sospeso</h3></div><b>${attention.length}</b></div>${attention.slice(0,3).map(attentionRow).join('')}<button class="text-action" data-quick="attention">Gestisci tutte</button></section>` : ''}
 
-    <section class="summary-card"><div class="dashboard-title"><div><span class="eyebrow">Registro personale</span><h3>La tua zona scambi</h3></div><span class="archive-code">FPT–01</span></div><div class="metric-grid">
+    <section class="summary-card"><div class="dashboard-title"><div><span class="eyebrow">Il tuo riepilogo</span><h3>Situazione attuale</h3></div></div><div class="metric-grid">
       ${metric(icon('swap'), lent, 'Carte prestate', 'gold')}
       ${metric(icon('card'), received, 'Carte ricevute', 'blue')}
       ${metric(icon('swap'), active.length, 'Prestiti attivi', 'violet')}
