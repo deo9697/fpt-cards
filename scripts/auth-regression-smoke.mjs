@@ -270,8 +270,9 @@ async function run() {
   for (const width of [1440, 820, 390, 360]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height:1000, deviceScaleFactor:1, mobile:false, screenWidth:width, screenHeight:1000 });
     await delay(80);
-    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,card:document.querySelector('.inventory-card')?.getBoundingClientRect().width,toolbar:document.querySelector('.inventory-toolbar')?.getBoundingClientRect().width})`);
+    const layout = await evaluate(`(()=>{const card=document.querySelector('.inventory-card');const copy=card?.querySelector('.inventory-card-copy');const title=copy?.querySelector('strong');const meta=copy?.querySelector('small');return{client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,card:card?.getBoundingClientRect().width,cardHeight:card?.getBoundingClientRect().height,toolbar:document.querySelector('.inventory-toolbar')?.getBoundingClientRect().width,titleHeight:title?.getBoundingClientRect().height,metaHeight:meta?.getBoundingClientRect().height,copyClient:copy?.clientHeight,copyScroll:copy?.scrollHeight}})()`);
     assert(layout.client === width && layout.scroll === width && layout.card > (width <= 390 ? 280 : 120) && layout.toolbar <= width, `Layout Raccolta non valido a ${width}px: ${JSON.stringify(layout)}`);
+    if(width<=390)assert(layout.cardHeight>=156&&layout.titleHeight>=11&&layout.metaHeight>=8&&layout.copyScroll<=layout.copyClient+1,`Testo card Raccolta compresso o tagliato a ${width}px: ${JSON.stringify(layout)}`);
   }
   console.log('PASS Raccolta responsive 1440/tablet/390/360');
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
