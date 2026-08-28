@@ -1,7 +1,7 @@
 export class FastScanCamera {
   constructor(mediaDevices = navigator.mediaDevices, timeoutMs = 12000) {
     this.mediaDevices=mediaDevices; this.timeoutMs=timeoutMs; this.stream=null; this.video=null; this.deviceId=''; this.generation=0; this.torchOn=false;
-    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.canvas=document.createElement('canvas'); this.signatureCanvas=document.createElement('canvas');
+    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.captureIndex=0; this.canvas=document.createElement('canvas'); this.signatureCanvas=document.createElement('canvas');
   }
   get supported() { return Boolean(this.mediaDevices?.getUserMedia); }
   get track() { return this.stream?.getVideoTracks?.()[0] || null; }
@@ -23,8 +23,8 @@ export class FastScanCamera {
   async configureTrack() {
     const track=this.track; if(!track?.applyConstraints)return;
     if(this.capabilities.focusModes.includes('continuous')) await applyAdvanced(track,{focusMode:'continuous'});
-    if(this.capabilities.zoom){const {min,max}=this.capabilities.zoom;const zoom=clamp(1.35,min,max);if(zoom>min)await applyAdvanced(track,{zoom});}
     this.settings=track.getSettings?.()||this.settings;
+    this.zoomValue=Number(this.settings.zoom)||this.capabilities.zoom?.min||1;
   }
   async devices() { if(!this.mediaDevices?.enumerateDevices)return[]; return (await this.mediaDevices.enumerateDevices()).filter(item=>item.kind==='videoinput'); }
   async refocus() {
@@ -39,7 +39,7 @@ export class FastScanCamera {
   }
   async setZoom(value) {
     const track=this.track, range=this.capabilities.zoom; if(!track||!range)return false;
-    const applied=await applyAdvanced(track,{zoom:clamp(Number(value)||range.min,range.min,range.max)}); if(applied)this.settings=track.getSettings?.()||this.settings; return applied;
+    const zoom=clamp(Number(value)||range.min,range.min,range.max);const applied=await applyAdvanced(track,{zoom});if(applied){this.settings=track.getSettings?.()||{...this.settings,zoom};this.zoomValue=Number(this.settings.zoom)||zoom;}return applied;
   }
   async toggleTorch(){const track=this.track;if(!this.torchSupported||!track)return false;this.torchOn=!this.torchOn;const applied=await applyAdvanced(track,{torch:this.torchOn});if(applied)return this.torchOn;this.torchOn=false;return false;}
   capture(roiElement) {
@@ -48,11 +48,11 @@ export class FastScanCamera {
     const width=Math.min(1440,Math.max(960,Math.round(crop.sw*3))),height=Math.max(96,Math.round(width*crop.sh/crop.sw));
     this.canvas.width=width;this.canvas.height=height;
     const ctx=this.canvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);
-    const signature=this.makeSignature(ctx,width,height); const preprocessing=preprocessCodeImage(ctx,width,height);
+    const signature=this.makeSignature(ctx,width,height);const mode=this.captureIndex++%3===2?'adaptive':'grayscale';const preprocessing=preprocessCodeImage(ctx,width,height,{mode});
     return {canvas:this.canvas,signature,roi:crop,preprocessing};
   }
   makeSignature(ctx,width,height){this.signatureCanvas.width=16;this.signatureCanvas.height=8;const sctx=this.signatureCanvas.getContext('2d',{willReadFrequently:true});sctx.drawImage(ctx.canvas,0,0,width,height,0,0,16,8);const data=sctx.getImageData(0,0,16,8).data;const values=[];for(let i=0;i<data.length;i+=4)values.push(Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114));return values;}
-  stop(){this.generation+=1;this.torchOn=false;this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};}
+  stop(){this.generation+=1;this.torchOn=false;this.captureIndex=0;this.zoomValue=1;this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};}
 }
 
 export function readCapabilities(track) {
@@ -74,13 +74,14 @@ export function sourceCrop(video,roiElement) {
   return {sx:Math.round(sx),sy:Math.round(sy),sw:Math.round(sw),sh:Math.round(sh)};
 }
 
-export function preprocessCodeImage(ctx,width,height) {
+export function preprocessCodeImage(ctx,width,height,{mode='adaptive'}={}) {
   const image=ctx.getImageData(0,0,width,height),pixels=width*height,gray=new Uint8Array(pixels),histogram=new Uint32Array(256);
   for(let p=0,i=0;p<pixels;p++,i+=4){const value=Math.round(image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114);gray[p]=value;histogram[value]++;}
   const low=percentile(histogram,pixels,.03),high=Math.max(low+24,percentile(histogram,pixels,.97)),factor=255/(high-low);
   for(let i=0;i<pixels;i++)gray[i]=clamp(Math.round((gray[i]-low)*factor),0,255);
   const sharpened=new Uint8Array(gray);
   for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){const i=y*width+x;sharpened[i]=clamp(Math.round(gray[i]*1.8-(gray[i-1]+gray[i+1]+gray[i-width]+gray[i+width])*.2),0,255);}
+  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=sharpened[p];image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high};}
   const integral=new Uint32Array((width+1)*(height+1));
   for(let y=1;y<=height;y++){let row=0;for(let x=1;x<=width;x++){row+=sharpened[(y-1)*width+x-1];integral[y*(width+1)+x]=integral[(y-1)*(width+1)+x]+row;}}
   const radius=Math.max(8,Math.round(height*.1));
