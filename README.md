@@ -43,6 +43,8 @@ Per abilitare Fast Scan e l’ingestion massiva, eseguire infine `supabase-miles
 
 Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Il motore Tesseract.js viene caricato soltanto quando si avvia lo scanner; la prima preparazione richiede connessione, mentre le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
 
+Il riconoscimento usa snapshot temporanei della sola ROI: `ImageCapture.grabFrame()` quando disponibile e un canvas dal video come fallback. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e il canvas OCR vengono liberati subito dopo ogni tentativo.
+
 Per misurare Fast Scan sul dispositivo senza telemetria esterna, eseguire nella console `localStorage.setItem('fpt-fast-scan-debug','1')` e ricaricare. Le metriche locali sono disponibili con `window.__fastScanPerf.snapshot()`; per disattivarle usare `localStorage.removeItem('fpt-fast-scan-debug')`.
 
 Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
