@@ -333,6 +333,20 @@ async function run() {
   await waitFor(`Boolean(document.querySelector('.fast-scan-live'))`, 'Scanner manuale Fast Scan non aperto');
   await evaluate(`document.querySelector('[data-scan-manual-open]').click()`);
   await waitFor(`!document.querySelector('[data-scan-manual-sheet]').classList.contains('hidden')`, 'Bottom sheet manuale Fast Scan non disponibile');
+  for (const viewport of [{width:360,height:844,label:'portrait 360'},{width:390,height:844,label:'portrait 390'},{width:360,height:500,label:'tastiera/browser bar'},{width:640,height:360,label:'landscape'}]) {
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width:viewport.width, height:viewport.height, deviceScaleFactor:1, mobile:true, screenWidth:viewport.width, screenHeight:viewport.height });
+    const geometry=await evaluate(`(()=>{const overlay=document.querySelector('[data-scan-manual-sheet]').getBoundingClientRect();const sheet=document.querySelector('[data-scan-manual-sheet] .scan-bottom-sheet').getBoundingClientRect();const input=document.querySelector('#scan-manual-code').getBoundingClientRect();const add=document.querySelector('#scan-manual-form .btn').getBoundingClientRect();return{innerHeight,innerWidth,overlay:{top:overlay.top,bottom:overlay.bottom,height:overlay.height},sheet:{top:sheet.top,bottom:sheet.bottom,height:sheet.height,left:sheet.left,right:sheet.right},input:{left:input.left,right:input.right,bottom:input.bottom},add:{left:add.left,right:add.right,bottom:add.bottom},scrollWidth:document.documentElement.scrollWidth}})()`);
+    assert(Math.abs(geometry.overlay.bottom-geometry.innerHeight)<2&&Math.abs(geometry.sheet.bottom-geometry.innerHeight)<2,`Sheet non ancorata al fondo (${viewport.label}): ${JSON.stringify(geometry)}`);
+    assert(geometry.sheet.top>=0&&geometry.sheet.height<geometry.innerHeight*.9,`Sheet troppo alta (${viewport.label}): ${JSON.stringify(geometry)}`);
+    assert(geometry.input.left>=geometry.sheet.left&&geometry.add.right<=geometry.sheet.right&&geometry.input.bottom<=geometry.innerHeight&&geometry.add.bottom<=geometry.innerHeight,`Controlli tagliati (${viewport.label}): ${JSON.stringify(geometry)}`);
+    assert(geometry.scrollWidth===geometry.innerWidth,`Overflow orizzontale sheet (${viewport.label}): ${JSON.stringify(geometry)}`);
+  }
+  await evaluate(`document.querySelector('#scan-manual-code').focus()`);
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width:390, height:480, deviceScaleFactor:1, mobile:true, screenWidth:390, screenHeight:844 });
+  assert(await evaluate(`(()=>{const sheet=document.querySelector('[data-scan-manual-sheet] .scan-bottom-sheet').getBoundingClientRect();const input=document.querySelector('#scan-manual-code').getBoundingClientRect();return Math.abs(sheet.bottom-innerHeight)<2&&input.bottom<=innerHeight})()`),'Sheet/input coperti con viewport ridotta da tastiera');
+  await evaluate(`document.querySelector('[data-scan-manual-close]').click();document.querySelector('[data-scan-manual-open]').click()`);
+  await waitFor(`!document.querySelector('[data-scan-manual-sheet]').classList.contains('hidden')`, 'Bottom sheet non si riapre dopo la chiusura');
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
   await evaluate(`(()=>{document.querySelector('#scan-manual-code').value='sdy - 006';document.querySelector('#scan-manual-form').requestSubmit()})()`);
   await waitFor(`document.querySelector('[data-scan-total-number]')?.textContent==='1'`, 'Fast Scan non ha accumulato la printing');
   await waitFor(`document.querySelector('[data-scan-last]')?.textContent.includes('SDY-006')&&!document.querySelector('[data-scan-session-cards]')`, 'Fast Scan live non mostra il feedback essenziale');
