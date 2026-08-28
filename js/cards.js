@@ -1,5 +1,8 @@
 const ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardinfo.php';
+const SET_ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardsetsinfo.php';
 const cache = new Map();
+const identityCache = new Map();
+const printingCache = new Map();
 
 export async function searchCards(query, game = 'yugioh') {
   if (game === 'onepiece') return searchOnePieceCards(query);
@@ -43,11 +46,121 @@ export async function findCard(name, game = 'yugioh') {
   if (game === 'onepiece') return findOnePieceCard(name);
   const value = name.trim();
   if (!value) return null;
-  let exact = await requestCards({ name:value, language:'it' });
-  if (!exact.length) exact = await requestCards({ name:value });
-  if (exact[0]) return mapCard(exact[0]);
+  const [italianExact, englishExact] = await Promise.all([
+    requestCards({ name:value, language:'it' }),
+    requestCards({ name:value })
+  ]);
+  const wanted = normalizeName(value);
+  const exact = [...italianExact, ...englishExact].find(card => normalizeName(card.name) === wanted);
+  if (exact) return mapCard(exact);
   const matches = await searchCards(value);
-  return matches.find(card => normalizeName(card.name) === normalizeName(value)) || matches[0] || null;
+  return matches.find(card => normalizeName(card.name) === wanted)
+    || matches.find(card => isConfidentAlias(card.name, value))
+    || null;
+}
+
+export async function findCardById(id, expectedName = '', game = 'yugioh') {
+  if (game !== 'yugioh') return null;
+  const candidates = await cardsById(id);
+  if (!candidates.length) return null;
+  const expected = normalizeName(expectedName);
+  const match = expected ? candidates.find(card => normalizeName(card.name) === expected) : candidates[0];
+  return match || null;
+}
+
+export async function resolveStoredCard({ id = '', name = '', setCode = '' } = {}, game = 'yugioh') {
+  if (game !== 'yugioh' || !name) return null;
+  const byId = id ? await findCardById(id, name, game) : null;
+  if (byId) return byId;
+  const matches = await searchCards(name, game);
+  const wantedSet = String(setCode || '').trim().toUpperCase();
+  if (wantedSet) {
+    const bySet = matches.find(card => card.printings?.some(printing =>
+      String(printing.setCode || '').trim().toUpperCase() === wantedSet
+    ));
+    if (bySet) return bySet;
+  }
+  const wantedName = normalizeName(name);
+  return matches.find(card => normalizeName(card.name) === wantedName)
+    || matches.find(card => isConfidentAlias(card.name, name))
+    || null;
+}
+
+export async function verifyCardIdentity(id, expectedName, game = 'yugioh') {
+  if (game !== 'yugioh' || !id || !expectedName) return null;
+  const candidates = await cardsById(id);
+  if (!candidates.length) return null;
+  const expected = normalizeName(expectedName);
+  return candidates.some(card => normalizeName(card.name) === expected);
+}
+
+export async function reconcileCatalogCard({ game = 'yugioh', catalogCardId = '', cardName = '', setCode = '', rarity = '', imageUrl = '' } = {}) {
+  if (game !== 'yugioh') return { status:'warning', card:null, issues:['Catalogo remoto non verificabile per questo gioco'] };
+  if (!catalogCardId || !cardName) return { status:'mismatch', card:null, issues:['ID catalogo o nome mancante'] };
+  const card = await findCardById(catalogCardId, cardName, game);
+  if (!card) return { status:'mismatch', card:null, issues:['Nome e catalog ID non identificano la stessa carta'] };
+  const issues = [];
+  const wantedSet = String(setCode || '').trim().toUpperCase();
+  const printing = wantedSet ? card.printings.find(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : null;
+  if (wantedSet && !printing) issues.push('Set code non presente nel catalogo della carta');
+  if (printing && rarity && printing.rarity && printing.rarity !== rarity) issues.push('Rarità diversa dal catalogo per questa printing');
+  if (imageUrl && cardImageMatches(card, imageUrl) === false) issues.push('Immagine riferita a un altro catalog ID');
+  return { status:issues.some(issue => issue.startsWith('Immagine')) ? 'mismatch' : issues.length ? 'warning' : 'valid', card, issues };
+}
+
+export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
+  if (game !== 'yugioh') return [];
+  const code=String(setCode||'').trim().toUpperCase(); if(!code)return[];
+  if(printingCache.has(code))return printingCache.get(code);
+  try {
+    const mapped=[];
+    for(const catalogCode of catalogSetCodeCandidates(code)){
+      const response=await fetch(`${SET_ENDPOINT}?setcode=${encodeURIComponent(catalogCode)}`);
+      if(!response.ok)continue;
+      const payload=await response.json(); const rows=Array.isArray(payload)?payload:payload?.data?payload.data:payload?.id?[payload]:[];
+      const exact=rows.filter(row=>String(row.set_code||'').trim().toUpperCase()===catalogCode);
+      for(const row of exact.slice(0,8)){
+        const card=await findCardById(row.id,row.name,'yugioh');
+        if(!card)continue;
+        const reconciliation=await reconcileCatalogCard({game:'yugioh',catalogCardId:row.id,cardName:row.name,setCode:row.set_code,rarity:row.set_rarity,imageUrl:card.fullImage||card.image});
+        if(reconciliation.status==='mismatch')continue;
+        const localized=catalogCode!==code;
+        mapped.push({printingId:'',game:'yugioh',catalogCardId:String(row.id),cardName:row.name,setCode:code,setName:row.set_name||'',rarity:row.set_rarity||'',imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:reconciliation.status==='warning'?reconciliation.issues.join('. '):''});
+      }
+      if(mapped.length)break;
+    }
+    const unique=[...new Map(mapped.map(item=>[[item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];printingCache.set(code,unique);return unique;
+  } catch { return []; }
+}
+
+function catalogSetCodeCandidates(code) {
+  const output=[code]; const localized=code.match(/^(.+)-(IT|FR|DE|SP|PT)(\d{1,4}[A-Z]?)$/);
+  if(localized)output.push(`${localized[1]}-EN${localized[3]}`);
+  return output;
+}
+
+export function cardImageMatches(card, url) {
+  const imageId = String(url || '').match(/\/([0-9]{5,10})\.(?:jpe?g|png)(?:[?#].*)?$/i)?.[1];
+  if (!imageId || !Array.isArray(card?.imageIds) || !card.imageIds.length) return null;
+  return card.imageIds.includes(imageId);
+}
+
+async function cardsById(id) {
+  const value = String(id || '').trim();
+  if (!/^\d{5,10}$/.test(value)) return [];
+  if (identityCache.has(value)) return identityCache.get(value);
+  const [italianCards, englishCards] = await Promise.all([
+    requestCards({ id:value, language:'it' }),
+    requestCards({ id:value })
+  ]);
+  const unique = new Map();
+  [...italianCards, ...englishCards]
+    .filter(card => String(card.id) === value)
+    .map(mapCard)
+    .forEach(card => unique.set(normalizeName(card.name), card));
+  const candidates = [...unique.values()];
+  if (candidates.length) identityCache.set(value, candidates);
+  return candidates;
 }
 
 const ONE_PIECE_ENDPOINTS = [
@@ -80,15 +193,22 @@ async function searchOnePieceCards(query) {
 async function findOnePieceCard(name) {
   const matches = await searchOnePieceCards(name);
   const normalized = name.trim().toLowerCase();
-  return matches.find(card => card.name.toLowerCase() === normalized) || matches[0] || null;
+  return matches.find(card => card.name.toLowerCase() === normalized) || null;
 }
 
 function mapOnePieceCard(card) {
+  const setCode = card.card_set_id || card.card_image_id || '';
   return {
-    id: card.card_set_id || card.card_image_id || '',
+    id: card.card_image_id || card.card_set_id || '',
     name: card.card_name || '',
     type: [card.card_set_id, card.card_type].filter(Boolean).join(' · '),
-    image: card.card_image || ''
+    image: card.card_image || '',
+    fullImage: card.card_image || '',
+    printings: [{
+      setCode,
+      setName: card.card_set_name || card.set_name || '',
+      rarity: card.card_rarity || card.rarity || ''
+    }]
   };
 }
 
@@ -102,12 +222,33 @@ async function requestCards(parameters) {
 }
 
 function mapCard(card) {
+  const artwork = card.card_images?.[0] || {};
   return {
     id: card.id,
     name: card.name,
     type: card.type,
-    image: card.card_images?.[0]?.image_url_cropped || ''
+    // image_url_cropped contiene soltanto l'illustrazione interna: non va usato
+    // come immagine della carta nelle liste o nei dati persistenti.
+    image: artwork.image_url_small || artwork.image_url || artwork.image_url_cropped || '',
+    fullImage: artwork.image_url || artwork.image_url_small || artwork.image_url_cropped || '',
+    imageIds: (card.card_images || []).map(image => String(image.id || '')).filter(Boolean),
+    printings: (card.card_sets || []).map(printing => ({
+      setCode: printing.set_code || '',
+      setName: printing.set_name || '',
+      rarity: printing.set_rarity || ''
+    }))
   };
+}
+
+export function normalizeCardImageUrl(url) {
+  const value = String(url || '');
+  if (!/^https:\/\/images\.ygoprodeck\.com\/images\/cards_cropped\//i.test(value)) return value;
+  return value.replace(/\/images\/cards_cropped\//i, '/images/cards/');
+}
+
+export function canonicalYgoCardImage(id) {
+  const value = String(id || '').trim();
+  return /^\d{5,10}$/.test(value) ? `https://images.ygoprodeck.com/images/cards/${value}.jpg` : '';
 }
 
 function normalizeName(value) {
@@ -124,6 +265,14 @@ function fallbackToken(value) {
   const ignored = new Set(['del', 'della', 'delle', 'degli', 'dello', 'dell', 'dei', 'di', 'da', 'con', 'per', 'the', 'of', 'and']);
   const candidates = normalizeName(value).split(' ').filter(token => token.length >= 3 && !ignored.has(token));
   return candidates[candidates.length - 1] || '';
+}
+
+function isConfidentAlias(candidate, query) {
+  const full = normalizeName(candidate);
+  const partial = normalizeName(query);
+  const tokens = partial.split(' ').filter(Boolean);
+  if (tokens.length < 2 || partial.length < 7) return false;
+  return full.startsWith(`${partial} `) || full.endsWith(` ${partial}`);
 }
 
 function matchScore(name, query) {

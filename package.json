@@ -2,6 +2,13 @@
   "name": "fpt-cards",
   "private": true,
   "version": "1.0.0",
+  "scripts": {
+    "preview": "node scripts/preview-server.mjs",
+    "test:auth": "node scripts/auth-regression-smoke.mjs",
+    "test:collection": "node scripts/collection-milestone-smoke.mjs",
+    "test:loans-2.1": "node scripts/collection-loans-2-1-smoke.mjs",
+    "test:fast-scan": "node scripts/fast-scan-milestone-smoke.mjs"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "web-push": "^3.6.7"

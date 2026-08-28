@@ -1,10 +1,11 @@
-const CACHE = 'fpt-cards-v52';
-const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/cards.js', './js/icons.js', './js/dashboard.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/HEYYEYAAEYAAAEYAEYAA.mp3', './assets/videoplayback.mp4', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
+const CACHE = 'fpt-cards-v80';
+const OCR_CACHE = 'fpt-cards-ocr-v1';
+const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/cards.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr.js', './js/fast-scan-storage.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './assets/fpt-card-hero.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/HEYYEYAAEYAAAEYAEYAA.mp3', './assets/videoplayback.mp4', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 self.addEventListener('install', event => event.waitUntil(
   caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting())
 ));
 self.addEventListener('activate', event => event.waitUntil(Promise.all([
-  caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))),
+  caches.keys().then(keys => Promise.all(keys.filter(k => ![CACHE,OCR_CACHE].includes(k)).map(k => caches.delete(k)))),
   self.clients.claim()
 ])));
 self.addEventListener('fetch', event => {
@@ -17,7 +18,21 @@ self.addEventListener('fetch', event => {
     }).catch(() => caches.match('./index.html').then(hit => hit || caches.match('./'))));
     return;
   }
-  event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request)));
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) {
+    if (['cdn.jsdelivr.net','tessdata.projectnaptha.com'].includes(url.hostname)) {
+      event.respondWith(caches.open(OCR_CACHE).then(async cache => {
+        const hit=await cache.match(event.request); if(hit)return hit;
+        const response=await fetch(event.request); if(response.ok||response.type==='opaque')cache.put(event.request,response.clone()); return response;
+      }));
+    } else event.respondWith(fetch(event.request));
+    return;
+  }
+  event.respondWith(fetch(event.request).then(response => {
+    const copy = response.clone();
+    caches.open(CACHE).then(cache => cache.put(event.request, copy));
+    return response;
+  }).catch(() => caches.match(event.request)));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();

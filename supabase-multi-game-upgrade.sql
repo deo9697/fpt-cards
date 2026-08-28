@@ -53,7 +53,7 @@ begin
     p_image like 'https://optcgapi.com/%'
   ) then raise exception 'Immagine non valida'; end if;
   update public.loans set card_external_id = left(p_external_id,100), card_image = left(p_image,500)
-    where id = p_id and card_image is null;
+    where id = p_id;
 end;
 $$;
 revoke all on function public.enrich_loan_card(text,uuid,text,text) from public;

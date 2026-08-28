@@ -4,10 +4,10 @@ PWA mobile per registrare e confermare i prestiti di carte tra i membri del team
 
 ## Avvio locale
 
-La service worker richiede un server HTTP. Con Python installato:
+La service worker richiede un server HTTP. Avviare la preview dalla cartella del progetto:
 
 ```powershell
-python -m http.server 8080
+npm run preview
 ```
 
 Aprire `http://localhost:8080` nel browser.
@@ -34,6 +34,14 @@ Per nascondere all'amministratore gli scambi tra altri membri, eseguire `supabas
 Per aggiornamenti immediati e notifiche mentre la PWA è attiva, eseguire `supabase-realtime-upgrade.sql`.
 
 Per notifiche Web Push ad app chiusa, eseguire `supabase-web-push-upgrade.sql` e configurare le variabili Netlify descritte nella sezione Web Push.
+
+La migration della raccolta personale/team è preparata in `supabase-milestone-2-collection.sql`, ma non è ancora applicata al database reale: eseguirla soltanto dopo la revisione pre-deploy. Aggiunge `card_printings`, `collection_items`, le RPC protette e il collegamento opzionale ai prestiti senza modificare lo storico esistente.
+
+Dopo la migration della raccolta, eseguire `supabase-milestone-2-1-collection-loans.sql` per abilitare richieste dirette dalla Raccolta Team, accettazione parziale e stati `requested/reserved/completed/rejected`. La migration conserva `pending/returned` e `collection_item_id` nullable per i prestiti legacy.
+
+Per abilitare Fast Scan e l’ingestion massiva, eseguire infine `supabase-milestone-3-fast-scan.sql`. Aggiunge il lookup protetto per `game + set_code` e la RPC atomica `save_collection_batch`; l’owner viene sempre ricavato dalla sessione applicativa e non dal payload client.
+
+Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Il motore Tesseract.js viene caricato soltanto quando si avvia lo scanner; la prima preparazione richiede connessione, mentre le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
 
 Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
 
