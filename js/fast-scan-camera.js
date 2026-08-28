@@ -1,7 +1,7 @@
 export class FastScanCamera {
   constructor(mediaDevices = navigator.mediaDevices, timeoutMs = 12000) {
     this.mediaDevices=mediaDevices; this.timeoutMs=timeoutMs; this.stream=null; this.video=null; this.deviceId=''; this.generation=0; this.torchOn=false;
-    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.captureIndex=0; this.canvas=document.createElement('canvas'); this.signatureCanvas=document.createElement('canvas');
+    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.captureIndex=0; this.preferredMode=''; this.canvas=document.createElement('canvas'); this.signatureCanvas=document.createElement('canvas');
   }
   get supported() { return Boolean(this.mediaDevices?.getUserMedia); }
   get track() { return this.stream?.getVideoTracks?.()[0] || null; }
@@ -42,17 +42,22 @@ export class FastScanCamera {
     const zoom=clamp(Number(value)||range.min,range.min,range.max);const applied=await applyAdvanced(track,{zoom});if(applied){this.settings=track.getSettings?.()||{...this.settings,zoom};this.zoomValue=Number(this.settings.zoom)||zoom;}return applied;
   }
   async toggleTorch(){const track=this.track;if(!this.torchSupported||!track)return false;this.torchOn=!this.torchOn;const applied=await applyAdvanced(track,{torch:this.torchOn});if(applied)return this.torchOn;this.torchOn=false;return false;}
+  preferPreprocessing(mode){if(['grayscale','adaptive'].includes(mode))this.preferredMode=mode;}
+  clearPreprocessingPreference(){this.preferredMode='';}
   capture(roiElement) {
+    const started=performance.now();
     const video=this.video; if(!video?.videoWidth||!video?.videoHeight)return null;
-    const crop=sourceCrop(video,roiElement); if(!crop||crop.sw<24||crop.sh<12)return null;
-    const width=Math.min(1440,Math.max(960,Math.round(crop.sw*3))),height=Math.max(96,Math.round(width*crop.sh/crop.sw));
-    this.canvas.width=width;this.canvas.height=height;
+    const cropStarted=performance.now(),crop=sourceCrop(video,roiElement),cropMs=performance.now()-cropStarted; if(!crop||crop.sw<24||crop.sh<12)return null;
+    const mode=this.preferredMode||(this.captureIndex%3===2?'adaptive':'grayscale');this.captureIndex+=1;
+    const factor=mode==='adaptive'?2.8:2.35,target=mode==='adaptive'?1080:900,ceiling=mode==='adaptive'?1280:1120;
+    const width=Math.min(ceiling,Math.max(target,Math.round(crop.sw*factor))),height=Math.max(88,Math.round(width*crop.sh/crop.sw));
+    const drawStarted=performance.now();this.canvas.width=width;this.canvas.height=height;
     const ctx=this.canvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);
-    const signature=this.makeSignature(ctx,width,height);const mode=this.captureIndex++%3===2?'adaptive':'grayscale';const preprocessing=preprocessCodeImage(ctx,width,height,{mode});
-    return {canvas:this.canvas,signature,roi:crop,preprocessing};
+    const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,preprocessStarted=performance.now(),preprocessing=preprocessCodeImage(ctx,width,height,{mode}),preprocessMs=performance.now()-preprocessStarted;
+    return {canvas:this.canvas,signature,roi:crop,preprocessing,timing:{totalMs:performance.now()-started,cropMs,drawMs,preprocessMs}};
   }
   makeSignature(ctx,width,height){this.signatureCanvas.width=16;this.signatureCanvas.height=8;const sctx=this.signatureCanvas.getContext('2d',{willReadFrequently:true});sctx.drawImage(ctx.canvas,0,0,width,height,0,0,16,8);const data=sctx.getImageData(0,0,16,8).data;const values=[];for(let i=0;i<data.length;i+=4)values.push(Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114));return values;}
-  stop(){this.generation+=1;this.torchOn=false;this.captureIndex=0;this.zoomValue=1;this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};}
+  stop(){this.generation+=1;this.torchOn=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};}
 }
 
 export function readCapabilities(track) {
@@ -65,7 +70,7 @@ export function readCapabilities(track) {
 export function sourceCrop(video,roiElement) {
   const vw=video.videoWidth,vh=video.videoHeight; if(!vw||!vh)return null;
   const videoRect=video.getBoundingClientRect?.(); const roiRect=roiElement?.getBoundingClientRect?.();
-  if(!videoRect?.width||!videoRect?.height||!roiRect?.width||!roiRect?.height)return {sx:Math.round(vw*.12),sy:Math.round(vh*.455),sw:Math.round(vw*.76),sh:Math.round(vh*.09)};
+  if(!videoRect?.width||!videoRect?.height||!roiRect?.width||!roiRect?.height)return {sx:Math.round(vw*.15),sy:Math.round(vh*.464),sw:Math.round(vw*.7),sh:Math.round(vh*.072)};
   const scale=Math.max(videoRect.width/vw,videoRect.height/vh),renderedWidth=vw*scale,renderedHeight=vh*scale;
   const offsetX=(videoRect.width-renderedWidth)/2,offsetY=(videoRect.height-renderedHeight)/2;
   const left=Math.max(videoRect.left,roiRect.left),top=Math.max(videoRect.top,roiRect.top),right=Math.min(videoRect.right,roiRect.right),bottom=Math.min(videoRect.bottom,roiRect.bottom);
@@ -79,18 +84,20 @@ export function preprocessCodeImage(ctx,width,height,{mode='adaptive'}={}) {
   for(let p=0,i=0;p<pixels;p++,i+=4){const value=Math.round(image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114);gray[p]=value;histogram[value]++;}
   const low=percentile(histogram,pixels,.03),high=Math.max(low+24,percentile(histogram,pixels,.97)),factor=255/(high-low);
   for(let i=0;i<pixels;i++)gray[i]=clamp(Math.round((gray[i]-low)*factor),0,255);
+  const sharpness=laplacianVariance(gray,width,height);
   const sharpened=new Uint8Array(gray);
   for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){const i=y*width+x;sharpened[i]=clamp(Math.round(gray[i]*1.8-(gray[i-1]+gray[i+1]+gray[i-width]+gray[i+width])*.2),0,255);}
-  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=sharpened[p];image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high};}
+  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=sharpened[p];image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high,sharpness};}
   const integral=new Uint32Array((width+1)*(height+1));
   for(let y=1;y<=height;y++){let row=0;for(let x=1;x<=width;x++){row+=sharpened[(y-1)*width+x-1];integral[y*(width+1)+x]=integral[(y-1)*(width+1)+x]+row;}}
   const radius=Math.max(8,Math.round(height*.1));
   for(let y=0,p=0;y<height;y++)for(let x=0;x<width;x++,p++){const x0=Math.max(0,x-radius),y0=Math.max(0,y-radius),x1=Math.min(width-1,x+radius),y1=Math.min(height-1,y+radius);const stride=width+1;const sum=integral[(y1+1)*stride+x1+1]-integral[y0*stride+x1+1]-integral[(y1+1)*stride+x0]+integral[y0*stride+x0];const mean=sum/((x1-x0+1)*(y1-y0+1));const value=sharpened[p]>mean-9?255:0;const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=value;image.data[i+3]=255;}
-  ctx.putImageData(image,0,0); return {mode:'adaptive',scale:high-low,low,high};
+  ctx.putImageData(image,0,0); return {mode:'adaptive',scale:high-low,low,high,sharpness};
 }
 
 async function applyAdvanced(track,constraint){try{await track.applyConstraints({advanced:[constraint]});return true;}catch{return false;}}
 function percentile(histogram,total,ratio){let count=0,target=total*ratio;for(let value=0;value<256;value++){count+=histogram[value];if(count>=target)return value;}return 255;}
+function laplacianVariance(gray,width,height){let sum=0,sumSquares=0,count=0;for(let y=2;y<height-2;y+=2)for(let x=2;x<width-2;x+=2){const i=y*width+x,value=(gray[i]*4)-gray[i-1]-gray[i+1]-gray[i-width]-gray[i+width];sum+=value;sumSquares+=value*value;count++;}if(!count)return 0;const mean=sum/count;return Math.max(0,(sumSquares/count)-(mean*mean));}
 function clamp(value,min,max){return Math.min(max,Math.max(min,value));}
 function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
 function cameraError(code,cause){const error=new Error(({unsupported:'Fotocamera non supportata dal browser',denied:'Permesso fotocamera negato',unavailable:'Nessuna fotocamera disponibile',timeout:'La fotocamera non ha risposto: prova da Safari o cambia camera',aborted:'Avvio fotocamera annullato',failed:'Impossibile avviare la fotocamera'})[code]);error.code=code;error.cause=cause;return error;}
