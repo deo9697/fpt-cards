@@ -49,6 +49,8 @@ Per misurare Fast Scan sul dispositivo senza telemetria esterna, aprire l'app co
 
 Lo scatto manuale in debug confronta inoltre sullo stesso snapshot reale: A) grayscale senza padding, B) grayscale con padding, C) grayscale con padding e crop OCR allargato alle larghezze 760/900/1100 px, D) adaptive fallback. Ogni riga riporta testo raw, confidence e tempo. In produzione il primo tentativo resta C a 900 px con PSM 7; D viene eseguito soltanto se C non produce un set code plausibile.
 
+Prima del grayscale viene estratta una sub-ROI verticale single-line dal raw crop: offset superiore 4% e altezza 46% della ROI completa. La guida visiva non cambia. Il debug mostra separatamente ROI raw completa, sub-crop raw, input grayscale e input adaptive, oltre all'eventuale candidato univoco restituito dal catalogo. La sub-ROI viene applicata prima di resize e padding.
+
 Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
 
 ## Web Push su Netlify
