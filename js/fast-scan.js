@@ -93,30 +93,35 @@ export class FastScanController {
   }
   async performScanOnce(){
     if(this.phase!=='scanning'||this.exitOpen||this.manualOpen||!this.camera.stream)return;
-    const forced=this.forceSnapshot;this.forceSnapshot=false;
+    // Keep a manual request pending until a real snapshot starts. Recovery,
+    // autofocus and a temporarily unavailable frame must not eat the click.
+    const forced=this.forceSnapshot;
     const initialIssue=this.camera.healthIssue?.();if(initialIssue){await this.recoverCamera(initialIssue);return;}
-    if(this.camera.refocusing){this.forceSnapshot=this.forceSnapshot||forced;this.setStatus('Messa a fuoco…');this.schedule(90);return;}
+    if(this.camera.refocusing){this.setStatus('Messa a fuoco…');this.schedule(90);return;}
     const roi=document.querySelector('.live-roi'),frame=this.camera.sample(roi);
     const sampledIssue=this.camera.healthIssue?.();if(sampledIssue){await this.recoverCamera(sampledIssue);return;}if(!frame){this.setStatus('Attendo la fotocamera…');this.schedule(250);return;}
-    if(!forced){this.scanState='LIVE';this.setStatus('Allinea il codice e premi Scatta e analizza');this.schedule(250);return;}
+    if(!forced){this.scanState='LIVE';this.schedule(250);return;}
+    this.forceSnapshot=false;
     this.scanState='STABLE';
     this.snapshotInFlight=true;this.updateCaptureUi(true);let snapshot=null;try{
       this.setStatus('Scatto foto…');this.scanState='CAPTURING';const ocrRoi=expandedOcrRoi(roi,.1);snapshot=await this.camera.captureSnapshot(ocrRoi,{preferVideoFrame:false,includeRaw:true});
       if(!snapshot||this.phase!=='scanning'||this.exitOpen||this.manualOpen){if(!snapshot)await this.recordFailure();return;}
       this.lastPreprocessing=snapshot.preprocessing;await this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
-      if((snapshot.preprocessing?.sharpness||0)<3){await this.recordFailure();this.setStatus('Foto sfocata · riprova lo scatto');return;}
+      const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
       this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;const plan=createOcrInputPlan(snapshot),productionReadings=[];try{
-        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted;productionReadings.push(primary);
-        if(!primaryCode.valid||repeatedLast){const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);}
+        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted,needsAlternative=!primaryCode.valid||repeatedLast;productionReadings.push(primary);
+        // A manual photo always gets both preprocessing passes. A formally valid
+        // first reading may still contain a confused digit or letter.
+        const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);
         const hasDifferentValid=productionReadings.some(reading=>{const normalized=normalizeSetCode(reading.text);return normalized.valid&&normalized.code!==lastAccepted;});
-        if(forced&&repeatedLast&&!hasDifferentValid){this.setStatus('Verifica lettura alternativa…');try{const paddle=await this.paddleOcr.recognize(plan.primary.canvas);productionReadings.push({...paddle,preprocessing:plan.primary.preprocessing});}catch{}}
+        if(forced&&needsAlternative&&repeatedLast&&!hasDifferentValid){this.setStatus('Verifica lettura alternativa…');try{const paddle=await this.paddleOcr.recognize(plan.primary.canvas);productionReadings.push({...paddle,preprocessing:plan.primary.preprocessing});}catch{}}
         let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};
-        this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;let outcome=null;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();if(forced&&(!outcome||outcome.status==='not_found'))this.setStatus('Codice non letto · prova ROI Ampia o 1,5×');
+        this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;let outcome=null;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
       }finally{plan.release();}
     }catch(error){const issue=this.camera.healthIssue?.();if(issue)await this.recoverCamera(issue);else if(error?.message!=='refocus-in-progress')this.setStatus(error.message||'OCR non disponibile');}
     finally{snapshot?.release?.();snapshot=null;this.snapshotInFlight=false;this.updateCaptureUi(false);if(this.phase==='scanning'&&!this.exitOpen&&!this.manualOpen){this.scanState='LIVE';this.schedule(250);}}
   }
-  requestSnapshot(){if(this.phase!=='scanning'||this.exitOpen||this.manualOpen||!this.camera.stream)return;if(this.snapshotInFlight){this.setStatus('Elaborazione snapshot in corso…');return;}this.forceSnapshot=true;this.stopLoop();this.setStatus(this.scanCycleInFlight?'Attendo analisi corrente…':'Scatto manuale…');if(!this.scanCycleInFlight)this.schedule(0);}
+  requestSnapshot(){if(this.phase==='paused'){this.setStatus('Riprendi lo scanner prima dello scatto');return;}if(this.exitOpen||this.manualOpen){this.setStatus('Chiudi la finestra aperta prima dello scatto');return;}if(this.phase!=='scanning'||!this.camera.stream){this.setStatus('Fotocamera non pronta · riavvia lo scanner');return;}if(this.snapshotInFlight){this.setStatus('Elaborazione snapshot in corso…');return;}this.forceSnapshot=true;this.stopLoop();this.setStatus(this.scanCycleInFlight?'Attendo analisi corrente…':'Scatto manuale…');if(!this.scanCycleInFlight)this.schedule(0);}
   updateCaptureUi(busy){const button=document.querySelector('[data-scan-capture]');if(!button)return;button.disabled=busy;const label=button.querySelector('span');if(label)label.textContent=busy?'Elaborazione…':'Scatta e analizza';}
   async recordFailure(catalogMiss=false){
     this.consensus.miss();this.gate.miss();this.failureStreak+=1;
@@ -184,6 +189,7 @@ export function selectSnapshotOcrResult(readings=[],{avoidCode=''}={}){
   return (alternatives.length?alternatives:available).sort((left,right)=>ocrReadingScore(right)-ocrReadingScore(left))[0]||null;
 }
 function ocrReadingScore(reading){const normalized=normalizeSetCode(reading?.text||''),near=normalized.code.includes('-')&&normalized.code.length>=5;return (normalized.valid?10000:near?1000:0)+(Number(reading?.confidence)||0);}
+function ocrReadingSummary(readings=[]){const values=readings.map(reading=>String(reading?.text||'').replace(/\s+/g,'').replace(/[^A-Z0-9-]/gi,'').toUpperCase()).filter(Boolean);return [...new Set(values)].join(' / ').slice(0,48);}
 function toggle(id,label,checked){return `<label class="scan-toggle"><input id="${id}" type="checkbox" ${checked?'checked':''}><span><strong>${label}</strong><small>${checked?'Attivo':'Disattivato'}</small></span></label>`;}
 function entryRow(item){return `<article class="scan-review-row"><div>${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:icon('card')}<span><strong>${esc(item.cardName)}</strong><small>${esc([item.setCode,item.rarity,item.confidence,item.warning].filter(Boolean).join(' · '))}</small></span></div><label>Quantità<input type="number" min="1" max="999" value="${item.quantity}" data-scan-quantity="${esc(item.key)}"></label><button class="btn secondary danger small" data-scan-remove="${esc(item.key)}">Rimuovi</button></article>`;}
 function reviewRow(item){return `<article class="scan-review-row warning"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc([item.warning,item.ocrConfidence?`confidence ${Math.round(item.ocrConfidence)}%`:''].filter(Boolean).join(' · '))}</small></span></div>${item.matches?.length?`<div class="review-choices">${item.matches.map((match,index)=>`<button class="btn secondary small" data-review-choice="${index}" data-review-id="${item.id}">${esc(match.cardName)} · ${esc(match.setCode)}</button>`).join('')}</div>`:`<div class="review-correction"><input data-review-input="${item.id}" value="${esc(item.code||'')}" placeholder="Correggi codice"><button class="btn secondary small" data-review-correct="${item.id}">Cerca</button></div>`}<button class="btn secondary small" data-review-ignore="${item.id}">Ignora</button></article>`;}
