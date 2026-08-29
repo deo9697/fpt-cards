@@ -1,11 +1,12 @@
-const CACHE = 'fpt-cards-v99';
+const CACHE = 'fpt-cards-v100';
 const OCR_CACHE = 'fpt-cards-ocr-v1';
+const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/cards.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr.js', './js/fast-scan-candidate-ranking.js', './js/fast-scan-ocr-engine-b.js', './js/fast-scan-storage.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './assets/fpt-card-hero.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/HEYYEYAAEYAAAEYAEYAA.mp3', './assets/videoplayback.mp4', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 self.addEventListener('install', event => event.waitUntil(
   caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting())
 ));
 self.addEventListener('activate', event => event.waitUntil(Promise.all([
-  caches.keys().then(keys => Promise.all(keys.filter(k => ![CACHE,OCR_CACHE].includes(k)).map(k => caches.delete(k)))),
+  caches.keys().then(keys => Promise.all(keys.filter(k => ![CACHE,OCR_CACHE,PADDLE_CACHE].includes(k)).map(k => caches.delete(k)))),
   self.clients.claim()
 ])));
 self.addEventListener('fetch', event => {
@@ -20,10 +21,11 @@ self.addEventListener('fetch', event => {
   }
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) {
-    if (['cdn.jsdelivr.net','tessdata.projectnaptha.com'].includes(url.hostname)) {
-      event.respondWith(caches.open(OCR_CACHE).then(async cache => {
+    if (['cdn.jsdelivr.net','tessdata.projectnaptha.com','paddle-model-ecology.bj.bcebos.com'].includes(url.hostname)) {
+      const isPaddle=url.hostname==='paddle-model-ecology.bj.bcebos.com'||['paddleocr','opencv','onnxruntime','js-yaml','clipper-lib'].some(part=>url.pathname.toLowerCase().includes(part));
+      event.respondWith(caches.open(isPaddle?PADDLE_CACHE:OCR_CACHE).then(async cache => {
         const hit=await cache.match(event.request); if(hit)return hit;
-        const response=await fetch(event.request); if(response.ok||response.type==='opaque')cache.put(event.request,response.clone()); return response;
+        const response=await fetch(event.request); if(response.ok||response.type==='opaque')try{await cache.put(event.request,response.clone());}catch{} return response;
       }));
     } else event.respondWith(fetch(event.request));
     return;
