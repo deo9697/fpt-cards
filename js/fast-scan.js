@@ -104,7 +104,11 @@ export class FastScanController {
     this.forceSnapshot=false;
     this.scanState='STABLE';
     this.snapshotInFlight=true;this.updateCaptureUi(true);let snapshot=null;try{
-      this.setStatus('Scatto foto…');this.scanState='CAPTURING';const ocrRoi=expandedOcrRoi(roi,.1);snapshot=await this.camera.captureSnapshot(ocrRoi,{preferVideoFrame:false,includeRaw:true});
+      this.setStatus('Scatto foto…');this.scanState='CAPTURING';const ocrRoi=expandedOcrRoi(roi,.1);snapshot=await this.camera.captureSnapshot(ocrRoi,{preferVideoFrame:true,includeRaw:true});
+      // The guide is drawn over the video preview, so its exact pixels are the
+      // authoritative crop. ImageCapture is only a fallback when no preview
+      // frame is available because some mobile cameras return shifted frames.
+      if(!snapshot)snapshot=await this.camera.captureSnapshot(ocrRoi,{preferVideoFrame:false,includeRaw:true});
       if(!snapshot||this.phase!=='scanning'||this.exitOpen||this.manualOpen){if(!snapshot)await this.recordFailure();return;}
       this.lastPreprocessing=snapshot.preprocessing;await this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
       const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
@@ -113,8 +117,8 @@ export class FastScanController {
         // A manual photo always gets both preprocessing passes. A formally valid
         // first reading may still contain a confused digit or letter.
         const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);
-        const hasDifferentValid=productionReadings.some(reading=>{const normalized=normalizeSetCode(reading.text);return normalized.valid&&normalized.code!==lastAccepted;});
-        if(forced&&needsAlternative&&repeatedLast&&!hasDifferentValid){this.setStatus('Verifica lettura alternativa…');try{const paddle=await this.paddleOcr.recognize(plan.primary.canvas);productionReadings.push({...paddle,preprocessing:plan.primary.preprocessing});}catch{}}
+        const validReadings=productionReadings.map(reading=>normalizeSetCode(reading.text)).filter(normalized=>normalized.valid),hasDifferentValid=validReadings.some(normalized=>normalized.code!==lastAccepted),needsEngineFallback=!validReadings.length||(repeatedLast&&!hasDifferentValid);
+        if(forced&&needsAlternative&&needsEngineFallback){this.setStatus('Tesseract incerto · provo OCR alternativo…');try{const paddle=await this.paddleOcr.recognize(plan.primary.canvas);productionReadings.push({...paddle,preprocessing:plan.primary.preprocessing});}catch{}}
         let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};
         this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;let outcome=null;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
       }finally{plan.release();}
