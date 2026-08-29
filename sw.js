@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v93';
+const CACHE = 'fpt-cards-v94';
 const OCR_CACHE = 'fpt-cards-ocr-v1';
 const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/cards.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr.js', './js/fast-scan-storage.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './assets/fpt-card-hero.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/HEYYEYAAEYAAAEYAEYAA.mp3', './assets/videoplayback.mp4', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 self.addEventListener('install', event => event.waitUntil(

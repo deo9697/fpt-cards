@@ -45,7 +45,7 @@ Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Il motore Tess
 
 Il riconoscimento usa snapshot temporanei della sola ROI: `ImageCapture.grabFrame()` quando risulta stabile e un canvas dal video come fallback. La camera preferisce 1080p e, dopo un errore ImageCapture o un aspect ratio incoerente, resta sul fallback canvas per tutta la sessione. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e il canvas OCR vengono liberati subito dopo ogni tentativo. Lo scanner monitora inoltre `readyState`, mute e frame neri, ricreando lo stream senza perdere il buffer quando serve.
 
-Per misurare Fast Scan sul dispositivo senza telemetria esterna, eseguire nella console `localStorage.setItem('fpt-fast-scan-debug','1')` e ricaricare. Le metriche locali sono disponibili con `window.__fastScanPerf.snapshot()`; per disattivarle usare `localStorage.removeItem('fpt-fast-scan-debug')`.
+Per misurare Fast Scan sul dispositivo senza telemetria esterna, aprire l'app con `?fastscanDebug=1` prima dell'hash della route oppure eseguire nella console `localStorage.setItem('fpt-fast-scan-debug','1')` e ricaricare. Dopo `Scatta e analizza` il pannello locale mostra raw, grayscale e adaptive dello stesso frame, risultati/tempi OCR, sharpness, mapping ROI e ritardo click→frame. Nessuna immagine viene salvata o inviata. Le metriche locali sono disponibili con `window.__fastScanPerf.snapshot()`; per disattivarle usare `localStorage.removeItem('fpt-fast-scan-debug')`.
 
 Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
 
