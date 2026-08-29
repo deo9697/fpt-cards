@@ -1235,4 +1235,8 @@ img.card-image-unavailable { opacity: 0; }
 
 .live-debug-crop .debug-ocr-test { min-height:36px;padding:7px 10px;border:1px solid #65dda56b;border-radius:8px;background:#10251de8;color:#a9f4cb;font-weight:800;cursor:pointer; }
 .live-debug-crop .debug-ocr-test:disabled { opacity:.55;cursor:wait; }
+.live-debug-crop .debug-engine-benchmark { display:grid;gap:6px;padding-top:8px;border-top:1px solid #65dda536; }
+.live-debug-crop .debug-engine-benchmark small { color:#b8c7bf;font-size:.58rem;line-height:1.45; }
+.live-debug-crop .debug-engine-benchmark label { display:grid;gap:4px;color:#dce7e1;font-size:.58rem;font-weight:800; }
+.live-debug-crop .debug-engine-benchmark input { width:100%;min-height:38px;padding:7px 9px;border:1px solid #65dda56b;border-radius:8px;background:#090c12;color:#fff;font:700 .72rem ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:uppercase; }
 .fast-scan-setup > .live-debug-crop.setup-debug { position:relative;top:auto;right:auto;width:100%;max-height:none; }
