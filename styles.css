@@ -1235,3 +1235,4 @@ img.card-image-unavailable { opacity: 0; }
 
 .live-debug-crop .debug-ocr-test { min-height:36px;padding:7px 10px;border:1px solid #65dda56b;border-radius:8px;background:#10251de8;color:#a9f4cb;font-weight:800;cursor:pointer; }
 .live-debug-crop .debug-ocr-test:disabled { opacity:.55;cursor:wait; }
+.fast-scan-setup > .live-debug-crop.setup-debug { position:relative;top:auto;right:auto;width:100%;max-height:none; }
