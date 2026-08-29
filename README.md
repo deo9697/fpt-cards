@@ -47,6 +47,8 @@ Il riconoscimento usa snapshot temporanei della sola ROI: `ImageCapture.grabFram
 
 Per misurare Fast Scan sul dispositivo senza telemetria esterna, aprire l'app con `?fastscanDebug=1` prima dell'hash della route oppure eseguire nella console `localStorage.setItem('fpt-fast-scan-debug','1')` e ricaricare. Il pannello diagnostico compare immediatamente entrando in `#/scan`, anche prima di uno snapshot; raw, grayscale e adaptive restano vuoti fino alla prima scansione. Il pulsante `Test Tesseract sintetico` prova quattro codici sul worker riutilizzato e su uno nuovo, confrontando PSM 7/8/13 e mostrando raw text, confidence, PASS/FAIL e la conclusione diagnostica A/B/C. Il report completo resta disponibile in memoria in `window.__fastScanOcrSelfTest`. Nessuna immagine viene salvata o inviata. Le metriche locali sono disponibili con `window.__fastScanPerf.snapshot()`; per disattivarle usare `localStorage.removeItem('fpt-fast-scan-debug')`.
 
+Lo scatto manuale in debug confronta inoltre sullo stesso snapshot reale: A) grayscale senza padding, B) grayscale con padding, C) grayscale con padding e crop OCR allargato alle larghezze 760/900/1100 px, D) adaptive fallback. Ogni riga riporta testo raw, confidence e tempo. In produzione il primo tentativo resta C a 900 px con PSM 7; D viene eseguito soltanto se C non produce un set code plausibile.
+
 Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
 
 ## Web Push su Netlify

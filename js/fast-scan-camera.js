@@ -113,9 +113,9 @@ export function preprocessCodeImage(ctx,width,height,{mode='adaptive'}={}) {
   const low=percentile(histogram,pixels,.03),high=Math.max(low+24,percentile(histogram,pixels,.97)),factor=255/(high-low);
   for(let i=0;i<pixels;i++)gray[i]=clamp(Math.round((gray[i]-low)*factor),0,255);
   const sharpness=laplacianVariance(gray,width,height);
+  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4,value=clamp(Math.round(16+gray[p]*.875),0,255);image.data[i]=image.data[i+1]=image.data[i+2]=value;image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high,sharpness,meanLuma:lumaSum/Math.max(1,pixels),sharpen:false,threshold:false};}
   const sharpened=new Uint8Array(gray);
   for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){const i=y*width+x;sharpened[i]=clamp(Math.round(gray[i]*1.8-(gray[i-1]+gray[i+1]+gray[i-width]+gray[i+width])*.2),0,255);}
-  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=sharpened[p];image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high,sharpness,meanLuma:lumaSum/Math.max(1,pixels)};}
   const integral=new Uint32Array((width+1)*(height+1));
   for(let y=1;y<=height;y++){let row=0;for(let x=1;x<=width;x++){row+=sharpened[(y-1)*width+x-1];integral[y*(width+1)+x]=integral[(y-1)*(width+1)+x]+row;}}
   const radius=Math.max(8,Math.round(height*.1));

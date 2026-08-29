@@ -1,5 +1,5 @@
 const STRICT_SET_CODE = /^[A-Z0-9]{2,12}-[A-Z0-9]{2,10}$/;
-const OCR_SWAPS = { O:'0',0:'O',I:'1',1:'I',S:'5',5:'S',B:'8',8:'B',Z:'2',2:'Z',G:'6',6:'G' };
+const OCR_SWAPS = { O:['0'],0:['O'],I:['1'],1:['I'],S:['5','9'],5:['S'],9:['S'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G'] };
 
 function plausibleSetCode(code) {
   if(!STRICT_SET_CODE.test(code))return false;
@@ -20,8 +20,8 @@ export function setCodeCandidates(raw,limit=24) {
   const base=normalizeSetCode(raw);if(!base.valid)return[];
   const output=[{code:base.code,corrected:false,ambiguous:false}];
   const indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0).slice(0,6);
-  for(const index of indexes){const chars=[...base.code];chars[index]=OCR_SWAPS[chars[index]];const code=chars.join('');if(plausibleSetCode(code))output.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${chars[index]}`});if(output.length>=limit)break;}
-  return [...new Map(output.map(item=>[item.code,item])).values()];
+  for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))output.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`});if(output.length>=limit)break;}
+  return [...new Map(output.map(item=>[item.code,item])).values()].slice(0,limit);
 }
 
 export function classifyPrintingMatch({normalized,matches=[],corrected=false,catalogMismatch=false,consensus=0,ocrConfidence=0,manual=false}) {
