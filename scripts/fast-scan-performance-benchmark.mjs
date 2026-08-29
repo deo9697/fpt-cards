@@ -26,7 +26,7 @@ const preprocess=[];
 for(const width of [900,1080,1280])for(const mode of ['grayscale','adaptive'])preprocess.push(benchmarkPreprocess(width,mode));
 const pipelineComparison={
   previousLive:{scheduleMs:720,frames:[benchmarkPreprocess(960,'grayscale'),benchmarkPreprocess(1440,'adaptive')]},
-  snapshot:{stabilityMs:190,liveQualitySample:benchmarkPreprocess(320,'grayscale'),frames:[benchmarkPreprocess(900,'grayscale'),benchmarkPreprocess(1280,'adaptive')]},
+  snapshot:{stabilityFrames:2,estimatedStabilityMs:160,liveQualitySample:benchmarkPreprocess(320,'grayscale'),frames:[benchmarkPreprocess(900,'grayscale'),benchmarkPreprocess(1280,'adaptive')]},
   scope:'CPU sintetica: non include latenza Tesseract, autofocus o ImageCapture del dispositivo'
 };
 const codes=['L26D-ENX40','L26D-ENX4O','TDGS-IT001','TDGS-EN001','LOB-001','TG-ZDEJ7'];
