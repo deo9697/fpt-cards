@@ -196,7 +196,7 @@ function pageContent() {
   if (page === 'decks') return decks.view();
   if (page === 'settings') return settingsView();
   if (page === 'more') return moreView();
-  return dashboardView(state, state.game);
+  return dashboardView(state, state.game, { ...marketWatch.data, error:marketWatch.error });
 }
 
 function loadingView() {

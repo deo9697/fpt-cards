@@ -1,7 +1,7 @@
 import { member, esc, formatDate } from './core.js';
 import { icon } from './icons.js';
 
-export function dashboardView(state, game = 'yugioh') {
+export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
   const firstName = me?.name?.split(' ')[0] || 'duellante';
   const teamLoans = state.loans.filter(loan => loan.game === game);
@@ -42,12 +42,22 @@ export function dashboardView(state, game = 'yugioh') {
         ${recent.length ? recent.map(activityRow).join('') : `<div class="inline-empty">${icon('swap')}<div><strong>Nessuna attività</strong><span>I movimenti del team compariranno qui.</span></div></div>`}
       </section>
       <section class="surface duel-panel market-preview">
-        <div class="section-title"><div><span class="eyebrow">Roadmap</span><h2>Market Watch</h2></div><button class="text-action" data-page="market">Apri ${icon('arrow')}</button></div>
+        <div class="section-title"><div><span class="eyebrow">Raccolta personale</span><h2>Market Watch</h2></div><button class="text-action" data-page="market">Apri ${icon('arrow')}</button></div>
         <div class="market-signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="market-placeholder">${icon('chart')}<strong>In attesa dei provider</strong><p>Prezzi e trend appariranno solo quando sarà disponibile una fonte dati reale.</p><button class="btn secondary small" data-page="market">Scopri l’anteprima</button></div>
+        ${marketPreview(market)}
       </section>
     </div>
   </section>`;
+}
+
+export function marketPreview(market = {}) {
+  const items = Array.isArray(market.items) ? market.items : [];
+  const priced = items.filter(item => item.referencePrice != null).length;
+  const owned = items.filter(item => Array.isArray(item.sources) && item.sources.includes('owned')).length;
+  if (market.error) return `<div class="market-placeholder">${icon('chart')}<strong>Market Watch non raggiungibile</strong><p>I dati dei prezzi non sono disponibili in questo momento. La configurazione dei provider resta protetta sul server.</p><button class="btn secondary small" data-page="market">Verifica stato</button></div>`;
+  if (priced) return `<div class="market-placeholder">${icon('chart')}<strong>${priced} printing valorizzate</strong><p>${owned} printing della tua raccolta monitorate${market.lastSync ? ` · aggiornamento ${formatDate(market.lastSync)}` : ''}.</p><button class="btn secondary small" data-page="market">Vedi prezzi e trend</button></div>`;
+  if (items.length) return `<div class="market-placeholder">${icon('chart')}<strong>Primo aggiornamento in attesa</strong><p>${items.length} printing sono già collegate. I prezzi appariranno dopo il primo sync Cardmarket completato.</p><button class="btn secondary small" data-page="market">Apri Market Watch</button></div>`;
+  return `<div class="market-placeholder">${icon('chart')}<strong>Market Watch pronto</strong><p>Le carte della tua raccolta entreranno automaticamente nel monitoraggio.</p><button class="btn secondary small" data-page="market">Apri Market Watch</button></div>`;
 }
 
 function trackedCards(loans) {

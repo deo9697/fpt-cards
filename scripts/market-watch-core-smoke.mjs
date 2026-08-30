@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {CardTraderProvider,CardmarketPriceGuideProvider,resolveExactPrinting,parseDelimited,parseCardmarketPayload,cardmarketNonSinglesUrl,resolveCardmarketPrinting} from '../market/providers.js';
+import {CardTraderProvider,CardmarketPriceGuideProvider,resolveExactPrinting,parseDelimited,parseCardmarketPayload,cardmarketNonSinglesUrl,resolveCardmarketPrinting,streamCardmarketRows} from '../market/providers.js';
 
 const exact={game:'yugioh',catalogCardId:'24224830',setCode:'DUDE-EN044',setName:'Duel Devastator',rarity:'Ultra Rare',language:'English',edition:'1st Edition',foil:true};
 const candidates=[
@@ -32,12 +32,16 @@ assert.equal(calls,2);assert(waits.some(ms=>ms===10),'Retry-After non rispettato
 
 const csv='idProduct;Name;Expansion ID\r\n10;Card A;5\r\n11;"Card; B";6';const parsed=parseDelimited(csv);assert.equal(parsed.length,2);assert.equal(parsed[1].Name,'Card; B');
 const catalogJson=JSON.stringify({createdAt:'2026-08-30T11:14:44+0200',products:[{idProduct:10,name:'Card A',idExpansion:5}]});assert.equal(parseCardmarketPayload(catalogJson,'products').rows[0].idProduct,10);assert.match(cardmarketNonSinglesUrl('https://downloads.s3.cardmarket.com/productCatalog/productList/products_singles_3.json'),/products_nonsingles_3\.json/);
+const chunks=['{"createdAt":"2026-08-30T11:14:44+0200","pro','ducts":[{"idProduct":10,"name":"Card { A"},{"idProduct":11,"name":"Card \\"B\\""}],"x":1}'];
+const streamed=[];const streamResponse=new Response(new ReadableStream({start(controller){for(const chunk of chunks)controller.enqueue(new TextEncoder().encode(chunk));controller.close();}}));
+const streamStats=await streamCardmarketRows(streamResponse,'products',row=>streamed.push(row));assert.equal(streamStats.rows,2);assert.equal(streamStats.createdAt,'2026-08-30T11:14:44+0200');assert.equal(streamed[1].name,'Card "B"');
 const cmResolution=resolveCardmarketPrinting({catalogCardId:'1',cardName:'Card A',setCode:'SET-EN001',setName:'Example Set',rarity:'Ultra Rare'},[{providerProductId:'10',cardName:'Card A',setName:'Example Set',rarity:'Ultra Rare'}]);assert.equal(cmResolution.status,'resolved');assert.equal(cmResolution.candidate.providerProductId,'10');
 const failingCm=new CardmarketPriceGuideProvider({catalogUrl:'https://downloads.s3.cardmarket.com/catalog.csv',priceGuideUrl:'https://downloads.s3.cardmarket.com/prices.csv',fetchImpl:async()=>new Response('down',{status:503})});
-await assert.rejects(()=>failingCm.load(),/Product Catalogue non disponibile/);
+await assert.rejects(()=>failingCm.load(),/Catalogo espansioni non disponibile|Product Catalogue non disponibile/);
 
 const storage=new Map();globalThis.localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
 const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload}=await import('../js/market-watch.js');
+const {marketPreview}=await import('../js/dashboard.js');
 const now=Date.now(),fresh=new Date(now-3600000).toISOString();
 const data=mapPayload({items:[
   {printing_id:'p1',card_name:'A',sources:['owned','deck'],owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,providers:{cardtrader:{price:10,capturedAt:fresh}}},
@@ -47,6 +51,9 @@ const summary=portfolioSummary(data.items,now);assert(summary.complete);assert.e
 const partial=portfolioSummary([...data.items,{printingId:'p3',sources:['owned'],ownedQuantity:2,referencePrice:null,latestAt:null}],now);assert(!partial.complete,'copertura sotto 90% deve mostrare dati parziali');
 const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{printingId:'p1',quantity:3},{printingId:null}],manual:[{printingId:'p1'},{printingId:'p2'}]});assert.equal(dedup.length,2);assert.deepEqual(new Set(dedup.find(row=>row.printingId==='p1').sources),new Set(['owned','deck','manual']));
 assert.equal(providerWarning({cardtrader:{price:12},cardmarket:{price:20}}),67);assert.equal(providerWarning({cardtrader:{price:19},cardmarket:{price:20}}),null);
+assert.match(marketPreview({items:[{sources:['owned'],referencePrice:null}]}),/Primo aggiornamento in attesa/);
+assert.match(marketPreview({items:[{sources:['owned'],referencePrice:12.5}],lastSync:fresh}),/1 printing valorizzate/);
+assert.doesNotMatch(marketPreview(),/In attesa dei provider/,'La Home non deve dichiarare i provider non configurati senza dati server-side');
 
 const {DeckController}=await import('../js/decks.js');
 const deckState={game:'yugioh',currentUser:'me',decks:[{id:'d1',persisted:true,name:'Deck',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'1',cardName:'Carta',imageUrl:'',section:'main',quantity:1,printingId:null}]}],collection:{mine:[],team:[]}};

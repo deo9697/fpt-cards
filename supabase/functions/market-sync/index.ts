@@ -19,7 +19,7 @@ Deno.serve(async request=>{
   ];
   const results=[];
   for(const provider of providers)results.push(await syncProvider(provider));
-  return json({ok:results.some(row=>row.status==='succeeded'),results});
+  return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),results});
 });
 
 async function syncProvider(provider:any){
@@ -30,9 +30,9 @@ async function syncProvider(provider:any){
   let requestCount=0,snapshots=0,failures=0,feedStats:any=null;
   try{
     const targets=await rpc('market_sync_targets',{p_provider:provider.name})||[];
-    if(provider.name==='cardmarket'){feedStats=await provider.load();requestCount+=3;}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
+    if(provider.name==='cardmarket'){feedStats=await provider.load([...unique.values()]);requestCount+=3;}
     const resolvedTargets=provider.name==='cardmarket'?await resolveCardmarketTargets(provider,[...unique.values()]):[...unique.values()];
     const pendingSnapshots=[];
     for(const target of resolvedTargets){

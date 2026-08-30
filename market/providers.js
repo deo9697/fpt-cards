@@ -51,32 +51,41 @@ export class CardTraderProvider extends PriceProvider {
 
 export class CardmarketPriceGuideProvider extends PriceProvider {
   constructor({catalogUrl='',priceGuideUrl='',fetchImpl=globalThis.fetch}={}){
-    super({name:'cardmarket',fetchImpl});this.catalogUrl=catalogUrl;this.priceGuideUrl=priceGuideUrl;this.catalog=[];this.prices=new Map();this.sourceUpdatedAt='';
+    super({name:'cardmarket',fetchImpl});this.catalogUrl=catalogUrl;this.priceGuideUrl=priceGuideUrl;this.catalog=[];this.prices=new Map();this.sourceUpdatedAt='';this.loaded=false;
   }
   get available(){return Boolean(this.catalogUrl&&this.priceGuideUrl);}
   getPriceMetadata(){return {provider:this.name,status:this.available?'available':'unavailable',currency:'EUR',frequency:'daily',
     priceTypes:['low','trend','average','avg1','avg7','avg30','foil_low','foil_trend','foil_average','foil_avg1','foil_avg7','foil_avg30']};}
-  async load(){
+  async load(targets=[]){
     if(!this.available)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRODUCT_CATALOG_URL / CARDMARKET_PRICE_GUIDE_URL');
     validateOfficialCardmarketUrl(this.catalogUrl);validateOfficialCardmarketUrl(this.priceGuideUrl);
     const nonSinglesUrl=cardmarketNonSinglesUrl(this.catalogUrl);
-    const [catalogResponse,priceResponse,nonSinglesResponse]=await Promise.all([this.fetch(this.catalogUrl),this.fetch(this.priceGuideUrl),nonSinglesUrl?this.fetch(nonSinglesUrl):Promise.resolve(null)]);
-    if(!catalogResponse.ok)throw new ProviderHttpError(this.name,catalogResponse.status,'Product Catalogue non disponibile');
-    if(!priceResponse.ok)throw new ProviderHttpError(this.name,priceResponse.status,'Price Guide non disponibile');
-    const [catalogText,priceText,nonSinglesText]=await Promise.all([responseText(catalogResponse),responseText(priceResponse),nonSinglesResponse?.ok?responseText(nonSinglesResponse):Promise.resolve('')]);
-    const catalogPayload=parseCardmarketPayload(catalogText,'products'),pricePayload=parseCardmarketPayload(priceText,'priceGuides');
-    const nonSingles=parseCardmarketPayload(nonSinglesText,'products').rows,expansions=buildExpansionNames(nonSingles);
-    if(catalogPayload.rows.length<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
-    if(pricePayload.rows.length<1000)throw new Error('Price Guide Cardmarket non valido: usa il link JSON diretto price_guide_3.json');
+    const nonSinglesResponse=nonSinglesUrl?await this.fetch(nonSinglesUrl):null;
+    if(!nonSinglesResponse?.ok)throw new ProviderHttpError(this.name,nonSinglesResponse?.status||503,'Catalogo espansioni non disponibile');
+    const expansions=new Map();
+    const expansionPayload=await streamCardmarketRows(nonSinglesResponse,'products',row=>addExpansionName(expansions,row));
     if(expansions.size<100)throw new Error('Catalogo espansioni Cardmarket non disponibile dal link Product Catalogue');
-    this.catalog=catalogPayload.rows.map(row=>normalizeCardmarketProduct(row,expansions));
-    this.prices=new Map(pricePayload.rows.map(row=>[productId(row),row]).filter(([id])=>id));
-    this.sourceUpdatedAt=pricePayload.createdAt||priceResponse.headers?.get?.('last-modified')||new Date().toISOString();return {catalogRows:this.catalog.length,priceRows:this.prices.size,expansionRows:expansions.size};
+    const wantedNames=new Set((targets||[]).map(row=>norm(row.cardName||row.card_name)).filter(Boolean));
+    const catalogResponse=await this.fetch(this.catalogUrl);
+    if(!catalogResponse.ok)throw new ProviderHttpError(this.name,catalogResponse.status,'Product Catalogue non disponibile');
+    const catalog=[];
+    const catalogPayload=await streamCardmarketRows(catalogResponse,'products',row=>{const parsed=parseProductName(row.name||'');if(!wantedNames.size||wantedNames.has(norm(parsed.cardName)))catalog.push(normalizeCardmarketProduct(row,expansions));});
+    if(catalogPayload.rows<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
+    this.catalog=catalog;
+    const wantedProductIds=new Set((targets||[]).map(row=>String(row.providerProductId||row.provider_product_id||'')).filter(Boolean));
+    for(const target of targets||[]){const resolution=resolveCardmarketPrinting(target,this.catalog);if(resolution.status==='resolved')wantedProductIds.add(productId(resolution.candidate));}
+    const priceResponse=await this.fetch(this.priceGuideUrl);
+    if(!priceResponse.ok)throw new ProviderHttpError(this.name,priceResponse.status,'Price Guide non disponibile');
+    this.prices=new Map();
+    const pricePayload=await streamCardmarketRows(priceResponse,'priceGuides',row=>{const id=productId(row);if(id&&(!wantedProductIds.size||wantedProductIds.has(id)))this.prices.set(id,row);});
+    if(pricePayload.rows<1000)throw new Error('Price Guide Cardmarket non valido: usa il link JSON diretto price_guide_3.json');
+    this.sourceUpdatedAt=pricePayload.createdAt||priceResponse.headers?.get?.('last-modified')||new Date().toISOString();this.loaded=true;
+    return {catalogRows:catalogPayload.rows,retainedCatalogRows:this.catalog.length,priceRows:pricePayload.rows,retainedPriceRows:this.prices.size,expansionRows:expansions.size};
   }
   async resolvePrinting(printing,candidates=this.catalog){return resolveCardmarketPrinting(printing,candidates);}
   async getMarketListings(){return [];}
   async getCurrentPrice(mapping){
-    if(!this.prices.size)await this.load();const id=String(mapping.providerProductId||mapping.provider_product_id||'');const row=this.prices.get(id);
+    if(!this.loaded)await this.load([mapping]);const id=String(mapping.providerProductId||mapping.provider_product_id||'');const row=this.prices.get(id);
     if(!row)return {provider:this.name,status:'unavailable',prices:[],availableQuantity:null,sampleSize:0};
     const definitions={low:['low','Low Price','LOW'],trend:['trend','Trend Price','TREND'],average:['avg','Avg. Sell Price','AVG'],avg1:['avg1','AVG1'],avg7:['avg7','AVG7'],avg30:['avg30','AVG30'],
       foil_low:['low-foil','Foil Low','LOWFOIL'],foil_trend:['trend-foil','Foil Trend','TRENDFOIL'],foil_average:['avg-foil','Foil Sell','SELLFOIL'],foil_avg1:['avg1-foil','Foil AVG1'],foil_avg7:['avg7-foil','Foil AVG7'],foil_avg30:['avg30-foil','Foil AVG30']};
@@ -137,6 +146,7 @@ function productId(row){return String(read(row,['idProduct','Product ID','produc
 export function parseCardmarketPayload(text,key){const value=String(text||'').trim();if(!value)return {rows:[],createdAt:''};if(value[0]==='{'||value[0]==='['){const parsed=JSON.parse(value),rows=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.[key])?parsed[key]:[]);return {rows,createdAt:parsed?.createdAt||''};}return {rows:parseDelimited(value),createdAt:''};}
 export function cardmarketNonSinglesUrl(value){try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
 function buildExpansionNames(rows){const values=new Map();for(const row of rows||[]){const id=String(row.idExpansion||row.expansion_id||'');if(!id)continue;const name=cleanExpansionName(row.name||'');if(!name)continue;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}return values;}
+function addExpansionName(values,row){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
 function cleanExpansionName(value){return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
 function normalizeCardmarketProduct(row,expansions){const parsed=parseProductName(row.name||'');const id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`};}
 function parseProductName(value){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/foil|rare/i.test(rarity)?true:null};}
@@ -153,6 +163,15 @@ function unavailable(provider,secret){const error=new Error(`${provider} non dis
 async function safeText(response){try{return (await response.text()).slice(0,500);}catch{return '';}}
 function validateOfficialCardmarketUrl(value){const url=new URL(value);if(url.protocol!=='https:'||!(url.hostname==='www.cardmarket.com'||url.hostname==='cardmarket.com'||url.hostname.endsWith('.cardmarket.com')||url.hostname==='downloads.s3.cardmarket.com'))throw new Error('URL Cardmarket non ufficiale rifiutato');}
 async function responseText(response){const buffer=await response.arrayBuffer(),encoding=String(response.headers?.get?.('content-encoding')||'').toLowerCase(),type=String(response.headers?.get?.('content-type')||'').toLowerCase(),gzip=encoding.includes('gzip')||type.includes('gzip')||new Uint8Array(buffer).slice(0,2).join(',')==='31,139';if(gzip&&typeof DecompressionStream!=='undefined'){const stream=new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));return new Response(stream).text();}return new TextDecoder().decode(buffer);}
+export async function streamCardmarketRows(response,key,onRow=()=>{}){
+  if(!response?.body)throw new Error(`Feed Cardmarket ${key} senza contenuto`);
+  const reader=response.body.getReader(),decoder=new TextDecoder();let header='',started=false,finished=false,inString=false,escaped=false,depth=0,object='',rows=0,createdAt='';
+  const consume=text=>{let index=0;if(!started){header+=text;const match=header.match(new RegExp(`"${key}"\\s*:\\s*\\[`));if(!match){if(header.length>131072)throw new Error(`Array ${key} non trovato nel feed Cardmarket`);return;}createdAt=header.match(/"createdAt"\s*:\s*"([^"]+)"/)?.[1]||'';index=match.index+match[0].length;header=header.slice(index);text=header;index=0;header='';started=true;}
+    for(;index<text.length&&!finished;index++){const char=text[index];if(depth===0){if(char==='{'){depth=1;object='{';inString=false;escaped=false;}else if(char===']')finished=true;continue;}object+=char;if(inString){if(escaped)escaped=false;else if(char==='\\')escaped=true;else if(char==='"')inString=false;continue;}if(char==='"'){inString=true;continue;}if(char==='{')depth++;else if(char==='}'&&--depth===0){onRow(JSON.parse(object));rows++;object='';}}
+  };
+  while(true){const {value,done}=await reader.read();if(done)break;consume(decoder.decode(value,{stream:true}));}
+  consume(decoder.decode());if(!started||!finished)throw new Error(`Feed Cardmarket ${key} incompleto`);return {rows,createdAt};
+}
 export function parseDelimited(text){const first=String(text).split(/\r?\n/,1)[0]||'',delimiter=(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?';':',';const rows=parseCsv(String(text),delimiter);if(!rows.length)return[];const headers=rows.shift().map(value=>value.replace(/^\uFEFF/,''));return rows.filter(row=>row.some(Boolean)).map(row=>Object.fromEntries(headers.map((key,index)=>[key,row[index]??''])));}
 function parseCsv(text,delimiter){const rows=[];let row=[],field='',quoted=false;for(let index=0;index<text.length;index++){const char=text[index];if(char==='"'){if(quoted&&text[index+1]==='"'){field+='"';index++;}else quoted=!quoted;}else if(char===delimiter&&!quoted){row.push(field);field='';}else if((char==='\n'||char==='\r')&&!quoted){if(char==='\r'&&text[index+1]==='\n')index++;row.push(field);rows.push(row);row=[];field='';}else field+=char;}if(field||row.length){row.push(field);rows.push(row);}return rows;}
 
