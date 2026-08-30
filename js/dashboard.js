@@ -1,5 +1,6 @@
 import { member, esc, formatDate } from './core.js';
 import { icon } from './icons.js';
+import { positiveMovers } from './market-watch.js';
 
 export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
@@ -12,7 +13,6 @@ export function dashboardView(state, game = 'yugioh', market = {}) {
     (loan.owner === me?.id && ['requested','return_pending'].includes(loan.status))
   );
   const tracked = trackedCards(teamLoans);
-  const featured = tracked.find(card => card.image) || null;
   const recent = [...teamLoans].reverse().slice(0, 4);
   const teamActive = [...teamLoans].reverse().filter(loan => !['returned','completed','rejected'].includes(loan.status)).slice(0, 4);
   const activeMembers = new Set(teamLoans.flatMap(loan => [loan.owner, loan.borrower]).filter(Boolean)).size;
@@ -32,7 +32,7 @@ export function dashboardView(state, game = 'yugioh', market = {}) {
     </section>
 
     <div class="duel-dashboard-main">
-      ${featuredPanel(featured)}
+      ${featuredPanel(market)}
       ${loanOverview(teamActive, attention)}
     </div>
 
@@ -80,31 +80,21 @@ function trackedCards(loans) {
   return [...records.values()];
 }
 
-function featuredPanel(card) {
-  if (!card) return `<section class="surface duel-panel featured-card-panel featured-empty">
-    <div class="section-title"><div><span class="eyebrow">Archivio del team</span><h2>Carta in evidenza</h2></div><button class="text-action" data-page="collection">Vedi raccolta ${icon('arrow')}</button></div>
-    <div class="inline-empty">${icon('collection')}<div><strong>La vetrina è pronta</strong><span>La prima carta catalogata con immagine diventerà la protagonista della Home.</span></div></div>
-    <button class="btn secondary small" data-page="new">${icon('plus')} Registra un prestito</button>
+function featuredPanel(market) {
+  const movers=positiveMovers(market.items,3),history=market.featuredHistory instanceof Map?market.featuredHistory:new Map();
+  if (!movers.length) return `<section class="surface duel-panel featured-card-panel featured-empty">
+    <div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Carte in evidenza</h2></div><button class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
+    <div class="inline-empty">${icon('chart')}<div><strong>Trend in preparazione</strong><span>Le carte con crescita positiva appariranno dopo il secondo snapshot giornaliero.</span></div></div>
   </section>`;
-
-  const ownerNames = [...card.owners].map(id => member(id)?.name).filter(Boolean);
-  const openLoans = card.loans.filter(loan => !['returned','completed','rejected'].includes(loan.status)).length;
-  return `<section class="surface duel-panel featured-card-panel">
-    <img class="featured-card-ghost" src="${esc(card.image)}" alt="" aria-hidden="true">
-    <div class="section-title"><div><span class="eyebrow">Archivio del team</span><h2>Carta in evidenza</h2></div><button class="text-action" data-page="collection">Vedi raccolta ${icon('arrow')}</button></div>
-    <div class="featured-card-content">
-      <button class="featured-card-art" data-card-key="${esc(card.key)}" aria-label="Apri ${esc(card.name)}"><img src="${esc(card.image)}" alt="${esc(card.name)}"></button>
-      <div class="featured-card-copy">
-        <span class="feature-kicker">Carta del team</span>
-        <h3>${esc(card.name)}</h3>
-        <p>${card.externalId ? `ID catalogo ${esc(card.externalId)}` : 'Carta inserita manualmente'}</p>
-        <div class="feature-chips"><span>${card.loans.length} ${card.loans.length === 1 ? 'movimento' : 'movimenti'}</span><span>${openLoans} non conclusi</span></div>
-        <p class="feature-owner">${ownerNames.length ? `Nello storico di ${esc(ownerNames.slice(0, 2).join(', '))}` : 'Proprietario non disponibile'}</p>
-        <button class="btn secondary small" data-card-key="${esc(card.key)}">Visualizza carta</button>
-      </div>
-    </div>
+  return `<section class="surface duel-panel featured-card-panel market-movers-panel">
+    <div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Carte in evidenza</h2></div><button class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
+    <div class="market-movers-carousel slides-${movers.length}">${movers.map((item,index)=>featuredMover(item,history.get(item.printingId)||[],index)).join('')}</div>
   </section>`;
 }
+
+function featuredMover(item,history,index){const points=marketMoverPoints(item,history),chart=marketMoverChart(points,index);return `<button class="market-mover-slide" style="--mover-image:url(&quot;${esc(item.imageUrl||'')}&quot;)" data-page="market" aria-label="Apri ${esc(item.cardName)} nel Market Watch"><h3>${esc(item.cardName)}</h3>${chart}</button>`;}
+function marketMoverPoints(item,history){const rows=(history||[]).filter(row=>Number.isFinite(row.price)).map(row=>({price:Number(row.price),capturedAt:row.capturedAt}));if(rows.length>1)return rows.sort((a,b)=>new Date(a.capturedAt)-new Date(b.capturedAt));const now=Date.now(),fallback=[[item.price30d,30],[item.price7d,7],[item.price24h,1],[item.referencePrice,0]].filter(([price])=>Number.isFinite(price)).map(([price,days])=>({price:Number(price),capturedAt:new Date(now-days*86400000).toISOString()}));return fallback;}
+function marketMoverChart(points,index){if(points.length<2)return `<span class="market-mover-chart empty">${icon('chart')}</span>`;const values=points.map(point=>point.price),min=Math.min(...values),max=Math.max(...values),span=max-min||1,width=520,height=150,pad=8,path=points.map((point,position)=>`${position?'L':'M'} ${pad+(position/(points.length-1))*(width-pad*2)} ${height-pad-((point.price-min)/span)*(height-pad*2)}`).join(' '),area=`${path} L ${width-pad} ${height-pad} L ${pad} ${height-pad} Z`,gradient=`mover-gradient-${index}`;return `<span class="market-mover-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico prezzi Cardmarket"><defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ee49a" stop-opacity=".46"/><stop offset="1" stop-color="#5ee49a" stop-opacity="0"/></linearGradient></defs><g class="mover-grid"><path d="M 0 38 H ${width} M 0 75 H ${width} M 0 112 H ${width}"/></g><path class="mover-area" d="${area}" fill="url(#${gradient})"/><path class="mover-line" d="${path}"/><circle cx="${width-pad}" cy="${height-pad-((values.at(-1)-min)/span)*(height-pad*2)}" r="5"/></svg></span>`;}
 
 function loanOverview(loans, attention) {
   const list = attention.length ? [...attention, ...loans.filter(loan => !attention.includes(loan))].slice(0, 4) : loans;

@@ -264,10 +264,12 @@ begin
     and not exists(select 1 from public.collection_items ci join public.card_printings p on p.id = ci.printing_id
       where ci.id = (c->>'collectionItemId')::uuid and ci.owner_slug = me and p.game = p_game)) then raise exception 'Elemento raccolta non valido'; end if;
 
-  perform ci.id from public.collection_items ci join (
-    select distinct (c->>'collectionItemId')::uuid item_id from jsonb_array_elements(p_cards) c
-    where nullif(c->>'collectionItemId','') is not null) requested on requested.item_id = ci.id
-    order by ci.id for update;
+  perform ci.id from public.collection_items ci
+  where exists (
+    select 1 from jsonb_array_elements(p_cards) c
+    where nullif(c->>'collectionItemId','') is not null
+      and ci.id = (c->>'collectionItemId')::uuid)
+  order by ci.id for update of ci;
   if exists(select 1 from (
     select (c->>'collectionItemId')::uuid item_id, sum((c->>'quantity')::integer)::integer requested
     from jsonb_array_elements(p_cards) c where nullif(c->>'collectionItemId','') is not null

@@ -47,7 +47,8 @@ const fakeSupabaseSource = `(()=>{
       if(name==='list_my_collection') return {data:collectionItems.filter(item=>item.owner_slug===currentSlug),error:null};
       if(name==='list_team_collection') return {data:collectionItems.map(({quantity_owned,...item})=>item),error:null};
       if(name==='list_my_decks') return {data:decks,error:null};
-      if(name==='list_market_watch') return {data:{items:[],deckUnresolved:[],lastSync:null},error:null};
+      if(name==='list_market_watch') return {data:{items:[{printing_id:'team-printing',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',sources:['owned'],owned_quantity:3,reference_price:12,price_24h:10,price_7d:8,price_30d:7,latest_at:new Date().toISOString(),providers:{cardmarket:{price:12,type:'trend',capturedAt:new Date().toISOString()}}}],deckUnresolved:[],lastSync:new Date().toISOString()},error:null};
+      if(name==='list_market_price_history') return {data:[{provider:'cardmarket',price_type:'trend',price:8,captured_at:new Date(Date.now()-86400000).toISOString()},{provider:'cardmarket',price_type:'trend',price:12,captured_at:new Date().toISOString()}],error:null};
       if(name==='save_deck'){const id=args.p_deck.id||'44444444-4444-4444-8444-444444444444',row={id,owner_slug:currentSlug,game:args.p_deck.game,name:args.p_deck.name,format:args.p_deck.format,cover_image_url:args.p_deck.cards[0]?.imageUrl||'',cards:args.p_deck.cards.map(card=>({catalog_card_id:card.catalogCardId,card_name:card.cardName,image_url:card.imageUrl,ban_tcg:card.banTcg||'',section:card.section,quantity:card.quantity}))};decks=decks.filter(deck=>deck.id!==id);decks.push(row);return {data:id,error:null};}
       if(name==='delete_deck'){decks=decks.filter(deck=>deck.id!==args.p_id);return {data:null,error:null};}
       if(name==='lookup_card_printings_by_set_code') return {data:collectionItems.filter(item=>item.game===args.p_game&&item.set_code===args.p_set_code).map(item=>({printing_id:item.printing_id,game:item.game,catalog_card_id:item.catalog_card_id,card_name:item.card_name,set_code:item.set_code,set_name:item.set_name,rarity:item.rarity,image_url:item.image_url})),error:null};
@@ -206,7 +207,7 @@ async function run() {
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
   const identityCheck = await evaluate(`import('./js/cards.js').then(async cards=>({fuzzy:await cards.findCard('Imaginary Dark'),valid:await cards.verifyCardIdentity('46986414','Dark Magician'),invalid:await cards.verifyCardIdentity('89631139','Dark Magician')}))`);
   assert(identityCheck.fuzzy===null && identityCheck.valid===true && identityCheck.invalid===false, `Resolver identità carta non sicuro: ${JSON.stringify(identityCheck)}`);
-  assert(await evaluate(`document.querySelector('.featured-card-art img')?.src.endsWith('/images/cards/46986414.jpg')`), 'URL canonico non derivato dall’ID catalogo');
+  assert(await evaluate(`document.querySelector('.market-mover-slide')?.style.getPropertyValue('--mover-image').includes('46986414.jpg')&&document.querySelector('.market-mover-chart svg')`), 'Carta in evidenza Market Watch o immagine canonica assente');
   console.log('PASS corrispondenza esatta nome/ID/immagine + quarantena legacy');
   console.log('PASS membro esistente + PIN corretto');
 

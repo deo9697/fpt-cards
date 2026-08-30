@@ -105,6 +105,9 @@ for (const required of [
   'greatest(ci.quantity_owned - q.loaned - q.reserved, 0)',
   "raise exception 'Quantità fisicamente non disponibile'"
 ]) assert(sql.includes(required), `migrazione incompleta: ${required}`);
+const createLoansSql = sql.slice(sql.indexOf('create or replace function public.create_team_loans'), sql.indexOf('create or replace function public.transition_loan'));
+assert(createLoansSql.includes('for update of ci'), 'lock inventario create_team_loans assente');
+assert(!createLoansSql.includes('select distinct'), 'create_team_loans combina ancora DISTINCT e FOR UPDATE');
 
 const app = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const api = fs.readFileSync(new URL('../js/api.js', import.meta.url), 'utf8');
