@@ -590,7 +590,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .market-movers-carousel { position: relative; min-height: 260px; margin: 0 -16px -16px; overflow: hidden; }
 .market-mover-slide { position: absolute; inset: 0; display: flex; overflow: hidden; width: 100%; padding: 28px 34px 22px; border: 0; background-image: linear-gradient(90deg,#090c14f7 0%,#090c14d9 42%,#07100bc0 100%),linear-gradient(0deg,#070a11 0%,transparent 65%),var(--mover-image); background-position: center,center,center 18%; background-size: cover; color: #fff; text-align: left; opacity: 0; transform: translateX(18px); flex-direction: column; justify-content: space-between; }
 .market-mover-slide::after { content: ''; position: absolute; inset: 0; border-top: 1px solid #66e6a025; background: radial-gradient(circle at 78% 45%,#41d9861b,transparent 37%); pointer-events: none; }
-.market-mover-slide h3 { position: relative; z-index: 1; max-width: 78%; margin: 0; color: #fff8e8; font-family: var(--display-font); font-size: clamp(1.2rem,2.2vw,1.9rem); line-height: 1.12; text-shadow: 0 3px 18px #000; }
+.market-mover-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; width: 100%; }
+.market-mover-slide h3 { max-width: 68%; margin: 0; color: #fff8e8; font-family: var(--display-font); font-size: clamp(1.2rem,2.2vw,1.9rem); line-height: 1.12; text-shadow: 0 3px 18px #000; }
+.market-mover-price { flex: none; text-align: right; text-shadow: 0 3px 16px #000; }
+.market-mover-price b,.market-mover-price small { display: block; }
+.market-mover-price b { color: #f4fff8; font-size: clamp(1.15rem,2vw,1.65rem); }
+.market-mover-price small { margin-top: 3px; color: #6ff0a8; font-size: .58rem; font-weight: 800; letter-spacing: .035em; }
 .market-mover-chart { position: relative; z-index: 1; display: block; width: min(92%,560px); height: 142px; color: #65e6a0; filter: drop-shadow(0 5px 12px #0008); }
 .market-mover-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .market-mover-chart .mover-grid path { fill: none; stroke: #b6cec124; stroke-width: 1; stroke-dasharray: 3 5; }
@@ -1025,7 +1030,10 @@ img.card-image-unavailable { opacity: 0; }
   .featured-card-copy h3 { font-size: 1.05rem; white-space: normal; }
   .market-movers-carousel { min-height: 225px; margin: 0 -14px -14px; }
   .market-mover-slide { padding: 22px 20px 16px; }
-  .market-mover-slide h3 { max-width: 94%; font-size: 1.15rem; }
+  .market-mover-slide h3 { max-width: 62%; font-size: 1.15rem; }
+  .market-mover-head { gap: 10px; }
+  .market-mover-price b { font-size: 1.05rem; }
+  .market-mover-price small { max-width: 120px; font-size: .5rem; }
   .market-mover-chart { width: 100%; height: 120px; }
   .feature-chips { gap: 4px; margin-bottom: 8px; }
   .feature-owner { display: none; }

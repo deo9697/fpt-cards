@@ -208,7 +208,7 @@ async function run() {
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
   const identityCheck = await evaluate(`import('./js/cards.js').then(async cards=>({fuzzy:await cards.findCard('Imaginary Dark'),valid:await cards.verifyCardIdentity('46986414','Dark Magician'),invalid:await cards.verifyCardIdentity('89631139','Dark Magician')}))`);
   assert(identityCheck.fuzzy===null && identityCheck.valid===true && identityCheck.invalid===false, `Resolver identità carta non sicuro: ${JSON.stringify(identityCheck)}`);
-  assert(await evaluate(`document.querySelector('.market-mover-slide')?.style.getPropertyValue('--mover-image').includes('46986414.jpg')&&document.querySelector('.market-mover-chart svg')`), 'Carta in evidenza Market Watch o immagine canonica assente');
+  assert(await evaluate(`document.querySelector('.market-mover-slide')?.style.getPropertyValue('--mover-image').includes('/cards_cropped/46986414.jpg')&&document.querySelector('.market-mover-chart svg')&&document.querySelector('.market-mover-price b')?.textContent.includes('12')`), 'Artwork cropped, prezzo o grafico della carta in evidenza assente');
   console.log('PASS corrispondenza esatta nome/ID/immagine + quarantena legacy');
   console.log('PASS membro esistente + PIN corretto');
 
