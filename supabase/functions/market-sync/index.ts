@@ -18,13 +18,14 @@ Deno.serve(async request=>{
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
   const results=[];
-  for(const provider of providers)results.push(await syncProvider(provider));
+  for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true}));
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),results});
 });
 
-async function syncProvider(provider:any){
+async function syncProvider(provider:any,{recoverStale=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
+  if(recoverStale)await releaseProviderSync(provider.name);
   const runId=await rpc('begin_market_provider_sync',{p_provider:provider.name});
   if(!runId)return {provider:provider.name,status:'skipped',reason:'sync_already_running'};
   let requestCount=0,snapshots=0,failures=0,feedStats:any=null;
@@ -78,6 +79,7 @@ function cardmarketResolutionBody(target:any,resolution:any){
 
 async function rpc(name:string,body:Record<string,unknown>){const response=await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`,{method:'POST',headers:headers(),body:JSON.stringify(body)});if(!response.ok)throw new Error(`${name}: ${response.status} ${await response.text()}`);const text=await response.text();return text?JSON.parse(text):null;}
 async function rest(table:string,method:string,body:unknown,extra:Record<string,string>={}){const response=await fetch(`${supabaseUrl}/rest/v1/${table}`,{method,headers:{...headers(),...extra},body:body==null?undefined:JSON.stringify(body)});if(!response.ok)throw new Error(`${table}: ${response.status} ${await response.text()}`);return response;}
+async function releaseProviderSync(provider:string){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_sync_runs?provider=eq.${encodeURIComponent(provider)}&status=eq.running`,{method:'PATCH',headers:{...headers(),Prefer:'return=minimal'},body:JSON.stringify({status:'failed',finished_at:new Date().toISOString(),error_code:'manual_recovery',error_message:'Lock recuperato dopo interruzione del worker'})});if(!response.ok)throw new Error(`sync recovery: ${response.status} ${await response.text()}`);}
 async function finish(id:string,status:string,fields:Record<string,unknown>){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_sync_runs?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(),Prefer:'return=minimal'},body:JSON.stringify({status,finished_at:new Date().toISOString(),last_success_at:['succeeded','partial'].includes(status)?new Date().toISOString():null,...fields})});if(!response.ok)throw new Error(`sync finish: ${response.status} ${await response.text()}`);}
 async function recordMappingError(id:string,error:any){if(!id)return;const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_printings?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(),Prefer:'return=minimal'},body:JSON.stringify({last_checked_at:new Date().toISOString(),last_error:String(error?.message||error).slice(0,500)})});if(!response.ok)throw new Error(`mapping error update: ${response.status}`);}
 function headers(){return {'content-type':'application/json',apikey:serviceKey,Authorization:`Bearer ${serviceKey}`};}
