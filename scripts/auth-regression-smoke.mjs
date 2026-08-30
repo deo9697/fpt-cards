@@ -30,7 +30,7 @@ const fakeSupabaseSource = `(()=>{
   const loans=${JSON.stringify([loan])};
   let collectionItems=[{id:'team-item',printing_id:'team-printing',owner_slug:'first-access',owner_name:'First Access',game:'yugioh',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',language:'Italiano',condition:'Near Mint',edition:'',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',quantity_owned:3,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:3,legacy_ambiguous:false,updated_at:new Date().toISOString()}];let decks=[];
   let currentSlug='existing-member';
-  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,holdCreate:false,syncDelay:0,syncInFlight:0,syncMaxInFlight:0};
+  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,requestCalls:0,holdCreate:false,syncDelay:0,syncInFlight:0,syncMaxInFlight:0};
   window.__authTest.getCollection=()=>collectionItems;
   const client={
     async rpc(name,args={}){
@@ -73,6 +73,7 @@ const fakeSupabaseSource = `(()=>{
         return {data:[],error:null};
       }
       if(name==='request_collection_loan'){
+        window.__authTest.requestCalls+=1;window.__authTest.lastRequest=args;
         const item=collectionItems.find(entry=>entry.id===args.p_collection_item_id);
         const base={card_name:item.card_name,quantity:args.p_quantity,requested_quantity:args.p_quantity,accepted_quantity:0,notes:args.p_notes,status:'requested',created_at:new Date().toISOString(),returned_at:null,card_image:item.image_url,card_external_id:item.catalog_card_id,game:item.game,returned_quantity:0,pending_return_quantity:0,collection_item_id:item.id,request_origin:'collection_request',card_set_code:item.set_code,card_set_name:item.set_name,card_rarity:item.rarity};
         loans.push({id:'request-outgoing',owner_slug:item.owner_slug,borrower_slug:currentSlug,...base});
@@ -235,7 +236,7 @@ async function run() {
 
   await evaluate(`Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true})`);
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1440, height:1000, deviceScaleFactor:1, mobile:false, screenWidth:1440, screenHeight:1000 });
-  await evaluate(`location.hash='#/new'`);
+  await evaluate(`document.querySelector('.fab[data-page="new"]').click()`);
   await waitFor(`Boolean(document.querySelector('.loan-builder-grid'))`, 'Loan Builder non renderizzato');
   assert(await evaluate(`document.querySelector('.loan-submit').disabled`), 'Submit senza carte/destinatario non disabilitato');
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
@@ -288,7 +289,20 @@ async function run() {
   await evaluate(`window.__authTest.releaseCreate();window.__authTest.holdCreate=false`);
   await waitFor(`Boolean(document.querySelector('#loan-query'))`, 'Submit valido Loan Builder non completato');
   assert(await evaluate(`window.__authTest.lastCreate.p_borrower_slug==='first-access' && window.__authTest.lastCreate.p_cards.length===2 && window.__authTest.lastCreate.p_cards[0].quantity===2 && window.__authTest.lastCreate.p_cards[0].image.endsWith('/icon-512.png') && window.__authTest.lastCreate.p_notes.includes('Near Mint')`), 'Payload prestito o immagine completa non rispettati');
-  console.log('PASS Loan Builder ricerca/quantità/destinatario/note/submit/desktop/mobile/tastiera/touch');
+  await evaluate(`document.querySelector('.fab[data-page="new"]').click()`);
+  await waitFor(`Boolean(document.querySelector('[data-loan-mode="request"]'))`, 'Interruttore bidirezionale assente');
+  await evaluate(`document.querySelector('[data-loan-mode="request"]').click()`);
+  await waitFor(`document.querySelector('.loan-mode-switch').classList.contains('request') && document.querySelector('.loan-direction-flag').textContent.includes('Stai richiedendo')`, 'Modalità ricezione non attivata');
+  await evaluate(`(()=>{const select=document.querySelector('#borrower');select.value='first-access';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician')&&row.textContent.includes('disponibili'))`, 'Raccolta del proprietario non usata nella richiesta');
+  await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-card-result]').click()`);
+  await waitFor(`document.querySelector('.draft-card')?.textContent.includes('SDY-006')`, 'Printing richiesta non collegata alla raccolta team');
+  assert(await evaluate(`document.querySelector('.loan-submit').textContent.includes('richiesta') && document.querySelector('.loan-direction-flag').textContent.includes('First Access')`), 'Conferma ricezione non esplicita');
+  await evaluate(`document.querySelector('.loan-submit').click()`);
+  await waitFor(`window.__authTest.requestCalls===1 && Boolean(document.querySelector('#loan-query'))`, 'Richiesta dal Loan Builder non inviata');
+  assert(await evaluate(`window.__authTest.lastRequest.p_collection_item_id==='team-item' && window.__authTest.lastRequest.p_quantity===1`), 'La richiesta non usa la printing esatta del proprietario');
+  console.log('PASS Loan Builder bidirezionale, animazione, ricerca/quantità/destinatario/note/submit/desktop/mobile/tastiera/touch');
   await cdp.call('Page.reload', { ignoreCache:true });
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Sessione non ripristinata dopo Loan Builder');
 

@@ -1216,7 +1216,15 @@ img.card-image-unavailable { opacity: 0; }
 .loan-builder-empty strong { color: #d8d1db; font-size: .75rem; }
 .loan-builder-empty span { margin-top: 4px; font-size: .6rem; }
 .loan-builder-summary { display: grid; gap: 10px; padding: 0 8px 8px; }
+.loan-mode-switch { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 4px; border: 1px solid #4f385b; border-radius: 12px; background: #090b12; box-shadow: inset 0 0 18px #0008; }
+.loan-mode-switch::before { content: ''; position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 5.5px); border: 1px solid #b765da; border-radius: 8px; background: linear-gradient(110deg,#54206f,#7c2fa0); box-shadow: 0 0 18px #9f42c755; transition: transform .28s cubic-bezier(.22,.75,.22,1); }
+.loan-mode-switch.lend::before { transform: translateX(calc(100% + 3px)); }
+.loan-mode-switch button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; border: 0; border-radius: 8px; background: transparent; color: #8f8794; font-size: .65rem; font-weight: 800; cursor: pointer; transition: color .2s ease; }
+.loan-mode-switch button.active { color: #fff; }
+.loan-mode-switch button .icon { width: 17px; height: 17px; }
 .loan-direction-flag { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 50px; padding: 9px 13px; border: 1px solid #75508a; border-radius: 9px; background: linear-gradient(100deg, #281336, #12101a); box-shadow: inset 3px 0 #c465eb, 0 0 18px #8436a31a; }
+.loan-direction-flag.request { border-color: #315f79; background: linear-gradient(100deg,#102938,#10131b); box-shadow: inset 3px 0 #43a8d8,0 0 18px #3183a31a; }
+.loan-direction-flag.request span { color: #8edcff; }
 .loan-direction-flag span { display: flex; align-items: center; gap: 8px; color: #e2a7fa; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 .loan-direction-flag span .icon { width: 18px; height: 18px; }
 .loan-direction-flag b { font-size: .67rem; }
@@ -1287,6 +1295,7 @@ img.card-image-unavailable { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .loan-mode-switch::before { transition: none; }
   .draft-card.loan-card-arrived { animation: none; }
 }
 
