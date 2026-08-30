@@ -27,10 +27,10 @@ async function syncProvider(provider:any){
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   const runId=await rpc('begin_market_provider_sync',{p_provider:provider.name});
   if(!runId)return {provider:provider.name,status:'skipped',reason:'sync_already_running'};
-  let requestCount=0,snapshots=0,failures=0;
+  let requestCount=0,snapshots=0,failures=0,feedStats:any=null;
   try{
     const targets=await rpc('market_sync_targets',{p_provider:provider.name})||[];
-    if(provider.name==='cardmarket'){await provider.load();requestCount+=3;}
+    if(provider.name==='cardmarket'){feedStats=await provider.load();requestCount+=3;}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
     const resolvedTargets=provider.name==='cardmarket'?await resolveCardmarketTargets(provider,[...unique.values()]):[...unique.values()];
@@ -54,9 +54,10 @@ async function syncProvider(provider:any){
       }catch(error:any){failures++;await recordMappingError(target.mapping_id,error);}
     }
     for(let index=0;index<pendingSnapshots.length;index+=250)await rest('market_price_snapshots','POST',pendingSnapshots.slice(index,index+250),{'Prefer':'resolution=ignore-duplicates,return=minimal'});
+    const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
     await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots}});
-    return {provider:provider.name,status,targets:unique.size,snapshots,failures};
+    return {provider:provider.name,status,targets:unique.size,snapshots,failures,feedStats,mappingStates};
   }catch(error:any){await finish(runId,'failed',{request_count:requestCount,attempt_count:1,error_code:error?.code||'sync_failed',error_message:String(error?.message||error).slice(0,500)});return {provider:provider.name,status:'failed',error:String(error?.message||error)};}
 }
 

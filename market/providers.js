@@ -66,6 +66,9 @@ export class CardmarketPriceGuideProvider extends PriceProvider {
     const [catalogText,priceText,nonSinglesText]=await Promise.all([responseText(catalogResponse),responseText(priceResponse),nonSinglesResponse?.ok?responseText(nonSinglesResponse):Promise.resolve('')]);
     const catalogPayload=parseCardmarketPayload(catalogText,'products'),pricePayload=parseCardmarketPayload(priceText,'priceGuides');
     const nonSingles=parseCardmarketPayload(nonSinglesText,'products').rows,expansions=buildExpansionNames(nonSingles);
+    if(catalogPayload.rows.length<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
+    if(pricePayload.rows.length<1000)throw new Error('Price Guide Cardmarket non valido: usa il link JSON diretto price_guide_3.json');
+    if(expansions.size<100)throw new Error('Catalogo espansioni Cardmarket non disponibile dal link Product Catalogue');
     this.catalog=catalogPayload.rows.map(row=>normalizeCardmarketProduct(row,expansions));
     this.prices=new Map(pricePayload.rows.map(row=>[productId(row),row]).filter(([id])=>id));
     this.sourceUpdatedAt=pricePayload.createdAt||priceResponse.headers?.get?.('last-modified')||new Date().toISOString();return {catalogRows:this.catalog.length,priceRows:this.prices.size,expansionRows:expansions.size};
