@@ -36,6 +36,9 @@ export const api = {
   async marketWatch(game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('list_market_watch', { p_token:token(),p_game:game }));
   },
+  async marketDashboardMovers(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('list_market_dashboard_movers', { p_token:token(),p_game:game }));
+  },
   async marketPriceHistory(printingId, days = 30) {
     ensure(); return unwrap(await client.rpc('list_market_price_history', { p_token:token(),p_printing_id:printingId,p_days:days }));
   },

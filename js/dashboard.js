@@ -36,28 +36,13 @@ export function dashboardView(state, game = 'yugioh', market = {}) {
       ${loanOverview(teamActive, attention)}
     </div>
 
-    <div class="dashboard-columns duel-dashboard-lower">
+    <div class="dashboard-columns duel-dashboard-lower activity-only">
       <section class="surface duel-panel activity-panel">
         <div class="section-title"><div><span class="eyebrow">Team log</span><h2>Attività recenti</h2></div><button class="text-action" data-page="loans">Vedi tutte ${icon('arrow')}</button></div>
         ${recent.length ? recent.map(activityRow).join('') : `<div class="inline-empty">${icon('swap')}<div><strong>Nessuna attività</strong><span>I movimenti del team compariranno qui.</span></div></div>`}
       </section>
-      <section class="surface duel-panel market-preview">
-        <div class="section-title"><div><span class="eyebrow">Raccolta personale</span><h2>Market Watch</h2></div><button class="text-action" data-page="market">Apri ${icon('arrow')}</button></div>
-        <div class="market-signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        ${marketPreview(market)}
-      </section>
     </div>
   </section>`;
-}
-
-export function marketPreview(market = {}) {
-  const items = Array.isArray(market.items) ? market.items : [];
-  const priced = items.filter(item => item.referencePrice != null).length;
-  const owned = items.filter(item => Array.isArray(item.sources) && item.sources.includes('owned')).length;
-  if (market.error) return `<div class="market-placeholder">${icon('chart')}<strong>Market Watch non raggiungibile</strong><p>I dati dei prezzi non sono disponibili in questo momento. La configurazione dei provider resta protetta sul server.</p><button class="btn secondary small" data-page="market">Verifica stato</button></div>`;
-  if (priced) return `<div class="market-placeholder">${icon('chart')}<strong>${priced} printing valorizzate</strong><p>${owned} printing della tua raccolta monitorate${market.lastSync ? ` · aggiornamento ${formatDate(market.lastSync)}` : ''}.</p><button class="btn secondary small" data-page="market">Vedi prezzi e trend</button></div>`;
-  if (items.length) return `<div class="market-placeholder">${icon('chart')}<strong>Primo aggiornamento in attesa</strong><p>${items.length} printing sono già collegate. I prezzi appariranno dopo il primo sync Cardmarket completato.</p><button class="btn secondary small" data-page="market">Apri Market Watch</button></div>`;
-  return `<div class="market-placeholder">${icon('chart')}<strong>Market Watch pronto</strong><p>Le carte della tua raccolta entreranno automaticamente nel monitoraggio.</p><button class="btn secondary small" data-page="market">Apri Market Watch</button></div>`;
 }
 
 function trackedCards(loans) {
@@ -81,7 +66,7 @@ function trackedCards(loans) {
 }
 
 function featuredPanel(market) {
-  const movers=positiveMovers(market.items,3),history=market.featuredHistory instanceof Map?market.featuredHistory:new Map();
+  const movers=market.featuredMovers?.length?market.featuredMovers:positiveMovers(market.items,3),history=market.featuredHistory instanceof Map?market.featuredHistory:new Map();
   if (!movers.length) return `<section class="surface duel-panel featured-card-panel featured-empty">
     <div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Carte in evidenza</h2></div><button class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
     <div class="inline-empty">${icon('chart')}<div><strong>Trend in preparazione</strong><span>Le carte con crescita positiva appariranno dopo il secondo snapshot giornaliero.</span></div></div>
@@ -93,7 +78,7 @@ function featuredPanel(market) {
 }
 
 function featuredMover(item,history,index){const points=marketMoverPoints(item,history),chart=marketMoverChart(points,index);return `<button class="market-mover-slide" style="--mover-image:url(&quot;${esc(item.imageUrl||'')}&quot;)" data-page="market" aria-label="Apri ${esc(item.cardName)} nel Market Watch"><h3>${esc(item.cardName)}</h3>${chart}</button>`;}
-function marketMoverPoints(item,history){const rows=(history||[]).filter(row=>Number.isFinite(row.price)).map(row=>({price:Number(row.price),capturedAt:row.capturedAt}));if(rows.length>1)return rows.sort((a,b)=>new Date(a.capturedAt)-new Date(b.capturedAt));const now=Date.now(),fallback=[[item.price30d,30],[item.price7d,7],[item.price24h,1],[item.referencePrice,0]].filter(([price])=>Number.isFinite(price)).map(([price,days])=>({price:Number(price),capturedAt:new Date(now-days*86400000).toISOString()}));return fallback;}
+function marketMoverPoints(item,history){if(item.sparkline?.length>1)return item.sparkline.map(point=>({price:Number(point.price),capturedAt:new Date(Date.now()-(4-point.order)*86400000).toISOString()}));const rows=(history||[]).filter(row=>Number.isFinite(row.price)).map(row=>({price:Number(row.price),capturedAt:row.capturedAt}));if(rows.length>1)return rows.sort((a,b)=>new Date(a.capturedAt)-new Date(b.capturedAt));const now=Date.now(),fallback=[[item.price30d,30],[item.price7d,7],[item.price24h,1],[item.referencePrice,0]].filter(([price])=>Number.isFinite(price)).map(([price,days])=>({price:Number(price),capturedAt:new Date(now-days*86400000).toISOString()}));return fallback;}
 function marketMoverChart(points,index){if(points.length<2)return `<span class="market-mover-chart empty">${icon('chart')}</span>`;const values=points.map(point=>point.price),min=Math.min(...values),max=Math.max(...values),span=max-min||1,width=520,height=150,pad=8,path=points.map((point,position)=>`${position?'L':'M'} ${pad+(position/(points.length-1))*(width-pad*2)} ${height-pad-((point.price-min)/span)*(height-pad*2)}`).join(' '),area=`${path} L ${width-pad} ${height-pad} L ${pad} ${height-pad} Z`,gradient=`mover-gradient-${index}`;return `<span class="market-mover-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico prezzi Cardmarket"><defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ee49a" stop-opacity=".46"/><stop offset="1" stop-color="#5ee49a" stop-opacity="0"/></linearGradient></defs><g class="mover-grid"><path d="M 0 38 H ${width} M 0 75 H ${width} M 0 112 H ${width}"/></g><path class="mover-area" d="${area}" fill="url(#${gradient})"/><path class="mover-line" d="${path}"/><circle cx="${width-pad}" cy="${height-pad-((values.at(-1)-min)/span)*(height-pad*2)}" r="5"/></svg></span>`;}
 
 function loanOverview(loans, attention) {

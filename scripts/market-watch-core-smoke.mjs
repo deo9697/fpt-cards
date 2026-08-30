@@ -40,8 +40,7 @@ const failingCm=new CardmarketPriceGuideProvider({catalogUrl:'https://downloads.
 await assert.rejects(()=>failingCm.load(),/Catalogo espansioni non disponibile|Product Catalogue non disponibile/);
 
 const storage=new Map();globalThis.localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
-const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload,positiveMovers}=await import('../js/market-watch.js');
-const {marketPreview}=await import('../js/dashboard.js');
+const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload,positiveMovers,mapDashboardMovers}=await import('../js/market-watch.js');
 const now=Date.now(),fresh=new Date(now-3600000).toISOString();
 const data=mapPayload({items:[
   {printing_id:'p1',card_name:'A',sources:['owned','deck'],owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,providers:{cardtrader:{price:10,capturedAt:fresh}}},
@@ -52,9 +51,7 @@ const partial=portfolioSummary([...data.items,{printingId:'p3',sources:['owned']
 const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{printingId:'p1',quantity:3},{printingId:null}],manual:[{printingId:'p1'},{printingId:'p2'}]});assert.equal(dedup.length,2);assert.deepEqual(new Set(dedup.find(row=>row.printingId==='p1').sources),new Set(['owned','deck','manual']));
 assert.equal(providerWarning({cardtrader:{price:12},cardmarket:{price:20}}),67);assert.equal(providerWarning({cardtrader:{price:19},cardmarket:{price:20}}),null);
 const movers=positiveMovers([{printingId:'a',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:12,price24h:10},{printingId:'a2',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:15,price24h:10},{printingId:'b',catalogCardId:'2',cardName:'B',sources:['owned'],referencePrice:5.5,price24h:5},{printingId:'c',catalogCardId:'3',cardName:'C',sources:['owned'],referencePrice:4,price24h:5}],3);assert.deepEqual(movers.map(item=>item.printingId),['a2','b'],'Le carte in crescita non sono ordinate/deduplicate correttamente');
-assert.match(marketPreview({items:[{sources:['owned'],referencePrice:null}]}),/Primo aggiornamento in attesa/);
-assert.match(marketPreview({items:[{sources:['owned'],referencePrice:12.5}],lastSync:fresh}),/1 printing valorizzate/);
-assert.doesNotMatch(marketPreview(),/In attesa dei provider/,'La Home non deve dichiarare i provider non configurati senza dati server-side');
+const dashboardMovers=mapDashboardMovers([{printingId:'p1',cardName:'A',referencePrice:12,baselinePrice:10,positiveChange:20,sparkline:[{label:'AVG30',price:8,order:1},{label:'TREND',price:12,order:4}]}]);assert.equal(dashboardMovers[0].sparkline.length,2);assert.equal(dashboardMovers[0].positiveChange,20);
 
 const {DeckController}=await import('../js/decks.js');
 const deckState={game:'yugioh',currentUser:'me',decks:[{id:'d1',persisted:true,name:'Deck',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'1',cardName:'Carta',imageUrl:'',section:'main',quantity:1,printingId:null}]}],collection:{mine:[],team:[]}};
@@ -66,6 +63,7 @@ for(const required of ['add column if not exists printing_id uuid','market_provi
 assert(!/cron\.schedule|net\.http_post/i.test(sql),'Lo scheduler non deve essere attivato dalla migration');
 assert(sql.includes("cp.catalog_card_id=dc.catalog_card_id"),'La selezione printing del mazzo non verifica la carta esatta');
 const operational=fs.readFileSync(new URL('../supabase-milestone-5-1-market-watch-operational.sql',import.meta.url),'utf8');for(const required of ['list_market_price_history','price_30d','cardmarket_url','market_sync_targets'])assert(operational.includes(required),`Migration operativa incompleta: ${required}`);
+const dashboardSql=fs.readFileSync(new URL('../supabase-market-dashboard-movers.sql',import.meta.url),'utf8');for(const required of ['list_market_dashboard_movers','avg1','avg7','avg30','positive_change','limit 3'])assert(dashboardSql.includes(required),`Segnali Dashboard incompleti: ${required}`);
 
 const edge=fs.readFileSync(new URL('../supabase/functions/market-sync/index.ts',import.meta.url),'utf8'),app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8'),styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8'),sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 for(const required of ['CARDTRADER_API_TOKEN','CARDMARKET_PRODUCT_CATALOG_URL','CARDMARKET_PRICE_GUIDE_URL','MARKET_SYNC_SECRET','begin_market_provider_sync','recoverStale','manual_recovery'])assert(edge.includes(required),`Edge Function incompleta: ${required}`);
