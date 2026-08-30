@@ -43,7 +43,7 @@ Per abilitare Fast Scan e l’ingestion massiva, eseguire infine `supabase-miles
 
 Per abilitare la sezione Mazzi, eseguire dopo la Raccolta `supabase-milestone-4-decks.sql`. Aggiunge mazzi personali, sezioni Main/Extra/Side e RPC protette; la disponibilità e le richieste delle carte mancanti continuano a usare l’inventario e i Prestiti esistenti.
 
-Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Tesseract.js viene preparato all’avvio dello scanner; PaddleOCR.js con PP-OCRv6 tiny interviene quando le letture Tesseract non producono un set code valido o quando Tesseract non è disponibile. Le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
+Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). PaddleOCR.js con PP-OCRv6 tiny viene preparato all’avvio dello scanner ed esegue due passaggi di preprocessing per ogni foto. Le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
 
 Il riconoscimento è esclusivamente manuale: parte soltanto premendo `Scatta e analizza`. Il loop dell'anteprima controlla la salute della camera ma non avvia mai l'OCR. Lo scatto usa i pixel del video mostrato sotto la ROI, così il ritaglio coincide con il riquadro; `ImageCapture.grabFrame()` resta un fallback. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e i canvas OCR vengono liberati subito dopo ogni tentativo.
 

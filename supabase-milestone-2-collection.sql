@@ -253,7 +253,7 @@ $$;
 create or replace function public.create_team_loans(
   p_token text, p_cards jsonb, p_borrower_slug text, p_notes text default '', p_game text default 'yugioh'
 ) returns setof public.loans language plpgsql security definer set search_path = public, extensions as $$
-declare me text := public.session_member(p_token);
+declare me text := public.session_member(p_token); locked_item_id uuid;
 begin
   if me is null then raise exception 'Sessione scaduta'; end if;
   if p_game not in ('yugioh','onepiece') then raise exception 'Gioco non valido'; end if;
@@ -264,12 +264,17 @@ begin
     and not exists(select 1 from public.collection_items ci join public.card_printings p on p.id = ci.printing_id
       where ci.id = (c->>'collectionItemId')::uuid and ci.owner_slug = me and p.game = p_game)) then raise exception 'Elemento raccolta non valido'; end if;
 
-  perform ci.id from public.collection_items ci
-  where exists (
-    select 1 from jsonb_array_elements(p_cards) c
+  for locked_item_id in
+    select (c->>'collectionItemId')::uuid
+    from jsonb_array_elements(p_cards) c
     where nullif(c->>'collectionItemId','') is not null
-      and ci.id = (c->>'collectionItemId')::uuid)
-  order by ci.id for update of ci;
+    group by (c->>'collectionItemId')::uuid
+    order by (c->>'collectionItemId')::uuid
+  loop
+    perform ci.id from public.collection_items ci
+    where ci.id = locked_item_id
+    for update of ci;
+  end loop;
   if exists(select 1 from (
     select (c->>'collectionItemId')::uuid item_id, sum((c->>'quantity')::integer)::integer requested
     from jsonb_array_elements(p_cards) c where nullif(c->>'collectionItemId','') is not null

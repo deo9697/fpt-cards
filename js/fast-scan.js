@@ -2,14 +2,13 @@ import { esc } from './core.js';
 import { icon } from './icons.js';
 import { normalizeSetCode, setCodeCandidates, classifyPrintingMatch, OcrConsensus, ScanGate, ScanSessionBuffer, defaultScanSettings } from './fast-scan-core.js';
 import { FastScanCamera, preprocessCodeImage } from './fast-scan-camera.js';
-import { FastScanOcr } from './fast-scan-ocr.js';
 import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-storage.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
 
 export class FastScanController {
-  constructor({api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute,camera,ocr,paddleOcr}={}) {
+  constructor({api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute,camera,paddleOcr}={}) {
     Object.assign(this,{api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute});
-    this.camera=camera||new FastScanCamera(); this.ocr=ocr||new FastScanOcr({onProgress:event=>this.ocrProgress(event)});this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
+    this.camera=camera||new FastScanCamera();this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
     this.buffer=new ScanSessionBuffer(); this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.phase='setup'; this.status='Pronto';
     this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
     this.visibilityHandler=()=>{if(document.hidden&&this.phase==='scanning')this.pause('Scanner in pausa perché l’app non è visibile');}; document.addEventListener('visibilitychange',this.visibilityHandler);
@@ -36,14 +35,13 @@ export class FastScanController {
     try{this.devices=await this.camera.start(video,this.camera.deviceId);if(this.phase!=='scanning')return;this.refreshControls();this.setStatus('Preparazione OCR…');await this.prepareProductionOcr();if(this.phase!=='scanning')return;if(this.paddleState==='unavailable'){this.setStatus('OCR non disponibile · usa inserimento manuale');return;}this.setStatus('Allinea il codice e premi Scatta e analizza');this.schedule(250);}catch(error){this.camera.stop();if(this.phase!=='scanning')return;this.scanState='CAMERA_ERROR';this.cameraError=error.message||'Fotocamera non disponibile';this.status='Riavvia fotocamera';this.onRender();setTimeout(()=>this.showRestartControl(),0);}
   }
   async prepareProductionOcr(){
-    if(this.paddleState==='tesseract'||this.paddleState==='paddle')return;if(this.primaryOcrPreparing)return this.primaryOcrPreparing;this.paddleState='preparing';this.paddleError='';this.primaryOcrPreparing=(async()=>{try{await this.ocr.prepare();this.paddleState='tesseract';}catch(error){this.paddleError=error?.message||String(error);this.setStatus('Tesseract non disponibile · preparo fallback…');try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(fallbackError){this.paddleState='unavailable';this.paddleError=`${this.paddleError}; ${fallbackError?.message||fallbackError}`;}}})();try{await this.primaryOcrPreparing;}finally{this.primaryOcrPreparing=null;}}
+    if(this.paddleState==='paddle')return;if(this.primaryOcrPreparing)return this.primaryOcrPreparing;this.paddleState='preparing';this.paddleError='';this.primaryOcrPreparing=(async()=>{try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(error){this.paddleState='unavailable';this.paddleError=error?.message||String(error);}})();try{await this.primaryOcrPreparing;}finally{this.primaryOcrPreparing=null;}}
   async recognizeProduction(canvas){
-    if(this.paddleState!=='tesseract'&&this.paddleState!=='paddle')await this.prepareProductionOcr();
-    if(this.paddleState==='tesseract'){try{return await this.ocr.recognize(canvas);}catch(error){this.paddleError=error?.message||String(error);this.setStatus('Errore Tesseract · attivo fallback…');try{await this.ocr.terminate?.();}catch{}try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(fallbackError){this.paddleState='unavailable';this.paddleError=`${this.paddleError}; ${fallbackError?.message||fallbackError}`;throw new Error(this.paddleError);}}}
+    if(this.paddleState!=='paddle')await this.prepareProductionOcr();
     if(this.paddleState==='paddle'){const result=await this.paddleOcr.recognize(canvas);return {text:result.text,confidence:result.confidence,engine:'paddle'};}
     throw new Error(this.paddleError||'Motore OCR non disponibile');
   }
-  async disposeProductionOcr(){if(this.primaryOcrPreparing)await this.primaryOcrPreparing.catch(()=>{});await Promise.allSettled([this.paddleOcr.dispose?.(),this.ocr.terminate?.()]);this.paddleState='idle';this.paddleError='';}
+  async disposeProductionOcr(){if(this.primaryOcrPreparing)await this.primaryOcrPreparing.catch(()=>{});await this.paddleOcr.dispose?.();this.paddleState='idle';this.paddleError='';}
   pause(message='Scanner in pausa'){this.stopLoop();this.phase='paused';this.scanState='PAUSED';this.setStatus(message);const button=document.querySelector('[data-scan-pause]');if(button)button.textContent='Riprendi';}
   async resume(){if(this.phase!=='paused')return;const issue=this.camera.healthIssue?.()||(!this.camera.stream?'missing-stream':'');if(issue){await this.recoverCamera(issue);return;}this.phase='scanning';this.scanState='LIVE';this.setStatus('Allinea il codice e premi Scatta e analizza');const button=document.querySelector('[data-scan-pause]');if(button)button.textContent='Pausa';this.schedule(250);}
   showRestartControl(){const state=document.querySelector('.live-ocr-state');if(state&&!state.querySelector('[data-scan-restart-camera]'))state.insertAdjacentHTML('beforeend','<button type="button" class="btn secondary small" data-scan-restart-camera>Riavvia fotocamera</button>');}
@@ -84,7 +82,6 @@ export class FastScanController {
   persist(now=false){clearTimeout(this.persistTimer);const save=()=>saveScanSession(this.buffer.snapshot());if(now)return save();this.persistTimer=setTimeout(save,180);} feedback(){if(this.buffer.settings.vibration)navigator.vibrate?.(35);if(this.buffer.settings.sound)beep();}
   setStatus(next){if(!next||next===this.status)return;this.status=next;this.refreshHud();}
   refreshHud(){const root=document,write=(node,value)=>{const text=String(value);if(node&&node.textContent!==text)node.textContent=text;};root.querySelectorAll('[data-scan-total-number]').forEach(el=>write(el,this.buffer.scanned));root.querySelectorAll('[data-scan-distinct]').forEach(el=>write(el,this.buffer.entries.size));root.querySelectorAll('[data-scan-review]').forEach(el=>write(el,this.buffer.review.length));write(root.querySelector('[data-scan-status]'),this.status);const last=root.querySelector('[data-scan-last]');if(last&&this.last){const html=`Ultima: <b>${esc(this.last.setCode)}</b> · +1`;if(last.innerHTML!==html)last.innerHTML=html;}}
-  ocrProgress(event){if(event?.status==='recognizing text'&&!this.ocrStatusShown){this.ocrStatusShown=true;this.scanState='ANALYZING';this.setStatus('Analizzo codice…');}}
   async snapshotFeedback(){this.scanState='CAPTURING';this.setStatus('Acquisito');const roi=document.querySelector('.live-roi');roi?.classList.add('captured');await delay(180);roi?.classList.remove('captured');}
   async scanOnce(){
     if(this.scanCycleInFlight)return;this.scanCycleInFlight=true;
@@ -113,12 +110,10 @@ export class FastScanController {
       this.lastPreprocessing=snapshot.preprocessing;await this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
       const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
       this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;const plan=createOcrInputPlan(snapshot),productionReadings=[];try{
-        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted,needsAlternative=!primaryCode.valid||repeatedLast;productionReadings.push(primary);
+        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted,needsAlternative=!primaryCode.valid||repeatedLast;productionReadings.push(primary);if(needsAlternative)this.setStatus('Verifico lettura OCR…');
         // A manual photo always gets both preprocessing passes. A formally valid
         // first reading may still contain a confused digit or letter.
         const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);
-        const validReadings=productionReadings.map(reading=>normalizeSetCode(reading.text)).filter(normalized=>normalized.valid),hasDifferentValid=validReadings.some(normalized=>normalized.code!==lastAccepted),needsEngineFallback=!validReadings.length||(repeatedLast&&!hasDifferentValid);
-        if(forced&&needsAlternative&&needsEngineFallback){this.setStatus('Tesseract incerto · provo OCR alternativo…');try{const paddle=await this.paddleOcr.recognize(plan.primary.canvas);productionReadings.push({...paddle,preprocessing:plan.primary.preprocessing});}catch{}}
         let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};
         this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;let outcome=null;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
       }finally{plan.release();}

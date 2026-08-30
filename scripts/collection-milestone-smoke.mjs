@@ -106,7 +106,8 @@ for (const required of [
   "raise exception 'Quantità fisicamente non disponibile'"
 ]) assert(sql.includes(required), `migrazione incompleta: ${required}`);
 const createLoansSql = sql.slice(sql.indexOf('create or replace function public.create_team_loans'), sql.indexOf('create or replace function public.transition_loan'));
-assert(createLoansSql.includes('for update of ci'), 'lock inventario create_team_loans assente');
+assert(createLoansSql.includes('for locked_item_id in'), 'deduplicazione lock create_team_loans assente');
+assert(createLoansSql.includes('where ci.id = locked_item_id') && createLoansSql.includes('for update of ci'), 'lock inventario create_team_loans assente');
 assert(!createLoansSql.includes('select distinct'), 'create_team_loans combina ancora DISTINCT e FOR UPDATE');
 
 const app = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');

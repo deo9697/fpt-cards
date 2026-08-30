@@ -1,6 +1,5 @@
--- Hotfix: evita "FOR UPDATE is not allowed with DISTINCT clause" durante
--- la creazione di un prestito dal Loan Builder.
--- Eseguire dopo supabase-milestone-2-collection.sql.
+-- Hotfix v2: separa la deduplicazione degli item dal lock FOR UPDATE.
+-- Eseguire nel Supabase SQL Editor.
 
 begin;
 
@@ -18,8 +17,6 @@ begin
     and not exists(select 1 from public.collection_items ci join public.card_printings p on p.id = ci.printing_id
       where ci.id = (c->>'collectionItemId')::uuid and ci.owner_slug = me and p.game = p_game)) then raise exception 'Elemento raccolta non valido'; end if;
 
-  -- Ricava prima gli ID univoci, poi esegue ogni lock con una SELECT semplice.
-  -- In questo modo FOR UPDATE non condivide mai la query con DISTINCT/GROUP BY.
   for locked_item_id in
     select (c->>'collectionItemId')::uuid
     from jsonb_array_elements(p_cards) c

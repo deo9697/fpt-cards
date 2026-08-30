@@ -25,7 +25,7 @@ let collectionSearchSequence = 0;
 let collectionError = '';
 let collectionPending = false;
 let draftCards = [];
-let loanBuilderDraft = { borrower:'', notes:'', query:'' };
+let loanBuilderDraft = { borrower:'', notes:'', query:'', mode:'lend' };
 let loanSearchResults = [];
 let loanSearchStatus = 'idle';
 let loanSubmitPending = false;
@@ -256,31 +256,33 @@ function moreView() {
 }
 
 function newLoanView() {
-  const recipients = MEMBERS;
+  const recipients = MEMBERS.filter(item => item.id !== state.currentUser);
   const game = GAMES[state.game];
+  const requesting = loanBuilderDraft.mode === 'request';
   const recipient = member(loanBuilderDraft.borrower);
   const copies = draftCards.reduce((total, card) => total + card.quantity, 0);
   const submitDisabled = loanSubmitPending || !draftCards.length || !loanBuilderDraft.borrower;
   return `<section class="loan-builder-page">
-    <header class="loan-builder-hero"><div class="loan-builder-emblem">${icon('swap')}</div><div><span class="eyebrow">Loan Builder · ${esc(game.short)}</span><h1>Nuovo prestito</h1><p>Prepara le carte da consegnare a un membro del team.</p></div><aside><strong>Come funziona</strong><span>Cerca le carte, aggiungile al prestito e scegli il destinatario. La richiesta sarà attiva solo dopo la sua conferma.</span></aside></header>
+    <header class="loan-builder-hero"><div class="loan-builder-emblem">${icon('swap')}</div><div><span class="eyebrow">Loan Builder · ${esc(game.short)}</span><h1>${requesting ? 'Richiedi un prestito' : 'Crea un prestito'}</h1><p>${requesting ? 'Scegli il proprietario e le carte che vuoi ricevere.' : 'Prepara le carte da consegnare a un membro del team.'}</p></div><aside><strong>Come funziona</strong><span>${requesting ? 'Le carte disponibili arrivano dalla raccolta del proprietario selezionato. La richiesta sarà attiva dopo la sua conferma.' : 'Cerca le carte, aggiungile al prestito e scegli il destinatario. Il prestito sarà attivo solo dopo la sua conferma.'}</span></aside></header>
     <form id="loan-form" class="loan-builder-grid">
       <div class="loan-builder-column loan-builder-left">
-        <section class="surface loan-builder-panel loan-search-stage"><header><span>${icon('search')}</span><h2>1. Cerca carte</h2></header><p>Cerca nel catalogo ${esc(game.name)}.</p>
+        <section class="surface loan-builder-panel loan-search-stage"><header><span>${icon('search')}</span><h2>1. Cerca carte</h2></header><p>${requesting ? 'Cerca tra le printing disponibili del proprietario selezionato.' : `Cerca nel catalogo ${esc(game.name)}.`}</p>
           <label class="sr-only" for="card-name">Cerca per nome carta, set o rarità</label><div class="loan-builder-search">${icon('search')}<input id="card-name" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(loanBuilderDraft.query)}" placeholder="Cerca per nome carta, set, rarità..." aria-controls="card-suggestions"></div>
-          <div id="card-suggestions" class="loan-search-results" aria-live="polite">${loanSearchResultsHtml()}</div>
+          <div id="card-suggestions" class="loan-search-results ${loanSearchStatus === 'closed' ? 'is-collapsed' : ''}" aria-live="polite">${loanSearchResultsHtml()}</div>
         </section>
         <section class="surface loan-builder-panel loan-notes"><label for="notes">${icon('card')} <span>Note facoltative</span></label><textarea id="notes" rows="3" maxlength="250" placeholder="Aggiungi note su edizione, rarità, condizioni o altre informazioni utili...">${esc(loanBuilderDraft.notes)}</textarea><small id="notes-count">${loanBuilderDraft.notes.length} / 250</small></section>
       </div>
       <div class="loan-builder-column loan-builder-right">
-        <section class="surface loan-builder-panel loan-recipient"><header><span>${icon('team')}</span><h2>2. Prestito</h2></header><label for="borrower">Destinatario</label><div class="recipient-picker"><i class="loan-recipient-avatar member-${esc(recipient?.id || 'empty')}">${recipient ? initials(recipient.name) : '?'}</i><div><strong>${recipient ? esc(recipient.name) : 'Seleziona un membro del team'}</strong><small>${recipient ? (recipient.role === 'admin' ? 'Amministratore' : 'Membro F.P.T') : 'Destinatario richiesto'}</small></div><select id="borrower" required aria-label="Destinatario del prestito"><option value="">Seleziona un membro</option>${recipients.map(m => `<option value="${esc(m.id)}" ${m.id === loanBuilderDraft.borrower ? 'selected' : ''}>${esc(m.name)}${m.id === state.currentUser ? ' (tu)' : ''}</option>`).join('')}</select></div></section>
-        <section class="surface loan-builder-panel selected-loan-cards"><h3>Carte selezionate per il prestito</h3><div class="draft-list">${draftCards.length ? draftCards.map(selectedLoanCardHtml).join('') : `<div class="loan-builder-empty">${icon('card')}<strong>Nessuna carta aggiunta</strong><span>Cerca una carta e aggiungila al prestito.</span></div>`}</div></section>
-        <section class="loan-builder-summary"><div class="loan-totals">${icon('collection')} <strong>${draftCards.length}</strong> ${draftCards.length === 1 ? 'carta' : 'carte'} <i>·</i> <strong>${copies}</strong> ${copies === 1 ? 'copia totale' : 'copie totali'}</div><p>${icon('info')} Il destinatario dovrà accettare prima che il prestito risulti attivo.</p><button class="btn wide loan-submit" type="submit" ${submitDisabled ? 'disabled' : ''}>${loanSubmitPending ? '<span class="button-spinner"></span> Invio in corso…' : `${icon('swap')} Invia richiesta di prestito`}</button></section>
+        <section class="surface loan-builder-panel loan-recipient"><header><span>${icon('team')}</span><h2>2. ${requesting ? 'Richiesta' : 'Prestito'}</h2></header><label for="borrower">${requesting ? 'Proprietario' : 'Destinatario'}</label><div class="recipient-picker"><i class="loan-recipient-avatar member-${esc(recipient?.id || 'empty')}">${recipient ? initials(recipient.name) : '?'}</i><div><strong>${recipient ? esc(recipient.name) : 'Seleziona un membro del team'}</strong><small>${recipient ? (recipient.role === 'admin' ? 'Amministratore' : 'Membro F.P.T') : (requesting ? 'Proprietario richiesto' : 'Destinatario richiesto')}</small></div><select id="borrower" required aria-label="${requesting ? 'Proprietario delle carte' : 'Destinatario del prestito'}"><option value="">Seleziona un membro</option>${recipients.map(m => `<option value="${esc(m.id)}" ${m.id === loanBuilderDraft.borrower ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div></section>
+        <section class="surface loan-builder-panel selected-loan-cards"><h3>${requesting ? 'Carte che vuoi richiedere' : 'Carte selezionate per il prestito'}</h3><div class="draft-list">${draftCards.length ? draftCards.map(selectedLoanCardHtml).join('') : `<div class="loan-builder-empty">${icon('card')}<strong>Nessuna carta aggiunta</strong><span>${requesting && !recipient ? 'Seleziona prima il proprietario, poi cerca una carta.' : 'Cerca una carta e aggiungila al prestito.'}</span></div>`}</div></section>
+        <section class="loan-builder-summary"><div class="loan-totals">${icon('collection')} <strong>${draftCards.length}</strong> ${draftCards.length === 1 ? 'carta' : 'carte'} <i>·</i> <strong>${copies}</strong> ${copies === 1 ? 'copia totale' : 'copie totali'}</div><div class="loan-mode-switch" role="group" aria-label="Direzione prestito"><button type="button" data-loan-mode="lend" class="${requesting ? '' : 'active'}">${icon('swap')} Presto carte</button><button type="button" data-loan-mode="request" class="${requesting ? 'active' : ''}">${icon('collection')} Chiedo carte</button></div><div class="loan-direction-flag ${requesting ? 'request' : 'lend'}" role="status"><span>${icon('swap')}<b>${requesting ? 'Stai richiedendo' : 'Stai prestando'}</b></span><small>${requesting ? `Le carte arriveranno a te${recipient ? ` da ${esc(recipient.name)}` : ' dal proprietario che selezionerai'}.` : `Le carte partiranno da te${recipient ? ` verso ${esc(recipient.name)}` : ' verso il membro che selezionerai'}.`}</small></div><p>${icon('info')} ${requesting ? 'Il proprietario dovrà accettare la richiesta e confermare la quantità.' : 'Il destinatario dovrà accettare prima che il prestito risulti attivo.'}</p><button class="btn wide loan-submit" type="submit" ${submitDisabled ? 'disabled' : ''}>${loanSubmitPending ? '<span class="button-spinner"></span> Invio in corso…' : `${icon('swap')} ${requesting ? 'Invia richiesta di prestito' : 'Invia proposta di prestito'}`}</button></section>
       </div>
     </form>
   </section>`;
 }
 
 function loanSearchResultsHtml() {
+  if (loanSearchStatus === 'closed') return '';
   if (loanSearchStatus === 'loading') return '<div class="loan-search-state"><span class="loading-spinner"></span> Ricerca nel catalogo…</div>';
   if (loanSearchStatus === 'error') return '<div class="loan-search-state error">Ricerca non disponibile. Riprova.</div>';
   if (loanSearchStatus === 'empty') return '<div class="loan-search-state">Nessuna carta trovata.</div>';
@@ -296,7 +298,7 @@ function selectedLoanCardHtml(card, index) {
   const meta = [card.setCode, card.setName].filter(Boolean).join(' · ') || (card.id ? `ID ${card.id}` : 'Carta manuale');
   const atMax = Number.isFinite(card.maxQuantity) && card.quantity >= card.maxQuantity;
   const preview = card.thumbnail || card.image;
-  return `<article class="draft-card">${preview ? `<img src="${esc(preview)}" alt="">` : `<span class="draft-placeholder">${icon('card')}</span>`}<div class="draft-card-copy"><strong>${esc(card.name)}</strong><small>${esc(meta)}</small></div>${card.rarity ? `<span class="rarity-chip">${esc(shortRarity(card.rarity))}</span>` : ''}<div class="draft-stepper"><button type="button" data-draft-quantity="minus" data-index="${index}" aria-label="Riduci quantità di ${esc(card.name)}" ${card.quantity <= 1 ? 'disabled' : ''}>−</button><output aria-live="polite">${card.quantity}</output><button type="button" data-draft-quantity="plus" data-index="${index}" aria-label="Aumenta quantità di ${esc(card.name)}" ${atMax ? 'disabled' : ''}>+</button></div><button type="button" class="draft-remove" data-remove-card="${index}" aria-label="Rimuovi ${esc(card.name)}">${icon('trash')}</button></article>`;
+  return `<article class="draft-card" data-draft-key="${esc(draftCardKey(card))}">${preview ? `<img src="${esc(preview)}" alt="">` : `<span class="draft-placeholder">${icon('card')}</span>`}<div class="draft-card-copy"><strong>${esc(card.name)}</strong><small>${esc(meta)}</small></div>${card.rarity ? `<span class="rarity-chip">${esc(shortRarity(card.rarity))}</span>` : ''}<div class="draft-stepper"><button type="button" data-draft-quantity="minus" data-index="${index}" aria-label="Riduci quantità di ${esc(card.name)}" ${card.quantity <= 1 ? 'disabled' : ''}>−</button><output aria-live="polite">${card.quantity}</output><button type="button" data-draft-quantity="plus" data-index="${index}" aria-label="Aumenta quantità di ${esc(card.name)}" ${atMax ? 'disabled' : ''}>+</button></div><button type="button" class="draft-remove" data-remove-card="${index}" aria-label="Rimuovi ${esc(card.name)}">${icon('trash')}</button></article>`;
 }
 
 function shortRarity(value) {
@@ -1079,6 +1081,8 @@ async function createLoan(e) {
 function addCatalogCard(button) {
   const card = loanSearchResults[Number(button.dataset.cardResult)];
   if (!card) return;
+  const source = button.closest('.loan-search-result')?.querySelector('img, .loan-result-placeholder');
+  const flight = captureLoanCardFlight(source);
   const printing = card.printings?.[0] || {};
   const inventory = matchingCollectionItem(card, printing);
   const candidate = {
@@ -1094,8 +1098,51 @@ function addCatalogCard(button) {
     if (candidate.maxQuantity === 0) return toast('Questa printing non ha copie fisicamente disponibili');
     draftCards.push(candidate);
   }
+  clearTimeout(cardSearchTimer);
+  cardSearchSequence += 1;
+  loanBuilderDraft.query = '';
+  loanSearchResults = [];
+  loanSearchStatus = 'closed';
   render(true);
+  animateLoanCardTransfer(flight, draftCardKey(candidate));
   document.querySelector('#card-name')?.focus();
+}
+
+function captureLoanCardFlight(source) {
+  if (!source || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return null;
+  const rect = source.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {
+    rect:{ left:rect.left, top:rect.top, width:rect.width, height:rect.height },
+    image:source.tagName === 'IMG' ? (source.currentSrc || source.src) : ''
+  };
+}
+
+function animateLoanCardTransfer(flight, key) {
+  if (!flight) return;
+  const target = [...document.querySelectorAll('[data-draft-key]')].find(item => item.dataset.draftKey === key);
+  const targetVisual = target?.querySelector('img, .draft-placeholder');
+  if (!targetVisual) return;
+  const destination = targetVisual.getBoundingClientRect();
+  const ghost = flight.image ? document.createElement('img') : document.createElement('span');
+  ghost.className = 'loan-card-flight';
+  if (flight.image) { ghost.src = flight.image; ghost.alt = ''; }
+  Object.assign(ghost.style, {
+    left:`${flight.rect.left}px`, top:`${flight.rect.top}px`,
+    width:`${flight.rect.width}px`, height:`${flight.rect.height}px`
+  });
+  document.body.append(ghost);
+  const translateX = destination.left - flight.rect.left;
+  const translateY = destination.top - flight.rect.top;
+  const scaleX = destination.width / flight.rect.width;
+  const scaleY = destination.height / flight.rect.height;
+  const animation = ghost.animate([
+    { transform:'translate3d(0,0,0) scale(1)', opacity:.96 },
+    { transform:`translate3d(${translateX}px,${translateY}px,0) scale(${scaleX},${scaleY})`, opacity:.72 }
+  ], { duration:560, easing:'cubic-bezier(.22,.75,.22,1)', fill:'forwards' });
+  target.classList.add('loan-card-arrived');
+  setTimeout(() => target.classList.remove('loan-card-arrived'), 720);
+  animation.finished.catch(() => {}).finally(() => ghost.remove());
 }
 
 function matchingCollectionItem(card, printing) {
@@ -1125,9 +1172,11 @@ function updateLoanRecipientUi() {
   const title = document.querySelector('.recipient-picker strong');
   const detail = document.querySelector('.recipient-picker small');
   const submit = document.querySelector('.loan-submit');
+  const direction = document.querySelector('.loan-direction-flag small');
   if (avatar) { avatar.className = `loan-recipient-avatar member-${recipient?.id || 'empty'}`; avatar.textContent = recipient ? initials(recipient.name) : '?'; }
   if (title) title.textContent = recipient?.name || 'Seleziona un membro del team';
   if (detail) detail.textContent = recipient ? (recipient.role === 'admin' ? 'Amministratore' : 'Membro F.P.T') : 'Destinatario richiesto';
+  if (direction) direction.textContent = `Le carte partiranno da te${recipient ? ` verso ${recipient.name}` : ' verso il membro che selezionerai'}.`;
   if (submit) submit.disabled = loanSubmitPending || !draftCards.length || !loanBuilderDraft.borrower;
 }
 

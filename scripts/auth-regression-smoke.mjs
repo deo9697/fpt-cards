@@ -244,10 +244,13 @@ async function run() {
   assert(await evaluate(`(()=>{const image=[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('img');const box=image.getBoundingClientRect();return getComputedStyle(image).objectFit==='contain'&&box.height/box.width>1.3})()`), 'La carta completa viene ancora ritagliata dal CSS');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('[data-card-result]').click()`);
   await waitFor(`document.querySelectorAll('.draft-card').length===1`, 'Aggiunta singola carta non riuscita');
+  assert(await evaluate(`document.querySelector('#card-name').value==='' && document.querySelector('#card-suggestions').classList.contains('is-collapsed') && Boolean(document.querySelector('.loan-card-flight'))`), 'La selezione non chiude la lista o non avvia il trasferimento animato');
   await evaluate(`document.querySelector('[data-draft-quantity="plus"]').focus()`);
   await cdp.call('Input.dispatchKeyEvent', { type:'keyDown', key:' ', code:'Space', windowsVirtualKeyCode:32 });
   await cdp.call('Input.dispatchKeyEvent', { type:'keyUp', key:' ', code:'Space', windowsVirtualKeyCode:32 });
   await waitFor(`document.querySelector('.draft-stepper output').textContent==='2'`, 'Incremento da tastiera non riuscito');
+  await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Blue-Eyes'))`, 'Seconda ricerca Blue-Eyes assente');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('[data-card-result]').click()`);
   await waitFor(`document.querySelector('.draft-stepper output').textContent==='3' && document.querySelectorAll('.draft-card').length===1`, 'Stessa carta non accorpata');
   const decrement = await evaluate(`(()=>{const before=document.querySelector('.draft-stepper output').textContent;document.querySelector('[data-draft-quantity="minus"]').click();return {before,after:document.querySelector('.draft-stepper output').textContent}})()`);
@@ -258,6 +261,8 @@ async function run() {
   await waitFor(`document.querySelectorAll('.draft-card').length===2`, 'Aggiunta multipla non riuscita');
   await evaluate(`[...document.querySelectorAll('.draft-card')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-remove-card]').click()`);
   await waitFor(`document.querySelectorAll('.draft-card').length===1`, 'Rimozione carta non riuscita');
+  await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician'))`, 'Seconda ricerca Dark Magician assente');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-card-result]').click()`);
   await waitFor(`document.querySelectorAll('.draft-card').length===2`, 'Nuova aggiunta dopo rimozione non riuscita');
   await evaluate(`document.querySelector('#borrower').focus()`);
@@ -266,6 +271,7 @@ async function run() {
     await cdp.call('Input.dispatchKeyEvent', { type:'keyUp', key:'ArrowDown', code:'ArrowDown', windowsVirtualKeyCode:40 });
   }
   await waitFor(`document.querySelector('#borrower').value==='first-access'`, 'Cambio destinatario da tastiera non riuscito');
+  assert(await evaluate(`document.querySelectorAll('#borrower option[value="existing-member"]').length===0 && document.querySelector('.loan-direction-flag').textContent.includes('Stai prestando') && document.querySelector('.loan-direction-flag').textContent.includes('First Access') && document.querySelector('.loan-submit').textContent.includes('proposta')`), 'Direzione del prestito non chiara o profilo personale ancora selezionabile');
   await evaluate(`(()=>{const notes=document.querySelector('#notes');notes.value='Near Mint · consegna sabato';notes.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   assert(await evaluate(`document.querySelector('#notes-count').textContent.startsWith('27') && !document.querySelector('.loan-submit').disabled`), 'Note o validazione Loan Builder errate');
   const desktopLoanLayout = await evaluate(`({columns:getComputedStyle(document.querySelector('.loan-builder-grid')).gridTemplateColumns,overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth})`);
