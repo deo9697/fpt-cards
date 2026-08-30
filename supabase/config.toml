@@ -1,0 +1,2 @@
+[functions.market-sync]
+verify_jwt = false

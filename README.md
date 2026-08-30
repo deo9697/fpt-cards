@@ -69,6 +69,8 @@ Senza configurazione Supabase l'app continua a funzionare in modalità locale.
 
 `supabase-milestone-5-market-watch.sql` è una migration additiva preparata ma **non applicata automaticamente**. Aggiunge la printing nullable ai mazzi, mapping provider, snapshot, watchlist, preferenze alert, eventi e stato sync. Le carte storiche dei mazzi restano senza printing finché un utente non la seleziona esplicitamente.
 
+`supabase-milestone-5-1-market-watch-operational.sql` completa in modo additivo il flusso Cardmarket: target con identità locale completa, URL prodotto, prezzo a 30 giorni e RPC protetta per lo storico del grafico. Applicarla soltanto dopo la milestone 5 e prima di distribuire `market-sync`.
+
 La funzione server-side è in `supabase/functions/market-sync/index.ts`. Prima del deploy configurare esclusivamente come secrets backend:
 
 - `SUPABASE_URL`
@@ -79,6 +81,8 @@ La funzione server-side è in `supabase/functions/market-sync/index.ts`. Prima d
 - `CARDMARKET_PRICE_GUIDE_URL`
 
 Gli ultimi due URL devono puntare direttamente ai file ufficiali Product Catalogue e Price Guide Cardmarket, mai a pagine HTML. Se un token/feed manca, il provider viene riportato come `unavailable` senza interrompere l'applicazione.
+
+Per Yu-Gi-Oh! i feed ufficiali correnti sono JSON (`products_singles_3.json` e `price_guide_3.json`). Il sync deriva anche il catalogo non-singles ufficiale per associare `idExpansion` al nome dell'espansione; un mapping viene risolto automaticamente solo quando nome + espansione (+ rarità, se disponibile) individuano un unico prodotto. I casi multipli restano `ambiguous`.
 
 Lo scheduler non è attivo. `supabase-market-watch-scheduler.example.sql` contiene soltanto un esempio commentato: invoca un gate orario che procede esclusivamente alle 03:00 `Europe/Rome`, gestendo automaticamente ora solare e legale. Attivarlo solo dopo migration, secrets, deploy e collaudo manuale.
 

@@ -1270,6 +1270,10 @@ img.card-image-unavailable { opacity: 0; }
 .market-kpi.positive strong,.positive { color:#65df84!important; }
 .market-kpi.negative strong,.negative { color:#ff6879!important; }
 .market-board { overflow:hidden;padding:0;border-color:#493355;background:#0a0d15e8; }
+.market-board-tools { display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #332a3c;background:#0d1019; }
+.market-board-tools .market-tabs { flex:1;border-bottom:0; }
+.market-board-tools>label { display:flex;align-items:center;gap:8px;padding-right:12px;color:#aaa0b1;font-size:.7rem; }
+.market-board-tools select { min-width:150px;padding:8px;border:1px solid #3b3344;border-radius:7px;background:#111520;color:#fff; }
 .market-tabs { display:flex;gap:4px;padding:8px;border-bottom:1px solid #332a3c;background:#0d1019; }
 .market-tabs button { display:flex;align-items:center;justify-content:center;gap:7px;min-width:130px;padding:11px 16px;border:1px solid transparent;border-radius:8px;background:transparent;color:#a9a1af;font-weight:750; }
 .market-tabs button span { display:grid;place-items:center;min-width:21px;height:20px;padding-inline:5px;border-radius:10px;background:#282330;color:#c9becf;font-size:.58rem; }
@@ -1289,6 +1293,12 @@ button.market-row:hover { background:#15121d; }
 .market-price strong,.market-price small { display:block; }
 .market-price strong { font-size:.9rem; }
 .market-price small { margin-top:4px;font-size:.58rem; }
+.market-chart { margin:18px 0;padding:14px;border:1px solid #392b45;border-radius:12px;background:#0a0d15; }
+.market-chart svg { display:block;width:100%;height:150px;color:#c866ff;overflow:visible; }
+.market-chart>div:last-child { display:flex;justify-content:space-between;color:#92899a;font-size:.66rem; }
+.market-chart>div:last-child strong { color:#fff; }
+.market-detail-actions { display:grid;gap:9px;margin-top:14px; }
+.mapping-state { padding:10px;border:1px solid #5a4430;border-radius:8px;color:#e7b75e;background:#1d160f; }
 .market-row>.icon { width:17px;color:#7f7187; }
 .market-row.unresolved { grid-template-columns:58px minmax(0,1fr) auto;background:#1b131a80; }
 .market-row.unresolved .market-card-copy em { color:#f0b74a; }
@@ -1332,6 +1342,8 @@ button.market-row:hover { background:#15121d; }
   .market-kpi { min-height:98px;padding:12px; }
   .market-kpi strong { font-size:1.05rem; }
   .market-tabs { overflow-x:auto; }
+  .market-board-tools { align-items:stretch;flex-direction:column; }
+  .market-board-tools>label { justify-content:space-between;padding:0 10px 10px; }
   .market-tabs button { flex:1;min-width:105px;padding-inline:10px; }
   .market-row { grid-template-columns:48px minmax(0,1fr) auto;gap:9px;padding-inline:7px; }
   .market-row>img,.market-art-empty { width:43px;height:61px; }

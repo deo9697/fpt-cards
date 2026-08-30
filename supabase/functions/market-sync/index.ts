@@ -9,7 +9,8 @@ const syncSecret=Deno.env.get('MARKET_SYNC_SECRET')||'';
 Deno.serve(async request=>{
   if(request.method!=='POST')return json({error:'method_not_allowed'},405);
   if(!supabaseUrl||!serviceKey)return json({error:'backend_not_configured'},503);
-  if(syncSecret&&request.headers.get('x-market-sync-secret')!==syncSecret)return json({error:'unauthorized'},401);
+  if(!syncSecret)return json({error:'sync_secret_not_configured'},503);
+  if(request.headers.get('x-market-sync-secret')!==syncSecret)return json({error:'unauthorized'},401);
   const payload=await request.json().catch(()=>({}));
   if(payload?.scheduled===true&&!isThreeInRome(new Date()))return json({ok:true,status:'skipped',reason:'outside_03_europe_rome'});
   const providers=[
@@ -29,31 +30,49 @@ async function syncProvider(provider:any){
   let requestCount=0,snapshots=0,failures=0;
   try{
     const targets=await rpc('market_sync_targets',{p_provider:provider.name})||[];
-    if(provider.name==='cardmarket'){await provider.load();requestCount+=2;}
+    if(provider.name==='cardmarket'){await provider.load();requestCount+=3;}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
-    for(const target of unique.values()){
-      if(!['resolved','manual'].includes(target.resolution_status)||!target.mapping_id){failures++;continue;}
+    const resolvedTargets=provider.name==='cardmarket'?await resolveCardmarketTargets(provider,[...unique.values()]):[...unique.values()];
+    const pendingSnapshots=[];
+    for(const target of resolvedTargets){
       try{
+        if(!['resolved','manual'].includes(target.resolution_status)||!target.mapping_id){failures++;continue;}
         const value=await provider.getCurrentPrice(target);requestCount+=provider.name==='cardtrader'?1:0;
         if(value.status!=='available')continue;
         const capturedAt=value.capturedAt||new Date().toISOString(),day=capturedAt.slice(0,10);
         for(const price of value.prices){
           const eur=value.currency==='EUR'?price.value:null;
-          await rest('market_price_snapshots','POST',{
+          pendingSnapshots.push({
             printing_id:target.printing_id,provider_mapping_id:target.mapping_id,provider:provider.name,price_type:price.type,
             original_currency:value.currency,original_price:price.value,normalized_currency:'EUR',normalized_price:eur,
             language:target.language||'',condition_reference:value.conditionReference||target.condition_reference||'',foil:target.foil,
             available_quantity:value.availableQuantity,sample_size:value.sampleSize,source_updated_at:value.sourceUpdatedAt||null,captured_at:capturedAt,
-            observation_key:`${target.mapping_id}:${day}`,metadata:{variantKey:target.variant_key||'default'}
-          },{'Prefer':'resolution=ignore-duplicates,return=minimal'});snapshots++;
+            observation_key:`${target.mapping_id}:${day}`,metadata:{variantKey:target.variant_key||'default',productUrl:target.provider_metadata?.productUrl||null}
+          });snapshots++;
         }
       }catch(error:any){failures++;await recordMappingError(target.mapping_id,error);}
     }
+    for(let index=0;index<pendingSnapshots.length;index+=250)await rest('market_price_snapshots','POST',pendingSnapshots.slice(index,index+250),{'Prefer':'resolution=ignore-duplicates,return=minimal'});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
     await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots}});
     return {provider:provider.name,status,targets:unique.size,snapshots,failures};
   }catch(error:any){await finish(runId,'failed',{request_count:requestCount,attempt_count:1,error_code:error?.code||'sync_failed',error_message:String(error?.message||error).slice(0,500)});return {provider:provider.name,status:'failed',error:String(error?.message||error)};}
+}
+
+async function resolveCardmarketTargets(provider:any,targets:any[]){
+  const bodies=[];
+  for(const target of targets){if(['resolved','manual'].includes(target.resolution_status)&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target)));}
+  const saved=[];
+  for(let index=0;index<bodies.length;index+=200){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_printings?on_conflict=printing_id,provider,variant_key`,{method:'POST',headers:{...headers(),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(bodies.slice(index,index+200))});if(!response.ok)throw new Error(`mapping cardmarket: ${response.status} ${await response.text()}`);saved.push(...await response.json());}
+  const byPrinting=new Map(saved.map((row:any)=>[row.printing_id,row]));return targets.map(target=>{const row:any=byPrinting.get(target.printing_id);return row?{...target,mapping_id:row.id,provider_product_id:row.provider_product_id,provider_expansion_id:row.provider_expansion_id,resolution_status:row.resolution_status,provider_metadata:row.provider_metadata,variant_key:row.variant_key}:target;});
+}
+function cardmarketResolutionBody(target:any,resolution:any){
+  const candidate=resolution.candidate||{},now=new Date().toISOString();
+  return {printing_id:target.printing_id,provider:'cardmarket',variant_key:'default',provider_product_id:candidate.providerProductId||candidate.provider_product_id||null,
+    provider_expansion_id:candidate.providerExpansionId||candidate.provider_expansion_id||null,language:target.language||'',condition_reference:'Price Guide Cardmarket',foil:target.foil,
+    edition:target.edition||'',resolution_status:resolution.status,confidence:resolution.confidence||0,resolved_at:resolution.status==='resolved'?now:null,last_checked_at:now,last_error:null,
+    provider_metadata:{productUrl:candidate.productUrl||null,productName:candidate.cardName||candidate.name||null,expansion:candidate.setName||candidate.expansion||null,rarity:candidate.rarity||null,evidence:resolution.evidence||null,candidateCount:resolution.candidates?.length||0}};
 }
 
 async function rpc(name:string,body:Record<string,unknown>){const response=await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`,{method:'POST',headers:headers(),body:JSON.stringify(body)});if(!response.ok)throw new Error(`${name}: ${response.status} ${await response.text()}`);const text=await response.text();return text?JSON.parse(text):null;}

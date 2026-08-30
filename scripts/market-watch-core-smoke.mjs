@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {CardTraderProvider,CardmarketPriceGuideProvider,resolveExactPrinting,parseDelimited} from '../market/providers.js';
+import {CardTraderProvider,CardmarketPriceGuideProvider,resolveExactPrinting,parseDelimited,parseCardmarketPayload,cardmarketNonSinglesUrl,resolveCardmarketPrinting} from '../market/providers.js';
 
 const exact={game:'yugioh',catalogCardId:'24224830',setCode:'DUDE-EN044',setName:'Duel Devastator',rarity:'Ultra Rare',language:'English',edition:'1st Edition',foil:true};
 const candidates=[
@@ -31,6 +31,8 @@ const current=await cardTrader.getCurrentPrice({providerBlueprintId:'123',condit
 assert.equal(calls,2);assert(waits.some(ms=>ms===10),'Retry-After non rispettato');assert.equal(current.availableQuantity,3);assert.equal(current.prices.find(row=>row.type==='lowest').value,3.9);assert.equal(current.prices.find(row=>row.type==='reference').value,4);
 
 const csv='idProduct;Name;Expansion ID\r\n10;Card A;5\r\n11;"Card; B";6';const parsed=parseDelimited(csv);assert.equal(parsed.length,2);assert.equal(parsed[1].Name,'Card; B');
+const catalogJson=JSON.stringify({createdAt:'2026-08-30T11:14:44+0200',products:[{idProduct:10,name:'Card A',idExpansion:5}]});assert.equal(parseCardmarketPayload(catalogJson,'products').rows[0].idProduct,10);assert.match(cardmarketNonSinglesUrl('https://downloads.s3.cardmarket.com/productCatalog/productList/products_singles_3.json'),/products_nonsingles_3\.json/);
+const cmResolution=resolveCardmarketPrinting({catalogCardId:'1',cardName:'Card A',setCode:'SET-EN001',setName:'Example Set',rarity:'Ultra Rare'},[{providerProductId:'10',cardName:'Card A',setName:'Example Set',rarity:'Ultra Rare'}]);assert.equal(cmResolution.status,'resolved');assert.equal(cmResolution.candidate.providerProductId,'10');
 const failingCm=new CardmarketPriceGuideProvider({catalogUrl:'https://downloads.s3.cardmarket.com/catalog.csv',priceGuideUrl:'https://downloads.s3.cardmarket.com/prices.csv',fetchImpl:async()=>new Response('down',{status:503})});
 await assert.rejects(()=>failingCm.load(),/Product Catalogue non disponibile/);
 
@@ -55,9 +57,11 @@ const sql=fs.readFileSync(new URL('../supabase-milestone-5-market-watch.sql',imp
 for(const required of ['add column if not exists printing_id uuid','market_provider_printings','market_price_snapshots','market_watch_items','market_alert_preferences','market_price_events','market_provider_sync_runs','market_latest_prices','market_monitored_printings','list_market_watch','list_deck_printing_options','set_deck_card_printing','detect_market_price_event_after_insert','resolution_status in (\'resolved\',\'ambiguous\',\'unresolved\',\'manual\')','unique (provider,observation_key,price_type)','absolute_threshold numeric(14,4) not null default 1','percentage_threshold numeric(8,4) not null default 8'])assert(sql.includes(required),`Migration Market Watch incompleta: ${required}`);
 assert(!/cron\.schedule|net\.http_post/i.test(sql),'Lo scheduler non deve essere attivato dalla migration');
 assert(sql.includes("cp.catalog_card_id=dc.catalog_card_id"),'La selezione printing del mazzo non verifica la carta esatta');
+const operational=fs.readFileSync(new URL('../supabase-milestone-5-1-market-watch-operational.sql',import.meta.url),'utf8');for(const required of ['list_market_price_history','price_30d','cardmarket_url','market_sync_targets'])assert(operational.includes(required),`Migration operativa incompleta: ${required}`);
 
 const edge=fs.readFileSync(new URL('../supabase/functions/market-sync/index.ts',import.meta.url),'utf8'),app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8'),styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8'),sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 for(const required of ['CARDTRADER_API_TOKEN','CARDMARKET_PRODUCT_CATALOG_URL','CARDMARKET_PRICE_GUIDE_URL','MARKET_SYNC_SECRET','begin_market_provider_sync'])assert(edge.includes(required),`Edge Function incompleta: ${required}`);
+for(const required of ['resolveCardmarketTargets','provider.resolvePrinting','provider_product_id','pendingSnapshots.slice'])assert(edge.includes(required),`Risoluzione Cardmarket non collegata: ${required}`);
 assert(!app.includes('CARDTRADER_API_TOKEN'),'Il secret CardTrader è finito nel frontend');
 for(const required of ["marketWatch.view()","marketWatch.bind(document)","marketWatch.load()","data-market-watch-add"])assert(app.includes(required),`UI Market Watch non integrata: ${required}`);
 assert(styles.includes('@media (max-width:600px)')&&styles.includes('.market-row'),'Layout mobile Market Watch assente');
