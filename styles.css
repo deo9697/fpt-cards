@@ -598,13 +598,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .market-mover-chart circle { fill: #d8ffe9; stroke: #35c97c; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .market-mover-chart.empty { display: grid; place-items: center; border: 1px dashed #5b7867; border-radius: 10px; }
 .market-movers-carousel.slides-1 .market-mover-slide { opacity: 1; transform: none; }
-.market-movers-carousel.slides-2 .market-mover-slide { animation: marketMoverCycleTwo 10s infinite both; }
+.market-movers-carousel.slides-2 .market-mover-slide { animation: marketMoverCycleTwo 10s infinite; }
 .market-movers-carousel.slides-2 .market-mover-slide:nth-child(2) { animation-delay: 5s; }
-.market-movers-carousel.slides-3 .market-mover-slide { animation: marketMoverCycleThree 15s infinite both; }
+.market-movers-carousel.slides-3 .market-mover-slide { animation: marketMoverCycleThree 15s infinite; }
 .market-movers-carousel.slides-3 .market-mover-slide:nth-child(2) { animation-delay: 5s; }
 .market-movers-carousel.slides-3 .market-mover-slide:nth-child(3) { animation-delay: 10s; }
-@keyframes marketMoverCycleTwo { 0%,43% { opacity:1;transform:translateX(0); } 49%,100% { opacity:0;transform:translateX(-18px); } }
-@keyframes marketMoverCycleThree { 0%,28% { opacity:1;transform:translateX(0); } 34%,100% { opacity:0;transform:translateX(-18px); } }
+@keyframes marketMoverCycleTwo { 0% { opacity:0;transform:translateX(18px); } 7%,43% { opacity:1;transform:translateX(0); } 50%,100% { opacity:0;transform:translateX(-18px); } }
+@keyframes marketMoverCycleThree { 0% { opacity:0;transform:translateX(18px); } 5%,28% { opacity:1;transform:translateX(0); } 34%,100% { opacity:0;transform:translateX(-18px); } }
 .loan-overview-panel { display: flex; min-height: 330px; flex-direction: column; }
 .duel-alert { display: flex; align-items: center; gap: 10px; margin: -2px 0 8px; padding: 9px 10px; border: 1px solid #d19c3550; border-radius: 7px; background: #c2811812; color: #efbd57; }
 .duel-alert .icon { flex: none; width: 18px; }
