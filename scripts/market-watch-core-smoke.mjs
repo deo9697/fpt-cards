@@ -40,7 +40,7 @@ const failingCm=new CardmarketPriceGuideProvider({catalogUrl:'https://downloads.
 await assert.rejects(()=>failingCm.load(),/Catalogo espansioni non disponibile|Product Catalogue non disponibile/);
 
 const storage=new Map();globalThis.localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
-const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload,positiveMovers,mapDashboardMovers}=await import('../js/market-watch.js');
+const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload,positiveMovers,mapDashboardMovers,buildMarketDecks}=await import('../js/market-watch.js');
 const now=Date.now(),fresh=new Date(now-3600000).toISOString();
 const data=mapPayload({items:[
   {printing_id:'p1',card_name:'A',sources:['owned','deck'],owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,providers:{cardtrader:{price:10,capturedAt:fresh}}},
@@ -52,6 +52,7 @@ const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{pr
 assert.equal(providerWarning({cardtrader:{price:12},cardmarket:{price:20}}),67);assert.equal(providerWarning({cardtrader:{price:19},cardmarket:{price:20}}),null);
 const movers=positiveMovers([{printingId:'a',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:12,price24h:10},{printingId:'a2',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:15,price24h:10},{printingId:'b',catalogCardId:'2',cardName:'B',sources:['owned'],referencePrice:5.5,price24h:5},{printingId:'c',catalogCardId:'3',cardName:'C',sources:['owned'],referencePrice:4,price24h:5}],3);assert.deepEqual(movers.map(item=>item.printingId),['a2','b'],'Le carte in crescita non sono ordinate/deduplicate correttamente');
 const dashboardMovers=mapDashboardMovers([{printingId:'p1',cardName:'A',referencePrice:12,baselinePrice:10,positiveChange:20,sparkline:[{label:'AVG30',price:8,order:1},{label:'TREND',price:12,order:4}]}]);assert.equal(dashboardMovers[0].sparkline.length,2);assert.equal(dashboardMovers[0].positiveChange,20);
+const groupedDecks=buildMarketDecks([{id:'d1',name:'Deck Box Market',deckTheme:'cyber-cyan',deckBoxTemplate:'cyber-core',cards:[{catalogCardId:'1',cardName:'A',section:'main',quantity:3,printingId:'p1'},{catalogCardId:'3',cardName:'Senza prezzo',section:'extra',quantity:1,printingId:null}]}],data.items,[{deckId:'d1',quantity:1}]);assert.equal(groupedDecks.length,1);assert.equal(groupedDecks[0].marketValue,30);assert.equal(groupedDecks[0].delta24,25);assert.equal(groupedDecks[0].unresolvedCount,1);assert.equal(groupedDecks[0].topMover.cardName,'A');
 
 const {DeckController}=await import('../js/decks.js');
 const deckState={game:'yugioh',currentUser:'me',decks:[{id:'d1',persisted:true,name:'Deck',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'1',cardName:'Carta',imageUrl:'',section:'main',quantity:1,printingId:null}]}],collection:{mine:[],team:[]}};
@@ -72,6 +73,7 @@ assert(!app.includes('CARDTRADER_API_TOKEN'),'Il secret CardTrader è finito nel
 for(const required of ["marketWatch.view()","marketWatch.bind(document)","marketWatch.load()","data-market-watch-add"])assert(app.includes(required),`UI Market Watch non integrata: ${required}`);
 assert(styles.includes('@media (max-width:600px)')&&styles.includes('.market-row'),'Layout mobile Market Watch assente');
 assert(sw.includes("'./js/market-watch.js'"),'Modulo Market Watch assente dalla cache PWA');
+assert(sw.includes("'./js/deck-box.js'"),'DeckBoxCard condivisa non inclusa nella cache PWA');
 
 console.log('PASS mapping printing esatto, ambiguo e set/rarità differenti');
 console.log('PASS provider unavailable, retry CardTrader e file Cardmarket non disponibile');

@@ -34,7 +34,7 @@ const fakeSupabaseSource = `(()=>{
   window.__authTest.getCollection=()=>collectionItems;
   const client={
     async rpc(name,args={}){
-      if(['list_team_loans','list_my_collection','list_team_collection','list_my_decks','list_market_watch'].includes(name)&&window.__authTest.syncDelay){window.__authTest.syncInFlight+=1;window.__authTest.syncMaxInFlight=Math.max(window.__authTest.syncMaxInFlight,window.__authTest.syncInFlight);await new Promise(resolve=>setTimeout(resolve,window.__authTest.syncDelay));window.__authTest.syncInFlight-=1;}
+      if(['list_team_loans','list_my_collection','list_team_collection','list_my_decks','list_my_decks_with_boxes','list_market_watch'].includes(name)&&window.__authTest.syncDelay){window.__authTest.syncInFlight+=1;window.__authTest.syncMaxInFlight=Math.max(window.__authTest.syncMaxInFlight,window.__authTest.syncInFlight);await new Promise(resolve=>setTimeout(resolve,window.__authTest.syncDelay));window.__authTest.syncInFlight-=1;}
       if(name==='list_login_members') return {data:members,error:null};
       if(name==='login_member'){
         window.__authTest.lastLoginSlug=args.p_slug||'';
@@ -46,11 +46,11 @@ const fakeSupabaseSource = `(()=>{
       if(name==='list_team_loans') return {data:loans,error:null};
       if(name==='list_my_collection') return {data:collectionItems.filter(item=>item.owner_slug===currentSlug),error:null};
       if(name==='list_team_collection') return {data:collectionItems.map(({quantity_owned,...item})=>item),error:null};
-      if(name==='list_my_decks') return {data:decks,error:null};
+      if(name==='list_my_decks'||name==='list_my_decks_with_boxes') return {data:decks,error:null};
       if(name==='list_market_watch') return {data:{items:[{printing_id:'team-printing',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',sources:['owned'],owned_quantity:3,reference_price:12,price_24h:10,price_7d:8,price_30d:7,latest_at:new Date().toISOString(),providers:{cardmarket:{price:12,type:'trend',capturedAt:new Date().toISOString()}}}],deckUnresolved:[],lastSync:new Date().toISOString()},error:null};
       if(name==='list_market_dashboard_movers') return {data:[{printingId:'team-printing',catalogCardId:'46986414',cardName:'Dark Magician',imageUrl:'https://images.ygoprodeck.com/images/cards/46986414.jpg',referencePrice:12,baselinePrice:10,positiveChange:20,sparkline:[{label:'AVG30',price:8,order:1},{label:'AVG7',price:10,order:2},{label:'TREND',price:12,order:4}]}],error:null};
       if(name==='list_market_price_history') return {data:[{provider:'cardmarket',price_type:'trend',price:8,captured_at:new Date(Date.now()-86400000).toISOString()},{provider:'cardmarket',price_type:'trend',price:12,captured_at:new Date().toISOString()}],error:null};
-      if(name==='save_deck'){const id=args.p_deck.id||'44444444-4444-4444-8444-444444444444',row={id,owner_slug:currentSlug,game:args.p_deck.game,name:args.p_deck.name,format:args.p_deck.format,cover_image_url:args.p_deck.cards[0]?.imageUrl||'',cards:args.p_deck.cards.map(card=>({catalog_card_id:card.catalogCardId,card_name:card.cardName,image_url:card.imageUrl,ban_tcg:card.banTcg||'',section:card.section,quantity:card.quantity}))};decks=decks.filter(deck=>deck.id!==id);decks.push(row);return {data:id,error:null};}
+      if(name==='save_deck'||name==='save_deck_with_box'){const id=args.p_deck.id||'44444444-4444-4444-8444-444444444444',row={id,owner_slug:currentSlug,game:args.p_deck.game,name:args.p_deck.name,format:args.p_deck.format,signature_card_id:args.p_deck.signatureCardId||null,deck_theme:args.p_deck.deckTheme||'arcane-purple',deck_box_template:args.p_deck.deckBoxTemplate||'procedural',cover_image_url:args.p_deck.cards[0]?.imageUrl||'',cards:args.p_deck.cards.map(card=>({catalog_card_id:card.catalogCardId,card_name:card.cardName,image_url:card.imageUrl,ban_tcg:card.banTcg||'',section:card.section,quantity:card.quantity,printing_id:card.printingId||null}))};decks=decks.filter(deck=>deck.id!==id);decks.push(row);return {data:id,error:null};}
       if(name==='delete_deck'){decks=decks.filter(deck=>deck.id!==args.p_id);return {data:null,error:null};}
       if(name==='lookup_card_printings_by_set_code') return {data:collectionItems.filter(item=>item.game===args.p_game&&item.set_code===args.p_set_code).map(item=>({printing_id:item.printing_id,game:item.game,catalog_card_id:item.catalog_card_id,card_name:item.card_name,set_code:item.set_code,set_name:item.set_name,rarity:item.rarity,image_url:item.image_url})),error:null};
       if(name==='save_collection_batch'){
@@ -228,8 +228,27 @@ async function run() {
   await evaluate(`[...document.querySelectorAll('[data-deck-result]')].find(button=>button.textContent.includes('Stardust Dragon')).click()`);
   assert(await evaluate(`document.querySelector('.deck-zone.main').textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra').textContent.includes('Stardust Dragon')`),'Classificazione automatica Main/Extra errata');
   assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Bollino Limitata TCG Advanced assente');
+  await evaluate(`document.querySelector('[data-deck-gallery]').click()`);
+  assert(await evaluate(`(()=>{const visual=document.querySelector('.deck-box-visual:not(.uses-template)'),image=visual?.querySelector('.deck-box-signature-art'),overlay=visual?.querySelector('i');if(!visual||!image||!overlay)return false;const imageBox=image.getBoundingClientRect(),visualBox=visual.getBoundingClientRect();return Math.abs(imageBox.width-visualBox.width)<5&&Math.abs(imageBox.height-visualBox.height)<5&&getComputedStyle(overlay).inset==='0px'})()`),'Artwork signature non aderisce alla faccia della Deck Box');
+  await evaluate(`[...document.querySelectorAll('.deck-box-card')].find(card=>card.textContent.includes('Nuovo mazzo')).click()`);
+  await evaluate(`document.querySelector('[data-deck-cover-open]').click()`);
+  await waitFor(`document.querySelectorAll('[data-deck-box-template]').length===4`,'Selettore modelli Deck Box non aperto');
+  assert(await evaluate(`[...document.querySelectorAll('.deck-template-options img')].filter(image=>image.src.includes('/assets/deck-boxes/')).length===3`),'Le tre immagini Deck Box non sono incorporate nel selettore');
+  await evaluate(`document.querySelector('[data-deck-box-template="infernal-dragon"]').click()`);
+  assert(await evaluate(`!document.querySelector('.deck-cover-picker')&&document.querySelector('[data-deck-theme]').value==='infernal-red'&&Boolean(document.querySelector('.deck-builder'))`),'La scelta del modello non torna automaticamente al mazzo');
+  await evaluate(`document.querySelector('[data-deck-cover-open]').click()`);
+  assert(await evaluate(`document.querySelector('[data-deck-box-template="infernal-dragon"]').classList.contains('active')`),'Modello Deck Box selezionato non conservato');
+  await evaluate(`document.querySelector('.deck-cover-back').click()`);
+  assert(await evaluate(`!document.querySelector('.deck-cover-picker')&&Boolean(document.querySelector('.deck-builder'))`),'Il pulsante Torna al mazzo non chiude la personalizzazione');
   await evaluate(`(()=>{const key='fpt-cards-deck-drafts-v1',drafts=JSON.parse(localStorage.getItem(key)||'[]');for(const deck of drafts)for(const card of deck.cards||[])delete card.banTcg;localStorage.setItem(key,JSON.stringify(drafts))})()`);
   await cdp.call('Page.reload',{ignoreCache:true});
+  await waitFor(`[...document.querySelectorAll('.deck-box-card')].some(card=>card.textContent.includes('Nuovo mazzo'))`,'Hard refresh non ha recuperato la bozza nella gallery');
+  assert(await evaluate(`document.querySelector('.deck-box-card')&&document.querySelector('.deck-gallery-hero h1')?.textContent==='Scegli il tuo mazzo'&&!document.querySelector('[data-deck-search]')`),'Gallery Mazzi non separata dall’editor');
+  assert(await evaluate(`document.querySelector('.deck-box-card[data-deck-template="infernal-dragon"] img.deck-box-template-art')?.src.includes('/assets/deck-boxes/infernal-dragon.png')`),'Hard refresh ha perso il modello Deck Box selezionato');
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width:390, height:844, deviceScaleFactor:1, mobile:true, screenWidth:390, screenHeight:844 });
+  assert(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth+1&&getComputedStyle(document.querySelector('.deck-box-grid')).gridTemplateColumns.split(' ').length===1`),'Gallery Mazzi non responsive a 390px');
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
+  await evaluate(`[...document.querySelectorAll('.deck-box-card')].find(card=>card.textContent.includes('Nuovo mazzo')).click()`);
   await waitFor(`document.querySelector('.deck-zone.main')?.textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra')?.textContent.includes('Stardust Dragon')`,'Hard refresh ha cancellato la bozza del mazzo');
   assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Hard refresh ha perso il bollino banlist TCG');
   console.log('PASS Mazzi sezioni simultanee + Extra automatico + recupero hard refresh');
@@ -389,7 +408,10 @@ async function run() {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width:viewport.width, height:viewport.height, deviceScaleFactor:1, mobile:true, screenWidth:viewport.width, screenHeight:viewport.height });
     const scannerLayout=await evaluate(`(()=>{const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return{top:value.top,bottom:value.bottom,left:value.left,right:value.right,width:value.width,height:value.height}};return{innerWidth,innerHeight,roi:rect('.live-roi'),stats:rect('.live-session-stats'),zoom:rect('[data-layout-zoom]'),controls:rect('.live-controls'),buttons:[...document.querySelectorAll('.live-controls button')].map(button=>button.getBoundingClientRect().height),scrollWidth:document.documentElement.scrollWidth}})()`);
     assert(scannerLayout.roi.height<=52&&scannerLayout.roi.width<scannerLayout.innerWidth*.82,`ROI troppo dominante (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
-    assert(scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&scannerLayout.stats.bottom<=scannerLayout.zoom.top&&scannerLayout.zoom.bottom<=scannerLayout.controls.top,`Gerarchia scanner sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    const hierarchyOk=viewport.width>viewport.height
+      ? scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&Math.abs(scannerLayout.stats.top-scannerLayout.zoom.top)<2&&scannerLayout.stats.bottom<=scannerLayout.controls.top
+      : scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&scannerLayout.stats.bottom<=scannerLayout.zoom.top&&scannerLayout.zoom.bottom<=scannerLayout.controls.top;
+    assert(hierarchyOk,`Gerarchia scanner sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
     assert(scannerLayout.controls.bottom<=scannerLayout.innerHeight&&scannerLayout.buttons.length===4&&scannerLayout.buttons.every(height=>height>=48)&&scannerLayout.scrollWidth===scannerLayout.innerWidth,`Controlli scanner tagliati (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
   }
   await evaluate(`(()=>{document.querySelector('[data-layout-zoom]')?.remove();document.querySelector('[data-layout-refocus]')?.remove();document.querySelector('[data-scan-torch]').classList.add('hidden');document.querySelector('[data-scan-switch-camera]').classList.add('hidden')})()`);

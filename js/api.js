@@ -20,11 +20,12 @@ export const api = {
   async loans() { ensure(); return unwrap(await client.rpc('list_team_loans', { p_token:token() })); },
   async myCollection() { ensure(); return unwrap(await client.rpc('list_my_collection', { p_token:token() })); },
   async teamCollection() { ensure(); return unwrap(await client.rpc('list_team_collection', { p_token:token() })); },
-  async decks() { ensure(); return unwrap(await client.rpc('list_my_decks', { p_token:token() })); },
+  async decks() { ensure(); const args={p_token:token()},result=await client.rpc('list_my_decks_with_boxes',args);if(!result.error)return result.data;if(!['PGRST202','42883'].includes(result.error.code))throw result.error;return unwrap(await client.rpc('list_my_decks',args)); },
   async saveDeck(deck) {
     ensure();
     const id=/^[0-9a-f-]{36}$/i.test(String(deck.id||''))?deck.id:null;
-    return unwrap(await client.rpc('save_deck', { p_token:token(),p_deck:{id,name:deck.name,game:deck.game,format:deck.format,cards:deck.cards} }));
+    const args={p_token:token(),p_deck:{id,name:deck.name,game:deck.game,format:deck.format,signatureCardId:deck.signatureCardId||null,deckTheme:deck.deckTheme||'arcane-purple',deckBoxTemplate:deck.deckBoxTemplate||'procedural',cards:deck.cards}},result=await client.rpc('save_deck_with_box',args);
+    if(!result.error)return result.data;if(!['PGRST202','42883'].includes(result.error.code))throw result.error;return {id:unwrap(await client.rpc('save_deck',args)),deckBoxPersisted:false};
   },
   async deleteDeck(id) { ensure(); return unwrap(await client.rpc('delete_deck', { p_token:token(),p_id:id })); },
   async deckPrintingOptions(deckId, catalogCardId) {

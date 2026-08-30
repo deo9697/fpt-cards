@@ -54,7 +54,7 @@ const fastScan = new FastScanController({
   onRoute:mode=>setFastScanRoute(mode)
 });
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
-const marketWatch = new MarketWatchController({api,getGame:()=>state.game,onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
+const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
@@ -79,7 +79,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
 
 function render(force = false) {
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
