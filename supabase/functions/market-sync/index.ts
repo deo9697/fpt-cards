@@ -54,7 +54,7 @@ async function syncProvider(provider:any,{recoverStale=false}={}){
         }
       }catch(error:any){failures++;await recordMappingError(target.mapping_id,error);}
     }
-    for(let index=0;index<pendingSnapshots.length;index+=250)await rest('market_price_snapshots','POST',pendingSnapshots.slice(index,index+250),{'Prefer':'resolution=ignore-duplicates,return=minimal'});
+    for(let index=0;index<pendingSnapshots.length;index+=250)await rest('market_price_snapshots?on_conflict=provider,observation_key,price_type','POST',pendingSnapshots.slice(index,index+250),{'Prefer':'resolution=ignore-duplicates,return=minimal'});
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
     await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots}});

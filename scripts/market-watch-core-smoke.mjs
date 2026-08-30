@@ -68,7 +68,7 @@ const operational=fs.readFileSync(new URL('../supabase-milestone-5-1-market-watc
 
 const edge=fs.readFileSync(new URL('../supabase/functions/market-sync/index.ts',import.meta.url),'utf8'),app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8'),styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8'),sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 for(const required of ['CARDTRADER_API_TOKEN','CARDMARKET_PRODUCT_CATALOG_URL','CARDMARKET_PRICE_GUIDE_URL','MARKET_SYNC_SECRET','begin_market_provider_sync','recoverStale','manual_recovery'])assert(edge.includes(required),`Edge Function incompleta: ${required}`);
-for(const required of ['resolveCardmarketTargets','provider.resolvePrinting','provider_product_id','pendingSnapshots.slice'])assert(edge.includes(required),`Risoluzione Cardmarket non collegata: ${required}`);
+for(const required of ['resolveCardmarketTargets','provider.resolvePrinting','provider_product_id','pendingSnapshots.slice','on_conflict=provider,observation_key,price_type'])assert(edge.includes(required),`Risoluzione Cardmarket non collegata: ${required}`);
 assert(!app.includes('CARDTRADER_API_TOKEN'),'Il secret CardTrader è finito nel frontend');
 for(const required of ["marketWatch.view()","marketWatch.bind(document)","marketWatch.load()","data-market-watch-add"])assert(app.includes(required),`UI Market Watch non integrata: ${required}`);
 assert(styles.includes('@media (max-width:600px)')&&styles.includes('.market-row'),'Layout mobile Market Watch assente');
