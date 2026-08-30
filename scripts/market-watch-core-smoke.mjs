@@ -55,7 +55,7 @@ const dashboardMovers=mapDashboardMovers([{printingId:'p1',cardName:'A',referenc
 
 const {DeckController}=await import('../js/decks.js');
 const deckState={game:'yugioh',currentUser:'me',decks:[{id:'d1',persisted:true,name:'Deck',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'1',cardName:'Carta',imageUrl:'',section:'main',quantity:1,printingId:null}]}],collection:{mine:[],team:[]}};
-const deckController=new DeckController({api:{deckPrintingOptions:async()=>[],setDeckCardPrinting:async()=>{}},getState:()=>deckState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});deckController.activeId='d1';assert(deckController.view().includes('Printing da selezionare'));
+const deckController=new DeckController({api:{deckPrintingOptions:async()=>[],setDeckCardPrinting:async()=>{}},getState:()=>deckState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});deckController.activeId='d1';assert(!deckController.view().includes('Printing da selezionare'),'Il deck builder non deve mostrare lo stato printing del Market Watch');
 await deckController.openPrintingPicker('1','main');assert.equal(deckController.printingPicker.options.length,0);
 
 const sql=fs.readFileSync(new URL('../supabase-milestone-5-market-watch.sql',import.meta.url),'utf8');

@@ -1372,9 +1372,6 @@ button.market-row:hover { background:#15121d; }
 .provider-price-list em { grid-column:1/-1;color:#948a99;font-size:.56rem;font-style:normal; }
 .provider-warning { display:flex;align-items:center;gap:8px;padding:11px;border:1px solid #8d6439;border-radius:8px;background:#3d2718;color:#ffc46e;font-size:.65rem; }
 .provider-warning .icon { flex:none;width:16px; }
-.deck-printing-status { width:100%;overflow:hidden;margin-top:3px;padding:4px 5px;border:1px solid #493554;border-radius:5px;background:#15101c;color:#b8a9c0;font-size:.5rem;text-overflow:ellipsis;white-space:nowrap; }
-.deck-printing-status.unresolved { border-color:#8b633a;background:#2a1c11;color:#f4bd62; }
-.deck-printing-status.resolved { border-color:#3f7959;background:#10241a;color:#7bd99a; }
 .deck-printing-picker { width:min(620px,100%); }
 .deck-printing-loading { display:flex;align-items:center;justify-content:center;gap:10px;min-height:150px;color:var(--muted); }
 .deck-printing-options { display:grid;gap:7px;max-height:55vh;overflow:auto;margin-top:16px; }

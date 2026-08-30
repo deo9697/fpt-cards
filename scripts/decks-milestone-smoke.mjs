@@ -40,6 +40,17 @@ assert.equal(report.rows.length,1);assert.equal(report.rows[0].missing,2);
 assert.equal(report.rows[0].best.ownerSlug,'bob','non seleziona il proprietario con più copie');
 assert.equal(report.rows[0].best.quantity,2);assert.equal(report.requestable,1);
 
+const repairedIdentityReport=deckAvailability({cards:[
+  {catalogCardId:'94145021',cardName:'Droll & Lock Bird',section:'main',quantity:1},
+  {catalogCardId:'73642296',cardName:'Ghost Belle & Haunted Mansion',section:'main',quantity:1}
+]},{mine:[
+  {id:'droll-old',catalogCardId:'97973387',cardName:'Droll & Lock Bird',quantityAvailable:1},
+  {id:'ghost-old',catalogCardId:'',cardName:'Ghost Belle & Haunted Mansion',quantityAvailable:1},
+  {id:'wrong-card',catalogCardId:'94145021',cardName:'Una carta diversa',quantityAvailable:9}
+],team:[]},'me');
+assert.equal(repairedIdentityReport.percent,100,'ID catalogo legacy impedisce il match Droll/Ghost Belle per nome esatto');
+assert.equal(repairedIdentityReport.rows.length,0,'carte possedute con ID legacy risultano mancanti');
+
 const uiState={game:'yugioh',currentUser:'me',decks:[{id:'deck-1',persisted:true,name:'Control Test',format:'TCG Avanzato',game:'yugioh',cover:'one.jpg',cards:deck.cards}],collection};
 const controller=new DeckController({getState:()=>uiState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});controller.activeId='deck-1';const html=controller.view();
 for(const required of ['Control Test','Main Deck','Extra Deck','Side Deck','60% pronto','Bob ne ha 2','data-deck-request="1"','Richiedi tutte le carte mancanti'])assert(html.includes(required),`UI Mazzi incompleta: ${required}`);
@@ -55,6 +66,7 @@ const legacyState={game:'yugioh',currentUser:'legacy-owner',decks:[],collection:
 assert.equal(legacyState.decks[0].cards[0].banTcg,'limited','mazzo esistente non aggiornato con Limited');
 assert.equal(legacyState.decks[0].cards[1].banTcg,'semi-limited','mazzo esistente non aggiornato con Semi-Limited');
 const legacyHtml=legacyController.view();assert(legacyHtml.includes('deck-ban-badge limited')&&legacyHtml.includes('deck-ban-badge semi-limited'),'bollini retroattivi non renderizzati');
+assert(!legacyHtml.includes('Printing da selezionare')&&!legacyHtml.includes('deck-printing-status'),'Il deck builder mostra ancora dettagli printing del Market Watch');
 
 const sql=fs.readFileSync(new URL('../supabase-milestone-4-decks.sql',import.meta.url),'utf8');
 for(const required of ['create table if not exists public.decks','create table if not exists public.deck_cards','ban_tcg','deck_cards_ban_tcg_check','public.session_member(p_token)','where d.owner_slug=me','public.save_deck','public.delete_deck','on delete cascade','grant execute'])assert(sql.includes(required),`Migrazione mazzi incompleta: ${required}`);
