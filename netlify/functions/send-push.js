@@ -30,8 +30,10 @@ exports.handler = async event => {
 };
 
 function recipientFor(type, record, old) {
-  if (type === 'INSERT' && record.status === 'pending') return { slug:record.borrower_slug, body:`${record.owner_slug} ti ha prestato ${record.quantity}× ${record.card_name}` };
-  if (type === 'UPDATE' && record.status === 'return_pending' && old.status !== 'return_pending') return { slug:record.owner_slug, body:`${record.borrower_slug} ha segnalato la restituzione di ${record.card_name}` };
+  const names = { daniele:'Daniele', 'cristian-arlia':'Cristian Arlia', 'cristian-spadafora':'Cristian Spadafora', cristofer:'Cristofer' };
+  if (type === 'INSERT' && record.status === 'requested') return { slug:record.owner_slug, body:`${names[record.borrower_slug] || record.borrower_slug} ti richiede ${record.requested_quantity || record.quantity}× ${record.card_name}` };
+  if (type === 'INSERT' && record.status === 'pending') return { slug:record.borrower_slug, body:`${names[record.owner_slug] || record.owner_slug} ti ha prestato ${record.quantity}× ${record.card_name}` };
+  if (type === 'UPDATE' && record.status === 'return_pending' && old.status !== 'return_pending') return { slug:record.owner_slug, body:`${names[record.borrower_slug] || record.borrower_slug} ha segnalato la restituzione di ${record.card_name}` };
   return null;
 }
 function response(statusCode, body) { return { statusCode, headers:{ 'content-type':'application/json' }, body:JSON.stringify({ message:body }) }; }

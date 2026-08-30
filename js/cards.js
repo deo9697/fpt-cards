@@ -3,6 +3,9 @@ const SET_ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardsetsinfo.php';
 const cache = new Map();
 const identityCache = new Map();
 const printingCache = new Map();
+const TCG_BANLIST_CACHE_KEY = 'fpt-cards-tcg-banlist-v1';
+const TCG_BANLIST_MAX_AGE = 6 * 60 * 60 * 1000;
+let tcgBanlistRequest;
 
 export async function searchCards(query, game = 'yugioh') {
   if (game === 'onepiece') return searchOnePieceCards(query);
@@ -149,17 +152,21 @@ async function cardsById(id) {
   const value = String(id || '').trim();
   if (!/^\d{5,10}$/.test(value)) return [];
   if (identityCache.has(value)) return identityCache.get(value);
-  const [italianCards, englishCards] = await Promise.all([
+  const request = Promise.all([
     requestCards({ id:value, language:'it' }),
     requestCards({ id:value })
-  ]);
-  const unique = new Map();
-  [...italianCards, ...englishCards]
-    .filter(card => String(card.id) === value)
-    .map(mapCard)
-    .forEach(card => unique.set(normalizeName(card.name), card));
-  const candidates = [...unique.values()];
+  ]).then(([italianCards, englishCards]) => {
+    const unique = new Map();
+    [...italianCards, ...englishCards]
+      .filter(card => String(card.id) === value)
+      .map(mapCard)
+      .forEach(card => unique.set(normalizeName(card.name), card));
+    return [...unique.values()];
+  });
+  identityCache.set(value, request);
+  const candidates = await request;
   if (candidates.length) identityCache.set(value, candidates);
+  else identityCache.delete(value);
   return candidates;
 }
 
@@ -231,6 +238,7 @@ function mapCard(card) {
     // come immagine della carta nelle liste o nei dati persistenti.
     image: artwork.image_url_small || artwork.image_url || artwork.image_url_cropped || '',
     fullImage: artwork.image_url || artwork.image_url_small || artwork.image_url_cropped || '',
+    banTcg: normalizeTcgBanStatus(card.banlist_info?.ban_tcg),
     imageIds: (card.card_images || []).map(image => String(image.id || '')).filter(Boolean),
     printings: (card.card_sets || []).map(printing => ({
       setCode: printing.set_code || '',
@@ -238,6 +246,49 @@ function mapCard(card) {
       rarity: printing.set_rarity || ''
     }))
   };
+}
+
+export function normalizeTcgBanStatus(value) {
+  const status = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (status === 'banned' || status === 'forbidden') return 'forbidden';
+  if (status === 'limited') return 'limited';
+  if (status === 'semilimited') return 'semi-limited';
+  return '';
+}
+
+export async function tcgBanlistStatuses() {
+  const cached = readTcgBanlistCache();
+  if (cached) return cached;
+  if (tcgBanlistRequest) return tcgBanlistRequest;
+  tcgBanlistRequest = (async () => {
+    try {
+      const response = await fetch(`${ENDPOINT}?banlist=tcg`);
+      if (!response.ok) return null;
+      const rows = (await response.json()).data || [];
+      const statuses = {};
+      for (const card of rows) {
+        const status = normalizeTcgBanStatus(card.banlist_info?.ban_tcg);
+        if (status) statuses[String(card.id)] = status;
+      }
+      writeTcgBanlistCache(statuses);
+      return statuses;
+    } catch { return null; }
+    finally { tcgBanlistRequest = null; }
+  })();
+  return tcgBanlistRequest;
+}
+
+function readTcgBanlistCache() {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const cached = JSON.parse(localStorage.getItem(TCG_BANLIST_CACHE_KEY) || 'null');
+    return cached && Date.now() - Number(cached.updatedAt || 0) < TCG_BANLIST_MAX_AGE && cached.statuses && typeof cached.statuses === 'object' ? cached.statuses : null;
+  } catch { return null; }
+}
+
+function writeTcgBanlistCache(statuses) {
+  if (typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(TCG_BANLIST_CACHE_KEY, JSON.stringify({ updatedAt:Date.now(), statuses })); } catch {}
 }
 
 export function normalizeCardImageUrl(url) {

@@ -18,11 +18,21 @@ export function normalizeSetCode(raw) {
 
 export function setCodeCandidates(raw,limit=24) {
   const base=normalizeSetCode(raw);if(!base.valid)return[];
-  const output=[{code:base.code,corrected:false,ambiguous:false}];
+  const variants=[];
+  const numericTail=correctNumericTailZeros(base.code);
+  if(numericTail&&numericTail!==base.code)variants.push({code:numericTail,corrected:true,ambiguous:true,confusion:'O/0 numeric-tail',priority:100});
+  variants.push(...edgeDeletionVariants(base.code,60));
+  if(numericTail)variants.push(...edgeDeletionVariants(numericTail,80));
   const indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0).slice(0,6);
-  for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))output.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`});if(output.length>=limit)break;}
+  for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,priority:confusionPriority(base.code,index,replacement)});}
+  variants.sort((left,right)=>right.priority-left.priority);
+  const output=[{code:base.code,corrected:false,ambiguous:false},...variants.map(({priority,...item})=>item)];
   return [...new Map(output.map(item=>[item.code,item])).values()].slice(0,limit);
 }
+
+function correctNumericTailZeros(code){const [prefix,suffix]=code.split('-');if(!/^(?:IT|EN|DE|FR|SP|PT)[A-Z0-9]{2,8}$/.test(suffix))return'';const language=suffix.slice(0,2),tail=suffix.slice(2),corrected=tail.replace(/O/g,'0');return corrected!==tail?`${prefix}-${language}${corrected}`:'';}
+function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali`,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali`,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
+function confusionPriority(code,index,replacement){const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<2&&/[A-Z]/.test(replacement))return 20;return 10;}
 
 export function classifyPrintingMatch({normalized,matches=[],corrected=false,catalogMismatch=false,consensus=0,ocrConfidence=0,manual=false}) {
   if(!normalized?.valid||catalogMismatch)return {status:catalogMismatch?'needs_review':'not_found',matches};

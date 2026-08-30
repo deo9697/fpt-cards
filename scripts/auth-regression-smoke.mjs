@@ -28,12 +28,13 @@ const loan = {
 const fakeSupabaseSource = `(()=>{
   const members=${JSON.stringify(members)};
   const loans=${JSON.stringify([loan])};
-  let collectionItems=[{id:'team-item',printing_id:'team-printing',owner_slug:'first-access',owner_name:'First Access',game:'yugioh',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',language:'Italiano',condition:'Near Mint',edition:'',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',quantity_owned:3,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:3,legacy_ambiguous:false,updated_at:new Date().toISOString()}];
+  let collectionItems=[{id:'team-item',printing_id:'team-printing',owner_slug:'first-access',owner_name:'First Access',game:'yugioh',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',language:'Italiano',condition:'Near Mint',edition:'',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',quantity_owned:3,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:3,legacy_ambiguous:false,updated_at:new Date().toISOString()}];let decks=[];
   let currentSlug='existing-member';
-  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,holdCreate:false};
+  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,holdCreate:false,syncDelay:0,syncInFlight:0,syncMaxInFlight:0};
   window.__authTest.getCollection=()=>collectionItems;
   const client={
     async rpc(name,args={}){
+      if(['list_team_loans','list_my_collection','list_team_collection','list_my_decks','list_market_watch'].includes(name)&&window.__authTest.syncDelay){window.__authTest.syncInFlight+=1;window.__authTest.syncMaxInFlight=Math.max(window.__authTest.syncMaxInFlight,window.__authTest.syncInFlight);await new Promise(resolve=>setTimeout(resolve,window.__authTest.syncDelay));window.__authTest.syncInFlight-=1;}
       if(name==='list_login_members') return {data:members,error:null};
       if(name==='login_member'){
         window.__authTest.lastLoginSlug=args.p_slug||'';
@@ -45,6 +46,10 @@ const fakeSupabaseSource = `(()=>{
       if(name==='list_team_loans') return {data:loans,error:null};
       if(name==='list_my_collection') return {data:collectionItems.filter(item=>item.owner_slug===currentSlug),error:null};
       if(name==='list_team_collection') return {data:collectionItems.map(({quantity_owned,...item})=>item),error:null};
+      if(name==='list_my_decks') return {data:decks,error:null};
+      if(name==='list_market_watch') return {data:{items:[],deckUnresolved:[],lastSync:null},error:null};
+      if(name==='save_deck'){const id=args.p_deck.id||'44444444-4444-4444-8444-444444444444',row={id,owner_slug:currentSlug,game:args.p_deck.game,name:args.p_deck.name,format:args.p_deck.format,cover_image_url:args.p_deck.cards[0]?.imageUrl||'',cards:args.p_deck.cards.map(card=>({catalog_card_id:card.catalogCardId,card_name:card.cardName,image_url:card.imageUrl,ban_tcg:card.banTcg||'',section:card.section,quantity:card.quantity}))};decks=decks.filter(deck=>deck.id!==id);decks.push(row);return {data:id,error:null};}
+      if(name==='delete_deck'){decks=decks.filter(deck=>deck.id!==args.p_id);return {data:null,error:null};}
       if(name==='lookup_card_printings_by_set_code') return {data:collectionItems.filter(item=>item.game===args.p_game&&item.set_code===args.p_set_code).map(item=>({printing_id:item.printing_id,game:item.game,catalog_card_id:item.catalog_card_id,card_name:item.card_name,set_code:item.set_code,set_name:item.set_name,rarity:item.rarity,image_url:item.image_url})),error:null};
       if(name==='save_collection_batch'){
         window.__authTest.lastBatch=args.p_items;
@@ -94,9 +99,9 @@ const server = http.createServer((req, res) => {
   if (requestPath === '/test-cardinfo') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     const blueEyes={id:89631139,name:'Blue-Eyes White Dragon',type:'Normal Monster',card_images:[{image_url:`http://127.0.0.1:${port}/icon-512.png`,image_url_small:`http://127.0.0.1:${port}/icon-192.png`,image_url_cropped:`http://127.0.0.1:${port}/assets/fpt-card-hero.png`}],card_sets:[{set_code:'SDK-001',set_name:'Starter Deck Kaiba',set_rarity:'Ultra Rare'},{set_code:'LOB-001',set_name:'Legend of Blue Eyes',set_rarity:'Ultra Rare'}]};
-    const darkMagician={id:46986414,name:'Dark Magician',type:'Normal Monster',card_images:[{id:46986414,image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',image_url_small:'https://images.ygoprodeck.com/images/cards_small/46986414.jpg',image_url_cropped:'https://images.ygoprodeck.com/images/cards_cropped/46986414.jpg'}],card_sets:[{set_code:'SDY-006',set_name:'Starter Deck Yugi',set_rarity:'Ultra Rare'}]};
+    const darkMagician={id:46986414,name:'Dark Magician',type:'Normal Monster',card_images:[{id:46986414,image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',image_url_small:'https://images.ygoprodeck.com/images/cards_small/46986414.jpg',image_url_cropped:'https://images.ygoprodeck.com/images/cards_cropped/46986414.jpg'}],card_sets:[{set_code:'SDY-006',set_name:'Starter Deck Yugi',set_rarity:'Ultra Rare'}]};const stardust={id:44508094,name:'Stardust Dragon',type:'Synchro Monster',banlist_info:{ban_tcg:'Limited'},card_images:[{id:44508094,image_url:'https://images.ygoprodeck.com/images/cards/44508094.jpg',image_url_small:'https://images.ygoprodeck.com/images/cards_small/44508094.jpg'}],card_sets:[]};
     const query=(requestUrl.searchParams.get('name')||requestUrl.searchParams.get('fname')||'').toLowerCase();
-    const data=query.includes('dark')?[darkMagician]:query.includes('blue')?[blueEyes]:[blueEyes,darkMagician];
+    const data=query.includes('dark')?[darkMagician]:query.includes('blue')?[blueEyes]:query.includes('stardust')?[stardust]:[blueEyes,darkMagician,stardust];
     return res.end(JSON.stringify({data}));
   }
   const relative = requestPath === '/' ? 'index.html' : requestPath.slice(1);
@@ -151,7 +156,7 @@ async function waitForUrl(url, attempts = 80) {
 async function run() {
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   const profile = path.join(os.tmpdir(), `fpt-auth-smoke-${Date.now()}`);
-  browser = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-first-run', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio:'ignore', windowsHide:true });
+  browser = spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-extensions', '--no-first-run', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio:'ignore', windowsHide:true });
   await waitForUrl(`http://127.0.0.1:${debugPort}/json/version`);
   const tab = await (await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent('about:blank')}`, { method:'PUT' })).json();
   const ws = new WebSocket(tab.webSocketDebuggerUrl);
@@ -192,14 +197,39 @@ async function run() {
   console.log('PASS membro esistente + PIN errato');
 
   await evaluate(`window.__authTest.wrongPinMode=false`);
+  await evaluate(`window.__authTest.syncDelay=120;window.__authTest.syncMaxInFlight=0`);
   await submitPin('1234');
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Login con PIN corretto non completato');
+  await waitFor(`window.__authTest.syncMaxInFlight>=4`,'Prestiti, raccolta e mazzi non vengono caricati in parallelo');
+  await waitFor(`window.__authTest.syncInFlight===0`,'Sincronizzazione iniziale non completata');
+  await evaluate(`window.__authTest.syncDelay=0`);
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
   const identityCheck = await evaluate(`import('./js/cards.js').then(async cards=>({fuzzy:await cards.findCard('Imaginary Dark'),valid:await cards.verifyCardIdentity('46986414','Dark Magician'),invalid:await cards.verifyCardIdentity('89631139','Dark Magician')}))`);
   assert(identityCheck.fuzzy===null && identityCheck.valid===true && identityCheck.invalid===false, `Resolver identità carta non sicuro: ${JSON.stringify(identityCheck)}`);
   assert(await evaluate(`document.querySelector('.featured-card-art img')?.src.endsWith('/images/cards/46986414.jpg')`), 'URL canonico non derivato dall’ID catalogo');
   console.log('PASS corrispondenza esatta nome/ID/immagine + quarantena legacy');
   console.log('PASS membro esistente + PIN corretto');
+
+  const routeDuration=await evaluate(`(()=>{window.__stableAppShell=document.querySelector('.app-shell');const started=performance.now();document.querySelector('[data-page="decks"]').click();return performance.now()-started})()`);
+  await waitFor(`Boolean(document.querySelector('.deck-page'))`,'Sezione Mazzi non renderizzata');
+  assert(await evaluate(`window.__stableAppShell===document.querySelector('.app-shell')`),'Il cambio sezione ricostruisce ancora tutta la shell');
+  assert(routeDuration<100,`Cambio sezione troppo lento nel fixture: ${routeDuration.toFixed(1)} ms`);
+  console.log(`PASS login parallelo + cambio sezione senza rebuild shell (${routeDuration.toFixed(1)} ms)`);
+  await evaluate(`document.querySelector('[data-deck-new]').click()`);
+  assert(await evaluate(`document.querySelectorAll('.deck-zone').length===3&&!document.querySelector('[data-deck-section]')`),'Main/Extra/Side sono ancora divisi in schede');
+  await evaluate(`(()=>{const input=document.querySelector('[data-deck-search]');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await waitFor(`[...document.querySelectorAll('[data-deck-result]')].some(button=>button.textContent.includes('Dark Magician'))`,'Ricerca carta Main nel mazzo fallita');
+  await evaluate(`[...document.querySelectorAll('[data-deck-result]')].find(button=>button.textContent.includes('Dark Magician')).click()`);
+  await evaluate(`(()=>{const input=document.querySelector('[data-deck-search]');input.value='Stardust Dragon';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await waitFor(`[...document.querySelectorAll('[data-deck-result]')].some(button=>button.textContent.includes('Stardust Dragon'))`,'Ricerca carta Extra nel mazzo fallita');
+  await evaluate(`[...document.querySelectorAll('[data-deck-result]')].find(button=>button.textContent.includes('Stardust Dragon')).click()`);
+  assert(await evaluate(`document.querySelector('.deck-zone.main').textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra').textContent.includes('Stardust Dragon')`),'Classificazione automatica Main/Extra errata');
+  assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Bollino Limitata TCG Advanced assente');
+  await evaluate(`(()=>{const key='fpt-cards-deck-drafts-v1',drafts=JSON.parse(localStorage.getItem(key)||'[]');for(const deck of drafts)for(const card of deck.cards||[])delete card.banTcg;localStorage.setItem(key,JSON.stringify(drafts))})()`);
+  await cdp.call('Page.reload',{ignoreCache:true});
+  await waitFor(`document.querySelector('.deck-zone.main')?.textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra')?.textContent.includes('Stardust Dragon')`,'Hard refresh ha cancellato la bozza del mazzo');
+  assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Hard refresh ha perso il bollino banlist TCG');
+  console.log('PASS Mazzi sezioni simultanee + Extra automatico + recupero hard refresh');
 
   await evaluate(`Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true})`);
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1440, height:1000, deviceScaleFactor:1, mobile:false, screenWidth:1440, screenHeight:1000 });

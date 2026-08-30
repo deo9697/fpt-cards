@@ -1,0 +1,24 @@
+-- ESEMPIO NON ATTIVO. NON ESEGUIRE prima di:
+-- 1. applicare supabase-milestone-5-market-watch.sql;
+-- 2. deployare la Edge Function market-sync;
+-- 3. configurare tutti i secrets documentati nel README;
+-- 4. collaudare manualmente la funzione.
+--
+-- pg_cron lavora in UTC, mentre Europe/Rome cambia con l'ora legale.
+-- Per rispettare sempre le 03:00 locali, invocare ogni ora passando
+-- {"scheduled":true}: la Edge Function procede solo quando a Roma sono le 03.
+-- Conservare URL, Authorization e x-market-sync-secret in Supabase Vault.
+--
+-- select cron.schedule(
+--   'fpt-market-watch-hourly-gate',
+--   '0 * * * *',
+--   $$ select net.http_post(
+--     url := '[SUPABASE_URL]/functions/v1/market-sync',
+--     headers := jsonb_build_object(
+--       'Authorization','Bearer [SUPABASE_ANON_OR_FUNCTION_TOKEN]',
+--       'Content-Type','application/json',
+--       'x-market-sync-secret','[MARKET_SYNC_SECRET]'
+--     ),
+--     body := '{"scheduled":true}'::jsonb
+--   ); $$
+-- );

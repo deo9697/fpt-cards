@@ -41,11 +41,13 @@ Dopo la migration della raccolta, eseguire `supabase-milestone-2-1-collection-lo
 
 Per abilitare Fast Scan e l’ingestion massiva, eseguire infine `supabase-milestone-3-fast-scan.sql`. Aggiunge il lookup protetto per `game + set_code` e la RPC atomica `save_collection_batch`; l’owner viene sempre ricavato dalla sessione applicativa e non dal payload client.
 
-Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Tesseract.js è il motore principale e viene caricato soltanto quando si avvia lo scanner; la prima preparazione richiede connessione, mentre le risorse già scaricate vengono conservate nella cache OCR della PWA. PaddleOCR.js con PP-OCRv6 tiny viene caricato soltanto come fallback se Tesseract non è disponibile. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
+Per abilitare la sezione Mazzi, eseguire dopo la Raccolta `supabase-milestone-4-decks.sql`. Aggiunge mazzi personali, sezioni Main/Extra/Side e RPC protette; la disponibilità e le richieste delle carte mancanti continuano a usare l’inventario e i Prestiti esistenti.
 
-Il riconoscimento è esclusivamente manuale: parte soltanto premendo `Scatta e analizza`. Il loop dell'anteprima controlla la salute della camera ma non avvia mai l'OCR. Lo scatto usa una snapshot temporanea della sola ROI tramite `ImageCapture.grabFrame()` e ricorre al canvas del video solo come fallback. La camera preferisce 1080p e, dopo un errore ImageCapture o un aspect ratio incoerente, resta sul fallback canvas per tutta la sessione. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e i canvas OCR vengono liberati subito dopo ogni tentativo.
+Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). Tesseract.js viene preparato all’avvio dello scanner; PaddleOCR.js con PP-OCRv6 tiny interviene quando le letture Tesseract non producono un set code valido o quando Tesseract non è disponibile. Le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
 
-Il riconoscimento usa una whitelist limitata a lettere maiuscole, cifre e trattino, con segmentazione a riga singola. Ogni snapshot genera un input grayscale; l'adaptive threshold viene provato solo quando il primo risultato non ha la forma di un set code plausibile. Non esistono pannelli DEV, telemetria OCR globale o immagini diagnostiche persistenti.
+Il riconoscimento è esclusivamente manuale: parte soltanto premendo `Scatta e analizza`. Il loop dell'anteprima controlla la salute della camera ma non avvia mai l'OCR. Lo scatto usa i pixel del video mostrato sotto la ROI, così il ritaglio coincide con il riquadro; `ImageCapture.grabFrame()` resta un fallback. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e i canvas OCR vengono liberati subito dopo ogni tentativo.
+
+Il riconoscimento usa una whitelist limitata a lettere maiuscole, cifre e trattino, con segmentazione a riga singola. Ogni snapshot manuale prova sia grayscale sia adaptive threshold prima di scegliere il risultato migliore. Non esistono pannelli DEV, telemetria OCR globale o immagini diagnostiche persistenti.
 
 In production il codice OCR esatto ha precedenza assoluta sulle correzioni: lookup in cache sessione, RPC Supabase `card_printings`, catalogo/API esterno e fallback regionale. Il fuzzy matching viene consultato solo dopo il fallimento dell'intero lookup esatto e non può sostituire un codice valido con uno simile presente nella raccolta locale.
 
@@ -62,3 +64,22 @@ Generare le chiavi localmente eseguendo `powershell -ExecutionPolicy Bypass -Fil
 Creare inoltre un Database Webhook Supabase per INSERT e UPDATE su `public.loans`, diretto a `https://DOMINIO/.netlify/functions/send-push`, con header `x-webhook-secret` uguale a `PUSH_WEBHOOK_SECRET`.
 
 Senza configurazione Supabase l'app continua a funzionare in modalità locale.
+
+## Market Watch Core (pre-deploy)
+
+`supabase-milestone-5-market-watch.sql` è una migration additiva preparata ma **non applicata automaticamente**. Aggiunge la printing nullable ai mazzi, mapping provider, snapshot, watchlist, preferenze alert, eventi e stato sync. Le carte storiche dei mazzi restano senza printing finché un utente non la seleziona esplicitamente.
+
+La funzione server-side è in `supabase/functions/market-sync/index.ts`. Prima del deploy configurare esclusivamente come secrets backend:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `MARKET_SYNC_SECRET`
+- `CARDTRADER_API_TOKEN`
+- `CARDMARKET_PRODUCT_CATALOG_URL`
+- `CARDMARKET_PRICE_GUIDE_URL`
+
+Gli ultimi due URL devono puntare direttamente ai file ufficiali Product Catalogue e Price Guide Cardmarket, mai a pagine HTML. Se un token/feed manca, il provider viene riportato come `unavailable` senza interrompere l'applicazione.
+
+Lo scheduler non è attivo. `supabase-market-watch-scheduler.example.sql` contiene soltanto un esempio commentato: invoca un gate orario che procede esclusivamente alle 03:00 `Europe/Rome`, gestendo automaticamente ora solare e legale. Attivarlo solo dopo migration, secrets, deploy e collaudo manuale.
+
+Eseguire i test core con `npm run test:market` prima del deploy.

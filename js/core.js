@@ -25,6 +25,7 @@ if (!state.game) state.game = 'yugioh';
 if (!state.collection || typeof state.collection !== 'object') state.collection = { mine:[], team:[], syncedAt:null };
 if (!Array.isArray(state.collection.mine)) state.collection.mine = [];
 if (!Array.isArray(state.collection.team)) state.collection.team = [];
+if (!Array.isArray(state.decks)) state.decks = [];
 if (Array.isArray(state.members) && state.members.length) setMembers(state.members);
 export const GAMES = {
   yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', mark:'Y' },

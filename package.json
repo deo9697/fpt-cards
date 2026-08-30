@@ -9,7 +9,10 @@
     "test:collection": "node scripts/collection-milestone-smoke.mjs",
     "test:loans-2.1": "node scripts/collection-loans-2-1-smoke.mjs",
     "test:fast-scan": "node scripts/fast-scan-milestone-smoke.mjs",
-    "test:fast-scan-performance": "node scripts/fast-scan-performance-benchmark.mjs"
+    "test:fast-scan-performance": "node scripts/fast-scan-performance-benchmark.mjs",
+    "test:decks": "node scripts/decks-milestone-smoke.mjs"
+    ,"test:market": "node scripts/market-watch-core-smoke.mjs"
+    ,"test:market-browser": "node scripts/market-watch-browser-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

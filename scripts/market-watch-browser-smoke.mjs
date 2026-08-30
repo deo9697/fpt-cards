@@ -1,0 +1,33 @@
+import {spawn} from 'node:child_process';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+
+const chromePath='C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',profile=await mkdtemp(path.join(tmpdir(),'fpt-market-smoke-')),port=9360;
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const chrome=spawn(chromePath,['--headless=new','--no-sandbox','--disable-gpu','--disable-extensions','--no-first-run',`--remote-debugging-port=${port}`,`--user-data-dir=${profile}`,'--window-size=390,844','about:blank'],{stdio:'ignore',windowsHide:true});
+let socket;
+try{
+  const target=await waitTarget(port);socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
+  let id=0;const pending=new Map();socket.addEventListener('message',event=>{const message=JSON.parse(event.data),task=pending.get(message.id);if(!task)return;pending.delete(message.id);message.error?task.reject(new Error(message.error.message)):task.resolve(message.result);});
+  const send=(method,params={})=>new Promise((resolve,reject)=>{const requestId=++id;pending.set(requestId,{resolve,reject});socket.send(JSON.stringify({id:requestId,method,params}));});
+  const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value;};
+  await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});await send('Page.navigate',{url:'http://localhost:8080/'});await delay(700);
+  const now=new Date().toISOString();
+  const fixture={items:[
+    {printing_id:'p1',catalog_card_id:'1',card_name:'Called by the Grave',set_code:'DUDE-EN044',set_name:'Duel Devastator',rarity:'Ultra Rare',image_url:'icon-192.png',sources:['owned','deck'],owned_quantity:9,reference_price:12,price_24h:10,price_7d:8,latest_at:now,providers:{cardtrader:{price:12,type:'reference',capturedAt:now,conditionReference:'Near Mint'},cardmarket:{price:20,type:'trend',capturedAt:now,conditionReference:'Price Guide'}}},
+    {printing_id:'p2',catalog_card_id:'2',card_name:'Droll & Lock Bird',set_code:'TAMA-EN040',set_name:'Tactical Masters',rarity:'Rare',image_url:'icon-192.png',sources:['owned','manual'],owned_quantity:1,reference_price:4,price_24h:4,price_7d:5,latest_at:now,providers:{cardmarket:{price:4,type:'trend',capturedAt:now}}}
+  ],deckUnresolved:[{deckId:'d1',deckName:'Control',catalogCardId:'3',cardName:'Baronne de Fleur',section:'extra',quantity:1}],lastSync:now};
+  const setup=await evaluate(`import('./js/market-watch.js').then(({MarketWatchController})=>{const c=new MarketWatchController({api:{marketWatch:async()=>(${JSON.stringify(fixture)}),setMarketWatchItem:async()=>{}},getGame:()=> 'yugioh',onRender:()=>{document.querySelector('#app').innerHTML=c.view();c.bind(document)},onToast:()=>{},onNavigate:()=>{}});return c.load().then(()=>{window.__market=c;document.querySelector('#app').innerHTML=c.view();c.bind(document);return true;});})`);if(!setup)throw new Error('Controller Market Watch non inizializzato');
+  const initial=await evaluate(`({kpis:document.querySelectorAll('.market-kpi').length,rows:document.querySelectorAll('.market-row').length,overflow:document.documentElement.scrollWidth>innerWidth,columns:getComputedStyle(document.querySelector('.market-kpis')).gridTemplateColumns,partial:document.body.innerText.includes('Dati parziali')})`);
+  if(initial.kpis!==4||initial.rows!==2||initial.overflow)throw new Error(`Layout mobile Market Watch non valido: ${JSON.stringify(initial)}`);
+  await evaluate(`document.querySelector('[data-market-card="p1"]').click()`);await delay(50);
+  const detail=await evaluate(`({open:Boolean(document.querySelector('.market-detail')),providers:document.querySelectorAll('.provider-price-list article').length,warning:document.body.innerText.includes('Prezzi discordanti')})`);
+  if(!detail.open||detail.providers!==2||!detail.warning)throw new Error(`Dettaglio provider incompleto: ${JSON.stringify(detail)}`);
+  await evaluate(`document.querySelector('[data-market-detail-close]').click();document.querySelector('[data-market-tab="deck"]').click()`);await delay(50);
+  const deck=await evaluate(`({unresolved:document.body.innerText.toLowerCase().includes('printing da selezionare'),overflow:document.documentElement.scrollWidth>innerWidth,tab:window.__market.tab,unresolvedCount:window.__market.data.deckUnresolved.length})`);
+  if(!deck.unresolved||deck.overflow)throw new Error(`Tab Deck mobile incompleto: ${JSON.stringify(deck)}`);
+  console.log(`PASS Market Watch browser mobile 390x844 · KPI ${initial.kpis} · provider ${detail.providers} · no overflow`);
+}finally{try{socket?.close();}catch{}chrome.kill();await rm(profile,{recursive:true,force:true}).catch(()=>{});}
+
+async function waitTarget(port){for(let index=0;index<80;index++){try{await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();return await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent('about:blank')}`,{method:'PUT'})).json();}catch{}await delay(100);}throw new Error('Chrome DevTools non disponibile');}

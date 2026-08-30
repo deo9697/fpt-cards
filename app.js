@@ -1,6 +1,6 @@
 import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage } from './js/cards.js';
+import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses } from './js/cards.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView } from './js/collection.js';
@@ -9,6 +9,8 @@ import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
+import { DeckController } from './js/decks.js';
+import { MarketWatchController } from './js/market-watch.js';
 
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more']);
 let page = routeFromHash();
@@ -43,12 +45,16 @@ let loginFeatureCards;
 let realtimeSyncTimer;
 let realtimeSyncRunning = false;
 let realtimeSyncQueued = false;
+let catalogRepairRunning = false;
+let catalogRepairQueued = false;
 const unresolvedCards = new Set();
 const fastScan = new FastScanController({
   api, externalLookup:lookupPrintingBySetCode, getCollection:()=>state.collection,
   isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
+const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
+const marketWatch = new MarketWatchController({api,getGame:()=>state.game,onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
@@ -73,7 +79,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); render(); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
 
 function render(force = false) {
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
@@ -93,6 +99,28 @@ function render(force = false) {
   document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
   bind();
   if (!state.currentUser) void loadLoginFeaturedCards();
+}
+
+function renderRoute() {
+  const shell = document.querySelector('.app-shell');
+  const stage = shell?.querySelector('.page-stage');
+  if (!state.currentUser || !shell || !stage) { render(); return; }
+  document.body.dataset.page = page;
+  stage.innerHTML = pageContent();
+  shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
+  shell.querySelector(':scope > .fab')?.remove();
+  if (page !== 'new') shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
+  shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
+    const target = button.dataset.page;
+    button.classList.toggle('active', target === page || (target === 'more' && ['decks','market','team','settings'].includes(page)));
+  });
+  // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
+  // ricostruire la pagina e le sue immagini.
+  for (const selector of ['.sidebar','.topbar','.mobile-nav',':scope > .fab']) {
+    const node = shell.querySelector(selector);
+    if (node) node.replaceWith(node.cloneNode(true));
+  }
+  bind();
 }
 
 function loginView() {
@@ -136,7 +164,7 @@ function appView() {
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
   const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
-  const mobileNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['loans','swap','Prestiti'],['more','more','Altro']];
+  const mobileNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
   return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
     <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}</button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-mark ${g.id}">${g.mark}</span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}</div></aside></div><label class="global-search">${icon('search')}<input id="global-search" type="search" placeholder="Cerca carte o prestiti…" aria-label="Ricerca globale"></label><button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-page="settings"><span class="avatar member-${u.id}">${initials(u.name)}</span></button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
@@ -164,8 +192,8 @@ function pageContent() {
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScan.view();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError);
-  if (page === 'market') return marketView();
-  if (page === 'decks') return futureView('Mazzi', 'deck', 'La gestione dei mazzi richiede un modello dati dedicato e sarà introdotta in una milestone successiva.');
+  if (page === 'market') return marketWatch.view();
+  if (page === 'decks') return decks.view();
   if (page === 'settings') return settingsView();
   if (page === 'more') return moreView();
   return dashboardView(state, state.game);
@@ -213,10 +241,6 @@ function cardDetailView(key) {
   return `<div class="detail-backdrop" data-close-detail><aside class="card-detail" role="dialog" aria-modal="true" aria-labelledby="card-detail-title"><button class="detail-close" data-close-detail aria-label="Chiudi">×</button><div class="detail-layout"><div class="detail-art">${card.image ? `<img src="${card.image}" alt="${esc(card.name)}">` : icon('card')}</div><div class="detail-copy"><span class="eyebrow">Dettaglio carta</span><h2 id="card-detail-title">${esc(card.name)}</h2><p>${card.externalId ? `ID catalogo ${esc(card.externalId)}` : 'Carta inserita manualmente'}</p><dl><div><dt>Movimenti registrati</dt><dd>${card.loans.length}</dd></div><div><dt>Prestiti non conclusi</dt><dd>${active.length}</dd></div><div><dt>Gioco</dt><dd>${esc(GAMES[state.game].name)}</dd></div></dl><h3>Proprietari nello storico</h3><div class="owner-list">${owners.map(owner => `<span><i class="mini-avatar member-${owner.id}">${initials(owner.name)}</i><b>${esc(owner.name)}</b></span>`).join('')}</div><div class="actions"><button class="btn" data-page="new">${icon('swap')} Crea prestito</button><button class="btn secondary" disabled title="Funzionalità futura">${icon('chart')} Watchlist futura</button></div><p class="data-note">Set, rarità, lingua, condizione e disponibilità reale richiedono campi dati non ancora presenti.</p></div></div></aside></div>`;
 }
 
-function marketView() {
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Roadmap</span><h1>Market Watch</h1><p>Una casa pronta per prezzi e watchlist, senza dati simulati.</p></div></header><section class="surface market-empty"><div class="market-orbit">${icon('chart')}</div><h2>Collegamento ai provider non configurato</h2><p>Non mostriamo prezzi, trend o variazioni finché non sarà disponibile una fonte dati affidabile e autorizzata.</p><div class="future-features"><span>Watchlist personale</span><span>Confronto provider</span><span>Alert di prezzo</span></div></section></section>`;
-}
-
 function futureView(title, iconName, description) {
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Prossimamente</span><h1>${title}</h1></div></header><section class="surface empty-state">${icon(iconName)}<h2>Spazio predisposto</h2><p>${description}</p></section></section>`;
 }
@@ -227,7 +251,7 @@ function settingsView() {
 }
 
 function moreView() {
-  const links = [['decks','deck','Mazzi','Gestione deck futura'],['market','chart','Market Watch','Prezzi e watchlist futura'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
+  const links = [['decks','deck','Mazzi','Costruzione e disponibilità'],['market','chart','Market Watch','Prezzi e watchlist'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
@@ -449,6 +473,7 @@ function bind() {
   document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionLoanRequest = null; render(); }));
   document.querySelectorAll('[data-collection-edit]').forEach(button => button.addEventListener('click', () => openCollectionEditor(button.dataset.collectionEdit)));
   document.querySelectorAll('[data-collection-delete]').forEach(button => button.addEventListener('click', () => deleteCollectionItem(button.dataset.collectionDelete)));
+  document.querySelectorAll('[data-market-watch-add]').forEach(button => button.addEventListener('click', async () => { try { await api.setMarketWatchItem(button.dataset.marketWatchAdd,true); await marketWatch.load(); toast('Printing aggiunta alla Watchlist'); } catch (error) { toast(error.message||'Watchlist non disponibile'); } }));
   document.querySelectorAll('[data-collection-loan]').forEach(button => button.addEventListener('click', () => createLoanFromCollection(button.dataset.collectionLoan)));
   document.querySelectorAll('[data-request-collection-loan]').forEach(button => button.addEventListener('click', () => openCollectionLoanRequest(button.dataset.requestCollectionLoan)));
   document.querySelector('#collection-card-search')?.addEventListener('input', onCollectionCardSearch);
@@ -478,6 +503,8 @@ function bind() {
   document.querySelectorAll('[data-member-action]').forEach(button => button.addEventListener('click', () => manageMember(button.dataset.memberAction, button.dataset.memberId)));
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
+  if (page === 'decks') decks.bind(document);
+  if (page === 'market') marketWatch.bind(document);
   if (page === 'fastscan') fastScan.bind(document);
 }
 
@@ -617,9 +644,28 @@ async function loadCollection() {
     team:(team || []).map(mapCollectionItem),
     syncedAt:new Date().toISOString()
   };
-  await quarantineMismatchedCollectionImages();
   syncLoanImagesFromCollection();
   collectionError = '';
+  scheduleCatalogRepairs();
+}
+
+async function loadDecks() {
+  try { await decks.load(); decks.error=''; }
+  catch (error) { decks.error=/list_my_decks/i.test(error.message||'')?'Applica la migrazione Mazzi su Supabase per attivare il salvataggio.':(error.message||'Mazzi non disponibili'); }
+}
+
+async function loadPrimaryData() {
+  const [loansResult, collectionResult] = await Promise.allSettled([
+    loadCloudLoans(),
+    loadCollection(),
+    loadDecks(),
+    marketWatch.load()
+  ]);
+  if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
+  if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';
+  else cloudError = '';
+  syncLoanImagesFromCollection();
+  return loansResult.status === 'rejected' ? loansResult.reason : null;
 }
 
 function syncLoanImagesFromCollection() {
@@ -652,17 +698,58 @@ function normalizeIdentityName(value) {
 async function quarantineMismatchedCollectionImages() {
   const unique = new Map([...state.collection.mine, ...state.collection.team].map(item => [item.id, item]));
   const items = [...unique.values()].filter(item => item.game === 'yugioh' && item.cardName);
-  for (const item of items) {
+  let changed = false;
+  await runLimited(items, 4, async item => {
     const card = await resolveStoredCard({ id:item.catalogCardId, name:item.cardName, setCode:item.setCode }, item.game);
-    if (!card) continue;
+    if (!card) return;
     const correctImage = card.fullImage || card.image || '';
     const idMismatch = String(card.id) !== String(item.catalogCardId || '');
     const imageMismatch = cardImageMatches(card, item.imageUrl) === false || (!item.imageUrl && correctImage);
-    if (!idMismatch && !imageMismatch) continue;
+    if (!idMismatch && !imageMismatch) return;
     item.imageUrl = correctImage;
     item.catalogCardId = String(card.id);
     item.imageMismatch = true;
+    changed = true;
     if (item.ownerSlug === state.currentUser) void persistCollectionImageRepair(item, card);
+  });
+  return changed;
+}
+
+async function runLimited(items, limit, task) {
+  let cursor = 0;
+  const workers = Array.from({ length:Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await task(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function scheduleCatalogRepairs() {
+  catalogRepairQueued = true;
+  if (catalogRepairRunning) return;
+  window.setTimeout(() => void runCatalogRepairs(), 0);
+}
+
+async function runCatalogRepairs() {
+  if (catalogRepairRunning) return;
+  catalogRepairRunning = true;
+  try {
+    while (catalogRepairQueued && state.currentUser) {
+      catalogRepairQueued = false;
+      const [collectionChanged, loansChanged] = await Promise.all([
+        quarantineMismatchedCollectionImages(),
+        quarantineMismatchedLoanImages()
+      ]);
+      if (!collectionChanged && !loansChanged) continue;
+      saveState();
+      const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+      if (!editing && page !== 'fastscan') renderRoute();
+    }
+  } catch {} finally {
+    catalogRepairRunning = false;
+    if (catalogRepairQueued && state.currentUser) scheduleCatalogRepairs();
   }
 }
 
@@ -833,7 +920,7 @@ async function manageMember(action, slug) {
 
 async function retryCloud() {
   appLoading = true; cloudError = ''; render();
-  try { await loadMembers(); await loadCloudLoans(); try { await loadCollection(); } catch (error) { collectionError = error.message || 'Raccolta non disponibile'; } saveState(); }
+  try { await Promise.all([loadMembers(),loadPrimaryData()]); saveState(); }
   catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
   finally { appLoading = false; render(); }
 }
@@ -851,13 +938,14 @@ async function login(e) {
     const submit = e.submitter;
     if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
-    await loadCloudLoans();
-    try { await loadCollection(); } catch (error) { collectionError = error.message || 'Raccolta non disponibile'; }
     state.currentUser = profile.slug;
     state.role = profile.role;
     initEasterEgg();
-    startRealtime();
     loginDraft = { member:'', pin:'' };
+    saveState();
+    render();
+    await loadPrimaryData();
+    startRealtime();
     saveState();
   } catch (error) {
     const message = /fetch|network|failed to fetch/i.test(error.message || '')
@@ -878,7 +966,7 @@ async function logout() {
   await fastScan.leave();
   api.unsubscribe();
   await api.logout();
-  state.currentUser = null; state.role = null; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
+  state.currentUser = null; state.role = null; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
 }
 
 async function enableNotifications() {
@@ -910,15 +998,12 @@ async function runRealtimeSync(source) {
   const before = actionableIds();
   try {
     if (source === 'collection') await loadCollection();
-    else {
-      await loadCloudLoans();
-      try { await loadCollection(); } catch {}
-    }
+    else await Promise.allSettled([loadCloudLoans(),loadCollection()]);
     saveState();
     const added = [...actionableIds()].filter(id => !before.has(id));
     if (added.length) await showLoanNotification(added.length);
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
-    if (!editing) render();
+    if (!editing) renderRoute();
   } catch {} finally {
     realtimeSyncRunning = false;
     if (realtimeSyncQueued) { realtimeSyncQueued = false; scheduleRealtimeSync('loans'); }
@@ -943,25 +1028,28 @@ async function loadCloudLoans() {
     const acceptedQuantity = l.accepted_quantity ?? (l.status === 'requested' ? 0 : l.quantity);
     return { id:l.id, cardName:l.card_name, quantity:l.quantity, requestedQuantity:l.requested_quantity || l.quantity, acceptedQuantity, remainingQuantity:Math.max(acceptedQuantity - (l.returned_quantity || 0), 0), owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:game === 'yugioh' ? (storedImage || canonicalYgoCardImage(externalId)) : storedImage, externalId, collectionItemId:l.collection_item_id || '', game, returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0, requestOrigin:l.request_origin || 'legacy', setCode:l.card_set_code || '', setName:l.card_set_name || '', rarity:l.card_rarity || '' };
   });
-  await quarantineMismatchedLoanImages();
   cloudError = '';
+  scheduleCatalogRepairs();
   void enrichMissingImages();
 }
 
 async function quarantineMismatchedLoanImages() {
   const candidates = state.loans.filter(loan => loan.game === 'yugioh' && loan.cardName);
-  for (const loan of candidates) {
+  let changed = false;
+  await runLimited(candidates, 4, async loan => {
     const card = await resolveStoredCard({ id:loan.externalId, name:loan.cardName }, loan.game);
-    if (!card) continue;
+    if (!card) return;
     const correctImage = card.fullImage || card.image || '';
     const idMismatch = String(card.id) !== String(loan.externalId || '');
     const imageMismatch = cardImageMatches(card, loan.image) === false || (!loan.image && correctImage);
-    if (!idMismatch && !imageMismatch) continue;
+    if (!idMismatch && !imageMismatch) return;
     loan.image = correctImage;
     loan.externalId = String(card.id);
     loan.imageMismatch = true;
+    changed = true;
     void api.enrichLoan(loan.id, card).catch(() => {});
-  }
+  });
+  return changed;
 }
 
 async function createLoan(e) {
@@ -1123,7 +1211,7 @@ async function start() {
   watchConnectivity(async connected => {
     if (!state.currentUser) return;
     if (!connected) { render(); return; }
-    try { await loadMembers(); await loadCloudLoans(); try { await loadCollection(); } catch (error) { collectionError = error.message || 'Raccolta non disponibile'; } saveState(); cloudError = ''; }
+    try { await Promise.all([loadMembers(),loadPrimaryData()]); saveState(); }
     catch (error) { cloudError = error.message || 'Sincronizzazione non riuscita'; }
     render();
   });
@@ -1151,15 +1239,13 @@ async function start() {
     void registerAutoUpdates();
     return;
   }
-  appLoading = true;
   initEasterEgg();
   render();
   try { await loadMembers(); } catch {}
   if (state.currentUser) {
-    appLoading = true; render();
     try {
-      await loadCloudLoans();
-      try { await loadCollection(); } catch (error) { collectionError = error.message || 'Raccolta non disponibile'; }
+      const syncError = await loadPrimaryData();
+      if (syncError && /Sessione scaduta/i.test(syncError.message || '')) throw syncError;
       startRealtime(); saveState();
     }
     catch (error) {
@@ -1184,15 +1270,16 @@ window.addEventListener('hashchange', () => {
     if(['scanning','paused'].includes(fastScan.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
     void fastScan.leave();
   }
-  page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null; render();
+  const previous = page;
+  page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
+  if(previous==='fastscan'||page==='fastscan')render();else renderRoute();
 });
 setInterval(async () => {
   if (!state.currentUser) return;
   try {
-    await loadCloudLoans();
-    try { await loadCollection(); } catch {}
+    await loadPrimaryData();
     saveState();
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
-    if (!editing) render();
+    if (!editing) renderRoute();
   } catch {}
 }, 120000);

@@ -20,6 +20,25 @@ export const api = {
   async loans() { ensure(); return unwrap(await client.rpc('list_team_loans', { p_token:token() })); },
   async myCollection() { ensure(); return unwrap(await client.rpc('list_my_collection', { p_token:token() })); },
   async teamCollection() { ensure(); return unwrap(await client.rpc('list_team_collection', { p_token:token() })); },
+  async decks() { ensure(); return unwrap(await client.rpc('list_my_decks', { p_token:token() })); },
+  async saveDeck(deck) {
+    ensure();
+    const id=/^[0-9a-f-]{36}$/i.test(String(deck.id||''))?deck.id:null;
+    return unwrap(await client.rpc('save_deck', { p_token:token(),p_deck:{id,name:deck.name,game:deck.game,format:deck.format,cards:deck.cards} }));
+  },
+  async deleteDeck(id) { ensure(); return unwrap(await client.rpc('delete_deck', { p_token:token(),p_id:id })); },
+  async deckPrintingOptions(deckId, catalogCardId) {
+    ensure(); return unwrap(await client.rpc('list_deck_printing_options', { p_token:token(),p_deck_id:deckId,p_catalog_card_id:String(catalogCardId) }));
+  },
+  async setDeckCardPrinting(deckId, catalogCardId, section, printingId) {
+    ensure(); return unwrap(await client.rpc('set_deck_card_printing', { p_token:token(),p_deck_id:deckId,p_catalog_card_id:String(catalogCardId),p_section:section,p_printing_id:printingId }));
+  },
+  async marketWatch(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('list_market_watch', { p_token:token(),p_game:game }));
+  },
+  async setMarketWatchItem(printingId, enabled) {
+    ensure(); return unwrap(await client.rpc('set_market_watch_item', { p_token:token(),p_printing_id:printingId,p_enabled:Boolean(enabled) }));
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },
