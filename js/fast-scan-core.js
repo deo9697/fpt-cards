@@ -1,5 +1,6 @@
 const STRICT_SET_CODE = /^[A-Z0-9]{2,12}-[A-Z0-9]{2,10}$/;
-const OCR_SWAPS = { O:['0'],0:['O'],I:['1'],1:['I'],S:['5','9'],5:['S'],9:['S'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G'] };
+const OCR_SWAPS = {O:['0'],0:['O'],I:['1'],1:['I'],S:['5'],5:['S'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G']};
+export const SCAN_DECISION = Object.freeze({EXACT_UNIQUE:'EXACT_UNIQUE',NEAR_UNIQUE:'NEAR_UNIQUE',AMBIGUOUS:'AMBIGUOUS',NOT_FOUND:'NOT_FOUND'});
 
 function plausibleSetCode(code) {
   if(!STRICT_SET_CODE.test(code))return false;
@@ -9,36 +10,57 @@ function plausibleSetCode(code) {
 
 export function normalizeSetCode(raw) {
   const source=String(raw||'').normalize('NFKC').toUpperCase().replace(/[\u2010-\u2015\u2212_]/g,'-');
-  const tokens=[...source.matchAll(/(?:^|[^A-Z0-9])([A-Z0-9](?:[A-Z0-9 ]{0,20}[A-Z0-9])?\s*-\s*[A-Z0-9](?:[A-Z0-9 ]{0,16}[A-Z0-9])?)(?=$|[^A-Z0-9])/g)]
-    .map(match=>match[1].replace(/\s+/g,'')).filter(plausibleSetCode);
+  const tokens=extractSetCodeCandidates(source);
   const cleaned=source.replace(/\s+/g,'').replace(/[^A-Z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'');
   const code=tokens[0]||cleaned;
   return {raw:String(raw||''),code,valid:plausibleSetCode(code)};
 }
 
+export function extractSetCodeCandidates(rawText) {
+  const source=String(rawText||'').normalize('NFKC').toUpperCase().replace(/[\u2010-\u2015\u2212_]/g,'-');
+  const matches=[];
+  for(const match of source.matchAll(/(?:^|[^A-Z0-9])([A-Z0-9]{2,12}\s*-\s*[A-Z0-9]{2,10})(?=$|[^A-Z0-9])/g)){
+    const code=match[1].replace(/\s+/g,'');
+    if(plausibleSetCode(code))matches.push(code);
+  }
+  return [...new Set(matches)];
+}
+
 export function setCodeCandidates(raw,limit=24) {
   const base=normalizeSetCode(raw);if(!base.valid)return[];
   const variants=[];
+  for(const code of extractSetCodeCandidates(raw).slice(1))variants.push({code,corrected:false,ambiguous:true,confusion:'altro candidato OCR',edits:0,priority:110});
   const numericTail=correctNumericTailZeros(base.code);
-  if(numericTail&&numericTail!==base.code)variants.push({code:numericTail,corrected:true,ambiguous:true,confusion:'O/0 numeric-tail',priority:100});
+  if(numericTail&&numericTail!==base.code)variants.push({code:numericTail,corrected:true,ambiguous:true,confusion:'O/0 numeric-tail',edits:characterDistance(base.code,numericTail),priority:100});
   variants.push(...edgeDeletionVariants(base.code,60));
-  if(numericTail)variants.push(...edgeDeletionVariants(numericTail,80));
+  if(numericTail)variants.push(...edgeDeletionVariants(numericTail,80).map(item=>({...item,edits:item.edits+characterDistance(base.code,numericTail)})));
   const indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0).slice(0,6);
-  for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,priority:confusionPriority(base.code,index,replacement)});}
+  for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,edits:1,priority:confusionPriority(base.code,index,replacement)});}
   variants.sort((left,right)=>right.priority-left.priority);
   const output=[{code:base.code,corrected:false,ambiguous:false},...variants.map(({priority,...item})=>item)];
   return [...new Map(output.map(item=>[item.code,item])).values()].slice(0,limit);
 }
 
 function correctNumericTailZeros(code){const [prefix,suffix]=code.split('-');if(!/^(?:IT|EN|DE|FR|SP|PT)[A-Z0-9]{2,8}$/.test(suffix))return'';const language=suffix.slice(0,2),tail=suffix.slice(2),corrected=tail.replace(/O/g,'0');return corrected!==tail?`${prefix}-${language}${corrected}`:'';}
-function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali`,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali`,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
+function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali`,edits:count,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,edits:count,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,edits:count,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali`,edits:count,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
 function confusionPriority(code,index,replacement){const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<2&&/[A-Z]/.test(replacement))return 20;return 10;}
+function characterDistance(left,right){if(left.length!==right.length)return Math.max(left.length,right.length);let count=0;for(let index=0;index<left.length;index++)if(left[index]!==right[index])count+=1;return count;}
 
 export function classifyPrintingMatch({normalized,matches=[],corrected=false,catalogMismatch=false,consensus=0,ocrConfidence=0,manual=false}) {
-  if(!normalized?.valid||catalogMismatch)return {status:catalogMismatch?'needs_review':'not_found',matches};
-  if(matches.length===1&&!corrected&&(manual||consensus>=2||ocrConfidence>=88))return {status:'high_confidence',matches};
-  if(matches.length)return {status:'needs_review',matches};
-  return {status:'not_found',matches:[]};
+  if(!normalized?.valid)return {status:'not_found',decision:SCAN_DECISION.NOT_FOUND,matches:[]};
+  if(catalogMismatch||matches.length>1)return {status:'needs_review',decision:SCAN_DECISION.AMBIGUOUS,matches};
+  if(matches.length===1&&!corrected)return {status:'high_confidence',decision:SCAN_DECISION.EXACT_UNIQUE,matches};
+  if(matches.length)return {status:'needs_review',decision:SCAN_DECISION.AMBIGUOUS,matches};
+  return {status:'not_found',decision:SCAN_DECISION.NOT_FOUND,matches:[]};
+}
+
+export function classifyNearPrintingMatch(resolvedCandidates=[],{plausibleCandidateCount=1}={}) {
+  const candidates=resolvedCandidates.filter(item=>item?.matches?.length);
+  const uniqueCodes=[...new Set(candidates.map(item=>item.candidate.code))];
+  const matches=[...new Map(candidates.flatMap(item=>item.matches).map(match=>[[match.printingId||match.printing_id,match.catalogCardId||match.catalog_card_id,match.setCode||match.set_code,match.rarity].join(':'),match])).values()];
+  const candidate=candidates[0]?.candidate;
+  const safe=plausibleCandidateCount===1&&uniqueCodes.length===1&&matches.length===1&&candidate?.edits===1;
+  return {status:safe?'high_confidence':'needs_review',decision:safe?SCAN_DECISION.NEAR_UNIQUE:SCAN_DECISION.AMBIGUOUS,matches,code:safe?uniqueCodes[0]:'',corrected:true,alternatives:uniqueCodes};
 }
 
 export class OcrConsensus {

@@ -358,8 +358,8 @@ async function run() {
   await waitFor(`Boolean(document.querySelector('[data-request-collection-loan="team-item"]:not(:disabled)'))`, 'CTA richiesta prestito non disponibile');
   await evaluate(`document.querySelector('[data-request-collection-loan="team-item"]').click()`);
   await waitFor(`Boolean(document.querySelector('#collection-request-form'))`, 'Modale richiesta prestito non aperta');
-  for (const width of [390,360]) {
-    await cdp.call('Emulation.setDeviceMetricsOverride', { width, height:844, deviceScaleFactor:1, mobile:false, screenWidth:width, screenHeight:844 });
+  for (const {width,height} of [{width:360,height:800},{width:390,height:844},{width:412,height:915}]) {
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor:1, mobile:false, screenWidth:width, screenHeight:height });
     const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,modal:document.querySelector('.collection-request').getBoundingClientRect().width,button:document.querySelector('#collection-request-form .btn').getBoundingClientRect().height})`);
     assert(layout.client===layout.scroll && layout.modal<=layout.client && layout.button>=42, `Richiesta mobile non valida a ${width}px: ${JSON.stringify(layout)}`);
   }
@@ -403,18 +403,20 @@ async function run() {
   await waitFor(`Boolean(document.querySelector('#fast-scan-settings'))`, 'Setup Fast Scan non riaperto');
   await evaluate(`document.querySelector('[data-scan-manual-start]').click()`);
   await waitFor(`Boolean(document.querySelector('.fast-scan-live'))`, 'Scanner manuale Fast Scan non aperto');
-  await evaluate(`(()=>{const controls=document.querySelector('.live-controls');document.querySelector('[data-scan-torch]').classList.remove('hidden');document.querySelector('[data-scan-switch-camera]').classList.remove('hidden');controls.insertAdjacentHTML('beforeend','<button data-layout-refocus><span>Rifocalizza</span></button>');controls.insertAdjacentHTML('beforebegin','<div class="live-zoom" data-layout-zoom><button>−</button><input type="range"><button>+</button><output>1.5×</output><small>Puoi anche pizzicare la guida</small></div>')})()`);
-  for (const viewport of [{width:360,height:844,label:'scanner portrait 360'},{width:390,height:844,label:'scanner portrait 390'},{width:640,height:360,label:'scanner landscape'}]) {
+  await evaluate(`(()=>{const controls=document.querySelector('.live-controls');controls.insertAdjacentHTML('beforebegin','<div class="live-zoom" data-layout-zoom><button>−</button><input type="range"><button>+</button><output>1.5×</output><small>Pinch</small></div>')})()`);
+  for (const viewport of [{width:360,height:800,label:'scanner portrait 360×800'},{width:390,height:844,label:'scanner portrait 390×844'},{width:412,height:915,label:'scanner portrait 412×915'},{width:640,height:360,label:'scanner landscape'}]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width:viewport.width, height:viewport.height, deviceScaleFactor:1, mobile:true, screenWidth:viewport.width, screenHeight:viewport.height });
-    const scannerLayout=await evaluate(`(()=>{const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return{top:value.top,bottom:value.bottom,left:value.left,right:value.right,width:value.width,height:value.height}};return{innerWidth,innerHeight,roi:rect('.live-roi'),stats:rect('.live-session-stats'),zoom:rect('[data-layout-zoom]'),controls:rect('.live-controls'),buttons:[...document.querySelectorAll('.live-controls button')].map(button=>button.getBoundingClientRect().height),scrollWidth:document.documentElement.scrollWidth}})()`);
+    const scannerLayout=await evaluate(`(()=>{const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return{top:value.top,bottom:value.bottom,left:value.left,right:value.right,width:value.width,height:value.height}};const roiStyle=getComputedStyle(document.querySelector('.live-roi')),buttons=[...document.querySelectorAll('.live-controls button')];return{innerWidth,innerHeight,roi:rect('.live-roi'),stats:rect('.live-session-stats'),capture:rect('.live-capture'),zoom:rect('[data-layout-zoom]'),controls:rect('.live-controls'),buttons:buttons.map(button=>({top:button.getBoundingClientRect().top,height:button.getBoundingClientRect().height})),roiBackground:roiStyle.backgroundColor,roiBlur:roiStyle.backdropFilter||roiStyle.webkitBackdropFilter,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight}})()`);
     assert(scannerLayout.roi.height<=52&&scannerLayout.roi.width<scannerLayout.innerWidth*.82,`ROI troppo dominante (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
     const hierarchyOk=viewport.width>viewport.height
       ? scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&Math.abs(scannerLayout.stats.top-scannerLayout.zoom.top)<2&&scannerLayout.stats.bottom<=scannerLayout.controls.top
       : scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&scannerLayout.stats.bottom<=scannerLayout.zoom.top&&scannerLayout.zoom.bottom<=scannerLayout.controls.top;
     assert(hierarchyOk,`Gerarchia scanner sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
-    assert(scannerLayout.controls.bottom<=scannerLayout.innerHeight&&scannerLayout.buttons.length===4&&scannerLayout.buttons.every(height=>height>=48)&&scannerLayout.scrollWidth===scannerLayout.innerWidth,`Controlli scanner tagliati (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    assert(scannerLayout.controls.bottom<=scannerLayout.innerHeight&&scannerLayout.capture.bottom<=scannerLayout.innerHeight&&scannerLayout.buttons.length===3&&scannerLayout.buttons.every(button=>button.height>=40)&&new Set(scannerLayout.buttons.map(button=>Math.round(button.top))).size===1&&scannerLayout.scrollWidth===scannerLayout.innerWidth,`Controlli scanner tagliati o a capo (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    assert(scannerLayout.roiBackground==='rgba(0, 0, 0, 0)'&&(scannerLayout.roiBlur==='none'||scannerLayout.roiBlur===''),`ROI offuscata (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    if(viewport.width<viewport.height)assert(scannerLayout.scrollHeight<=scannerLayout.innerHeight,`Scrolling inutile scanner (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
   }
-  await evaluate(`(()=>{document.querySelector('[data-layout-zoom]')?.remove();document.querySelector('[data-layout-refocus]')?.remove();document.querySelector('[data-scan-torch]').classList.add('hidden');document.querySelector('[data-scan-switch-camera]').classList.add('hidden')})()`);
+  await evaluate(`document.querySelector('[data-layout-zoom]')?.remove()`);
   assert(await evaluate(`getComputedStyle(document.querySelector('[data-scan-manual-sheet]')).display==='none'`), 'Bottom sheet manuale visibile prima dell’apertura');
   await evaluate(`document.querySelector('[data-scan-manual-open]').click()`);
   await waitFor(`getComputedStyle(document.querySelector('[data-scan-manual-sheet]')).display!=='none'`, 'Bottom sheet manuale Fast Scan non disponibile');
@@ -456,7 +458,7 @@ async function run() {
   assert(await evaluate(`window.__authTest.lastBatch.length===1&&window.__authTest.lastBatch[0].quantityDelta===2&&!('owner' in window.__authTest.lastBatch[0])`),'Payload batch Fast Scan non valido');
   await evaluate(`location.hash='#/collection'`);
   await waitFor(`[...document.querySelectorAll('.inventory-card')].some(card=>card.textContent.includes('Dark Magician')&&card.textContent.includes('Disponibili 2'))`, 'Batch Fast Scan non riflesso nella Raccolta');
-  console.log('PASS Fast Scan buffer/review/batch + responsive 390/360 + owner server-side');
+  console.log('PASS Fast Scan buffer/review/batch + responsive 360/390/412 + owner server-side');
 
   await cdp.call('Page.reload', { ignoreCache:true });
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Sessione non ripristinata dopo refresh');
