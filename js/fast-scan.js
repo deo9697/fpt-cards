@@ -80,7 +80,21 @@ export class FastScanController {
   showDetection(code,detail){const node=document.querySelector('[data-scan-detection]');if(node){node.innerHTML=`<strong>✓ ${esc(code)}</strong><span>${esc(detail)}</span>`;node.classList.add('show');}clearTimeout(this.feedbackTimer);this.feedbackTimer=setTimeout(()=>{node?.classList.remove('show');this.status='Pronto allo scatto';this.refreshHud();},1500);}
   chooseReview(id,index){const item=this.buffer.review.find(entry=>entry.id===id);const match=item?.matches?.[index];if(!match)return;this.buffer.add(match,'needs_review',item.warning,false);this.buffer.removeReview(id);this.persist();this.onRender();}
   async correctReview(id,code){const item=this.buffer.review.find(entry=>entry.id===id);if(!item)return;const result=await this.resolve(code,100);if(result.matches.length===1){this.buffer.add(result.matches[0],'needs_review','Correzione manuale',false);this.buffer.removeReview(id);this.persist();this.onRender();}else this.onToast?.('Printing non trovata o ancora ambigua');}
-  async save(){if(this.saving||!this.buffer.entries.size||!this.isOnline())return;this.saving=true;this.onRender();try{const prepared=await canonicalizeFastScanEntries([...this.buffer.entries.values()],(setCode,game)=>this.api.lookupPrintings(setCode,game),resolveStoredCard);this.debugTrace('batch:canonicalized',{repaired:prepared.repaired,items:prepared.items.map(item=>({printingId:item.printingId,setCode:item.setCode,catalogCardId:item.catalogCardId}))});await this.api.saveCollectionBatch(prepared.items);this.buffer.clear();this.hasRecovery=false;await clearScanSession();await this.disposeProductionOcr();await this.onSaved?.();this.phase='setup';this.onToast?.(prepared.repaired?`Sessione salvata · ${prepared.repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');}catch(error){this.onToast?.(error.message||'Batch non salvato: puoi riprovare');}finally{this.saving=false;this.onRender();}}
+  async save(){
+    if(this.saving||!this.buffer.entries.size||!this.isOnline())return;
+    this.saving=true;this.onRender();let stage='canonicalization';
+    const entries=[...this.buffer.entries.values()];
+    this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
+    try{
+      const prepared=await canonicalizeFastScanEntries(entries,(setCode,game)=>this.api.lookupPrintings(setCode,game),resolveStoredCard);
+      this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry)});
+      stage='rpc';const rpcPayload=prepared.items;this.debugTrace('save:rpc-request',{rpcPayload});
+      const rpcResult=await this.api.saveCollectionBatch(rpcPayload);this.debugTrace('save:rpc-result',{saveAccepted:true,rpcResult});
+      stage='refresh';this.buffer.clear();this.hasRecovery=false;await clearScanSession();await this.disposeProductionOcr();await this.onSaved?.();this.debugTrace('save:refresh',{saveAccepted:true});
+      this.phase='setup';this.onToast?.(prepared.repaired?`Sessione salvata · ${prepared.repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
+    }catch(error){const reason=saveRejectionReason(error,stage);this.debugTrace('save:rejected',{saveAccepted:false,saveRejected:true,saveRejectionReason:reason,stage,error:error?.message||String(error),details:error?.details||null});this.onToast?.(error.message||'Batch non salvato: puoi riprovare');}
+    finally{this.saving=false;this.onRender();}
+  }
   async discard(render=true){this.startRequestId+=1;this.stopLoop();this.camera.stop('discard-session');await this.disposeProductionOcr();this.buffer=new ScanSessionBuffer();this.hasRecovery=false;this.exitOpen=false;this.manualOpen=false;await clearScanSession();this.phase='setup';if(render)this.onRender();}
   async switchCamera(){if(this.devices.length<2)return;const index=this.devices.findIndex(item=>item.deviceId===this.camera.deviceId);const next=this.devices[(index+1)%this.devices.length];this.camera.deviceId=next.deviceId;await this.start();}
   persist(now=false){clearTimeout(this.persistTimer);const save=()=>saveScanSession(this.buffer.snapshot());if(now)return save();this.persistTimer=setTimeout(save,180);} feedback(){if(this.buffer.settings.vibration)navigator.vibrate?.(35);if(this.buffer.settings.sound)beep();}
@@ -114,12 +128,10 @@ export class FastScanController {
       this.lastPreprocessing=snapshot.preprocessing;await this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
       const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
       this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;const plan=createOcrInputPlan(snapshot),productionReadings=[];try{
-        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted,needsAlternative=!primaryCode.valid||repeatedLast;productionReadings.push(primary);if(needsAlternative)this.setStatus('Verifico lettura OCR…');
-        // A manual photo always gets both preprocessing passes. A formally valid
-        // first reading may still contain a confused digit or letter.
-        const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);
-        let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};
-        this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;let outcome=null;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
+        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted;productionReadings.push(primary);let outcome=null;
+        if(primaryCode.valid&&!repeatedLast){this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();const resolved=await this.resolve(primary.text,primary.confidence,{consensus:1});if(resolved.status==='high_confidence'){this.gate.accept(resolved.code,frame.signature,Date.now());this.consensus.reset();this.failureStreak=0;this.lastPreprocessing=primary.preprocessing;await this.commitResolution(resolved,primary.text);this.camera.clearPreprocessingPreference?.();outcome=resolved;this.debugTrace('ocr:short-circuit',{rawOcr:primary.text,parsedCode:primaryCode.code,decision:resolved.decision,printingId:resolved.matches?.[0]?.printingId||''});}}
+        if(!outcome){this.setStatus('Verifico lettura OCR…');const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();}
+        if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
       }finally{plan.release();}
     }catch(error){const issue=this.camera.healthIssue?.();if(issue)await this.recoverCamera(issue);else if(error?.message!=='refocus-in-progress')this.setStatus(error.message||'OCR non disponibile');}
     finally{snapshot?.release?.();snapshot=null;this.snapshotInFlight=false;this.updateCaptureUi(false);if(this.phase==='scanning'&&!this.exitOpen&&!this.manualOpen){this.scanState='LIVE';this.schedule(250);}}
@@ -136,16 +148,16 @@ export class FastScanController {
     this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();
     const evidence=this.consensus.observe(raw,ocrConfidence);
     this.debugTrace('ocr',{raw,ocrConfidence,candidate:evidence.code||'',votes:evidence.votes||0});
-    if(!evidence.valid){const near=normalizeSetCode(raw).code;if(near.includes('-')&&near.length>=5&&near.length<=24)this.camera.preferPreprocessing?.(preprocessing.mode);await this.recordFailure();return {status:'not_found'};}
+    if(!evidence.valid){const near=normalizeSetCode(raw).code;this.debugTrace('resolution:rejected',{rawOcr:raw,normalizedOcr:near,parsedCode:'',candidateCodes:[],catalogMatches:[],accepted:false,rejectionReason:'INVALID_FORMAT'});if(near.includes('-')&&near.length>=5&&near.length<=24)this.camera.preferPreprocessing?.(preprocessing.mode);await this.recordFailure();return {status:'not_found'};}
     if(!evidence.ready&&!evidence.strong){
       if(options.catalogConfirm){const confirmed=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(confirmed.status!=='not_found'){this.gate.accept(confirmed.code,signature,Date.now());this.consensus.reset();this.failureStreak=0;await this.commitResolution(confirmed,raw);this.camera.clearPreprocessingPreference?.();return confirmed;}this.consensus.reset();await this.commitResolution(confirmed,raw,true);return confirmed;}
       const fast=await this.resolveFast(evidence.code,evidence.confidence,{consensus:evidence.votes});
-      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature))return {status:'duplicate_blocked'};this.consensus.reset();this.failureStreak=0;await this.commitResolution(fast,raw);this.camera.clearPreprocessingPreference?.();return fast;}
+      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:fast.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}this.consensus.reset();this.failureStreak=0;await this.commitResolution(fast,raw);this.camera.clearPreprocessingPreference?.();return fast;}
       this.camera.preferPreprocessing?.(preprocessing.mode);this.setStatus(`Conferma lettura ${evidence.votes}/2`);return {status:'pending_consensus',code:evidence.code};
     }
     const result=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});
     if(result.status==='not_found'){this.consensus.reset();await this.recordFailure(true);return result;}
-    if(options.catalogConfirm)this.gate.accept(result.code,signature,Date.now());else if(!this.gate.consider(result.code,signature))return {status:'duplicate_blocked'};
+    if(options.catalogConfirm)this.gate.accept(result.code,signature,Date.now());else if(!this.gate.consider(result.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:result.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}
     this.consensus.reset();this.failureStreak=0;await this.commitResolution(result,raw);this.camera.clearPreprocessingPreference?.();return result;
   }
   async processManual(raw){const normalized=normalizeSetCode(raw);if(!normalized.valid){this.onToast?.('Formato printing code non valido');return;}const result=await this.resolve(raw,100,{manual:true,consensus:2});await this.commitResolution(result,raw,true);}
@@ -169,7 +181,8 @@ export class FastScanController {
     return {...classified,code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
   async commitResolution(result,raw,manual=false){
-    this.debugTrace('catalog',{raw,code:result.code||'',decision:result.decision||result.status,source:result.lookupSource||'',matches:result.matches?.length||0,timingMs:Math.round((typeof performance!=='undefined'?performance.now():Date.now())-(this.debugStartedAt||0))});
+    const normalized=normalizeSetCode(raw),candidateCodes=setCodeCandidates(raw).map(item=>item.code),selected=result.matches?.[0]||null,accepted=result.status==='high_confidence'&&(result.decision==='EXACT_UNIQUE'||result.decision==='NEAR_UNIQUE'||manual),rejectionReason=result.status==='not_found'?'NO_CATALOG_MATCH':result.matches?.length>1?'MULTIPLE_CATALOG_MATCHES':accepted?'':result.corrected?'LOW_CONFIDENCE':'VALIDATION_FAILED';
+    this.debugTrace('catalog',{rawOcr:raw,normalizedOcr:normalized.code,parsedCode:result.code||normalized.code,candidateCodes,catalogMatches:(result.matches||[]).map(saveDiagnosticEntry),selectedCatalogEntry:selected?saveDiagnosticEntry(selected):null,printingId:selected?.printingId||selected?.printing_id||'',printingKey:selected?[selected.game||'yugioh',selected.catalogCardId||selected.catalog_card_id||'',selected.setCode||selected.set_code||'',selected.rarity||''].join(':'):'',validationResult:result.decision||result.status,accepted,rejected:!accepted,rejectionReason,source:result.lookupSource||'',timingMs:Math.round((typeof performance!=='undefined'?performance.now():Date.now())-(this.debugStartedAt||0))});
     if(result.status==='not_found'){this.status='Codice non trovato · riprova o usa Manuale';this.showDetection('Codice non letto','Riprova');this.refreshHud();return;}
     this.scanState='RESULT';
     const mustAutoAdd=result.decision==='EXACT_UNIQUE'||(result.decision==='NEAR_UNIQUE'&&this.buffer.settings.autoAdd)||manual;
@@ -191,24 +204,33 @@ export class FastScanController {
 }
 
 export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null) {
-  const items=[];let repaired=0;
+  const items=[],decisions=[];let repaired=0;
   for(const entry of entries){
     const base=batchItem(entry);
-    if(base.printingId){items.push(base);continue;}
-    if(!base.setCode||!base.cardName||!base.catalogCardId)throw new Error(`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`);
-    const rows=await lookupPrintings(base.setCode,base.game),candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
+    if(base.printingId){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
+    if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
+    let rows=[],lookupFailure='';try{rows=await lookupPrintings(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
+    const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
     if(!candidates.length){
-      if(base.game==='yugioh'){const card=await resolveCanonicalCard({id:'',name:base.cardName,setCode:base.setCode},base.game);if(!card)throw new Error(`Impossibile verificare l'identità canonica di ${base.setCode}: controlla la connessione e riprova`);const setMatch=(card.printings||[]).some(printing=>sameText(printing.setCode,base.setCode)),legacyArtwork=(card.imageIds||[]).includes(String(base.catalogCardId));if(!sameText(card.name,base.cardName)||(!setMatch&&!legacyArtwork))throw new Error(`Identità printing incoerente per ${base.setCode}: il catalogo non conferma la carta`);const canonicalId=String(card.id||'');if(!canonicalId)throw new Error(`Identità printing incompleta per ${base.setCode}`);items.push({...base,catalogCardId:canonicalId,cardName:card.name,imageUrl:card.fullImage||card.image||base.imageUrl});if(canonicalId!==base.catalogCardId)repaired+=1;continue;}
-      items.push(base);continue;
+      if(base.game==='yugioh'){
+        let card=null,resolverFailure='';try{card=await resolveCanonicalCard({id:'',name:base.cardName,setCode:base.setCode},base.game);}catch(error){resolverFailure=error?.message||'resolver_failed';}
+        if(card){const setMatch=(card.printings||[]).some(printing=>sameText(printing.setCode,base.setCode)),legacyArtwork=(card.imageIds||[]).includes(String(base.catalogCardId));if(!sameText(card.name,base.cardName)||(!setMatch&&!legacyArtwork))throw saveError('CATALOG_IDENTITY_MISMATCH',`Identità printing incoerente per ${base.setCode}: il catalogo non conferma la carta`,{base,cardId:card.id||'',cardName:card.name||''});const canonicalId=String(card.id||'');if(!canonicalId)throw saveError('PRINTING_CANONICALIZATION_FAILED',`Identità printing incompleta per ${base.setCode}`,base);const canonical={...base,catalogCardId:canonicalId,cardName:card.name,imageUrl:card.fullImage||card.image||base.imageUrl};items.push(canonical);decisions.push(canonicalDecision(canonical,'CANONICAL_CATALOG_ID',{lookupFailure}));if(canonicalId!==base.catalogCardId)repaired+=1;continue;}
+        items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure,resolverFailure:resolverFailure||'catalog_unavailable'}));continue;
+      }
+      items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
     }
     const ranked=candidates.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
-    if(!best||ties.length!==1)throw new Error(`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`);
-    const canonical=best.item;items.push({...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl});repaired+=1;
+    if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
+    const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
   }
-  return {items,repaired};
+  return {items,repaired,decisions};
 }
 
 function batchItem(entry){return {printingId:entry.printingId||'',game:entry.game||'yugioh',catalogCardId:String(entry.catalogCardId||''),cardName:String(entry.cardName||''),setCode:String(entry.setCode||'').trim().toUpperCase(),setName:entry.setName||'',rarity:entry.rarity||'',imageUrl:entry.imageUrl||'',quantityDelta:Number(entry.quantity??entry.quantityDelta??0),language:entry.language||'Italiano',condition:entry.condition||'Near Mint',edition:entry.edition||''};}
+function canonicalDecision(item,validationResult,extra={}){return {setCode:item.setCode,printingId:item.printingId||'',cardId:item.catalogCardId||'',catalogIdentity:[item.game,item.catalogCardId,item.setCode,item.rarity].join(':'),validationResult,...extra};}
+function saveDiagnosticEntry(item){return {printingId:item.printingId||'',cardId:item.catalogCardId||item.catalog_card_id||'',setCode:item.setCode||item.set_code||'',cardName:item.cardName||item.card_name||'',rarity:item.rarity||'',quantity:Number(item.quantity??item.quantityDelta??0),catalogIdentity:[item.game||'yugioh',item.catalogCardId||item.catalog_card_id||'',item.setCode||item.set_code||'',item.rarity||''].join(':')};}
+function saveError(code,message,details){const error=new Error(message);error.code=code;error.details=details;return error;}
+function saveRejectionReason(error,stage){if(error?.code&&['INVALID_RPC_PAYLOAD','PRINTING_CANONICALIZATION_FAILED','AMBIGUOUS_PRINTING','CATALOG_IDENTITY_MISMATCH'].includes(error.code))return error.code;if(stage==='rpc'){const message=String(error?.message||'');if(/inventory|collection_items|quantit/i.test(message))return 'INVENTORY_WRITE_FAILED';return 'RPC_REJECTED';}if(stage==='refresh')return 'UI_REFRESH_FAILED';return 'PRINTING_CANONICALIZATION_FAILED';}
 function canonicalCompatibilityScore(entry,candidate){const sameId=String(entry.catalogCardId)===String(candidate.catalogCardId),sameName=sameText(entry.cardName,candidate.cardName),sameRarity=!entry.rarity||!candidate.rarity||sameText(entry.rarity,candidate.rarity);if(!sameName)return 0;return (sameId?8:0)+4+(sameRarity?2:0);}
 function sameText(left,right){return String(left||'').normalize('NFKC').trim().toLocaleLowerCase('en')===String(right||'').normalize('NFKC').trim().toLocaleLowerCase('en');}
 

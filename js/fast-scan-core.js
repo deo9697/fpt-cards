@@ -1,5 +1,6 @@
 const STRICT_SET_CODE = /^[A-Z0-9]{2,12}-[A-Z0-9]{2,10}$/;
-const OCR_SWAPS = {O:['0'],0:['O'],I:['1'],1:['I'],S:['5'],5:['S'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G']};
+const OCR_SWAPS = {O:['0'],0:['O'],I:['1','L','T'],1:['I','L','T'],L:['I','1'],T:['I','1'],S:['5'],5:['S','3'],3:['5'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G']};
+const REGION_CODES = ['IT','EN','DE','FR','SP','PT','ENC',...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(letter=>`EN${letter}`)];
 export const SCAN_DECISION = Object.freeze({EXACT_UNIQUE:'EXACT_UNIQUE',NEAR_UNIQUE:'NEAR_UNIQUE',AMBIGUOUS:'AMBIGUOUS',NOT_FOUND:'NOT_FOUND'});
 
 function plausibleSetCode(code) {
@@ -12,7 +13,7 @@ export function normalizeSetCode(raw) {
   const source=String(raw||'').normalize('NFKC').toUpperCase().replace(/[\u2010-\u2015\u2212_]/g,'-');
   const tokens=extractSetCodeCandidates(source);
   const cleaned=source.replace(/\s+/g,'').replace(/[^A-Z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'');
-  const code=tokens[0]||cleaned;
+  const code=tokens[0]||reconstructMissingSeparator(cleaned)||cleaned;
   return {raw:String(raw||''),code,valid:plausibleSetCode(code)};
 }
 
@@ -32,18 +33,37 @@ export function setCodeCandidates(raw,limit=24) {
   for(const code of extractSetCodeCandidates(raw).slice(1))variants.push({code,corrected:false,ambiguous:true,confusion:'altro candidato OCR',edits:0,priority:110});
   const numericTail=correctNumericTailZeros(base.code);
   if(numericTail&&numericTail!==base.code)variants.push({code:numericTail,corrected:true,ambiguous:true,confusion:'O/0 numeric-tail',edits:characterDistance(base.code,numericTail),priority:100});
+  const structural=structuralRegionVariants(base.code);variants.push(...structural);
   variants.push(...edgeDeletionVariants(base.code,60));
   if(numericTail)variants.push(...edgeDeletionVariants(numericTail,80).map(item=>({...item,edits:item.edits+characterDistance(base.code,numericTail)})));
-  const indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0).slice(0,6);
+  const separator=base.code.indexOf('-'),observedRegion=base.code.slice(separator+1,separator+3),protectRegion=REGION_CODES.includes(observedRegion)||structural.length>0,indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0&&!(protectRegion&&index>separator&&index-separator-1<2)).slice(0,6);
   for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,edits:1,priority:confusionPriority(base.code,index,replacement)});}
   variants.sort((left,right)=>right.priority-left.priority);
   const output=[{code:base.code,corrected:false,ambiguous:false},...variants.map(({priority,...item})=>item)];
   return [...new Map(output.map(item=>[item.code,item])).values()].slice(0,limit);
 }
 
+function reconstructMissingSeparator(cleaned){
+  if(!cleaned||cleaned.includes('-'))return'';const tail=cleaned.match(/([0-9]{1,4}[A-Z]?)$/)?.[1]||'',head=tail?cleaned.slice(0,-tail.length):'';if(!head)return'';
+  for(const region of [...REGION_CODES].sort((left,right)=>right.length-left.length)){if(!head.endsWith(region))continue;const prefix=head.slice(0,-region.length),code=`${prefix}-${region}${tail}`;if(prefix.length>=2&&plausibleSetCode(code))return code;}
+  for(const regionLength of [2,3]){const prefix=head.slice(0,-regionLength),region=head.slice(-regionLength),code=`${prefix}-${region}${tail}`;if(prefix.length>=2&&plausibleSetCode(code))return code;}
+  return'';
+}
+function structuralRegionVariants(code){
+  const [prefix,suffix]=code.split('-'),variants=[];
+  for(const regionLength of [2,3]){
+    const observed=suffix.slice(0,regionLength),number=suffix.slice(regionLength);if(observed.length!==regionLength||!/^[A-Z0-9]{1,4}[A-Z]?$/.test(number)||!/[0-9]/.test(number))continue;
+    for(const region of REGION_CODES.filter(item=>item.length===regionLength)){
+      const edits=controlledConfusionDistance(observed,region);if(!edits||edits>2)continue;
+      variants.push({code:`${prefix}-${region}${number}`,corrected:true,ambiguous:true,structural:true,confusion:`regione ${observed}/${region}`,edits,priority:106-edits});
+    }
+  }
+  return variants.filter(item=>plausibleSetCode(item.code));
+}
+function controlledConfusionDistance(observed,expected){if(observed.length!==expected.length)return Infinity;let edits=0;for(let index=0;index<observed.length;index++){if(observed[index]===expected[index])continue;if(!OCR_SWAPS[observed[index]]?.includes(expected[index]))return Infinity;edits+=1;}return edits;}
 function correctNumericTailZeros(code){const [prefix,suffix]=code.split('-');if(!/^(?:IT|EN|DE|FR|SP|PT)[A-Z0-9]{2,8}$/.test(suffix))return'';const language=suffix.slice(0,2),tail=suffix.slice(2),corrected=tail.replace(/O/g,'0');return corrected!==tail?`${prefix}-${language}${corrected}`:'';}
 function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali`,edits:count,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,edits:count,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,edits:count,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali`,edits:count,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
-function confusionPriority(code,index,replacement){const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<2&&/[A-Z]/.test(replacement))return 20;return 10;}
+function confusionPriority(code,index,replacement){const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<3&&/[A-Z]/.test(replacement))return 82;return 72;}
 function characterDistance(left,right){if(left.length!==right.length)return Math.max(left.length,right.length);let count=0;for(let index=0;index<left.length;index++)if(left[index]!==right[index])count+=1;return count;}
 
 export function classifyPrintingMatch({normalized,matches=[],corrected=false,catalogMismatch=false,consensus=0,ocrConfidence=0,manual=false}) {
@@ -59,7 +79,7 @@ export function classifyNearPrintingMatch(resolvedCandidates=[],{plausibleCandid
   const uniqueCodes=[...new Set(candidates.map(item=>item.candidate.code))];
   const matches=[...new Map(candidates.flatMap(item=>item.matches).map(match=>[[match.printingId||match.printing_id,match.catalogCardId||match.catalog_card_id,match.setCode||match.set_code,match.rarity].join(':'),match])).values()];
   const candidate=candidates[0]?.candidate;
-  const safe=plausibleCandidateCount===1&&uniqueCodes.length===1&&matches.length===1&&candidate?.edits===1;
+  const safeEdit=candidate?.edits===1||(candidate?.structural&&candidate.edits<=2),safe=plausibleCandidateCount===1&&uniqueCodes.length===1&&matches.length===1&&safeEdit;
   return {status:safe?'high_confidence':'needs_review',decision:safe?SCAN_DECISION.NEAR_UNIQUE:SCAN_DECISION.AMBIGUOUS,matches,code:safe?uniqueCodes[0]:'',corrected:true,alternatives:uniqueCodes};
 }
 
