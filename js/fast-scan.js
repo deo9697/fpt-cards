@@ -86,12 +86,13 @@ export class FastScanController {
     const entries=[...this.buffer.entries.values()];
     this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
     try{
-      const prepared=await canonicalizeFastScanEntries(entries,(setCode,game)=>this.api.lookupPrintings(setCode,game),resolveStoredCard);
+      const prepared=await canonicalizeFastScanEntries(entries);
       this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry)});
       stage='rpc';const rpcPayload=prepared.items;this.debugTrace('save:rpc-request',{rpcPayload});
-      const rpcResult=await this.api.saveCollectionBatch(rpcPayload);this.debugTrace('save:rpc-result',{saveAccepted:true,rpcResult});
+      const saved=await saveFastScanBatchWithRepair(rpcPayload,items=>this.api.saveCollectionBatch(items),async(problemItems,setCode)=>{this.debugTrace('save:repair-request',{setCode,entries:problemItems.map(saveDiagnosticEntry)});return canonicalizeFastScanEntries(problemItems,(code,game)=>this.api.lookupPrintings(code,game),resolveStoredCard);});
+      const rpcResult=saved.rpcResult;this.debugTrace('save:rpc-result',{saveAccepted:true,rpcResult,repairAttempts:saved.repairAttempts,repairedSetCodes:saved.repairedSetCodes});
       stage='refresh';this.buffer.clear();this.hasRecovery=false;await clearScanSession();await this.disposeProductionOcr();await this.onSaved?.();this.debugTrace('save:refresh',{saveAccepted:true});
-      this.phase='setup';this.onToast?.(prepared.repaired?`Sessione salvata · ${prepared.repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
+      this.phase='setup';const repaired=prepared.repaired+saved.repairAttempts;this.onToast?.(repaired?`Sessione salvata · ${repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
     }catch(error){const reason=saveRejectionReason(error,stage);this.debugTrace('save:rejected',{saveAccepted:false,saveRejected:true,saveRejectionReason:reason,stage,error:error?.message||String(error),details:error?.details||null});this.onToast?.(error.message||'Batch non salvato: puoi riprovare');}
     finally{this.saving=false;this.onRender();}
   }
@@ -226,11 +227,21 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
   return {items,repaired,decisions};
 }
 
+export async function saveFastScanBatchWithRepair(items=[],saveBatch,repairEntries,{maxRepairs=8}={}){
+  let payload=items.map(item=>({...item})),repairAttempts=0;const repairedSetCodes=[];
+  while(true){
+    try{return {rpcResult:await saveBatch(payload),payload,repairAttempts,repairedSetCodes};}
+    catch(error){const setCode=catalogMismatchSetCode(error);if(!setCode||repairAttempts>=maxRepairs||repairedSetCodes.includes(setCode))throw error;const indexes=[];for(let index=0;index<payload.length;index++)if(!payload[index].printingId&&sameText(payload[index].setCode,setCode))indexes.push(index);if(!indexes.length)throw error;const before=indexes.map(index=>payload[index]),repaired=await repairEntries(before,setCode),next=repaired?.items||[];if(next.length!==before.length||!next.some((item,index)=>canonicalIdentityChanged(before[index],item)))throw error;indexes.forEach((payloadIndex,index)=>{payload[payloadIndex]=next[index];});repairAttempts+=1;repairedSetCodes.push(setCode);}
+  }
+}
+
 function batchItem(entry){return {printingId:entry.printingId||'',game:entry.game||'yugioh',catalogCardId:String(entry.catalogCardId||''),cardName:String(entry.cardName||''),setCode:String(entry.setCode||'').trim().toUpperCase(),setName:entry.setName||'',rarity:entry.rarity||'',imageUrl:entry.imageUrl||'',quantityDelta:Number(entry.quantity??entry.quantityDelta??0),language:entry.language||'Italiano',condition:entry.condition||'Near Mint',edition:entry.edition||''};}
 function canonicalDecision(item,validationResult,extra={}){return {setCode:item.setCode,printingId:item.printingId||'',cardId:item.catalogCardId||'',catalogIdentity:[item.game,item.catalogCardId,item.setCode,item.rarity].join(':'),validationResult,...extra};}
 function saveDiagnosticEntry(item){return {printingId:item.printingId||'',cardId:item.catalogCardId||item.catalog_card_id||'',setCode:item.setCode||item.set_code||'',cardName:item.cardName||item.card_name||'',rarity:item.rarity||'',quantity:Number(item.quantity??item.quantityDelta??0),catalogIdentity:[item.game||'yugioh',item.catalogCardId||item.catalog_card_id||'',item.setCode||item.set_code||'',item.rarity||''].join(':')};}
 function saveError(code,message,details){const error=new Error(message);error.code=code;error.details=details;return error;}
 function saveRejectionReason(error,stage){if(error?.code&&['INVALID_RPC_PAYLOAD','PRINTING_CANONICALIZATION_FAILED','AMBIGUOUS_PRINTING','CATALOG_IDENTITY_MISMATCH'].includes(error.code))return error.code;if(stage==='rpc'){const message=String(error?.message||'');if(/inventory|collection_items|quantit/i.test(message))return 'INVENTORY_WRITE_FAILED';return 'RPC_REJECTED';}if(stage==='refresh')return 'UI_REFRESH_FAILED';return 'PRINTING_CANONICALIZATION_FAILED';}
+function catalogMismatchSetCode(error){return String(error?.message||'').match(/Dati catalogo incoerenti per\s+([A-Z0-9-]+)/i)?.[1]?.toUpperCase()||'';}
+function canonicalIdentityChanged(before,after){return ['printingId','catalogCardId','cardName','setCode','setName','rarity','imageUrl'].some(field=>String(before?.[field]||'')!==String(after?.[field]||''));}
 function canonicalCompatibilityScore(entry,candidate){const sameId=String(entry.catalogCardId)===String(candidate.catalogCardId),sameName=sameText(entry.cardName,candidate.cardName),sameRarity=!entry.rarity||!candidate.rarity||sameText(entry.rarity,candidate.rarity);if(!sameName)return 0;return (sameId?8:0)+4+(sameRarity?2:0);}
 function sameText(left,right){return String(left||'').normalize('NFKC').trim().toLocaleLowerCase('en')===String(right||'').normalize('NFKC').trim().toLocaleLowerCase('en');}
 
