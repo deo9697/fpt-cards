@@ -1,7 +1,7 @@
 export class FastScanCamera {
   constructor(mediaDevices = navigator.mediaDevices, timeoutMs = 12000, ImageCaptureClass = globalThis.ImageCapture) {
     this.mediaDevices=mediaDevices; this.timeoutMs=timeoutMs; this.stream=null; this.video=null; this.deviceId=''; this.generation=0; this.torchOn=false;
-    this.ImageCaptureClass=ImageCaptureClass;this.imageCapture=null;this.imageCaptureUnstable=false;this.snapshotErrors=0;this.lastGrabError='';this.constraintErrors=[];this.refocusing=false;this.trackListeners=null;this.trackStartedAt=0;this.lastFrameAt=0;this.mutedAt=0;this.blackFrameStreak=0;this.lastTrackEvent='';
+    this.ImageCaptureClass=ImageCaptureClass;this.imageCapture=null;this.imageCaptureUnstable=false;this.snapshotErrors=0;this.lastGrabError='';this.constraintErrors=[];this.refocusing=false;this.trackListeners=null;this.trackStartedAt=0;this.lastFrameAt=0;this.mutedAt=0;this.blackFrameStreak=0;this.lastTrackEvent='';this.onDiagnostic=null;
     this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.captureIndex=0; this.preferredMode=''; this.sampleCanvas=document.createElement('canvas');this.snapshotCanvas=document.createElement('canvas');this.signatureCanvas=document.createElement('canvas');
   }
   get supported() { return Boolean(this.mediaDevices?.getUserMedia); }
@@ -10,16 +10,17 @@ export class FastScanCamera {
   get focusSupported() { return Boolean(this.capabilities.focusSupported && this.track?.applyConstraints); }
   get zoomSupported() { return Boolean(this.capabilities.zoom && this.track?.applyConstraints); }
   async start(video, deviceId = '') {
-    this.stop(); const generation=this.generation; if(!this.supported) throw cameraError('unsupported');
+    this.stop('restart-before-start'); const generation=this.generation; if(!this.supported) throw cameraError('unsupported');this.diagnostic('start-request',{generation,deviceId:deviceId||'environment'});
     const videoConstraint=deviceId?{deviceId:{exact:deviceId},width:{ideal:1920},height:{ideal:1080}}:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}};
     const request=this.mediaDevices.getUserMedia({audio:false,video:videoConstraint});
     let timeout; const timeoutPromise=new Promise((_,reject)=>{timeout=setTimeout(()=>reject(cameraError('timeout')),this.timeoutMs);});
-    try { this.stream=await Promise.race([request,timeoutPromise]); }
+    let acquired=null;try { acquired=await Promise.race([request,timeoutPromise]); }
     catch(error){if(error?.code==='timeout'){request.then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{});throw error;}throw cameraError(error?.name==='NotAllowedError'||error?.name==='SecurityError'?'denied':error?.name==='NotFoundError'||error?.name==='OverconstrainedError'?'unavailable':'failed',error);}
     finally { clearTimeout(timeout); }
-    if(generation!==this.generation){this.stream.getTracks().forEach(track=>track.stop());this.stream=null;throw cameraError('aborted');}
+    if(generation!==this.generation){acquired?.getTracks?.().forEach(track=>track.stop());this.diagnostic('start-aborted',{generation,currentGeneration:this.generation});throw cameraError('aborted');}
+    this.stream=acquired;
     const track=this.track; this.video=video; this.deviceId=track?.getSettings?.().deviceId||deviceId; this.capabilities=readCapabilities(track); this.settings=track?.getSettings?.()||{};this.imageCapture=this.imageCaptureUnstable?null:createImageCapture(this.ImageCaptureClass,track);this.attachTrackHealth(track);
-    video.srcObject=this.stream; video.muted=true; video.playsInline=true; await video.play(); await this.configureTrack(); return this.devices();
+    video.srcObject=this.stream; video.muted=true; video.playsInline=true; await video.play(); await this.configureTrack();this.diagnostic('start-ready',this.stateSnapshot());return this.devices();
   }
   async configureTrack() {
     const track=this.track; if(!track?.applyConstraints)return;
@@ -49,7 +50,7 @@ export class FastScanCamera {
   clearPreprocessingPreference(){this.preferredMode='';}
   attachTrackHealth(track){
     this.detachTrackHealth();this.trackStartedAt=performance.now();this.lastFrameAt=0;this.mutedAt=track?.muted?performance.now():0;this.blackFrameStreak=0;this.lastTrackEvent='attached';if(!track?.addEventListener)return;
-    const ended=()=>{this.lastTrackEvent='ended';},mute=()=>{this.lastTrackEvent='mute';this.mutedAt=performance.now();},unmute=()=>{this.lastTrackEvent='unmute';this.mutedAt=0;this.blackFrameStreak=0;};track.addEventListener('ended',ended);track.addEventListener('mute',mute);track.addEventListener('unmute',unmute);this.trackListeners={track,ended,mute,unmute};
+    const ended=()=>{this.lastTrackEvent='ended';this.diagnostic('track-ended',this.stateSnapshot());},mute=()=>{this.lastTrackEvent='mute';this.mutedAt=performance.now();this.diagnostic('track-muted',this.stateSnapshot());},unmute=()=>{this.lastTrackEvent='unmute';this.mutedAt=0;this.blackFrameStreak=0;this.diagnostic('track-unmuted',this.stateSnapshot());};track.addEventListener('ended',ended);track.addEventListener('mute',mute);track.addEventListener('unmute',unmute);this.trackListeners={track,ended,mute,unmute};
   }
   detachTrackHealth(){const item=this.trackListeners;if(item?.track?.removeEventListener){item.track.removeEventListener('ended',item.ended);item.track.removeEventListener('mute',item.mute);item.track.removeEventListener('unmute',item.unmute);}this.trackListeners=null;}
   markImageCaptureUnstable(reason='unstable'){this.imageCaptureUnstable=true;this.imageCapture=null;this.lastGrabError=reason;}
@@ -82,7 +83,8 @@ export class FastScanCamera {
     }finally{if(!completed){clearCanvas(this.snapshotCanvas);clearCanvas(rawCanvas);}bitmap?.close?.();bitmap=null;rawCanvas=null;source=null;}
   }
   makeSignature(ctx,width,height){this.signatureCanvas.width=16;this.signatureCanvas.height=8;const sctx=this.signatureCanvas.getContext('2d',{willReadFrequently:true});sctx.drawImage(ctx.canvas,0,0,width,height,0,0,16,8);const data=sctx.getImageData(0,0,16,8).data;const values=[];for(let i=0;i<data.length;i+=4)values.push(Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114));return values;}
-  stop(){this.generation+=1;this.torchOn=false;this.refocusing=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.imageCapture=null;this.detachTrackHealth();this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;clearCanvas(this.sampleCanvas);clearCanvas(this.snapshotCanvas);this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};}
+  diagnostic(event,payload={}){this.onDiagnostic?.(event,payload);}
+  stop(reason='explicit'){const snapshot=this.stream?this.stateSnapshot():null;this.generation+=1;this.torchOn=false;this.refocusing=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.imageCapture=null;this.detachTrackHealth();this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;clearCanvas(this.sampleCanvas);clearCanvas(this.snapshotCanvas);this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};if(snapshot)this.diagnostic('stop',{reason,generation:this.generation,before:snapshot});}
 }
 
 export function readCapabilities(track) {

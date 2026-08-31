@@ -824,8 +824,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .live-scan-shade { position: absolute; inset: 0; background: linear-gradient(180deg,#020308d9 0,#02030818 24%,#02030810 58%,#020308ed 100%); pointer-events: none; }
 .live-scan-header { position: absolute; z-index: 4; top: 0; left: 0; right: 0; display: grid; grid-template-columns: 48px 1fr 66px; align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left)); }
 .live-scan-header > div { text-align: center; }.live-scan-header small,.live-scan-header strong { display: block; }.live-scan-header small { color: #c7bdcf; font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; }.live-scan-header strong { font-size: 1rem; }
-.live-icon-button,.live-text-button { min-height: 44px; border: 1px solid #ffffff2b; border-radius: 999px; background: #080911ad; color: #fff; backdrop-filter: blur(12px); }
-.live-icon-button { width: 44px; }.live-icon-button .icon { width: 20px; transform: rotate(180deg); }.live-text-button { padding: 0 13px; font-weight: 700; }
+.live-icon-button { width:44px;min-height:44px;border:1px solid #ffffff2b;border-radius:999px;background:#080911ad;color:#fff;backdrop-filter:blur(12px); }.live-icon-button .icon { width:20px;transform:rotate(180deg); }
 .live-roi { position: absolute; z-index: 3; top: 48%; left: 50%; width: 50vw; max-width:420px; height: clamp(34px,4.4vh,38px); padding:0;border: 2px solid #c77dff; border-radius: 10px; background:transparent;color:#fff;box-shadow: 0 0 0 9999px #03040752,0 0 30px #a855f75c; transform: translate(-50%,-50%);touch-action:none;transition:width .18s ease,height .18s ease; }
 .live-roi.wide { width:64vw;max-width:520px;height:42px; }
 .live-roi-preset { position:absolute;z-index:4;top:calc(48% + 28px);left:50%;min-height:28px;padding:4px 10px;border:1px solid #ffffff2b;border-radius:999px;background:#080911d9;color:#eee;font-size:.55rem;font-weight:700;transform:translateX(-50%);backdrop-filter:blur(10px); }
@@ -858,13 +857,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 /* Fast Scan capture layout */
 .fast-scan-live { min-height:100dvh;overflow:hidden;background:#050611; }
 .live-scan-shade { display:none; }
-.live-scan-header { grid-template-columns:48px 1fr 96px;gap:8px;padding:calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 8px max(14px,env(safe-area-inset-left));background:linear-gradient(180deg,#040611e8,transparent); }
+.live-scan-header { grid-template-columns:48px 1fr 48px;gap:8px;padding:calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 8px max(14px,env(safe-area-inset-left));background:linear-gradient(180deg,#040611e8,transparent); }
 .live-scan-header small { color:#c178f3;font-size:.56rem;font-weight:850;letter-spacing:.16em; }
 .live-scan-header strong { margin-top:1px;font-size:1.08rem;letter-spacing:.01em; }
 .live-icon-button { display:grid;place-items:center;width:44px;height:44px;border-color:#4d415e;border-radius:50%;background:#090b18d9; }
 .live-icon-button .icon { width:21px; }
-.live-text-button { display:flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 12px;border-color:#b55ff0;border-radius:24px;background:#0b0d19e6;font-size:.76rem; }
-.live-text-button i { font-size:.85rem;font-style:normal;letter-spacing:-.18em; }
+.live-header-spacer { width:44px;height:44px; }
 .live-roi-label { position:absolute;z-index:4;top:calc(39% - 31px);left:50%;color:#f0eaf4;font-size:.68rem;text-shadow:0 2px 10px #000;transform:translateX(-50%); }
 .live-roi,.live-roi.wide { top:39%;width:min(68%,500px);max-width:none;height:42px;border:1px solid #bd63f5;border-radius:8px;background:transparent;box-shadow:0 0 0 9999px #03040724,0 0 15px #aa51f0a8;backdrop-filter:none;-webkit-backdrop-filter:none; }
 .live-roi i { background:none; }
@@ -876,7 +874,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .live-ocr-state strong { font-size:.64rem; }
 .live-ocr-state small { display:none; }
 .live-detection { top:25%;padding:6px 12px; }
-.live-scan-bottom { left:50%;right:auto;width:min(620px,calc(100% - 24px));gap:6px;padding:60px 0 calc(9px + env(safe-area-inset-bottom));transform:translateX(-50%);background:linear-gradient(180deg,transparent,#050611d6 27%,#050611fa 54%); }
+.live-scan-bottom { left:0;right:0;width:100%;margin:0;padding:60px max(12px,env(safe-area-inset-right)) calc(9px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));box-sizing:border-box;transform:none;background:linear-gradient(180deg,transparent,#050611d6 27%,#050611fa 54%); }
+.live-scan-content { display:grid;gap:6px;width:min(620px,100%);margin-inline:auto; }
 .live-last { order:1;min-height:18px;font-size:.65rem; }
 .live-session-stats { order:2;display:flex;align-items:center;justify-content:center;width:100%;min-height:32px;margin-inline:auto;padding:5px 10px;border-color:#3e354e;border-radius:999px;background:#0a0c18e6;box-shadow:0 8px 20px #0006; }
 .live-session-stats span { display:inline;padding:0 5px;font-size:.59rem;white-space:nowrap; }
@@ -897,7 +896,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 @media (max-width:600px) {
   .live-roi,.live-roi.wide { width:72%;height:40px; }
-  .live-scan-bottom { width:calc(100% - 24px); }
+  .live-scan-bottom { width:100%; }
 }
 
 @media (orientation:landscape) and (max-height:600px) {
@@ -905,7 +904,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
   .live-roi-label { top:calc(30% - 28px); }
   .live-roi,.live-roi.wide { top:30%;height:36px; }
   .live-ocr-state { top:calc(30% + 54px); }
-  .live-scan-bottom { width:min(700px,calc(100% - 24px));grid-template-columns:1fr 1.4fr 1fr;padding:35px 0 8px;gap:6px; }
+  .live-scan-bottom { width:100%;padding:35px max(12px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); }
+  .live-scan-content { grid-template-columns:1fr 1.4fr 1fr;width:min(700px,100%); }
   .live-last { display:none; }
   .live-session-stats { grid-column:1;width:100%; }
   .live-capture { grid-column:2;grid-row:1;min-height:52px; }
