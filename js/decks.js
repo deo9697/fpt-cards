@@ -1,5 +1,6 @@
 import { esc, initials, member } from './core.js';
 import { icon } from './icons.js';
+import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import {DEFAULT_DECK_BOX_TEMPLATE,DEFAULT_DECK_THEME,DECK_BOX_TEMPLATES,deckThemeOptions,normalizeDeckBoxTemplate,preferredDeckArtwork,renderDeckBoxCard,renderDeckBoxVisual,resolveDeckSignature} from './deck-box.js';
 
 const SECTIONS=['main','extra','side'];
@@ -96,8 +97,14 @@ export function deckAvailability(deck,collection,currentUser){
   return {total,covered,percent:total?Math.round(covered/total*100):0,rows,requestable};
 }
 
-function deckCardIdentityKey(card){const name=normalizeDeckCardName(card?.cardName);return name?`name:${name}`:`id:${String(card?.catalogCardId||'')}`;}
-function sameDeckCardIdentity(card,item){const cardName=normalizeDeckCardName(card?.cardName),itemName=normalizeDeckCardName(item?.cardName);if(cardName&&itemName)return cardName===itemName;return Boolean(card?.catalogCardId&&item?.catalogCardId)&&String(card.catalogCardId)===String(item.catalogCardId);}
+function deckCardIdentityKey(card){const game=card?.game||'yugioh',id=canonicalCatalogCardId(card?.catalogCardId,game),name=normalizeDeckCardName(card?.cardName);return id?`id:${game}:${id}`:`name:${game}:${name}`;}
+export function sameDeckCardIdentity(card,item){
+  const game=card?.game||item?.game||'yugioh';
+  const cardHasId=validCatalogCardId(card?.catalogCardId,game),itemHasId=validCatalogCardId(item?.catalogCardId,game);
+  if(cardHasId&&itemHasId)return canonicalCatalogCardId(card.catalogCardId,game)===canonicalCatalogCardId(item.catalogCardId,game);
+  const cardName=normalizeDeckCardName(card?.cardName),itemName=normalizeDeckCardName(item?.cardName);
+  return Boolean(cardName&&itemName)&&cardName===itemName;
+}
 function normalizeDeckCardName(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();}
 export function parseDeckList(text){let section='main';const merged=new Map();for(const raw of String(text).split(/\r?\n/)){const line=raw.trim();if(!line)continue;const marker=line.toLowerCase();if(marker==='#main'||marker==='main deck'||marker==='main:'){section='main';continue;}if(marker==='#extra'||marker==='extra deck'||marker==='extra:'){section='extra';continue;}if(marker==='!side'||marker==='#side'||marker==='side deck'||marker==='side:'){section='side';continue;}if(line.startsWith('#')||line.startsWith('!'))continue;const match=line.match(/^(?:(\d{1,2})\s*[x×]?\s+)?(.+)$/),quantity=Math.max(1,Number(match?.[1]||1)),value=(match?.[2]||line).trim(),id=/^\d{5,10}$/.test(value)?value:'';const key=`${section}:${id||value.toLowerCase()}`,existing=merged.get(key);if(existing)existing.quantity+=quantity;else merged.set(key,{section,quantity,id,name:id?'':value});}return [...merged.values()];}
 function mapDeck(row){return {id:String(row.id),persisted:true,dirty:false,ownerSlug:row.owner_slug||row.ownerSlug||'',name:row.name,format:row.format||'TCG Avanzato',game:row.game,signatureCardId:row.signature_card_id||row.signatureCardId||null,deckTheme:row.deck_theme||row.deckTheme||DEFAULT_DECK_THEME,deckBoxTemplate:row.deck_box_template||row.deckBoxTemplate||DEFAULT_DECK_BOX_TEMPLATE,createdAt:row.created_at||row.createdAt||'',updatedAt:row.updated_at||row.updatedAt||'',cards:(row.cards||[]).map(card=>({catalogCardId:String(card.catalog_card_id||card.catalogCardId),cardName:card.card_name||card.cardName,imageUrl:card.image_url||card.imageUrl||'',croppedImageUrl:card.cropped_image_url||card.croppedImageUrl||'',banTcg:card.ban_tcg||card.banTcg||'',section:card.section||'main',quantity:Number(card.quantity||1),printingId:card.printing_id||card.printingId||null,printingSetCode:card.printing_set_code||card.printingSetCode||'',printingRarity:card.printing_rarity||card.printingRarity||''})),cover:row.cover_image_url||row.coverImageUrl||''};}

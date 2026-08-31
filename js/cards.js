@@ -7,6 +7,35 @@ const TCG_BANLIST_CACHE_KEY = 'fpt-cards-tcg-banlist-v1';
 const TCG_BANLIST_MAX_AGE = 6 * 60 * 60 * 1000;
 let tcgBanlistRequest;
 
+// Alias catalogo confermati e persistiti anche in card_catalog_aliases.
+// Il nome carta non deve mai trasformare due ID validi differenti nella stessa identita.
+const YUGIOH_CATALOG_ALIASES = new Map([
+  ['94145022','94145021'],
+  ['73642296','73642297'],
+  ['89631140','89631139'], ['89631141','89631139'], ['89631142','89631139'],
+  ['89631143','89631139'], ['89631144','89631139'], ['89631145','89631139'],
+  ['89631146','89631139']
+]);
+
+export function validCatalogCardId(value, game = 'yugioh') {
+  const id = String(value || '').trim();
+  if (!id || ['0','null','undefined','unknown'].includes(id.toLowerCase())) return false;
+  return game === 'yugioh' ? /^\d{5,10}$/.test(id) : id.length <= 100;
+}
+
+export function canonicalCatalogCardId(value, game = 'yugioh') {
+  const id = String(value || '').trim();
+  if (!validCatalogCardId(id, game)) return '';
+  return game === 'yugioh' ? (YUGIOH_CATALOG_ALIASES.get(id) || id) : id;
+}
+
+export function catalogImageNeedsRepair(catalogCardId, imageUrl, game = 'yugioh') {
+  if (!validCatalogCardId(catalogCardId, game) || !String(imageUrl || '').trim()) return true;
+  if (game !== 'yugioh') return false;
+  const imageId = String(imageUrl).match(/\/([0-9]{5,10})\.(?:jpe?g|png|webp)(?:[?#].*)?$/i)?.[1];
+  return Boolean(imageId && canonicalCatalogCardId(imageId, game) !== canonicalCatalogCardId(catalogCardId, game));
+}
+
 export async function searchCards(query, game = 'yugioh') {
   if (game === 'onepiece') return searchOnePieceCards(query);
   const value = query.trim();

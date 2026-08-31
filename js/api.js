@@ -63,6 +63,18 @@ export const api = {
       p_quantity_mode:item.id ? 'set' : 'increment'
     }));
   },
+  async catalogVerificationQueue(version) {
+    ensure(); return unwrap(await client.rpc('list_collection_catalog_verification_queue', {
+      p_token:token(), p_verification_version:version
+    }));
+  },
+  async repairCollectionCatalogIdentity(item) {
+    ensure(); return unwrap(await client.rpc('repair_collection_item_catalog_identity', {
+      p_token:token(), p_collection_item_id:item.collectionItemId,
+      p_catalog_card_id:String(item.catalogCardId), p_card_name:item.cardName,
+      p_image_url:item.imageUrl || '', p_verification_version:item.verificationVersion
+    }));
+  },
   async deleteCollection(id) {
     ensure(); return unwrap(await client.rpc('delete_collection_item', { p_token:token(), p_id:id }));
   },

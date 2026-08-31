@@ -1,6 +1,7 @@
 import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses } from './js/cards.js';
+import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair } from './js/cards.js';
+import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView } from './js/collection.js';
@@ -47,6 +48,7 @@ let realtimeSyncRunning = false;
 let realtimeSyncQueued = false;
 let catalogRepairRunning = false;
 let catalogRepairQueued = false;
+const catalogRepairAttempted = new Set();
 const unresolvedCards = new Set();
 const fastScan = new FastScanController({
   api, externalLookup:lookupPrintingBySetCode, getCollection:()=>state.collection,
@@ -719,23 +721,20 @@ function normalizeIdentityName(value) {
 }
 
 async function quarantineMismatchedCollectionImages() {
-  const unique = new Map([...state.collection.mine, ...state.collection.team].map(item => [item.id, item]));
-  const items = [...unique.values()].filter(item => item.game === 'yugioh' && item.cardName);
-  let changed = false;
-  await runLimited(items, 4, async item => {
-    const card = await resolveStoredCard({ id:item.catalogCardId, name:item.cardName, setCode:item.setCode }, item.game);
-    if (!card) return;
-    const correctImage = card.fullImage || card.image || '';
-    const idMismatch = String(card.id) !== String(item.catalogCardId || '');
-    const imageMismatch = cardImageMatches(card, item.imageUrl) === false || (!item.imageUrl && correctImage);
-    if (!idMismatch && !imageMismatch) return;
-    item.imageUrl = correctImage;
-    item.catalogCardId = String(card.id);
-    item.imageMismatch = true;
-    changed = true;
-    if (item.ownerSlug === state.currentUser) void persistCollectionImageRepair(item, card);
+  const result = await verifyPendingCollectionCatalog({
+    api, resolveCard:resolveStoredCard, attempted:catalogRepairAttempted,
+    onVerified:(row, repaired, card) => {
+      const id = row.collection_item_id || row.collectionItemId || row.id;
+      const payload = Array.isArray(repaired) ? repaired[0] : repaired;
+      [...state.collection.mine, ...state.collection.team].filter(item => item.id === id).forEach(item => {
+        item.printingId = payload?.printing_id || payload?.printingId || item.printingId;
+        item.catalogCardId = String(payload?.catalog_card_id || payload?.catalogCardId || card.id);
+        item.cardName = payload?.card_name || payload?.cardName || card.name;
+        item.imageUrl = payload?.image_url || payload?.imageUrl || card.fullImage || card.image || item.imageUrl;
+      });
+    }
   });
-  return changed;
+  return result.verified > 0;
 }
 
 async function runLimited(items, limit, task) {
@@ -774,17 +773,6 @@ async function runCatalogRepairs() {
     catalogRepairRunning = false;
     if (catalogRepairQueued && state.currentUser) scheduleCatalogRepairs();
   }
-}
-
-async function persistCollectionImageRepair(item, card) {
-  try {
-    await api.saveCollection({
-      id:item.id, game:item.game, catalogCardId:String(card.id), cardName:card.name,
-      setCode:item.setCode, setName:item.setName, rarity:item.rarity,
-      language:item.language, condition:item.condition, edition:item.edition,
-      imageUrl:card.fullImage || card.image || '', quantityOwned:item.quantityOwned
-    });
-  } catch {}
 }
 
 async function retryCollection() {
@@ -1057,7 +1045,8 @@ async function loadCloudLoans() {
 }
 
 async function quarantineMismatchedLoanImages() {
-  const candidates = state.loans.filter(loan => loan.game === 'yugioh' && loan.cardName);
+  const candidates = state.loans.filter(loan => loan.game === 'yugioh' && loan.cardName
+    && catalogImageNeedsRepair(loan.externalId, loan.image, loan.game));
   let changed = false;
   await runLimited(candidates, 4, async loan => {
     const card = await resolveStoredCard({ id:loan.externalId, name:loan.cardName }, loan.game);
