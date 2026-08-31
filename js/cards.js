@@ -229,7 +229,10 @@ async function requestCards(parameters) {
 }
 
 function mapCard(card) {
-  const artwork = card.card_images?.[0] || {};
+  const artworks = Array.isArray(card.card_images) ? card.card_images : [];
+  const artwork = artworks.find(image => String(image?.id || '') === String(card.id || ''))
+    || artworks[0]
+    || {};
   return {
     id: card.id,
     name: card.name,
@@ -239,7 +242,7 @@ function mapCard(card) {
     image: artwork.image_url_small || artwork.image_url || artwork.image_url_cropped || '',
     fullImage: artwork.image_url || artwork.image_url_small || artwork.image_url_cropped || '',
     banTcg: normalizeTcgBanStatus(card.banlist_info?.ban_tcg),
-    imageIds: (card.card_images || []).map(image => String(image.id || '')).filter(Boolean),
+    imageIds: artworks.map(image => String(image.id || '')).filter(Boolean),
     printings: (card.card_sets || []).map(printing => ({
       setCode: printing.set_code || '',
       setName: printing.set_name || '',
