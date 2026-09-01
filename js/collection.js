@@ -75,8 +75,8 @@ export function collectionEditorView(editor, game, connected) {
   const sets = [...new Map(printings.map(printing => [normalizeSetCode(printing.setCode), printing])).values()];
   const rarities = printings.filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode));
   const edition = item?.edition || '';
-  const knownEditions = ['', 'Prima Edizione', 'Unlimited'];
-  const legacyEdition = edition && !knownEditions.includes(edition) ? edition : '';
+  const firstEdition = isFirstEdition(edition);
+  const editionStatus = editionState(edition);
   const owned = item?.quantityOwned ?? 1;
   return `<div class="detail-backdrop" data-close-collection-editor><aside class="card-detail collection-editor" role="dialog" aria-modal="true" aria-labelledby="collection-editor-title"><button class="detail-close" data-close-collection-editor aria-label="Chiudi">×</button><span class="eyebrow">${item ? 'Modifica inventario' : 'Nuova carta'}</span><h2 id="collection-editor-title">${item ? esc(item.cardName) : 'Aggiungi alla raccolta'}</h2>
     <form id="collection-form">
@@ -85,11 +85,42 @@ export function collectionEditorView(editor, game, connected) {
       <div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
       ${rarities.length > 1 && !selectedPrinting ? `<div class="data-note warning">${icon('bell')} Questo set contiene più rarità: seleziona esplicitamente quella posseduta.</div>` : ''}
       <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
-      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field">Prima Edizione<select id="collection-edition">${legacyEdition ? `<option value="${esc(legacyEdition)}" selected>Mantieni valore legacy (${esc(legacyEdition)})</option>` : ''}<option value="Prima Edizione" ${edition === 'Prima Edizione' ? 'selected' : ''}>Prima Edizione</option><option value="Unlimited" ${edition === 'Unlimited' ? 'selected' : ''}>Non Prima Edizione / Unlimited</option><option value="" ${!edition ? 'selected' : ''}>Non specificata</option></select></label></div>
+      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field edition-flag"><input id="collection-first-edition" type="checkbox" data-edition-touched="false" data-edition-original="${esc(edition)}" ${firstEdition ? 'checked' : ''}><span><strong>Prima Edizione</strong><small data-edition-status>${editionStatus === 'first' ? 'Prima Edizione' : editionStatus === 'unlimited' ? 'Non Prima Edizione / Unlimited' : 'Non specificata'}</small></span></label></div>
       <p class="quantity-help">La disponibilità fisica viene calcolata automaticamente sottraendo copie prestate e prenotate.</p>
+      <div id="collection-save-status" class="collection-save-status" role="status" aria-live="polite" hidden></div>
       <button class="btn wide" type="submit" ${selected && selectedPrinting && connected ? '' : 'disabled'}>Salva nella raccolta</button>
     </form>
   </aside></div>`;
+}
+
+export function isFirstEdition(value) {
+  return editionState(value) === 'first';
+}
+
+export function editionState(value) {
+  const source = String(value ?? '').trim();
+  if (!source) return 'unspecified';
+  const normalized = source.toLocaleLowerCase('it').replace(/[^a-z0-9]+/g, '');
+  return ['1','1ed','1edizione','1edition','1sted','1stedition','primaedizione','firstedition'].includes(normalized)
+    ? 'first'
+    : ['unlimited','unlimitededition','illimitata','edizioneillimitata','nonprimaedizione','nonfirstedition'].includes(normalized) ? 'unlimited' : 'unspecified';
+}
+
+export function editionFromFirstEditionFlag({ checked = false, touched = false, original = '' } = {}) {
+  if (!touched) return String(original ?? '');
+  return checked ? 'Prima Edizione' : 'Unlimited';
+}
+
+export function persistedCollectionItemMatches(item, expected = {}) {
+  if (!item?.printingId) return false;
+  return normalizeSetCode(item.setCode) === normalizeSetCode(expected.setCode)
+    && (!expected.setName || String(item.setName || '').trim() === String(expected.setName).trim())
+    && normalizeRarity(item.rarity) === normalizeRarity(expected.rarity)
+    && item.language === expected.language
+    && item.condition === expected.condition
+    && item.edition === expected.edition
+    && Number(item.quantityOwned) === Number(expected.quantityOwned)
+    && (!expected.printingId || item.printingId === expected.printingId);
 }
 
 export function collectionPrintingOptions(card) {
@@ -105,10 +136,11 @@ export function collectionPrintingOptions(card) {
 }
 
 function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
+function normalizeRarity(value) { return String(value || '').trim().toLocaleLowerCase('it'); }
 function samePrinting(left, right) {
   return Boolean(left && right)
     && normalizeSetCode(left.setCode) === normalizeSetCode(right.setCode)
-    && String(left.rarity || '').trim().toLocaleLowerCase('it') === String(right.rarity || '').trim().toLocaleLowerCase('it');
+    && normalizeRarity(left.rarity) === normalizeRarity(right.rarity);
 }
 
 function groupTeamItems(items) {

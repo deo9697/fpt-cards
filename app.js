@@ -1,10 +1,10 @@
 import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair } from './js/cards.js';
+import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, setCodeMatchesLanguage } from './js/cards.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions } from './js/collection.js';
+import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -516,6 +516,11 @@ function bind() {
     ) || null;
     render();
   });
+  document.querySelector('#collection-first-edition')?.addEventListener('change', event => {
+    event.currentTarget.dataset.editionTouched = 'true';
+    const status = document.querySelector('[data-edition-status]');
+    if (status) status.textContent = event.currentTarget.checked ? 'Prima Edizione' : 'Non Prima Edizione / Unlimited';
+  });
   document.querySelector('#collection-form')?.addEventListener('submit', saveCollectionItem);
   document.querySelector('#collection-request-form')?.addEventListener('submit', submitCollectionLoanRequest);
   document.querySelector('#retry-collection')?.addEventListener('click', retryCollection);
@@ -676,8 +681,11 @@ function mapCollectionItem(item) {
   };
 }
 
-async function loadCollection() {
-  if(collectionLoadInFlight)return collectionLoadInFlight;
+async function loadCollection({ force = false } = {}) {
+  if(collectionLoadInFlight){
+    if(!force)return collectionLoadInFlight;
+    try{await collectionLoadInFlight;}catch{}
+  }
   collectionLoadInFlight=(async()=>{
     const [mine, team] = await Promise.all([api.myCollection(), api.teamCollection()]);
     state.collection = {
@@ -812,8 +820,8 @@ async function openCollectionEditor(id) {
   const catalog = await findCard(item.cardName, item.game);
   if (!catalog || collectionEditor?.item?.id !== expectedId) return;
   if (!catalog.printings.some(printing => printing.setCode === item.setCode && printing.rarity === item.rarity)) catalog.printings.unshift(currentPrinting);
-  collectionEditor.card = catalog;
-  collectionEditor.printing = catalog.printings.find(printing => printing.setCode === item.setCode && printing.rarity === item.rarity) || catalog.printings[0];
+  collectionEditor.card = collectionCardWithLocalizedPrintings(catalog, item.language || 'Italiano');
+  collectionEditor.printing = collectionEditor.card.printings.find(printing => sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,item.rarity)) || collectionEditor.card.printings[0];
   collectionEditor.setCode = collectionEditor.printing?.setCode || item.setCode;
   render();
 }
@@ -833,8 +841,8 @@ function onCollectionCardSearch(event) {
     box.querySelectorAll('[data-collection-card-result]').forEach(button => button.addEventListener('click', () => {
       const card = collectionSearchResults[Number(button.dataset.collectionCardResult)];
       if (!card || !collectionEditor) return;
-      collectionEditor.card = card;
-      const options = collectionPrintingOptions(card);
+      collectionEditor.card = collectionCardWithLocalizedPrintings(card, document.querySelector('#collection-language')?.value || 'Italiano');
+      const options = collectionPrintingOptions(collectionEditor.card);
       collectionEditor.setCode = options[0]?.setCode || '';
       const firstSetOptions = options.filter(printing => sameCollectionSet(printing.setCode, collectionEditor.setCode));
       collectionEditor.printing = firstSetOptions.length === 1 ? firstSetOptions[0] : null;
@@ -854,10 +862,19 @@ async function saveCollectionItem(event) {
   if (!printing) return toast('Seleziona esplicitamente la rarità della printing');
   const language = document.querySelector('#collection-language').value;
   const condition = document.querySelector('#collection-condition').value;
-  const edition = document.querySelector('#collection-edition').value;
+  const editionInput = document.querySelector('#collection-first-edition');
+  const firstEdition = Boolean(editionInput?.checked);
+  const edition = editionFromFirstEditionFlag({
+    checked:firstEdition,
+    touched:editionInput?.dataset.editionTouched === 'true',
+    original:editionInput?.dataset.editionOriginal ?? collectionEditor.item?.edition ?? ''
+  });
   const item = collectionEditor.item;
   const printingChanged = Boolean(item) && (!sameCollectionSet(item.setCode, printing.setCode) || !sameCollectionRarity(item.rarity, printing.rarity));
   const editionChanged = Boolean(item) && item.edition !== edition;
+  if ((!item || printingChanged) && !setCodeMatchesLanguage(printing.setCode, language)) {
+    return toast(`Il codice ${printing.setCode} non è coerente con la lingua ${language}`);
+  }
   if ((printingChanged || editionChanged) && (quantityOwned !== item.quantityOwned || language !== item.language || condition !== item.condition)) {
     return toast('Per sicurezza, salva quantità, lingua o condizione separatamente dalla correzione printing');
   }
@@ -866,6 +883,7 @@ async function saveCollectionItem(event) {
   let catalogWarning = '';
   collectionPending = true;
   if (submit) { submit.disabled = true; submit.textContent = 'Salvataggio…'; }
+  setCollectionSaveStatus('loading', 'Salvataggio e verifica sul database…');
   try {
     const reconciliation = await reconcileCatalogCard({ game:state.game, catalogCardId:card.id, cardName:card.name,
       setCode:printing.setCode || '', rarity:printing.rarity || '', imageUrl:card.fullImage || card.image || '' });
@@ -874,23 +892,48 @@ async function saveCollectionItem(event) {
       throw new Error('La combinazione set e rarità non è presente nel catalogo verificato');
     }
     if (reconciliation.status === 'warning') catalogWarning = reconciliation.issues.join('. ');
+    let savedResult;
     if (item && (printingChanged || editionChanged)) {
-      await api.correctCollectionPrinting({
+      savedResult = await api.correctCollectionPrinting({
         collectionItemId:item.id, catalogCardId:card.id, cardName:card.name,
         setCode:printing.setCode || '', setName:printing.setName || '', rarity:printing.rarity || '',
         imageUrl:card.fullImage || card.image || '', edition, verificationVersion:1
       });
     } else {
-      await api.saveCollection({
+      savedResult = await api.saveCollection({
         id:item?.id || null, game:state.game, catalogCardId:card.id,
         cardName:card.name, setCode:printing.setCode || '', setName:printing.setName || '',
         rarity:printing.rarity || '', language, condition, edition,
         imageUrl:card.fullImage || card.image || '', quantityOwned
       });
     }
-    await loadCollection(); saveState(); collectionEditor = null; render(); toast(catalogWarning ? `Raccolta aggiornata · verifica: ${catalogWarning}` : 'Raccolta aggiornata');
-  } catch (error) { toast(error.message || 'Salvataggio non riuscito'); }
+    const savedRow = Array.isArray(savedResult) ? savedResult[0] : savedResult;
+    const savedId = item?.id || (typeof savedResult === 'string' ? savedResult : savedRow?.collection_item_id || savedRow?.id);
+    await loadCollection({ force:true });
+    const persisted = state.collection.mine.find(entry => entry.id === savedId);
+    assertPersistedCollectionItem(persisted, {
+      id:savedId, printingId:savedRow?.printing_id || '', setCode:printing.setCode || '', setName:printing.setName || '', rarity:printing.rarity || '',
+      language, condition, edition, quantityOwned
+    });
+    saveState();
+    setCollectionSaveStatus('success', 'Salvataggio verificato sul database.');
+    collectionEditor = null; render(); toast(catalogWarning ? `Raccolta aggiornata · verifica: ${catalogWarning}` : 'Raccolta aggiornata e verificata');
+  } catch (error) { setCollectionSaveStatus('error', error.message || 'Salvataggio non riuscito'); toast(error.message || 'Salvataggio non riuscito'); }
   finally { collectionPending = false; if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Salva nella raccolta'; } }
+}
+
+function setCollectionSaveStatus(stateName, message) {
+  const status = document.querySelector('#collection-save-status');
+  if (!status) return;
+  status.hidden = false;
+  status.className = `collection-save-status ${stateName}`;
+  status.textContent = message;
+}
+
+function assertPersistedCollectionItem(item, expected) {
+  if (!item?.printingId) throw new Error('Salvataggio non confermato dal database');
+  if (!persistedCollectionItemMatches(item, expected)) throw new Error('Il database ha restituito dettagli diversi da quelli salvati');
+  return item;
 }
 
 function sameCollectionSet(left, right) { return String(left || '').trim().toUpperCase() === String(right || '').trim().toUpperCase(); }

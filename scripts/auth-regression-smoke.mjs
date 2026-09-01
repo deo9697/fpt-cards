@@ -395,7 +395,7 @@ async function run() {
   await evaluate(`document.querySelector('[data-collection-edit]').click()`);
   await waitFor(`document.querySelector('#collection-rarity')?.value==='Common' && document.querySelectorAll('#collection-rarity option').length===2`, 'Rarità corrente/catalogo non ripristinati nel form');
   await evaluate(`window.confirm=()=>true;(()=>{const rarity=document.querySelector('#collection-rarity');rarity.value='Ultra Rare';rarity.dispatchEvent(new Event('change',{bubbles:true}))})()`);
-  await evaluate(`(()=>{const edition=document.querySelector('#collection-edition');edition.value='Prima Edizione';edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
+  await evaluate(`(()=>{const edition=document.querySelector('#collection-first-edition');edition.checked=true;edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
   await waitFor(`document.querySelector('.inventory-card')?.textContent.includes('Ultra Rare')`, 'Relink rarity non completato');
   assert(await evaluate(`window.__authTest.lastPrintingCorrection.p_rarity==='Ultra Rare' && window.__authTest.lastPrintingCorrection.p_edition==='Prima Edizione' && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===4`), 'RPC printing editor non preserva quantità o edizione');
   await evaluate(`document.querySelector('.inventory-card').click()`);

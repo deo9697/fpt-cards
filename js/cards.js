@@ -16,6 +16,13 @@ const YUGIOH_CATALOG_ALIASES = new Map([
   ['89631143','89631139'], ['89631144','89631139'], ['89631145','89631139'],
   ['89631146','89631139']
 ]);
+const SET_LANGUAGE_CODES = new Map([
+  ['Italiano','IT'], ['Inglese','EN'], ['Francese','FR'], ['Tedesco','DE'],
+  ['Spagnolo','SP'], ['Portoghese','PT']
+]);
+const LOCALIZED_SET_NAMES = new Map([
+  ['DOOD:IT','Destino delle Dimensioni']
+]);
 
 export function validCatalogCardId(value, game = 'yugioh') {
   const id = String(value || '').trim();
@@ -134,8 +141,13 @@ export async function reconcileCatalogCard({ game = 'yugioh', catalogCardId = ''
   const issues = [];
   const wantedSet = String(setCode || '').trim().toUpperCase();
   const wantedRarity = String(rarity || '').trim().toLocaleLowerCase('it');
-  const setPrintings = wantedSet ? card.printings.filter(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : [];
-  const printing = findExactCatalogPrinting(card.printings, wantedSet, rarity);
+  const catalogCodes = catalogSetCodeCandidates(wantedSet);
+  const catalogSet = catalogCodes.find(code => card.printings.some(item => normalizeSetCode(item.setCode) === code)) || wantedSet;
+  const setPrintings = wantedSet ? card.printings.filter(item => normalizeSetCode(item.setCode) === catalogSet) : [];
+  const catalogPrinting = findExactCatalogPrinting(card.printings, catalogSet, rarity);
+  const printing = catalogPrinting && catalogSet !== wantedSet
+    ? localizeCatalogPrinting(catalogPrinting, wantedSet)
+    : catalogPrinting;
   if (wantedSet && !setPrintings.length) issues.push('Set code non presente nel catalogo della carta');
   else if (wantedSet && wantedRarity && !printing) issues.push('Rarità non presente nel catalogo per questo set');
   else if (wantedSet && !wantedRarity && setPrintings.length > 1) issues.push('Il set contiene più rarità: selezione esplicita richiesta');
@@ -149,6 +161,42 @@ export function findExactCatalogPrinting(printings = [], setCode = '', rarity = 
   const candidates = wantedSet ? printings.filter(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : [];
   if (wantedRarity) return candidates.find(item => String(item.rarity || '').trim().toLocaleLowerCase('it') === wantedRarity) || null;
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+export function collectionCardWithLocalizedPrintings(card, language = 'Italiano') {
+  if (!card || !Array.isArray(card.printings) || !SET_LANGUAGE_CODES.has(language)) return card;
+  const targetCode = SET_LANGUAGE_CODES.get(language);
+  const localized = card.printings.map(printing => {
+    const setCode = localizeSetCode(printing.setCode, targetCode);
+    return setCode === normalizeSetCode(printing.setCode) ? null : localizeCatalogPrinting(printing, setCode);
+  }).filter(Boolean);
+  if (!localized.length) return card;
+  return {...card, printings:[...localized, ...card.printings]};
+}
+
+export function localizeSetCode(setCode, targetLanguageCode = 'IT') {
+  const normalized = normalizeSetCode(setCode);
+  const match = normalized.match(/^([A-Z0-9]+)-([A-Z]{2})(\d{3,4}[A-Z]?)$/);
+  if (!match || !['EN','IT','FR','DE','SP','PT'].includes(targetLanguageCode)) return normalized;
+  return `${match[1]}-${targetLanguageCode}${match[3]}`;
+}
+
+export function setCodeMatchesLanguage(setCode, language) {
+  const expected = SET_LANGUAGE_CODES.get(String(language || '').trim());
+  const marker = normalizeSetCode(setCode).match(/^[A-Z0-9]+-([A-Z]{2})\d{3,4}[A-Z]?$/)?.[1];
+  return !expected || !marker || marker === expected;
+}
+
+function localizeCatalogPrinting(printing, localizedSetCode) {
+  const setCode = normalizeSetCode(localizedSetCode);
+  const prefix = setCode.split('-')[0];
+  const language = setCode.match(/-([A-Z]{2})\d/)?.[1] || '';
+  return {
+    ...printing,
+    setCode,
+    setName:LOCALIZED_SET_NAMES.get(`${prefix}:${language}`) || printing.setName || '',
+    catalogSetCode:normalizeSetCode(printing.catalogSetCode || printing.setCode)
+  };
 }
 
 export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
@@ -181,6 +229,8 @@ function catalogSetCodeCandidates(code) {
   if(localized)output.push(`${localized[1]}-EN${localized[3]}`);
   return output;
 }
+
+function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
 
 export function cardImageMatches(card, url) {
   const imageId = String(url || '').match(/\/([0-9]{5,10})\.(?:jpe?g|png)(?:[?#].*)?$/i)?.[1];
