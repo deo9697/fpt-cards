@@ -14,6 +14,7 @@
     ,"test:market": "node scripts/market-watch-core-smoke.mjs"
     ,"test:market-browser": "node scripts/market-watch-browser-smoke.mjs"
     ,"test:high-regressions": "node scripts/high-regression-smoke.mjs"
+    ,"test:printing-editor": "node scripts/printing-editor-integrity-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

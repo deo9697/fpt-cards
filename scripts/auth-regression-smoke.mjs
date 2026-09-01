@@ -66,6 +66,13 @@ const fakeSupabaseSource = `(()=>{
         const row={id,printing_id:'33333333-3333-4333-8333-333333333333',owner_slug:currentSlug,owner_name:members.find(item=>item.slug===currentSlug)?.full_name||currentSlug,game:args.p_game,catalog_card_id:args.p_catalog_card_id,card_name:args.p_card_name,set_code:args.p_set_code,set_name:args.p_set_name,rarity:args.p_rarity,language:args.p_language,condition:args.p_condition,edition:args.p_edition,image_url:args.p_image_url,quantity_owned:owned,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:owned,legacy_ambiguous:false,updated_at:new Date().toISOString()};
         collectionItems=collectionItems.filter(item=>item.id!==id);collectionItems.push(row);return {data:id,error:null};
       }
+      if(name==='correct_collection_item_printing'){
+        const row=collectionItems.find(item=>item.id===args.p_collection_item_id&&item.owner_slug===currentSlug);
+        if(!row)return {data:null,error:{message:'Elemento raccolta non trovato o non modificabile'}};
+        row.printing_id='corrected-'+args.p_set_code+'-'+args.p_rarity;row.set_code=args.p_set_code;row.set_name=args.p_set_name;row.rarity=args.p_rarity;row.edition=args.p_edition;row.updated_at=new Date().toISOString();
+        window.__authTest.lastPrintingCorrection=args;
+        return {data:[{collection_item_id:row.id,printing_id:row.printing_id,rarity:row.rarity,edition:row.edition,quantity_owned:row.quantity_owned,language:row.language,condition:row.condition}],error:null};
+      }
       if(name==='delete_collection_item'){collectionItems=collectionItems.filter(item=>item.id!==args.p_id);return {data:null,error:null};}
       if(name==='create_team_loans'){
         window.__authTest.createCalls+=1;window.__authTest.lastCreate=args;
@@ -101,7 +108,7 @@ const server = http.createServer((req, res) => {
   }
   if (requestPath === '/test-cardinfo') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    const blueEyes={id:89631139,name:'Blue-Eyes White Dragon',type:'Normal Monster',card_images:[{image_url:`http://127.0.0.1:${port}/icon-512.png`,image_url_small:`http://127.0.0.1:${port}/icon-192.png`,image_url_cropped:`http://127.0.0.1:${port}/assets/fpt-card-hero.png`}],card_sets:[{set_code:'SDK-001',set_name:'Starter Deck Kaiba',set_rarity:'Ultra Rare'},{set_code:'LOB-001',set_name:'Legend of Blue Eyes',set_rarity:'Ultra Rare'}]};
+    const blueEyes={id:89631139,name:'Blue-Eyes White Dragon',type:'Normal Monster',card_images:[{image_url:`http://127.0.0.1:${port}/icon-512.png`,image_url_small:`http://127.0.0.1:${port}/icon-192.png`,image_url_cropped:`http://127.0.0.1:${port}/assets/fpt-card-hero.png`}],card_sets:[{set_code:'SDK-001',set_name:'Starter Deck Kaiba',set_rarity:'Ultra Rare'},{set_code:'LOB-001',set_name:'Legend of Blue Eyes',set_rarity:'Ultra Rare'},{set_code:'LOB-001',set_name:'Legend of Blue Eyes',set_rarity:'Common'}]};
     const darkMagician={id:46986414,name:'Dark Magician',type:'Normal Monster',card_images:[{id:46986414,image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',image_url_small:'https://images.ygoprodeck.com/images/cards_small/46986414.jpg',image_url_cropped:'https://images.ygoprodeck.com/images/cards_cropped/46986414.jpg'}],card_sets:[{set_code:'SDY-006',set_name:'Starter Deck Yugi',set_rarity:'Ultra Rare'}]};const stardust={id:44508094,name:'Stardust Dragon',type:'Synchro Monster',banlist_info:{ban_tcg:'Limited'},card_images:[{id:44508094,image_url:'https://images.ygoprodeck.com/images/cards/44508094.jpg',image_url_small:'https://images.ygoprodeck.com/images/cards_small/44508094.jpg'}],card_sets:[]};
     const query=(requestUrl.searchParams.get('name')||requestUrl.searchParams.get('fname')||'').toLowerCase();
     const data=query.includes('dark')?[darkMagician]:query.includes('blue')?[blueEyes]:query.includes('stardust')?[stardust]:[blueEyes,darkMagician,stardust];
@@ -332,9 +339,11 @@ async function run() {
   await evaluate(`(()=>{const input=document.querySelector('#collection-card-search');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`Boolean(document.querySelector('[data-collection-card-result]'))`, 'Catalogo raccolta senza risultati');
   await evaluate(`document.querySelector('[data-collection-card-result]').click()`);
-  await waitFor(`document.querySelectorAll('#collection-printing option').length === 2`, 'Printing non caricate');
-  await evaluate(`(()=>{const printing=document.querySelector('#collection-printing');printing.value='1';printing.dispatchEvent(new Event('change',{bubbles:true}))})()`);
-  await waitFor(`document.querySelector('.printing-preview')?.textContent.includes('LOB-001')`, 'Cambio printing non applicato');
+  await waitFor(`document.querySelectorAll('#collection-set option').length === 2`, 'Printing non caricate');
+  await evaluate(`(()=>{const printing=document.querySelector('#collection-set');printing.value='LOB-001';printing.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await waitFor(`document.querySelector('#collection-rarity')?.value==='' && document.querySelector('#collection-form button[type="submit"]').disabled`, 'Rarità ambigua selezionata automaticamente');
+  await evaluate(`(()=>{const rarity=document.querySelector('#collection-rarity');rarity.value='Common';rarity.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await waitFor(`document.querySelector('.printing-preview')?.textContent.includes('LOB-001') && document.querySelector('.printing-preview')?.textContent.includes('Common')`, 'Cambio printing esatto non applicato');
   await evaluate(`(()=>{const owned=document.querySelector('#collection-owned');owned.value='3';owned.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
   await waitFor(`Boolean(document.querySelector('.inventory-card'))`, 'Carta non aggiunta alla raccolta');
   assert(await evaluate(`document.querySelector('.inventory-card').textContent.includes('Disponibili 3')`), 'Disponibilità iniziale errata');
@@ -382,6 +391,13 @@ async function run() {
   await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica non aperto');
   await evaluate(`(()=>{const owned=document.querySelector('#collection-owned');owned.value='4';owned.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
   await waitFor(`document.querySelector('.inventory-card')?.textContent.includes('Disponibili 4')`, 'Modifica quantità non applicata');
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`document.querySelector('#collection-rarity')?.value==='Common' && document.querySelectorAll('#collection-rarity option').length===2`, 'Rarità corrente/catalogo non ripristinati nel form');
+  await evaluate(`window.confirm=()=>true;(()=>{const rarity=document.querySelector('#collection-rarity');rarity.value='Ultra Rare';rarity.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await evaluate(`(()=>{const edition=document.querySelector('#collection-edition');edition.value='Prima Edizione';edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
+  await waitFor(`document.querySelector('.inventory-card')?.textContent.includes('Ultra Rare')`, 'Relink rarity non completato');
+  assert(await evaluate(`window.__authTest.lastPrintingCorrection.p_rarity==='Ultra Rare' && window.__authTest.lastPrintingCorrection.p_edition==='Prima Edizione' && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===4`), 'RPC printing editor non preserva quantità o edizione');
   await evaluate(`document.querySelector('.inventory-card').click()`);
   await evaluate(`window.confirm=()=>true;document.querySelector('[data-collection-delete]').click()`);
   await waitFor(`!document.querySelector('.inventory-card')`, 'Eliminazione raccolta non applicata');

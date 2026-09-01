@@ -67,20 +67,48 @@ export function collectionEditorView(editor, game, connected) {
     id:item.catalogCardId, name:item.cardName, image:item.imageUrl,
     printings:[{ setCode:item.setCode, setName:item.setName, rarity:item.rarity }]
   } : null);
-  const printings = selected?.printings?.length ? selected.printings : [{ setCode:'', setName:'', rarity:'' }];
-  const selectedPrinting = editor.printing || printings.find(printing => printing.setCode === item?.setCode && printing.rarity === item?.rarity) || printings[0];
+  const printings = collectionPrintingOptions(selected);
+  const selectedPrinting = Object.hasOwn(editor, 'printing')
+    ? editor.printing
+    : printings.find(printing => samePrinting(printing, item)) || null;
+  const selectedSetCode = editor.setCode ?? selectedPrinting?.setCode ?? printings[0]?.setCode ?? '';
+  const sets = [...new Map(printings.map(printing => [normalizeSetCode(printing.setCode), printing])).values()];
+  const rarities = printings.filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode));
+  const edition = item?.edition || '';
+  const knownEditions = ['', 'Prima Edizione', 'Unlimited'];
+  const legacyEdition = edition && !knownEditions.includes(edition) ? edition : '';
   const owned = item?.quantityOwned ?? 1;
   return `<div class="detail-backdrop" data-close-collection-editor><aside class="card-detail collection-editor" role="dialog" aria-modal="true" aria-labelledby="collection-editor-title"><button class="detail-close" data-close-collection-editor aria-label="Chiudi">×</button><span class="eyebrow">${item ? 'Modifica inventario' : 'Nuova carta'}</span><h2 id="collection-editor-title">${item ? esc(item.cardName) : 'Aggiungi alla raccolta'}</h2>
     <form id="collection-form">
-      <label for="collection-card-search">Carta dal catalogo</label><div class="catalog-search"><input id="collection-card-search" autocomplete="off" value="${selected ? esc(selected.name) : ''}" placeholder="Cerca almeno 3 caratteri…" ${item ? '' : 'required'}><div id="collection-card-suggestions" class="suggestions"></div></div>
+      <label for="collection-card-search">Carta dal catalogo</label><div class="catalog-search"><input id="collection-card-search" autocomplete="off" value="${selected ? esc(selected.name) : ''}" placeholder="Cerca almeno 3 caratteri…" ${item ? 'disabled' : 'required'}><div id="collection-card-suggestions" class="suggestions"></div></div>
       ${selected ? `<div class="selected-catalog-card">${selected.image ? `<img src="${esc(selected.image)}" alt="">` : icon('card')}<span><strong>${esc(selected.name)}</strong><small>ID ${esc(selected.id)}</small></span></div>
-      <label for="collection-printing">Printing / set</label><select id="collection-printing">${printings.map((printing,index) => `<option value="${index}" ${printing === selectedPrinting || (printing.setCode === selectedPrinting.setCode && printing.rarity === selectedPrinting.rarity) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName, printing.rarity].filter(Boolean).join(' · '))}</option>`).join('')}</select>
-      <div class="printing-preview"><span><small>Set</small><b>${esc(selectedPrinting.setCode || 'Non specificato')}</b></span><span><small>Rarità</small><b>${esc(selectedPrinting.rarity || 'Non specificata')}</b></span></div>` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
-      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field">Edizione<input id="collection-edition" maxlength="100" value="${esc(item?.edition || '')}" placeholder="es. 1ª Edizione"></label></div>
+      <div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
+      ${rarities.length > 1 && !selectedPrinting ? `<div class="data-note warning">${icon('bell')} Questo set contiene più rarità: seleziona esplicitamente quella posseduta.</div>` : ''}
+      <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
+      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field">Prima Edizione<select id="collection-edition">${legacyEdition ? `<option value="${esc(legacyEdition)}" selected>Mantieni valore legacy (${esc(legacyEdition)})</option>` : ''}<option value="Prima Edizione" ${edition === 'Prima Edizione' ? 'selected' : ''}>Prima Edizione</option><option value="Unlimited" ${edition === 'Unlimited' ? 'selected' : ''}>Non Prima Edizione / Unlimited</option><option value="" ${!edition ? 'selected' : ''}>Non specificata</option></select></label></div>
       <p class="quantity-help">La disponibilità fisica viene calcolata automaticamente sottraendo copie prestate e prenotate.</p>
-      <button class="btn wide" type="submit" ${selected && connected ? '' : 'disabled'}>Salva nella raccolta</button>
+      <button class="btn wide" type="submit" ${selected && selectedPrinting && connected ? '' : 'disabled'}>Salva nella raccolta</button>
     </form>
   </aside></div>`;
+}
+
+export function collectionPrintingOptions(card) {
+  const rows = card?.printings?.length ? card.printings : [{ setCode:'', setName:'', rarity:'' }];
+  return [...new Map(rows.map(printing => {
+    const normalized = {
+      setCode:String(printing.setCode || '').trim().toUpperCase(),
+      setName:String(printing.setName || '').trim(),
+      rarity:String(printing.rarity || '').trim()
+    };
+    return [`${normalizeSetCode(normalized.setCode)}\u0000${normalized.rarity.toLocaleLowerCase('it')}`, normalized];
+  })).values()];
+}
+
+function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
+function samePrinting(left, right) {
+  return Boolean(left && right)
+    && normalizeSetCode(left.setCode) === normalizeSetCode(right.setCode)
+    && String(left.rarity || '').trim().toLocaleLowerCase('it') === String(right.rarity || '').trim().toLocaleLowerCase('it');
 }
 
 function groupTeamItems(items) {

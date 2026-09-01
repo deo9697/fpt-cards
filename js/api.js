@@ -75,6 +75,15 @@ export const api = {
       p_image_url:item.imageUrl || '', p_verification_version:item.verificationVersion
     }));
   },
+  async correctCollectionPrinting(item) {
+    ensure(); return unwrap(await client.rpc('correct_collection_item_printing', {
+      p_token:token(), p_collection_item_id:item.collectionItemId,
+      p_catalog_card_id:String(item.catalogCardId), p_card_name:item.cardName,
+      p_set_code:item.setCode || '', p_set_name:item.setName || '',
+      p_rarity:item.rarity || '', p_image_url:item.imageUrl || '',
+      p_edition:item.edition || '', p_verification_version:item.verificationVersion
+    }));
+  },
   async deleteCollection(id) {
     ensure(); return unwrap(await client.rpc('delete_collection_item', { p_token:token(), p_id:id }));
   },

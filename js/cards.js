@@ -133,11 +133,22 @@ export async function reconcileCatalogCard({ game = 'yugioh', catalogCardId = ''
   if (!card) return { status:'mismatch', card:null, issues:['Nome e catalog ID non identificano la stessa carta'] };
   const issues = [];
   const wantedSet = String(setCode || '').trim().toUpperCase();
-  const printing = wantedSet ? card.printings.find(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : null;
-  if (wantedSet && !printing) issues.push('Set code non presente nel catalogo della carta');
-  if (printing && rarity && printing.rarity && printing.rarity !== rarity) issues.push('Rarità diversa dal catalogo per questa printing');
+  const wantedRarity = String(rarity || '').trim().toLocaleLowerCase('it');
+  const setPrintings = wantedSet ? card.printings.filter(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : [];
+  const printing = findExactCatalogPrinting(card.printings, wantedSet, rarity);
+  if (wantedSet && !setPrintings.length) issues.push('Set code non presente nel catalogo della carta');
+  else if (wantedSet && wantedRarity && !printing) issues.push('Rarità non presente nel catalogo per questo set');
+  else if (wantedSet && !wantedRarity && setPrintings.length > 1) issues.push('Il set contiene più rarità: selezione esplicita richiesta');
   if (imageUrl && cardImageMatches(card, imageUrl) === false) issues.push('Immagine riferita a un altro catalog ID');
-  return { status:issues.some(issue => issue.startsWith('Immagine')) ? 'mismatch' : issues.length ? 'warning' : 'valid', card, issues };
+  return { status:issues.some(issue => issue.startsWith('Immagine')) ? 'mismatch' : issues.length ? 'warning' : 'valid', card, printing, issues };
+}
+
+export function findExactCatalogPrinting(printings = [], setCode = '', rarity = '') {
+  const wantedSet = String(setCode || '').trim().toUpperCase();
+  const wantedRarity = String(rarity || '').trim().toLocaleLowerCase('it');
+  const candidates = wantedSet ? printings.filter(item => String(item.setCode || '').trim().toUpperCase() === wantedSet) : [];
+  if (wantedRarity) return candidates.find(item => String(item.rarity || '').trim().toLocaleLowerCase('it') === wantedRarity) || null;
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {

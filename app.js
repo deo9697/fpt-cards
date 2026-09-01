@@ -4,7 +4,7 @@ import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalo
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView } from './js/collection.js';
+import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -501,7 +501,20 @@ function bind() {
   document.querySelectorAll('[data-collection-loan]').forEach(button => button.addEventListener('click', () => createLoanFromCollection(button.dataset.collectionLoan)));
   document.querySelectorAll('[data-request-collection-loan]').forEach(button => button.addEventListener('click', () => openCollectionLoanRequest(button.dataset.requestCollectionLoan)));
   document.querySelector('#collection-card-search')?.addEventListener('input', onCollectionCardSearch);
-  document.querySelector('#collection-printing')?.addEventListener('change', event => { if (!collectionEditor?.card) return; collectionEditor.printing = collectionEditor.card.printings[Number(event.currentTarget.value)] || collectionEditor.card.printings[0]; render(); });
+  document.querySelector('#collection-set')?.addEventListener('change', event => {
+    if (!collectionEditor?.card) return;
+    collectionEditor.setCode = event.currentTarget.value;
+    const options = collectionPrintingOptions(collectionEditor.card).filter(printing => sameCollectionSet(printing.setCode, collectionEditor.setCode));
+    collectionEditor.printing = options.length === 1 ? options[0] : null;
+    render();
+  });
+  document.querySelector('#collection-rarity')?.addEventListener('change', event => {
+    if (!collectionEditor?.card) return;
+    collectionEditor.printing = collectionPrintingOptions(collectionEditor.card).find(printing =>
+      sameCollectionSet(printing.setCode, collectionEditor.setCode) && sameCollectionRarity(printing.rarity, event.currentTarget.value)
+    ) || null;
+    render();
+  });
   document.querySelector('#collection-form')?.addEventListener('submit', saveCollectionItem);
   document.querySelector('#collection-request-form')?.addEventListener('submit', submitCollectionLoanRequest);
   document.querySelector('#retry-collection')?.addEventListener('click', retryCollection);
@@ -787,7 +800,7 @@ async function openCollectionEditor(id) {
   if (!item) return;
   const currentPrinting = { setCode:item.setCode, setName:item.setName, rarity:item.rarity };
   const initialCard = { id:item.catalogCardId, name:item.cardName, image:item.imageUrl, fullImage:item.imageUrl, printings:[currentPrinting] };
-  collectionEditor = { item, card:initialCard, printing:currentPrinting };
+  collectionEditor = { item, card:initialCard, printing:currentPrinting, setCode:item.setCode };
   selectedCollectionItem = '';
   render();
   const expectedId = item.id;
@@ -796,6 +809,7 @@ async function openCollectionEditor(id) {
   if (!catalog.printings.some(printing => printing.setCode === item.setCode && printing.rarity === item.rarity)) catalog.printings.unshift(currentPrinting);
   collectionEditor.card = catalog;
   collectionEditor.printing = catalog.printings.find(printing => printing.setCode === item.setCode && printing.rarity === item.rarity) || catalog.printings[0];
+  collectionEditor.setCode = collectionEditor.printing?.setCode || item.setCode;
   render();
 }
 
@@ -815,7 +829,10 @@ function onCollectionCardSearch(event) {
       const card = collectionSearchResults[Number(button.dataset.collectionCardResult)];
       if (!card || !collectionEditor) return;
       collectionEditor.card = card;
-      collectionEditor.printing = card.printings[0] || { setCode:'', setName:'', rarity:'' };
+      const options = collectionPrintingOptions(card);
+      collectionEditor.setCode = options[0]?.setCode || '';
+      const firstSetOptions = options.filter(printing => sameCollectionSet(printing.setCode, collectionEditor.setCode));
+      collectionEditor.printing = firstSetOptions.length === 1 ? firstSetOptions[0] : null;
       render();
     }));
   }, 320);
@@ -828,7 +845,18 @@ async function saveCollectionItem(event) {
   const quantityOwned = Number(document.querySelector('#collection-owned')?.value);
   if (!Number.isInteger(quantityOwned) || quantityOwned < 1 || quantityOwned > 999) return toast('Inserisci una quantità valida');
   const card = collectionEditor.card;
-  const printing = collectionEditor.printing || card.printings[0] || {};
+  const printing = collectionEditor.printing;
+  if (!printing) return toast('Seleziona esplicitamente la rarità della printing');
+  const language = document.querySelector('#collection-language').value;
+  const condition = document.querySelector('#collection-condition').value;
+  const edition = document.querySelector('#collection-edition').value;
+  const item = collectionEditor.item;
+  const printingChanged = Boolean(item) && (!sameCollectionSet(item.setCode, printing.setCode) || !sameCollectionRarity(item.rarity, printing.rarity));
+  const editionChanged = Boolean(item) && item.edition !== edition;
+  if ((printingChanged || editionChanged) && (quantityOwned !== item.quantityOwned || language !== item.language || condition !== item.condition)) {
+    return toast('Per sicurezza, salva quantità, lingua o condizione separatamente dalla correzione printing');
+  }
+  if ((printingChanged || editionChanged) && !confirm(`Confermi il collegamento a ${printing.setCode} · ${printing.rarity || 'rarità non specificata'}${edition ? ` · ${edition}` : ''}?`)) return;
   const submit = event.submitter;
   let catalogWarning = '';
   collectionPending = true;
@@ -837,19 +865,31 @@ async function saveCollectionItem(event) {
     const reconciliation = await reconcileCatalogCard({ game:state.game, catalogCardId:card.id, cardName:card.name,
       setCode:printing.setCode || '', rarity:printing.rarity || '', imageUrl:card.fullImage || card.image || '' });
     if (reconciliation.status === 'mismatch') throw new Error(`Dati catalogo incoerenti: ${reconciliation.issues.join('. ')}`);
+    if (state.game === 'yugioh' && (printing.setCode || printing.rarity) && !reconciliation.printing) {
+      throw new Error('La combinazione set e rarità non è presente nel catalogo verificato');
+    }
     if (reconciliation.status === 'warning') catalogWarning = reconciliation.issues.join('. ');
-    await api.saveCollection({
-      id:collectionEditor.item?.id || null, game:state.game, catalogCardId:card.id,
-      cardName:card.name, setCode:printing.setCode || '', setName:printing.setName || '',
-      rarity:printing.rarity || '', language:document.querySelector('#collection-language').value,
-      condition:document.querySelector('#collection-condition').value,
-      edition:document.querySelector('#collection-edition').value.trim(),
-      imageUrl:card.fullImage || card.image || '', quantityOwned
-    });
+    if (item && (printingChanged || editionChanged)) {
+      await api.correctCollectionPrinting({
+        collectionItemId:item.id, catalogCardId:card.id, cardName:card.name,
+        setCode:printing.setCode || '', setName:printing.setName || '', rarity:printing.rarity || '',
+        imageUrl:card.fullImage || card.image || '', edition, verificationVersion:1
+      });
+    } else {
+      await api.saveCollection({
+        id:item?.id || null, game:state.game, catalogCardId:card.id,
+        cardName:card.name, setCode:printing.setCode || '', setName:printing.setName || '',
+        rarity:printing.rarity || '', language, condition, edition,
+        imageUrl:card.fullImage || card.image || '', quantityOwned
+      });
+    }
     await loadCollection(); saveState(); collectionEditor = null; render(); toast(catalogWarning ? `Raccolta aggiornata · verifica: ${catalogWarning}` : 'Raccolta aggiornata');
   } catch (error) { toast(error.message || 'Salvataggio non riuscito'); }
   finally { collectionPending = false; if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Salva nella raccolta'; } }
 }
+
+function sameCollectionSet(left, right) { return String(left || '').trim().toUpperCase() === String(right || '').trim().toUpperCase(); }
+function sameCollectionRarity(left, right) { return String(left || '').trim().toLocaleLowerCase('it') === String(right || '').trim().toLocaleLowerCase('it'); }
 
 async function deleteCollectionItem(id) {
   const item = state.collection.mine.find(entry => entry.id === id);
