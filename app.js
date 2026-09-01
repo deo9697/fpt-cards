@@ -46,6 +46,7 @@ let loginFeatureCards;
 let realtimeSyncTimer;
 let realtimeSyncRunning = false;
 let realtimeSyncQueued = false;
+let collectionLoadInFlight = null;
 let catalogRepairRunning = false;
 let catalogRepairQueued = false;
 const catalogRepairAttempted = new Set();
@@ -676,15 +677,19 @@ function mapCollectionItem(item) {
 }
 
 async function loadCollection() {
-  const [mine, team] = await Promise.all([api.myCollection(), api.teamCollection()]);
-  state.collection = {
-    mine:(mine || []).map(mapCollectionItem),
-    team:(team || []).map(mapCollectionItem),
-    syncedAt:new Date().toISOString()
-  };
-  syncLoanImagesFromCollection();
-  collectionError = '';
-  scheduleCatalogRepairs();
+  if(collectionLoadInFlight)return collectionLoadInFlight;
+  collectionLoadInFlight=(async()=>{
+    const [mine, team] = await Promise.all([api.myCollection(), api.teamCollection()]);
+    state.collection = {
+      mine:(mine || []).map(mapCollectionItem),
+      team:(team || []).map(mapCollectionItem),
+      syncedAt:new Date().toISOString()
+    };
+    syncLoanImagesFromCollection();
+    collectionError = '';
+    scheduleCatalogRepairs();
+  })();
+  try{return await collectionLoadInFlight;}finally{collectionLoadInFlight=null;}
 }
 
 async function loadDecks() {

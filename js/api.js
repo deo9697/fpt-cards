@@ -52,6 +52,11 @@ export const api = {
   async saveCollectionBatch(items) {
     ensure(); return unwrap(await client.rpc('save_collection_batch', { p_token:token(),p_items:items }));
   },
+  async saveFastScanChunk(batchId, chunkId, batchPayloadHash, payloadHash, totalChunks, items) {
+    ensure(); return unwrap(await client.rpc('save_fast_scan_chunk', {
+      p_token:token(),p_scan_batch_id:batchId,p_chunk_id:chunkId,p_batch_payload_hash:batchPayloadHash,p_payload_hash:payloadHash,p_total_chunks:totalChunks,p_items:items
+    }));
+  },
   async saveCollection(item) {
     ensure();
     return unwrap(await client.rpc('save_collection_item', {
