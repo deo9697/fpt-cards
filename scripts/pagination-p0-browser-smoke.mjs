@@ -1,0 +1,21 @@
+import {spawn} from 'node:child_process';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+
+const chromePath='C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',profile=await mkdtemp(path.join(tmpdir(),'fpt-pagination-smoke-')),port=9361;
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const chrome=spawn(chromePath,['--headless=new','--no-sandbox','--disable-gpu','--disable-extensions','--no-first-run',`--remote-debugging-port=${port}`,`--user-data-dir=${profile}`,'--window-size=390,844','about:blank'],{stdio:'ignore',windowsHide:true});
+let socket;
+try{
+  const target=await waitTarget(port);socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
+  let id=0;const pending=new Map();socket.addEventListener('message',event=>{const message=JSON.parse(event.data),task=pending.get(message.id);if(!task)return;pending.delete(message.id);message.error?task.reject(new Error(message.error.message)):task.resolve(message.result);});
+  const send=(method,params={})=>new Promise((resolve,reject)=>{const requestId=++id;pending.set(requestId,{resolve,reject});socket.send(JSON.stringify({id:requestId,method,params}));});
+  const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value;};
+  await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});await send('Emulation.setCPUThrottlingRate',{rate:4});await send('Page.navigate',{url:'http://localhost:8080/'});await delay(500);
+  const result=await evaluate(`Promise.all([import('./js/pagination.js'),import('./js/decks.js')]).then(async([{collectPages,paginationMetrics},{deckAvailability}])=>{const source=Array.from({length:1048},(_,index)=>({id:'mobile-'+index,printing_id:'printing-'+index,owner_slug:'daniele',owner_name:'Daniele',game:'yugioh',catalog_card_id:String(10000000+index),card_name:index===1047?'Uria oltre mille':'Carta '+index,set_code:'TEST-IT'+String(index%1000).padStart(3,'0'),set_name:'Set di collaudo paginazione',rarity:'Common',language:'Italiano',condition:'Near Mint',edition:'Prima Edizione',image_url:'https://images.ygoprodeck.com/images/cards/'+(10000000+index)+'.jpg',quantity_owned:index<744?2:1,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:index<744?2:1,legacy_ambiguous:false,created_at:'2026-09-02T00:00:00Z',updated_at:'2026-09-02T00:00:00Z'}));const rows=await collectPages(async(from,to)=>source.slice(from,to+1),{resource:'mobile_p05'});const collection={mine:[{catalogCardId:'73642297',cardName:'Ghost Belle & Haunted Mansion',quantityAvailable:4}],team:[]},deck={cards:[{catalogCardId:'73642296',cardName:'Ghost Belle & Haunted Mansion',quantity:3}]},report=deckAvailability(deck,collection,'daniele');return {...paginationMetrics('mobile_p05'),unique:new Set(rows.map(row=>row.id)).size,copies:rows.reduce((sum,row)=>sum+row.quantity_owned,0),search:Boolean(rows.find(row=>row.card_name==='Uria oltre mille')),ghostCovered:report.covered,ghostMissing:report.rows.length};})`);
+  if(result.rows!==1048||result.unique!==1048||result.copies!==1792||!result.search||result.requests!==3||result.payloadBytes<500000||result.ghostCovered!==3||result.ghostMissing!==0)throw new Error(`P0.5 mobile non valido: ${JSON.stringify(result)}`);
+  console.log(`PASS P0.5 mobile 390x844 / CPU 4x: ${result.rows} righe / ${result.copies} copie / ${result.requests} richieste / ${result.payloadBytes} byte / ${result.durationMs} ms / Ghost Belle 3/3`);
+}finally{try{socket?.close();}catch{}chrome.kill();await rm(profile,{recursive:true,force:true}).catch(()=>{});}
+
+async function waitTarget(debugPort){for(let index=0;index<80;index++){try{await (await fetch(`http://127.0.0.1:${debugPort}/json/version`)).json();return await (await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent('about:blank')}`,{method:'PUT'})).json();}catch{}await delay(100);}throw new Error('Chrome DevTools non disponibile');}

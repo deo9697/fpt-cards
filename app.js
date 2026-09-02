@@ -45,8 +45,11 @@ let memberLoadError = '';
 let loginFeatureCards;
 let realtimeSyncTimer;
 let realtimeSyncRunning = false;
-let realtimeSyncQueued = false;
+const realtimeSyncSources = new Set();
 let collectionLoadInFlight = null;
+let collectionLoadGeneration = 0;
+let collectionLoadAbortController = null;
+let loansLoadInFlight = null;
 let catalogRepairRunning = false;
 let catalogRepairQueued = false;
 const catalogRepairAttempted = new Set();
@@ -684,10 +687,16 @@ function mapCollectionItem(item) {
 async function loadCollection({ force = false } = {}) {
   if(collectionLoadInFlight){
     if(!force)return collectionLoadInFlight;
+    collectionLoadGeneration+=1;
+    collectionLoadAbortController?.abort();
     try{await collectionLoadInFlight;}catch{}
   }
-  collectionLoadInFlight=(async()=>{
-    const [mine, team] = await Promise.all([api.myCollection(), api.teamCollection()]);
+  const generation=++collectionLoadGeneration;
+  const controller=new AbortController();
+  collectionLoadAbortController=controller;
+  const request=(async()=>{
+    const [mine, team] = await Promise.all([api.myCollection({signal:controller.signal}), api.teamCollection({signal:controller.signal})]);
+    if(generation!==collectionLoadGeneration)return state.collection;
     state.collection = {
       mine:(mine || []).map(mapCollectionItem),
       team:(team || []).map(mapCollectionItem),
@@ -696,8 +705,12 @@ async function loadCollection({ force = false } = {}) {
     syncLoanImagesFromCollection();
     collectionError = '';
     scheduleCatalogRepairs();
+    return state.collection;
   })();
-  try{return await collectionLoadInFlight;}finally{collectionLoadInFlight=null;}
+  collectionLoadInFlight=request;
+  try{return await request;}
+  catch(error){if(generation===collectionLoadGeneration&&!controller.signal.aborted)collectionError=error.message||'Raccolta non disponibile';throw error;}
+  finally{if(collectionLoadInFlight===request)collectionLoadInFlight=null;if(collectionLoadAbortController===controller)collectionLoadAbortController=null;}
 }
 
 async function loadDecks() {
@@ -1087,16 +1100,19 @@ function startRealtime() {
 }
 
 function scheduleRealtimeSync(source) {
+  realtimeSyncSources.add(source);
   clearTimeout(realtimeSyncTimer);
-  realtimeSyncTimer = setTimeout(() => runRealtimeSync(source), 140);
+  realtimeSyncTimer = setTimeout(() => runRealtimeSync(), 250);
 }
 
-async function runRealtimeSync(source) {
-  if (realtimeSyncRunning) { realtimeSyncQueued = true; return; }
+async function runRealtimeSync() {
+  if (realtimeSyncRunning) return;
   realtimeSyncRunning = true;
+  const sources=new Set(realtimeSyncSources);
+  realtimeSyncSources.clear();
   const before = actionableIds();
   try {
-    if (source === 'collection') await loadCollection();
+    if (!sources.has('loans')) await loadCollection();
     else await Promise.allSettled([loadCloudLoans(),loadCollection()]);
     saveState();
     const added = [...actionableIds()].filter(id => !before.has(id));
@@ -1105,7 +1121,7 @@ async function runRealtimeSync(source) {
     if (!editing) renderRoute();
   } catch {} finally {
     realtimeSyncRunning = false;
-    if (realtimeSyncQueued) { realtimeSyncQueued = false; scheduleRealtimeSync('loans'); }
+    if (realtimeSyncSources.size) scheduleRealtimeSync('collection');
   }
 }
 
@@ -1119,6 +1135,13 @@ async function showLoanNotification(count) {
 }
 
 async function loadCloudLoans() {
+  if(loansLoadInFlight)return loansLoadInFlight;
+  const request=fetchCloudLoans();
+  loansLoadInFlight=request;
+  try{return await request;}finally{if(loansLoadInFlight===request)loansLoadInFlight=null;}
+}
+
+async function fetchCloudLoans() {
   const data = await api.loans();
   state.loans = data.map(l => {
     const game = l.game || 'yugioh';

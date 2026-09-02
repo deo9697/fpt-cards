@@ -1,3 +1,5 @@
+import { pagedRpc, paginationMetrics } from './pagination.js';
+
 const configured = Boolean(window.FPT_CONFIG?.supabaseUrl && window.FPT_CONFIG?.supabaseKey);
 const client = configured ? window.supabase.createClient(window.FPT_CONFIG.supabaseUrl, window.FPT_CONFIG.supabaseKey) : null;
 const TOKEN_KEY = 'fpt-cards-session-token';
@@ -17,10 +19,10 @@ export const api = {
   async members() { ensure(); return unwrap(await client.rpc('list_login_members')); },
   async login(slug, pin) { ensure(); return unwrap(await client.rpc('login_member', { p_slug:slug, p_pin:pin, p_token:token() })); },
   async logout() { if (client) await client.rpc('logout_member', { p_token:token() }); localStorage.removeItem(TOKEN_KEY); },
-  async loans() { ensure(); return unwrap(await client.rpc('list_team_loans', { p_token:token() })); },
-  async myCollection() { ensure(); return unwrap(await client.rpc('list_my_collection', { p_token:token() })); },
-  async teamCollection() { ensure(); return unwrap(await client.rpc('list_team_collection', { p_token:token() })); },
-  async decks() { ensure(); const args={p_token:token()},result=await client.rpc('list_my_decks_with_boxes',args);if(!result.error)return result.data;if(!['PGRST202','42883'].includes(result.error.code))throw result.error;return unwrap(await client.rpc('list_my_decks',args)); },
+  async loans({signal}={}) { ensure(); return pagedRpc(client,'list_team_loans',{p_token:token()},{signal,orders:[{column:'created_at'},{column:'id'}]}); },
+  async myCollection({signal}={}) { ensure(); return pagedRpc(client,'list_my_collection',{p_token:token()},{signal,orders:[{column:'card_name'},{column:'set_code'},{column:'condition'},{column:'id'}]}); },
+  async teamCollection({signal}={}) { ensure(); return pagedRpc(client,'list_team_collection',{p_token:token()},{signal,orders:[{column:'card_name'},{column:'owner_name'},{column:'set_code'},{column:'id'}]}); },
+  async decks({signal}={}) { ensure(); const args={p_token:token()};try{return await pagedRpc(client,'list_my_decks_with_boxes',args,{signal,orders:[{column:'updated_at',ascending:false},{column:'id'}]});}catch(error){if(!['PGRST202','42883'].includes(error.code))throw error;return pagedRpc(client,'list_my_decks',args,{signal,orders:[{column:'updated_at',ascending:false},{column:'id'}]});} },
   async saveDeck(deck) {
     ensure();
     const id=/^[0-9a-f-]{36}$/i.test(String(deck.id||''))?deck.id:null;
@@ -68,10 +70,10 @@ export const api = {
       p_quantity_mode:item.id ? 'set' : 'increment'
     }));
   },
-  async catalogVerificationQueue(version) {
-    ensure(); return unwrap(await client.rpc('list_collection_catalog_verification_queue', {
+  async catalogVerificationQueue(version,{signal}={}) {
+    ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {
       p_token:token(), p_verification_version:version
-    }));
+    },{signal,key:row=>row.collection_item_id||row.collectionItemId||row.id});
   },
   async repairCollectionCatalogIdentity(item) {
     ensure(); return unwrap(await client.rpc('repair_collection_item_catalog_identity', {
@@ -143,5 +145,6 @@ export const api = {
     realtimeChannel = null;
     collectionChannel = null;
   },
+  paginationMetrics(resource) { return paginationMetrics(resource); },
   async transition(id, action) { ensure(); unwrap(await client.rpc('transition_loan', { p_token:token(), p_id:id, p_action:action })); }
 };
