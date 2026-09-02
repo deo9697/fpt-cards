@@ -1,5 +1,12 @@
 const CARDTRADER_BASE='https://api.cardtrader.com/api/v2';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
+export const CARDMARKET_RESOLVER_VERSION=2;
+export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
+const SUPPORTED_RARITIES=new Map([
+  ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
+  ['ultimate rare','Ultimate Rare'],['starlight rare','Starlight Rare'],['platinum secret rare','Platinum Secret Rare'],
+  ["collector's rare","Collector's Rare"],['collectors rare',"Collector's Rare"],['quarter century secret rare','Quarter Century Secret Rare']
+]);
 
 export class PriceProvider {
   constructor({name,fetchImpl=globalThis.fetch}={}){this.name=name;this.fetch=fetchImpl;}
@@ -50,39 +57,61 @@ export class CardTraderProvider extends PriceProvider {
 }
 
 export class CardmarketPriceGuideProvider extends PriceProvider {
-  constructor({catalogUrl='',priceGuideUrl='',fetchImpl=globalThis.fetch}={}){
-    super({name:'cardmarket',fetchImpl});this.catalogUrl=catalogUrl;this.priceGuideUrl=priceGuideUrl;this.catalog=[];this.prices=new Map();this.sourceUpdatedAt='';this.loaded=false;
+  constructor({catalogUrl='',priceGuideUrl='',fetchImpl=globalThis.fetch,sleep=delay,timeoutMs=180000}={}){
+    super({name:'cardmarket',fetchImpl});this.catalogUrl=catalogUrl;this.priceGuideUrl=priceGuideUrl;this.sleep=sleep;this.timeoutMs=timeoutMs;this.catalog=[];this.prices=new Map();this.sourceUpdatedAt='';this.loaded=false;
   }
   get available(){return Boolean(this.catalogUrl&&this.priceGuideUrl);}
   getPriceMetadata(){return {provider:this.name,status:this.available?'available':'unavailable',currency:'EUR',frequency:'daily',
-    priceTypes:['low','trend','average','avg1','avg7','avg30','foil_low','foil_trend','foil_average','foil_avg1','foil_avg7','foil_avg30']};}
+    priceTypes:['low','trend','average','avg1','avg7','avg30','foil_low','foil_trend','foil_average','foil_avg1','foil_avg7','foil_avg30'],
+    languageScope:'aggregate',editionScope:'aggregate',rarityScope:'product_variant_unlabeled',foilScope:'parallel_columns_unassigned',resolverVersion:CARDMARKET_RESOLVER_VERSION};}
+  async request(url,{maxAttempts=3}={}){
+    for(let attempt=0;attempt<maxAttempts;attempt++){
+      let response;
+      try{response=await this.fetch(url,{signal:typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout==='function'?AbortSignal.timeout(this.timeoutMs):undefined});}
+      catch(error){if(attempt===maxAttempts-1)throw error;await this.sleep(backoff(attempt));continue;}
+      if(response.ok)return response;
+      if(![429,500,502,503,504].includes(response.status)||attempt===maxAttempts-1)throw new ProviderHttpError(this.name,response.status,await safeText(response));
+      const retryAfter=Number(response.headers?.get?.('retry-after'));await this.sleep(Number.isFinite(retryAfter)&&retryAfter>0?retryAfter*1000:backoff(attempt));
+    }
+  }
   async load(targets=[]){
     if(!this.available)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRODUCT_CATALOG_URL / CARDMARKET_PRICE_GUIDE_URL');
     validateOfficialCardmarketUrl(this.catalogUrl);validateOfficialCardmarketUrl(this.priceGuideUrl);
+    const catalogStats=await this.loadCatalog(targets),priceStats=await this.loadPrices(targets);
+    return {...catalogStats,...priceStats};
+  }
+  async loadCatalog(targets=[]){
+    if(!this.catalogUrl)throw unavailable('Cardmarket Product Catalogue','CARDMARKET_PRODUCT_CATALOG_URL');
+    validateOfficialCardmarketUrl(this.catalogUrl);
     const nonSinglesUrl=cardmarketNonSinglesUrl(this.catalogUrl);
-    const nonSinglesResponse=nonSinglesUrl?await this.fetch(nonSinglesUrl):null;
+    const nonSinglesResponse=nonSinglesUrl?await this.request(nonSinglesUrl):null;
     if(!nonSinglesResponse?.ok)throw new ProviderHttpError(this.name,nonSinglesResponse?.status||503,'Catalogo espansioni non disponibile');
     const expansions=new Map();
     const expansionPayload=await streamCardmarketRows(nonSinglesResponse,'products',row=>addExpansionName(expansions,row));
     if(expansions.size<100)throw new Error('Catalogo espansioni Cardmarket non disponibile dal link Product Catalogue');
     const wantedNames=new Set((targets||[]).map(row=>norm(row.cardName||row.card_name)).filter(Boolean));
-    const catalogResponse=await this.fetch(this.catalogUrl);
+    const catalogResponse=await this.request(this.catalogUrl);
     if(!catalogResponse.ok)throw new ProviderHttpError(this.name,catalogResponse.status,'Product Catalogue non disponibile');
     const catalog=[];
     const catalogPayload=await streamCardmarketRows(catalogResponse,'products',row=>{const parsed=parseProductName(row.name||'');if(!wantedNames.size||wantedNames.has(norm(parsed.cardName)))catalog.push(normalizeCardmarketProduct(row,expansions));});
     if(catalogPayload.rows<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
     this.catalog=catalog;
-    const wantedProductIds=new Set((targets||[]).map(row=>String(row.providerProductId||row.provider_product_id||'')).filter(Boolean));
-    for(const target of targets||[]){const resolution=resolveCardmarketPrinting(target,this.catalog);if(resolution.status==='resolved')wantedProductIds.add(productId(resolution.candidate));}
-    const priceResponse=await this.fetch(this.priceGuideUrl);
-    if(!priceResponse.ok)throw new ProviderHttpError(this.name,priceResponse.status,'Price Guide non disponibile');
+    return {catalogRows:catalogPayload.rows,retainedCatalogRows:this.catalog.length,expansionRows:expansions.size};
+  }
+  async loadPrices(targets=[]){
+    if(!this.priceGuideUrl)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRICE_GUIDE_URL');
+    validateOfficialCardmarketUrl(this.priceGuideUrl);
+    const wantedProductIds=new Set((targets||[]).filter(row=>isAuthorizedCardmarketMapping(row)).map(row=>String(row.providerProductId||row.provider_product_id||'')).filter(Boolean));
     this.prices=new Map();
-    const pricePayload=await streamCardmarketRows(priceResponse,'priceGuides',row=>{const id=productId(row);if(id&&(!wantedProductIds.size||wantedProductIds.has(id)))this.prices.set(id,row);});
+    if(!wantedProductIds.size){this.sourceUpdatedAt=new Date().toISOString();this.loaded=true;return {priceRows:0,retainedPriceRows:0,mode:'prices_only'};}
+    const priceResponse=await this.request(this.priceGuideUrl);
+    if(!priceResponse.ok)throw new ProviderHttpError(this.name,priceResponse.status,'Price Guide non disponibile');
+    const pricePayload=await streamCardmarketRows(priceResponse,'priceGuides',row=>{const id=productId(row);if(id&&wantedProductIds.has(id))this.prices.set(id,row);});
     if(pricePayload.rows<1000)throw new Error('Price Guide Cardmarket non valido: usa il link JSON diretto price_guide_3.json');
     this.sourceUpdatedAt=pricePayload.createdAt||priceResponse.headers?.get?.('last-modified')||new Date().toISOString();this.loaded=true;
-    return {catalogRows:catalogPayload.rows,retainedCatalogRows:this.catalog.length,priceRows:pricePayload.rows,retainedPriceRows:this.prices.size,expansionRows:expansions.size};
+    return {priceRows:pricePayload.rows,retainedPriceRows:this.prices.size,mode:'prices_only'};
   }
-  async resolvePrinting(printing,candidates=this.catalog){return resolveCardmarketPrinting(printing,candidates);}
+  async resolvePrinting(printing,options={}){return resolveCardmarketPrinting(printing,this.catalog,options);}
   async getMarketListings(){return [];}
   async getCurrentPrice(mapping){
     if(!this.loaded)await this.load([mapping]);const id=String(mapping.providerProductId||mapping.provider_product_id||'');const row=this.prices.get(id);
@@ -109,17 +138,34 @@ export function resolveExactPrinting(printing,candidates,provider){
   if(matches.length>1)return {status:'ambiguous',confidence:0.5,candidates:matches,provider};
   return {status:'unresolved',confidence:0,candidates:[],provider};
 }
-export function resolveCardmarketPrinting(printing,candidates){
-  const local=normalizePrinting(printing),name=norm(printing.cardName||printing.card_name),expansion=local.expansion;
-  if(!name||!expansion)return {status:'unresolved',confidence:0,candidates:[],provider:'cardmarket',reason:'name_or_expansion_missing'};
-  const expanded=(candidates||[]).filter(row=>norm(row.cardName||row.name)===name&&norm(row.setName||row.expansion)===expansion);
-  const rarityMatches=local.rarity?expanded.filter(row=>norm(row.rarity)===local.rarity):expanded;
-  const matches=rarityMatches.length?rarityMatches:expanded;
-  if(matches.length===1)return {status:'resolved',confidence:rarityMatches.length ? .98 : .88,candidate:matches[0],provider:'cardmarket',evidence:{catalogCardId:printing.catalogCardId||printing.catalog_card_id,setCode:printing.setCode||printing.set_code,expansion:printing.setName||printing.set_name,rarity:printing.rarity||'',language:printing.language||'',edition:printing.edition||''}};
-  if(matches.length>1)return {status:'ambiguous',confidence:.5,candidates:matches,provider:'cardmarket'};
-  return {status:'unresolved',confidence:0,candidates:[],provider:'cardmarket'};
+export function resolveCardmarketPrinting(printing,candidates,options={}){
+  const local=normalizePrinting(printing),internalRarity=normalizeMarketRarity(printing.rarity),name=norm(printing.cardName||printing.card_name);
+  const base=evidenceBase(printing,internalRarity),fail=(status,reason,extra={})=>({status,confidence:0,candidates:[],provider:'cardmarket',reason,evidence:{...base,...extra},priceScope:null,resolverVersion:CARDMARKET_RESOLVER_VERSION});
+  if(!internalRarity)return fail(CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,'unsupported_internal_rarity');
+  const family=internalFamily(printing,options.internalPrintings||[]),expansions=new Set(family.map(row=>norm(row.setName||row.set_name)).filter(Boolean));
+  if(local.expansion)expansions.add(local.expansion);
+  if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
+  const products=dedupeProducts((candidates||[]).filter(row=>norm(row.cardName||row.name)===name&&expansions.has(norm(row.setName||row.expansion))));
+  if(!products.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_product_not_found',{acceptedExpansions:[...expansions].sort()});
+  const internalRarities=[...new Set(family.map(row=>normalizeMarketRarity(row.rarity)).filter(Boolean))].sort();
+  const exactRarity=products.filter(row=>normalizeMarketRarity(row.rarity)===internalRarity);
+  const providerRarityKnown=products.filter(row=>normalizeMarketRarity(row.rarity));
+  let matches=[];
+  if(exactRarity.length)matches=exactRarity;
+  else if(providerRarityKnown.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_rarity_mismatch',{internalRarities,providerRarities:[...new Set(providerRarityKnown.map(row=>normalizeMarketRarity(row.rarity)))].sort(),candidateCount:products.length});
+  else matches=products;
+  if(matches.length>1)return {...fail(CARDMARKET_RESOLUTION_STATES.AMBIGUOUS,'multiple_provider_products',{internalRarities,candidateCount:matches.length}),candidates:matches};
+  const candidate=matches[0],providerRarity=normalizeMarketRarity(candidate.rarity);
+  if(!providerRarity&&internalRarities.length>1)return {...fail(CARDMARKET_RESOLUTION_STATES.AMBIGUOUS,'internal_rarity_conflict_provider_rarity_missing',{internalRarities,candidateCount:1}),candidates:[candidate]};
+  const priceScope={language:'aggregate',edition:'aggregate',rarity:providerRarity?'specific':'aggregate',foil:candidate.foil==null?'parallel_columns_unassigned':'specific'};
+  return {status:CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,confidence:1,candidate,candidates:[candidate],provider:'cardmarket',reason:'unique_provider_product_aggregate_variant_scope',priceScope,resolverVersion:CARDMARKET_RESOLVER_VERSION,
+    evidence:{...base,providerProductId:productId(candidate),providerCardName:candidate.cardName||candidate.name||'',providerExpansion:candidate.setName||candidate.expansion||'',providerExpansionId:candidate.providerExpansionId||candidate.provider_expansion_id||null,
+      providerRarity:providerRarity||null,providerFoil:candidate.foil??null,providerHasSetCode:false,internalSetFamily:setFamilyKey(printing.setCode||printing.set_code),internalCatalogFamilySize:family.length,
+      internalRarities,candidateCount:1,acceptedExpansions:[...expansions].sort(),identityBasis:['card_name','provider_expansion_id','unique_provider_product_id','internal_set_family']}};
 }
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
+export function normalizeMarketRarity(value){return SUPPORTED_RARITIES.get(norm(value))||null;}
+export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
 
 function normalizePrinting(row){return {game:norm(row.game),catalogId:norm(row.catalogCardId||row.catalog_card_id),setCode:normCode(row.setCode||row.set_code),
   expansion:norm(row.setName||row.set_name||row.expansion),rarity:norm(row.rarity),language:norm(row.language),edition:norm(row.edition),foil:bool(row.foil)};}
@@ -142,14 +188,18 @@ function eligibleListing(row,mapping){const props=row.properties_hash||row.prope
   if(typeof mapping.foil==='boolean'){const actual=bool(props.yugioh_foil??props.mtg_foil??props.foil);if(actual!==mapping.foil)return false;}return true;}
 function normalizeCardTraderListing(row){const price=row.price||{};return {id:row.id,blueprintId:row.blueprint_id,price:Number(price.cents??row.price_cents)/100,
   currency:String(price.currency||row.price_currency||'EUR').toUpperCase(),quantity:Number(row.quantity||0),properties:row.properties_hash||row.properties||{}};}
-function productId(row){return String(read(row,['idProduct','Product ID','product_id','id'])||'');}
+function productId(row){return String(read(row,['providerProductId','provider_product_id','idProduct','Product ID','product_id','id'])||'');}
+function evidenceBase(printing,rarity){return {internalPrintingId:printing.printingId||printing.printing_id||printing.id||null,catalogCardId:String(printing.catalogCardId||printing.catalog_card_id||''),internalSetCode:printing.setCode||printing.set_code||'',internalSetName:printing.setName||printing.set_name||'',internalRarity:rarity,internalLanguage:printing.language||'',internalEdition:printing.edition||''};}
+function setFamilyKey(value){const code=String(value||'').trim().toUpperCase(),match=code.match(/^([A-Z0-9]+)-[A-Z]{1,3}([0-9]+)$/);return match?`${match[1]}:${match[2]}`:normCode(code);}
+function internalFamily(printing,rows){const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),result=(rows||[]).filter(row=>norm(row.catalogCardId||row.catalog_card_id)===catalog&&setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
+function dedupeProducts(rows){const byId=new Map();for(const row of rows||[]){const id=productId(row);if(id&&!byId.has(id))byId.set(id,row);}return [...byId.values()].sort((a,b)=>productId(a).localeCompare(productId(b),'en',{numeric:true}));}
 export function parseCardmarketPayload(text,key){const value=String(text||'').trim();if(!value)return {rows:[],createdAt:''};if(value[0]==='{'||value[0]==='['){const parsed=JSON.parse(value),rows=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.[key])?parsed[key]:[]);return {rows,createdAt:parsed?.createdAt||''};}return {rows:parseDelimited(value),createdAt:''};}
 export function cardmarketNonSinglesUrl(value){try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
 function buildExpansionNames(rows){const values=new Map();for(const row of rows||[]){const id=String(row.idExpansion||row.expansion_id||'');if(!id)continue;const name=cleanExpansionName(row.name||'');if(!name)continue;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}return values;}
 function addExpansionName(values,row){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
 function cleanExpansionName(value){return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
 function normalizeCardmarketProduct(row,expansions){const parsed=parseProductName(row.name||'');const id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`};}
-function parseProductName(value){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/foil|rare/i.test(rarity)?true:null};}
+function parseProductName(value){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/\bfoil\b/i.test(rarity)?true:null};}
 function numberFrom(row,keys){const raw=read(row,keys);if(raw==null||raw==='')return null;const value=Number(String(raw).replace(',','.'));return Number.isFinite(value)&&value>=0?value:null;}
 function read(row,keys){for(const key of keys)if(row?.[key]!=null&&row[key]!=='')return row[key];return null;}
 function norm(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ');}

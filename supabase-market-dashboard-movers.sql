@@ -13,7 +13,7 @@ begin
     group by ci.printing_id
   ), latest as (
     select distinct on (s.printing_id,s.price_type) s.printing_id,s.price_type,s.normalized_price,s.captured_at
-    from market_price_snapshots s join owned o on o.printing_id=s.printing_id
+    from market_derived_price_snapshots s join owned o on o.printing_id=s.printing_id
     where s.provider='cardmarket' and s.normalized_currency='EUR' and s.normalized_price is not null
       and s.price_type in ('trend','avg1','avg7','avg30') and s.captured_at>=now()-interval '48 hours'
     order by s.printing_id,s.price_type,s.captured_at desc,s.id desc
