@@ -3,11 +3,11 @@ export const CATALOG_VERIFICATION_VERSION = 1;
 export async function verifyPendingCollectionCatalog({
   api,
   resolveCard,
-  onVerified = () => {},
+  onVerified = () => { },
   attempted = new Set(),
   concurrency = 4
 } = {}) {
-  const stats = { queued:0, providerRequests:0, verified:0, failed:0, unavailable:false };
+  const stats = { queued: 0, providerRequests: 0, verified: 0, failed: 0, unavailable: false };
   let rows;
   try {
     rows = await api.catalogVerificationQueue(CATALOG_VERIFICATION_VERSION);
@@ -27,17 +27,17 @@ export async function verifyPendingCollectionCatalog({
     stats.providerRequests += 1;
     try {
       const card = await resolveCard({
-        id:row.catalog_card_id || row.catalogCardId || '',
-        name:row.card_name || row.cardName || '',
-        setCode:row.set_code || row.setCode || ''
+        id: row.catalog_card_id || row.catalogCardId || '',
+        name: row.card_name || row.cardName || '',
+        setCode: row.set_code || row.setCode || ''
       }, row.game || 'yugioh');
       if (!card) { stats.failed += 1; return; }
       const repaired = await api.repairCollectionCatalogIdentity({
-        collectionItemId:row.collection_item_id || row.collectionItemId || row.id,
-        catalogCardId:String(card.id),
-        cardName:card.name,
-        imageUrl:card.fullImage || card.image || '',
-        verificationVersion:CATALOG_VERIFICATION_VERSION
+        collectionItemId: row.collection_item_id || row.collectionItemId || row.id,
+        catalogCardId: String(card.id),
+        cardName: card.name,
+        imageUrl: card.fullImage || card.image || '',
+        verificationVersion: CATALOG_VERIFICATION_VERSION
       });
       stats.verified += 1;
       onVerified(row, repaired, card);
@@ -51,7 +51,7 @@ export async function verifyPendingCollectionCatalog({
 
 async function runLimited(items, limit, task) {
   let cursor = 0;
-  const workers = Array.from({ length:Math.min(Math.max(1, limit), items.length) }, async () => {
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
     while (cursor < items.length) await task(items[cursor++]);
   });
   await Promise.all(workers);
