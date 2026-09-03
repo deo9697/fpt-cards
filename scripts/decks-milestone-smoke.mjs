@@ -81,6 +81,28 @@ controller.chooseCover('10000002');assert.equal(uiState.decks[0].signatureCardId
 controller.chooseDeckBoxTemplate('infernal-dragon');assert.equal(uiState.decks[0].deckBoxTemplate,'infernal-dragon');assert.equal(uiState.decks[0].deckTheme,'infernal-red','Il modello rosso non applica il tema coerente');
 assert(isExtraDeckCard({type:'Synchro Effect Monster'}));assert(isExtraDeckCard({type:'Link Monster'}));assert(!isExtraDeckCard({type:'Effect Monster'}));
 
+let typesRequests=0;
+const typeDeck={id:'deck-types',persisted:true,name:'Type Sort Test',format:'TCG Avanzato',game:'yugioh',cover:'',cards:[
+  {catalogCardId:'1',cardName:'Zeta Trap',section:'main',quantity:1,imageUrl:''},
+  {catalogCardId:'2',cardName:'Alpha Monster',section:'main',quantity:1,imageUrl:''},
+  {catalogCardId:'3',cardName:'Beta Spell',section:'main',quantity:1,imageUrl:''}
+]};
+const typeState={game:'yugioh',currentUser:'me',decks:[typeDeck],collection:{mine:[],team:[]}};
+const typeController=new DeckController({getState:()=>typeState,isOnline:()=>true,onRender:()=>{},onToast:()=>{},cardTypesByIds:async ids=>{typesRequests+=1;return {'1':'Trap Card','2':'Effect Monster','3':'Spell Card'};}});
+typeController.activeId='deck-types';typeController.previewId='deck-types';typeController.screen='detail';
+const resolvePromise=typeController.resolveCardTypes(typeController.active());
+assert.equal(typeController.typesLoading,true,'typesLoading non attivo durante la risoluzione bulk dei tipi');
+await resolvePromise;
+assert.equal(typesRequests,1,'la risoluzione dei tipi deve usare una sola richiesta bulk, non una per carta');
+assert.equal(typeController.typesLoading,false,'typesLoading non si disattiva dopo la risoluzione');
+assert.deepEqual(typeController.cardTypes,{'1':'trap','2':'monster','3':'spell'},'tipi carta non normalizzati correttamente dalla risposta bulk');
+const sortedDefault=typeController.sortCards(typeDeck.cards).map(c=>c.cardName);
+assert.deepEqual(sortedDefault,['Alpha Monster','Beta Spell','Zeta Trap'],'ordinamento predefinito non raggruppa Mostri → Magie → Trappole');
+typeController.setSort('name-asc');
+assert.deepEqual(typeController.sortCards(typeDeck.cards).map(c=>c.cardName),['Alpha Monster','Beta Spell','Zeta Trap'],'ordinamento Nome A-Z errato');
+typeController.setTypeFilter('trap');const trapHtml=typeController.view();
+assert(trapHtml.includes('Zeta Trap')&&!trapHtml.includes('Alpha Monster')&&!trapHtml.includes('Beta Spell'),'filtro Trappole non isola le sole carte trappola risolte');
+
 const draftState={game:'yugioh',currentUser:'me',decks:[],collection:{mine:[],team:[]}},draftController=new DeckController({api:{decks:async()=>[]},getState:()=>draftState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});draftController.create(false);draftController.add({id:'99',name:'Synchro Test',type:'Synchro Monster',image:'synchro.jpg',banTcg:'semi-limited'});assert.equal(draftController.active().cards[0].section,'extra','una carta Extra Deck inserita dal Main non viene classificata automaticamente');
 const restoredState={game:'yugioh',currentUser:'me',decks:[],collection:{mine:[],team:[]}},restoredController=new DeckController({api:{decks:async()=>[]},getState:()=>restoredState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});await restoredController.load();assert.equal(restoredController.active().cards[0].cardName,'Synchro Test','hard refresh perde la bozza locale');
 assert.equal(restoredController.active().cards[0].banTcg,'semi-limited','hard refresh perde lo stato della banlist TCG');

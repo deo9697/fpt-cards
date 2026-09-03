@@ -1,6 +1,6 @@
 import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
+import { searchCards, findCard, findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
@@ -59,7 +59,7 @@ const fastScan = new FastScanController({
   isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
-const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
+const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function installCardImageRecovery() {

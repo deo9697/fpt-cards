@@ -1043,10 +1043,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .deck-mh-tabs button.active i { background:#c66cff2e;color:#e6c9ff; }
 .deck-mh-filters { display:flex;align-items:center;gap:7px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px; }
 .deck-mh-filters .chip { flex:none; }
+.deck-mh-filters select { flex:none;width:auto;min-width:0;margin-left:auto;padding:6px 26px 6px 10px;border-color:#241f38;background-color:#0c0a17;font-size:.66rem; }
+.deck-mh-types-loading { display:flex;align-items:center;gap:8px;margin:-4px 0 10px;color:var(--muted);font-size:.7rem; }
+.deck-mh-types-loading .loading-spinner { width:14px;height:14px;border-width:2px; }
 .deck-mobile-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding-bottom:8px; }
 .deck-tile { position:relative;padding:0;border:0;background:transparent; }
 .deck-tile-art { position:relative;display:block;aspect-ratio:.686;overflow:hidden;border-radius:11px;background:#111725;box-shadow:0 8px 18px #0007;transition:box-shadow .16s,transform .16s; }
 .deck-tile:active .deck-tile-art { transform:scale(.96); }
+.deck-tile[data-card-type="monster"] .deck-tile-art { box-shadow:0 0 0 2px #b8873f77,0 8px 18px #0007; }
+.deck-tile[data-card-type="spell"] .deck-tile-art { box-shadow:0 0 0 2px #3fae7277,0 8px 18px #0007; }
+.deck-tile[data-card-type="trap"] .deck-tile-art { box-shadow:0 0 0 2px #c34a8c77,0 8px 18px #0007; }
 .deck-tile.selected .deck-tile-art { box-shadow:0 0 0 2px #c66cff,0 8px 18px #0007; }
 .deck-tile-art img { width:100%;height:100%;object-fit:contain;background:#090b10; }
 .deck-tile-art>.icon { width:100%;height:100%;padding:25%;color:#49536b; }

@@ -13,15 +13,22 @@ const TYPE_FILTERS = [
   { value: 'spell', label: 'Magie' },
   { value: 'trap', label: 'Trappole' }
 ];
+const TYPE_RANK = { monster: 0, spell: 1, trap: 2, '': 3 };
+const SORT_OPTIONS = [
+  { value: 'type', label: 'Tipo (Mostri → Magie → Trappole)' },
+  { value: 'name-asc', label: 'Nome A–Z' },
+  { value: 'name-desc', label: 'Nome Z–A' },
+  { value: 'qty-desc', label: 'Più copie' }
+];
 const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limitata a 2 copie', forbidden: 'Proibita' };
 
 export class DeckController {
-  constructor({ api, getState, searchCards, findCard, findCardById, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged } = {}) {
-    Object.assign(this, { api, getState, searchCards, findCard, findCardById, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged });
+  constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged } = {}) {
+    Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged });
     this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
     this.scope = 'mine'; this.teamDecksAll = []; this.teamDetailId = ''; this.teamLoadInFlight = null; this.teamError = '';
-    this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
-    this.cardTypes = readTypeCache(); this.typeResolveInFlight = new Set();
+    this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.cardSort = 'type'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
+    this.cardTypes = readTypeCache(); this.typesLoading = false;
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }
@@ -63,7 +70,7 @@ export class DeckController {
       ${this.editorHeader(deck, total, report)}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…"></label><div data-deck-search-results class="deck-search-results"></div></div>
       <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra per tipo">${TYPE_FILTERS.map(f => `<button type="button" class="chip ${this.cardTypeFilter === f.value ? 'active' : ''}" data-deck-type-filter="${f.value}">${f.label}</button>`).join('')}</div>` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina">${TYPE_FILTERS.map(f => `<button type="button" class="chip ${this.cardTypeFilter === f.value ? 'active' : ''}" data-deck-type-filter="${f.value}">${f.label}</button>`).join('')}<select data-deck-sort aria-label="Ordina carte">${SORT_OPTIONS.map(option => `<option value="${option.value}" ${this.cardSort === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck)}
       ${sheetCard ? this.cardSheet(sheetCard, report) : this.availabilityPeek(report)}
       ${this.moreMenuOpen ? this.moreMenu(deck) : ''}
@@ -86,14 +93,26 @@ export class DeckController {
     </div>`;
   }
   sectionGrid(deck) {
-    const cards = deck.cards.filter(item => item.section === this.activeSection && this.matchesTypeFilter(item));
+    const cards = this.sortCards(deck.cards.filter(item => item.section === this.activeSection && this.matchesTypeFilter(item)));
     if (!cards.length) return `<div class="deck-section-empty">${icon('card')}<span>Nessuna carta${this.cardTypeFilter !== 'all' ? ' per questo filtro' : ' in questa sezione'}</span></div>`;
     return `<div class="deck-mobile-grid">${cards.map(item => this.cardTile(item)).join('')}</div>`;
   }
   matchesTypeFilter(item) { return this.cardTypeFilter === 'all' || this.cardTypes[item.catalogCardId] === this.cardTypeFilter; }
+  sortCards(cards) {
+    const sorted = [...cards];
+    switch (this.cardSort) {
+      case 'name-desc': return sorted.sort((a, b) => b.cardName.localeCompare(a.cardName, 'it'));
+      case 'qty-desc': return sorted.sort((a, b) => b.quantity - a.quantity || a.cardName.localeCompare(b.cardName, 'it'));
+      case 'name-asc': return sorted.sort((a, b) => a.cardName.localeCompare(b.cardName, 'it'));
+      default: return sorted.sort((a, b) => {
+        const rank = (TYPE_RANK[this.cardTypes[a.catalogCardId] || ''] ?? 3) - (TYPE_RANK[this.cardTypes[b.catalogCardId] || ''] ?? 3);
+        return rank || a.cardName.localeCompare(b.cardName, 'it');
+      });
+    }
+  }
   cardTile(item) {
     const selected = this.selectedCard && this.selectedCard.catalogCardId === item.catalogCardId && this.selectedCard.section === item.section;
-    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}<b>${item.quantity}</b></span></button>`;
+    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}<b>${item.quantity}</b></span></button>`;
   }
   cardSheet(item, report) {
     const otherSections = SECTIONS.filter(section => section !== item.section);
@@ -161,6 +180,7 @@ export class DeckController {
     root.querySelector('[data-deck-import-run]')?.addEventListener('click', () => void this.importText(root.querySelector('[data-deck-import-text]')?.value || ''));
     root.querySelectorAll('[data-deck-section]').forEach(button => button.addEventListener('click', () => this.setSection(button.dataset.deckSection)));
     root.querySelectorAll('[data-deck-type-filter]').forEach(button => button.addEventListener('click', () => this.setTypeFilter(button.dataset.deckTypeFilter)));
+    root.querySelector('[data-deck-sort]')?.addEventListener('change', event => this.setSort(event.target.value));
     root.querySelectorAll('[data-deck-card-select]').forEach(button => button.addEventListener('click', () => this.selectCard(button.dataset.deckCardSelect, button.dataset.deckCardSelectSection)));
     root.querySelector('[data-deck-sheet-close]')?.addEventListener('click', () => this.closeSheet());
     root.querySelectorAll('[data-deck-sheet-qty]').forEach(button => button.addEventListener('click', () => this.sheetQuantity(button.dataset.deckSheetQty === 'plus' ? 1 : -1)));
@@ -203,23 +223,20 @@ export class DeckController {
   }
   toggleMissingPanel(open) { this.missingPanelOpen = open; if (open) this.selectedCard = null; this.onRender(); }
   toggleMoreMenu() { this.moreMenuOpen = !this.moreMenuOpen; this.onRender(); }
+  setSort(value) { if (!SORT_OPTIONS.some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
   async resolveCardTypes(deck) {
-    if (!deck || deck.game !== 'yugioh') return;
-    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardTypes) && !this.typeResolveInFlight.has(id));
+    if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds || this.typesLoading) return;
+    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardTypes));
     if (!ids.length) return;
-    ids.forEach(id => this.typeResolveInFlight.add(id));
-    let changed = false;
-    const queue = [...ids];
-    const worker = async () => {
-      while (queue.length) {
-        const id = queue.shift();
-        try { const card = await this.findCardById(id, '', deck.game); this.cardTypes[id] = card ? coarseCardType(card.type) : ''; changed = true; }
-        catch { this.cardTypes[id] = this.cardTypes[id] || ''; }
-        finally { this.typeResolveInFlight.delete(id); }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker));
-    if (changed) { writeTypeCache(this.cardTypes); this.onRender(); }
+    this.typesLoading = true;
+    try {
+      const resolved = await this.cardTypesByIds(ids, deck.game);
+      for (const id of ids) this.cardTypes[id] = coarseCardType(resolved[id] || '');
+      writeTypeCache(this.cardTypes);
+    } finally {
+      this.typesLoading = false;
+      this.onRender();
+    }
   }
   search(query) { clearTimeout(this.searchTimer); const box = document.querySelector('[data-deck-search-results]'); if (!box) return; if (query.trim().length < 3) { box.innerHTML = ''; return; } box.innerHTML = '<span>Ricerca…</span>'; this.searchTimer = setTimeout(async () => { const results = await this.searchCards(query, this.state.game); this.searchResults = results; const current = document.querySelector('[data-deck-search-results]'); if (!current) return; current.innerHTML = results.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>'; current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(this.searchResults[Number(button.dataset.deckResult)]))); }, 260); }
   add(card, section = this.targetSection, quantity = 1) { const deck = this.active(); if (!deck || !card) return; const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = String(card.id), existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination); if (existing) { existing.quantity = Math.min(99, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.searchResults = []; this.markDirty(deck); this.onRender(); }

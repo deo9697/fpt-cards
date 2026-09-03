@@ -99,6 +99,20 @@ export async function findCard(name, game = 'yugioh') {
     || null;
 }
 
+export async function cardTypesByIds(ids, game = 'yugioh') {
+  if (game !== 'yugioh') return {};
+  const unique = [...new Set((ids || []).map(id => String(id).trim()).filter(id => /^\d{5,10}$/.test(id)))];
+  if (!unique.length) return {};
+  try {
+    const response = await fetch(`${ENDPOINT}?id=${unique.join(',')}`);
+    if (!response.ok) return {};
+    const rows = (await response.json()).data || [];
+    const map = {};
+    for (const row of rows) map[String(row.id)] = row.type || '';
+    return map;
+  } catch { return {}; }
+}
+
 export async function findCardById(id, expectedName = '', game = 'yugioh') {
   if (game !== 'yugioh') return null;
   const candidates = await cardsById(id);
