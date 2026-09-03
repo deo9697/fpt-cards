@@ -30,7 +30,7 @@ export class FastScanCamera {
   }
   async devices() { if(!this.mediaDevices?.enumerateDevices)return[]; return (await this.mediaDevices.enumerateDevices()).filter(item=>item.kind==='videoinput'); }
   async refocus() {
-    const track=this.track; if(!this.focusSupported||!track)return false;
+    const track=this.track; if(!this.focusSupported||!track||this.refocusing)return false;
     this.refocusing=true;try{const modes=this.capabilities.focusModes;
       if(modes.includes('single-shot')) {
         const applied=await this.applyConstraint({focusMode:'single-shot'}); if(!applied)return false;
@@ -45,7 +45,22 @@ export class FastScanCamera {
     const zoom=clamp(Number(value)||range.min,range.min,range.max);const applied=await this.applyConstraint({zoom});if(applied){this.settings=track.getSettings?.()||{...this.settings,zoom};this.zoomValue=Number(this.settings.zoom)||zoom;}return applied;
   }
   async toggleTorch(){const track=this.track;if(!this.torchSupported||!track)return false;this.torchOn=!this.torchOn;const applied=await this.applyConstraint({torch:this.torchOn});if(applied)return this.torchOn;this.torchOn=false;return false;}
-  async applyConstraint(constraint){const track=this.track;if(!track?.applyConstraints)return false;try{await track.applyConstraints({advanced:[constraint]});return true;}catch(error){this.constraintErrors.push({constraint:Object.keys(constraint)[0],message:error?.message||'applyConstraints failed',at:new Date().toISOString()});if(this.constraintErrors.length>12)this.constraintErrors.shift();return false;}}
+  async applyConstraint(constraint){
+    const track=this.track;if(!track?.applyConstraints)return false;
+    // Some Android camera drivers never settle this promise (seen with rapid
+    // focusMode changes). Without a bounded timeout here, refocus() would stay
+    // stuck mid-flight forever, wedging the scan loop in "Messa a fuoco..." and
+    // blocking every future capture — race a timeout so it always resolves.
+    let timeout;
+    try{
+      await Promise.race([
+        track.applyConstraints({advanced:[constraint]}),
+        new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('applyConstraints timeout')),2500);})
+      ]);
+      return true;
+    }catch(error){this.constraintErrors.push({constraint:Object.keys(constraint)[0],message:error?.message||'applyConstraints failed',at:new Date().toISOString()});if(this.constraintErrors.length>12)this.constraintErrors.shift();return false;}
+    finally{clearTimeout(timeout);}
+  }
   preferPreprocessing(mode){if(['grayscale','adaptive'].includes(mode))this.preferredMode=mode;}
   clearPreprocessingPreference(){this.preferredMode='';}
   attachTrackHealth(track){
