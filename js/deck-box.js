@@ -36,10 +36,10 @@ export function preferredDeckArtwork(card){
   const id=String(card.catalogCardId||'');return /^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:source;
 }
 
-export function deckBoxModel(deck,{availability=null,marketValue=null,delta24=null,delta7=null,topMover=null}={}){
+export function deckBoxModel(deck,{availability=null,marketValue=null,marketIndicative=false,marketCoverage='',delta24=null,delta7=null,topMover=null}={}){
   const signature=resolveDeckSignature(deck),template=normalizeDeckBoxTemplate(deck?.deckBoxTemplate),templatePreset=DECK_BOX_TEMPLATES[template],theme=normalizeDeckTheme(deck?.deckTheme||templatePreset.theme),preset=DECK_THEMES[theme];
   return {deckId:String(deck?.id||''),deckName:deck?.name||'Mazzo senza nome',signature,template,templatePreset,artwork:templatePreset.image||preferredDeckArtwork(signature),theme,preset,
-    mainCount:sectionTotal(deck,'main'),extraCount:sectionTotal(deck,'extra'),sideCount:sectionTotal(deck,'side'),availability,marketValue,delta24,delta7,topMover};
+    mainCount:sectionTotal(deck,'main'),extraCount:sectionTotal(deck,'extra'),sideCount:sectionTotal(deck,'side'),availability,marketValue,marketIndicative,marketCoverage,delta24,delta7,topMover};
 }
 
 export function renderDeckBoxCard(deck,options={}){
@@ -51,7 +51,7 @@ export function renderDeckBoxVisual(deck,{className=''}={}){const model=deckBoxM
 
 function renderArtwork(model){return model.artwork?`<img class="${model.template!=='procedural'?'deck-box-template-art':'deck-box-signature-art'}" src="${esc(model.artwork)}" alt="${model.template!=='procedural'?`Modello ${esc(model.templatePreset.label)}`:`Artwork di ${esc(model.signature?.cardName||model.deckName)} per il mazzo ${esc(model.deckName)}`}" loading="lazy">`:`<span class="deck-box-fallback">${icon('deck')}<strong>F.P.T</strong><small>CARDS</small></span>`;}
 function availabilityMeta(model){if(model.availability==null)return'<em>Disponibilità non disponibile</em>';return `<em>Disponibilità personale <b>${model.availability}%</b><i class="deck-mini-ready" style="--ready:${model.availability}"></i></em>`;}
-function marketMeta(model){return `<span class="deck-market-value">${model.marketValue==null?'Valore non disponibile':money(model.marketValue)}</span><em class="deck-market-deltas"><b class="${tone(model.delta24)}">24h ${change(model.delta24)}</b><b class="${tone(model.delta7)}">7d ${change(model.delta7)}</b></em>${model.topMover?`<span class="deck-top-mover">Top mover · ${esc(model.topMover.cardName)} ${change(model.topMover.percent)}</span>`:''}`;}
+function marketMeta(model){return `<span class="deck-market-value">${model.marketValue==null?'Valore non disponibile':`${model.marketIndicative?'Valore indicativo ':'Valore '}${money(model.marketValue)}`}</span>${model.marketIndicative?`<em class="deck-market-deltas"><b>Copertura ${esc(model.marketCoverage||'parziale')}</b><b>Trend escluso</b></em>`:`<em class="deck-market-deltas"><b class="${tone(model.delta24)}">24h ${change(model.delta24)}</b><b class="${tone(model.delta7)}">7d ${change(model.delta7)}</b></em>${model.topMover?`<span class="deck-top-mover">Top mover · ${esc(model.topMover.cardName)} ${change(model.topMover.percent)}</span>`:''}`}`;}
 function themeAttributes(model){const t=model.preset;return `data-deck-theme="${model.theme}" data-deck-template="${model.template}" style="--deck-hue:${t.hue};--deck-accent:${t.accent};--deck-border:${t.border};--deck-glow:${t.glow};--deck-dark:${t.dark}"`;}
 function sectionTotal(deck,section){return (deck?.cards||[]).filter(card=>card.section===section).reduce((sum,card)=>sum+Number(card.quantity||0),0);}
 function money(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(value));}

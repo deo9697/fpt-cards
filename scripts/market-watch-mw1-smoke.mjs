@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,isAuthorizedCardmarketMapping,normalizeMarketRarity,resolveCardmarketPrinting} from '../market/providers.js';
+import {CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,cardmarketMappingNeedsResolver,isAuthorizedCardmarketMapping,normalizeMarketRarity,resolveCardmarketPrinting} from '../market/providers.js';
 
 const product=(id,name,expansion,rarity='')=>({providerProductId:String(id),cardName:name,setName:expansion,rarity,foil:null});
 const printing=(overrides={})=>({game:'yugioh',catalogCardId:'1',cardName:'Test Card',setCode:'TEST-EN001',setName:'Test Set',rarity:'Common',language:'English',edition:'1st Edition',...overrides});
@@ -43,11 +43,17 @@ const english={...italian,setCode:'LOC-EN001',setName:'English Set',language:'En
 assert.equal(resolve(italian,[product(906,'Localized Card','English Set')],[italian,english]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
 assert.equal(resolve(printing({rarity:'Ultimate Rare'}),[product(907,'Test Card','Test Set')]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
 assert.equal(resolve(printing({rarity:'Platinum Secret Rare'}),[product(908,'Test Card','Test Set')]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
+const encodedExpansion=printing({cardName:'Encoded Card',setName:'Legendary 5D&apos;s Decks',rarity:'Short Print'});
+assert.equal(resolve(encodedExpansion,[product(909,'Encoded Card',"Legendary 5D's Decks")]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'entità HTML non normalizzata nel nome espansione');
 assert.equal(resolve(printing({rarity:'3'}),[oneProduct]).status,CARDMARKET_RESOLUTION_STATES.UNSUPPORTED);
-for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Starlight Rare','Platinum Secret Rare',"Collector's Rare",'Quarter Century Secret Rare'])assert(normalizeMarketRarity(rarity),`Rarità supportata non normalizzata: ${rarity}`);
+for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Starlight Rare','Platinum Secret Rare',"Collector's Rare",'Quarter Century Secret Rare','Starfoil Rare','Short Print','Prismatic Secret Rare','Gold Secret Rare','Gold Rare','Mosaic Rare','Premium Gold Rare','Shatterfoil Rare'])assert(normalizeMarketRarity(rarity),`Rarità supportata non normalizzata: ${rarity}`);
 for(const rarity of ['2','3','New'])assert.equal(normalizeMarketRarity(rarity),null);
 
-assert.equal(CARDMARKET_RESOLVER_VERSION,2);
+assert.equal(CARDMARKET_RESOLVER_VERSION,3);
+assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
+assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:3}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{}}),'mapping legacy 0.88 ancora autorizzato');
 assert(isAuthorizedCardmarketMapping({resolution_status:'manual'}));
@@ -61,6 +67,7 @@ const moversSql=fs.readFileSync(new URL('../supabase-market-dashboard-movers.sql
 const frontendSource=fs.readFileSync(new URL('../js/market-watch.js',import.meta.url),'utf8');
 assert(!providerSource.includes("confidence:rarityMatches.length ? .98 : .88"),'fallback 0.88 ancora presente');
 for(const required of ['pricesOnly','payload?.scheduled===true','loadPrices','outside_03_europe_rome','x-market-sync-secret','resolution=ignore-duplicates','source_updated_at:value.sourceUpdatedAt','isAuthorizedCardmarketMapping','dryTargetPrintingIds','canaryPrintingIds','canary_requires_full_mode','pricesForTarget'])assert(edgeSource.includes(required),`Contratto Edge v10/MW1 assente: ${required}`);
+for(const required of ['pendingResolverLimit:10','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
 assert(edgeSource.includes('queryPagination:true'),'La paginazione RPC Edge deve usare limit/offset espliciti');
 assert(edgeSource.includes('limit=${pageSize}&offset=${from}'),'Offset RPC PostgREST non applicato');
 for(const required of ["rpcPages('market_sync_targets'","restPages('card_printings?",'Range:`${from}-${to}`',"'Range-Unit':'items'",'from<=maxRows','from===maxRows&&page.length','seen.has(normalized)'])assert(edgeSource.includes(required),`Paginazione Edge incompleta: ${required}`);

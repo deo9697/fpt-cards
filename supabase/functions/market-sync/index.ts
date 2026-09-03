@@ -1,6 +1,6 @@
 // Deploy manualmente solo dopo aver applicato la migration Market Watch.
 // Il cron delle 03:00 Europe/Rome è intenzionalmente escluso dalla migration.
-import {CardTraderProvider,CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,isAuthorizedCardmarketMapping} from '../../../market/providers.js';
+import {CardTraderProvider,CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,isAuthorizedCardmarketMapping,cardmarketMappingNeedsResolver} from '../../../market/providers.js';
 
 const supabaseUrl=Deno.env.get('SUPABASE_URL')||'';
 const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
@@ -22,7 +22,7 @@ Deno.serve(async request=>{
     new CardTraderProvider({token:Deno.env.get('CARDTRADER_API_TOKEN')||''}),
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
-  const pricesOnly=payload?.pricesOnly===true||payload?.scheduled===true;
+  const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
   if(dryTargetPrintingIds.length){
     const cardmarket=providers.find(provider=>provider.name==='cardmarket');
@@ -30,10 +30,11 @@ Deno.serve(async request=>{
   }
   const results=[];
   for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true,pricesOnly,targetPrintingIds:canaryPrintingIds}));
-  return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':pricesOnly?'prices_only':'full',results});
+  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:10}));}
+  return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
 
-async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[]}={}){
+async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   if(recoverStale)await releaseProviderSync(provider.name);
@@ -43,7 +44,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
   try{
     const targetResult=await rpcPages('market_sync_targets',{p_provider:provider.name},{order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
     const allTargets=targetResult.rows;targetPages=targetResult.requests;
-    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):allTargets;
+    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
+    if(pendingResolverLimit&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
     let resolvedTargets=[...unique.values()];
