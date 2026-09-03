@@ -66,12 +66,19 @@ const controller=new DeckController({getState:()=>uiState,isOnline:()=>true,onRe
 for(const required of ['Scegli il tuo mazzo','deck-box-grid','deck-box-card','Control Test','Disponibilità personale','data-deck-import-new'])assert(galleryHtml.includes(required),`Gallery Mazzi incompleta: ${required}`);
 assert(!galleryHtml.includes('data-deck-search'),"L'editor compare ancora nella schermata iniziale dei mazzi");
 controller.open('deck-1');const html=controller.view();
-for(const required of ['Control Test','Main Deck','Extra Deck','Side Deck','60% pronto','Bob ne ha 2','data-deck-request="10000001"','Richiedi tutte le carte mancanti'])assert(html.includes(required),`UI Mazzi incompleta: ${required}`);
-for(const required of ['deck-ban-badge limited','Limitata a 1 copia','deck-ban-badge forbidden','Proibita','>⊘</i>'])assert(html.includes(required),`Bollino banlist TCG Advanced assente: ${required}`);
-assert(html.includes('Tema Deck Box')&&html.includes('data-deck-cover-open'),'Controlli cover/tema assenti dall’editor');
+for(const required of ['Control Test','data-deck-section="main"','data-deck-section="extra"','data-deck-section="side"','60% pronto per il team','deck-ban-badge limited','Limitata a 1 copia'])assert(html.includes(required),`UI Mazzi incompleta: ${required}`);
+assert(html.includes('data-deck-section='),'Il compilatore mobile-first non usa più le schede Main/Extra/Side');
+controller.setSection('side');const sideHtml=controller.view();
+for(const required of ['deck-ban-badge forbidden','Proibita','>⊘</i>'])assert(sideHtml.includes(required),`Bollino banlist TCG Advanced assente nella scheda Side: ${required}`);
+controller.setSection('main');
+controller.toggleMissingPanel(true);const missingHtml=controller.view();
+for(const required of ['Bob ne ha 2','data-deck-request="10000001"','Richiedi tutte le carte mancanti'])assert(missingHtml.includes(required),`Pannello carte mancanti incompleto: ${required}`);
+controller.toggleMissingPanel(false);
+controller.toggleMoreMenu();const moreHtml=controller.view();
+assert(moreHtml.includes('Tema Deck Box')&&moreHtml.includes('data-deck-cover-open'),'Controlli cover/tema assenti dal menu Altro');
+controller.toggleMoreMenu();
 controller.chooseCover('10000002');assert.equal(uiState.decks[0].signatureCardId,'10000002','Scelta cover non persistita nella bozza');
 controller.chooseDeckBoxTemplate('infernal-dragon');assert.equal(uiState.decks[0].deckBoxTemplate,'infernal-dragon');assert.equal(uiState.decks[0].deckTheme,'infernal-red','Il modello rosso non applica il tema coerente');
-assert(!html.includes('data-deck-section='),'Il compilatore divide ancora il mazzo in tre schede');
 assert(isExtraDeckCard({type:'Synchro Effect Monster'}));assert(isExtraDeckCard({type:'Link Monster'}));assert(!isExtraDeckCard({type:'Effect Monster'}));
 
 const draftState={game:'yugioh',currentUser:'me',decks:[],collection:{mine:[],team:[]}},draftController=new DeckController({api:{decks:async()=>[]},getState:()=>draftState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});draftController.create(false);draftController.add({id:'99',name:'Synchro Test',type:'Synchro Monster',image:'synchro.jpg',banTcg:'semi-limited'});assert.equal(draftController.active().cards[0].section,'extra','una carta Extra Deck inserita dal Main non viene classificata automaticamente');
