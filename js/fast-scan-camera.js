@@ -65,7 +65,7 @@ export class FastScanCamera {
     const cropStarted=performance.now(),crop=sourceCrop(video,roiElement),cropMs=performance.now()-cropStarted; if(!crop||crop.sw<24||crop.sh<12)return null;
     const width=320,height=Math.max(38,Math.round(width*crop.sh/crop.sw)),drawStarted=performance.now();this.sampleCanvas.width=width;this.sampleCanvas.height=height;
     const ctx=this.sampleCanvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='medium';ctx.drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);
-    const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,qualityStarted=performance.now(),quality=preprocessCodeImage(ctx,width,height,{mode:'grayscale'}),qualityMs=performance.now()-qualityStarted;this.lastFrameAt=performance.now();this.blackFrameStreak=quality.meanLuma<2?this.blackFrameStreak+1:0;
+    const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,qualityStarted=performance.now(),quality=preprocessCodeImage(ctx,width,height,{mode:'grayscale',metricsOnly:true}),qualityMs=performance.now()-qualityStarted;this.lastFrameAt=performance.now();this.blackFrameStreak=quality.meanLuma<2?this.blackFrameStreak+1:0;
     return {signature,roi:crop,quality,timing:{totalMs:performance.now()-started,cropMs,drawMs,qualityMs}};
   }
   async captureSnapshot(roiElement,{preferVideoFrame=false,includeRaw=false}={}) {
@@ -78,7 +78,7 @@ export class FastScanCamera {
       const mode=this.preferredMode||(this.captureIndex%3===2?'adaptive':'grayscale');this.captureIndex+=1;
       const factor=mode==='adaptive'?2.8:2.35,target=mode==='adaptive'?1080:900,ceiling=mode==='adaptive'?1280:1120,width=Math.min(ceiling,Math.max(target,Math.round(crop.sw*factor))),height=Math.max(88,Math.round(width*crop.sh/crop.sw));
       const drawStarted=performance.now();this.snapshotCanvas.width=width;this.snapshotCanvas.height=height;const ctx=this.snapshotCanvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(source,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);const frameCapturedAt=performance.now(),frameCapturedWallAt=new Date().toISOString();if(includeRaw)rawCanvas=cloneCanvas(this.snapshotCanvas);const drawMs=performance.now()-drawStarted;
-      const preprocessStarted=performance.now(),preprocessing=preprocessCodeImage(ctx,width,height,{mode}),preprocessMs=performance.now()-preprocessStarted,snapshot={canvas:this.snapshotCanvas,rawCanvas,previewRoi,roi:crop,preprocessing,alternates:[],mapping:{...mapping,snapshotCrop:crop,sourceWidth,sourceHeight},source:sourceType,resolution:{width:sourceWidth,height:sourceHeight},frameCapturedAt,frameCapturedWallAt,timing:{totalMs:performance.now()-started,grabMs,cropMs,drawMs,preprocessMs}};
+      const preprocessStarted=performance.now(),preprocessing=preprocessCodeImage(ctx,width,height,{mode,metricsOnly:includeRaw}),preprocessMs=performance.now()-preprocessStarted,snapshot={canvas:this.snapshotCanvas,rawCanvas,previewRoi,roi:crop,preprocessing,alternates:[],mapping:{...mapping,snapshotCrop:crop,sourceWidth,sourceHeight},source:sourceType,resolution:{width:sourceWidth,height:sourceHeight},frameCapturedAt,frameCapturedWallAt,timing:{totalMs:performance.now()-started,grabMs,cropMs,drawMs,preprocessMs}};
       snapshot.release=()=>releaseSnapshot(snapshot);completed=true;return snapshot;
     }finally{if(!completed){clearCanvas(this.snapshotCanvas);clearCanvas(rawCanvas);}bitmap?.close?.();bitmap=null;rawCanvas=null;source=null;}
   }
@@ -109,20 +109,24 @@ export function sourceCropDetails(video,roiElement,sourceWidth=video.videoWidth,
 
 export function mapCropToSource(crop,fromWidth,fromHeight,toWidth,toHeight){if(!crop||!fromWidth||!fromHeight||!toWidth||!toHeight)return null;const scaleX=toWidth/fromWidth,scaleY=toHeight/fromHeight,sx=clamp(Math.round(crop.sx*scaleX),0,toWidth-1),sy=clamp(Math.round(crop.sy*scaleY),0,toHeight-1);return {sx,sy,sw:clamp(Math.round(crop.sw*scaleX),1,toWidth-sx),sh:clamp(Math.round(crop.sh*scaleY),1,toHeight-sy)};}
 
-export function preprocessCodeImage(ctx,width,height,{mode='adaptive'}={}) {
+export function preprocessCodeImage(ctx,width,height,{mode='adaptive',metricsOnly=false}={}) {
   const image=ctx.getImageData(0,0,width,height),pixels=width*height,gray=new Uint8Array(pixels),histogram=new Uint32Array(256);let lumaSum=0;
   for(let p=0,i=0;p<pixels;p++,i+=4){const value=Math.round(image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114);gray[p]=value;histogram[value]++;lumaSum+=value;}
   const low=percentile(histogram,pixels,.03),high=Math.max(low+24,percentile(histogram,pixels,.97)),factor=255/(high-low);
   for(let i=0;i<pixels;i++)gray[i]=clamp(Math.round((gray[i]-low)*factor),0,255);
-  const sharpness=laplacianVariance(gray,width,height);
-  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4,value=clamp(Math.round(16+gray[p]*.875),0,255);image.data[i]=image.data[i+1]=image.data[i+2]=value;image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high,sharpness,meanLuma:lumaSum/Math.max(1,pixels),sharpen:false,threshold:false};}
+  const sharpness=laplacianVariance(gray,width,height),meanLuma=lumaSum/Math.max(1,pixels);
+  // Health checks (preview sample) and the blur read at capture time only need
+  // these scalars; skipping the pixel writeback here avoids redoing the same
+  // sharpen/threshold pass a second time once createOcrInputPlan runs it for real.
+  if(metricsOnly)return {mode,scale:high-low,low,high,sharpness,meanLuma};
+  if(mode==='grayscale'){for(let p=0;p<pixels;p++){const i=p*4,value=clamp(Math.round(16+gray[p]*.875),0,255);image.data[i]=image.data[i+1]=image.data[i+2]=value;image.data[i+3]=255;}ctx.putImageData(image,0,0);return {mode,scale:high-low,low,high,sharpness,meanLuma,sharpen:false,threshold:false};}
   const sharpened=new Uint8Array(gray);
   for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){const i=y*width+x;sharpened[i]=clamp(Math.round(gray[i]*1.8-(gray[i-1]+gray[i+1]+gray[i-width]+gray[i+width])*.2),0,255);}
   const integral=new Uint32Array((width+1)*(height+1));
   for(let y=1;y<=height;y++){let row=0;for(let x=1;x<=width;x++){row+=sharpened[(y-1)*width+x-1];integral[y*(width+1)+x]=integral[(y-1)*(width+1)+x]+row;}}
   const radius=Math.max(8,Math.round(height*.1));
   for(let y=0,p=0;y<height;y++)for(let x=0;x<width;x++,p++){const x0=Math.max(0,x-radius),y0=Math.max(0,y-radius),x1=Math.min(width-1,x+radius),y1=Math.min(height-1,y+radius);const stride=width+1;const sum=integral[(y1+1)*stride+x1+1]-integral[y0*stride+x1+1]-integral[(y1+1)*stride+x0]+integral[y0*stride+x0];const mean=sum/((x1-x0+1)*(y1-y0+1));const value=sharpened[p]>mean-9?255:0;const i=p*4;image.data[i]=image.data[i+1]=image.data[i+2]=value;image.data[i+3]=255;}
-  ctx.putImageData(image,0,0); return {mode:'adaptive',scale:high-low,low,high,sharpness,meanLuma:lumaSum/Math.max(1,pixels)};
+  ctx.putImageData(image,0,0); return {mode:'adaptive',scale:high-low,low,high,sharpness,meanLuma};
 }
 
 function createImageCapture(ImageCaptureClass,track){if(!ImageCaptureClass||!track)return null;try{return new ImageCaptureClass(track);}catch{return null;}}

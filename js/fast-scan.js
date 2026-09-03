@@ -59,7 +59,7 @@ export class FastScanController {
   async requestExit(){if(!this.hasScans)return this.exitToCollection();this.stopLoop();this.exitOpen=true;document.querySelector('[data-scan-exit-sheet]')?.classList.remove('hidden');}
   cancelExit(){this.exitOpen=false;document.querySelector('[data-scan-exit-sheet]')?.classList.add('hidden');if(this.phase==='scanning'&&this.camera.stream)this.schedule(120);}
   toggleManual(open){this.manualOpen=open;document.querySelector('[data-scan-manual-sheet]')?.classList.toggle('hidden',!open);if(open)this.stopLoop();else if(this.phase==='scanning'&&this.camera.stream)this.schedule(120);if(open)setTimeout(()=>document.querySelector('#scan-manual-code')?.focus(),0);}
-  async openReview(){this.exitOpen=false;this.manualOpen=false;this.stopLoop();this.camera.stop('open-review');await this.disposeProductionOcr();this.phase='review';await this.persist(true);this.onRoute?.('review');this.onRender();}
+  async openReview(){this.exitOpen=false;this.manualOpen=false;this.stopLoop();this.camera.stop('open-review');this.phase='review';await this.persist(true);this.onRoute?.('review');this.onRender();}
   async exitToCollection(){await this.leave();this.phase='setup';this.onRoute?.('collection');}
   async discardAndExit(){await this.discard(false);await this.exitToCollection();}
   async leave(){this.startRequestId+=1;this.stopLoop();clearTimeout(this.feedbackTimer);clearTimeout(this.persistTimer);this.camera.stop('leave-route');await this.disposeProductionOcr();if(this.hasScans)await saveScanSession({...this.buffer.snapshot(),sync:this.sync});}
