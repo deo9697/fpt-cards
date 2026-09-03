@@ -23,6 +23,7 @@ const SET_LANGUAGE_CODES = new Map([
 const LOCALIZED_SET_NAMES = new Map([
   ['DOOD:IT','Destino delle Dimensioni']
 ]);
+const NON_RARITY_CATALOG_VALUES = new Set(['new','reprint']);
 
 export function validCatalogCardId(value, game = 'yugioh') {
   const id = String(value || '').trim();
@@ -213,10 +214,11 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
       for(const row of exact.slice(0,8)){
         const card=await findCardById(row.id,row.name,'yugioh');
         if(!card)continue;
-        const reconciliation=await reconcileCatalogCard({game:'yugioh',catalogCardId:row.id,cardName:row.name,setCode:row.set_code,rarity:row.set_rarity,imageUrl:card.fullImage||card.image});
-        if(reconciliation.status==='mismatch')continue;
         const localized=catalogCode!==code;
-        mapped.push({printingId:'',game:'yugioh',catalogCardId:String(row.id),cardName:row.name,setCode:code,setName:row.set_name||'',rarity:row.set_rarity||'',imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:reconciliation.status==='warning'?reconciliation.issues.join('. '):''});
+        const variants=card.printings.filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+        for(const printing of variants){
+          mapped.push({printingId:'',game:'yugioh',catalogCardId:String(row.id),cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
+        }
       }
       if(mapped.length)break;
     }
@@ -318,6 +320,29 @@ async function requestCards(parameters) {
   } catch { return []; }
 }
 
+export function normalizeCatalogRarity(value) {
+  const rarity = String(value || '').trim();
+  if (!rarity) return '';
+  if (/^\d+$/.test(rarity)) return 'Common';
+  if (NON_RARITY_CATALOG_VALUES.has(rarity.toLocaleLowerCase('en'))) return '';
+  return rarity;
+}
+
+export function normalizeCatalogPrintings(rows = []) {
+  const printings = new Map();
+  for (const printing of rows) {
+    const normalized = {
+      setCode:String(printing?.set_code || printing?.setCode || '').trim().toUpperCase(),
+      setName:String(printing?.set_name || printing?.setName || '').trim(),
+      rarity:normalizeCatalogRarity(printing?.set_rarity || printing?.rarity || '')
+    };
+    if (!normalized.setCode || !normalized.rarity) continue;
+    const key = `${normalized.setCode}\u0000${normalized.rarity.toLocaleLowerCase('en')}`;
+    if (!printings.has(key)) printings.set(key, normalized);
+  }
+  return [...printings.values()];
+}
+
 function mapCard(card) {
   const artworks = Array.isArray(card.card_images) ? card.card_images : [];
   const artwork = artworks.find(image => String(image?.id || '') === String(card.id || ''))
@@ -333,11 +358,7 @@ function mapCard(card) {
     fullImage: artwork.image_url || artwork.image_url_small || artwork.image_url_cropped || '',
     banTcg: normalizeTcgBanStatus(card.banlist_info?.ban_tcg),
     imageIds: artworks.map(image => String(image.id || '')).filter(Boolean),
-    printings: (card.card_sets || []).map(printing => ({
-      setCode: printing.set_code || '',
-      setName: printing.set_name || '',
-      rarity: printing.set_rarity || ''
-    }))
+    printings: normalizeCatalogPrintings(card.card_sets || [])
   };
 }
 

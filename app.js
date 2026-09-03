@@ -1,10 +1,10 @@
 import { MEMBERS, GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, setCodeMatchesLanguage } from './js/cards.js';
+import { searchCards, findCard, findCardById, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches } from './js/collection.js';
+import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -673,7 +673,7 @@ function mapCollectionItem(item) {
     id:item.id, printingId:item.printing_id, ownerSlug:item.owner_slug,
     ownerName:item.owner_name, game:item.game, catalogCardId:item.catalog_card_id,
     cardName:item.card_name, setCode:item.set_code || '', setName:item.set_name || '',
-    rarity:item.rarity || '', language:item.language || 'Italiano',
+    rarity:normalizeCatalogRarity(item.rarity) || item.rarity || '', language:item.language || 'Italiano',
     condition:item.condition || 'Near Mint', edition:item.edition || '',
     imageUrl:item.game === 'yugioh' ? (storedImage || canonicalYgoCardImage(item.catalog_card_id)) : storedImage, quantityOwned:Number(item.quantity_owned || 0),
     quantityLoaned:Number(item.quantity_loaned || 0),
@@ -824,7 +824,8 @@ async function openCollectionEditor(id) {
   if (!online()) return toast('Torna online per modificare la raccolta');
   const item = state.collection.mine.find(entry => entry.id === id);
   if (!item) return;
-  const currentPrinting = { setCode:item.setCode, setName:item.setName, rarity:item.rarity };
+  const normalizedCurrentRarity = normalizeCatalogRarity(item.rarity);
+  const currentPrinting = { setCode:item.setCode, setName:item.setName, rarity:normalizedCurrentRarity || item.rarity };
   const initialCard = { id:item.catalogCardId, name:item.cardName, image:item.imageUrl, fullImage:item.imageUrl, printings:[currentPrinting] };
   collectionEditor = { item, card:initialCard, printing:currentPrinting, setCode:item.setCode };
   selectedCollectionItem = '';
@@ -832,9 +833,9 @@ async function openCollectionEditor(id) {
   const expectedId = item.id;
   const catalog = await findCard(item.cardName, item.game);
   if (!catalog || collectionEditor?.item?.id !== expectedId) return;
-  if (!catalog.printings.some(printing => printing.setCode === item.setCode && printing.rarity === item.rarity)) catalog.printings.unshift(currentPrinting);
+  if (!catalog.printings.some(printing => sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,currentPrinting.rarity))) catalog.printings.unshift(currentPrinting);
   collectionEditor.card = collectionCardWithLocalizedPrintings(catalog, item.language || 'Italiano');
-  collectionEditor.printing = collectionEditor.card.printings.find(printing => sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,item.rarity)) || collectionEditor.card.printings[0];
+  collectionEditor.printing = selectCollectionEditorPrinting(collectionEditor.card, item.setCode, normalizedCurrentRarity);
   collectionEditor.setCode = collectionEditor.printing?.setCode || item.setCode;
   render();
 }

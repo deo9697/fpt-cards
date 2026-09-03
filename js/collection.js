@@ -135,6 +135,12 @@ export function collectionPrintingOptions(card) {
   })).values()];
 }
 
+export function selectCollectionEditorPrinting(card, setCode, rarity = '') {
+  const options = collectionPrintingOptions(card).filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(setCode));
+  const exact = options.find(printing => normalizeRarity(printing.rarity) === normalizeRarity(rarity));
+  return exact || (options.length === 1 ? options[0] : null);
+}
+
 function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
 function normalizeRarity(value) { return String(value || '').trim().toLocaleLowerCase('it'); }
 function samePrinting(left, right) {

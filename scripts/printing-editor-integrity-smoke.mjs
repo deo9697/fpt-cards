@@ -3,8 +3,34 @@ import fs from 'node:fs';
 
 globalThis.localStorage = { getItem:() => null, setItem:() => {}, removeItem:() => {} };
 
-const { collectionEditorView, collectionPrintingOptions, isFirstEdition, editionState, editionFromFirstEditionFlag, persistedCollectionItemMatches } = await import('../js/collection.js');
-const { findExactCatalogPrinting, collectionCardWithLocalizedPrintings, localizeSetCode, reconcileCatalogCard, setCodeMatchesLanguage } = await import('../js/cards.js');
+const { collectionEditorView, collectionPrintingOptions, isFirstEdition, editionState, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting } = await import('../js/collection.js');
+const { findExactCatalogPrinting, collectionCardWithLocalizedPrintings, localizeSetCode, lookupPrintingBySetCode, normalizeCatalogPrintings, normalizeCatalogRarity, reconcileCatalogCard, setCodeMatchesLanguage } = await import('../js/cards.js');
+
+assert.equal(normalizeCatalogRarity('2'), 'Common', 'la quantità 2 del deck è stata mostrata come rarità');
+assert.equal(normalizeCatalogRarity('3'), 'Common', 'la quantità 3 del deck è stata mostrata come rarità');
+assert.equal(normalizeCatalogRarity('New'), '', 'la nota New è stata mostrata come rarità');
+const normalizedShizukuPrintings = normalizeCatalogPrintings([
+  {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'2'},
+  {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'Secret Rare'},
+  {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'Starlight Rare'},
+  {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'Common'}
+]);
+assert.deepEqual(normalizedShizukuPrintings.map(printing=>printing.rarity).sort(), ['Common','Secret Rare','Starlight Rare']);
+assert.equal(normalizedShizukuPrintings.filter(printing=>printing.rarity==='Common').length, 1, 'Common duplicata dopo la normalizzazione');
+assert.equal(selectCollectionEditorPrinting({printings:normalizedShizukuPrintings}, 'L26D-ENS26', 'Common')?.rarity, 'Common');
+assert.equal(selectCollectionEditorPrinting({printings:normalizedShizukuPrintings}, 'L26D-ENS26', ''), null, 'una rarità corrotta non deve sceglierne una arbitraria');
+assert.equal(selectCollectionEditorPrinting({printings:[{setCode:'BLGG-EN027',setName:'Battles of Legend',rarity:'Ultra Rare'}]}, 'BLGG-EN027', '')?.rarity, 'Ultra Rare', 'una sola rarità valida deve essere recuperata automaticamente');
+globalThis.fetch = async url => {
+  const parsed = new URL(url);
+  if (parsed.pathname.endsWith('cardsetsinfo.php')) return {ok:true,json:async()=>({id:90673288,name:'Sky Striker Ace - Shizuku',set_name:'Legendary Modern Decks 2026',set_code:'L26D-ENS26',set_rarity:'Starlight Rare'})};
+  return {ok:true,json:async()=>({data:[{id:90673288,name:'Sky Striker Ace - Shizuku',type:'Link Monster',card_images:[{id:90673288,image_url:'https://images.ygoprodeck.com/images/cards/90673288.jpg'}],card_sets:[
+    {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'2'},
+    {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'Secret Rare'},
+    {set_code:'L26D-ENS26',set_name:'Legendary Modern Decks 2026',set_rarity:'Starlight Rare'}
+  ]}]})};
+};
+const shizukuLookup = await lookupPrintingBySetCode('L26D-ENS26');
+assert.deepEqual(shizukuLookup.map(printing=>printing.rarity).sort(), ['Common','Secret Rare','Starlight Rare'], 'il lookup per set conserva soltanto la variante restituita da cardsetsinfo');
 
 const shizukuPrintings = [
   { setCode:'L26D-ENS26', setName:'Legendary Modern Decks 2026', rarity:'Starlight Rare' },
