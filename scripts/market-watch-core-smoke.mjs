@@ -44,8 +44,10 @@ const {portfolioSummary,deduplicateMonitored,providerWarning,mapPayload,positive
 const now=Date.now(),fresh=new Date(now-3600000).toISOString();
 const data=mapPayload({items:[
   {printing_id:'p1',card_name:'A',sources:['owned','deck'],owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardtrader:{price:10,capturedAt:fresh}}},
-  {printing_id:'p2',card_name:'B',sources:['owned','manual'],owned_quantity:1,reference_price:20,price_24h:20,price_7d:10,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:20,capturedAt:fresh}}}
+  {printing_id:'p2',card_name:'B',sources:['owned','manual'],owned_quantity:1,reference_price:20,price_24h:20,price_7d:10,min_price:17.5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:20,capturedAt:fresh}}}
 ]});
+assert.equal(data.items.find(item=>item.printingId==='p1').minPrice,null,'min_price assente non deve produrre un valore inventato');
+assert.equal(data.items.find(item=>item.printingId==='p2').minPrice,17.5,'il prezzo minimo Cardmarket ("a partire da") non è mappato dal payload');
 const summary=portfolioSummary(data.items,now);assert(summary.complete);assert.equal(summary.current,110);assert.equal(summary.delta24,18);assert.equal(summary.delta7,55);assert(summary.delta24Complete&&summary.delta7Complete);
 const partial=portfolioSummary([...data.items,{printingId:'p3',sources:['owned'],ownedQuantity:2,referencePrice:null,latestAt:null}],now);assert(!partial.complete,'copertura sotto 90% deve mostrare dati parziali');
 const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{printingId:'p1',quantity:3},{printingId:null}],manual:[{printingId:'p1'},{printingId:'p2'}]});assert.equal(dedup.length,2);assert.deepEqual(new Set(dedup.find(row=>row.printingId==='p1').sources),new Set(['owned','deck','manual']));
