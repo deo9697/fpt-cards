@@ -1,6 +1,19 @@
 import { esc } from './core.js';
 import { icon } from './icons.js';
 
+const STATUS_CHIPS = [
+  { value:'all', label:'Tutte' },
+  { value:'available', label:'Disponibili' },
+  { value:'partial', label:'Parziali' },
+  { value:'unavailable', label:'Non disponibili' }
+];
+const SORT_OPTIONS = [
+  { value:'name-asc', label:'A–Z' },
+  { value:'name-desc', label:'Z–A' },
+  { value:'available-desc', label:'Più disponibili' },
+  { value:'quantity-desc', label:'Più possedute' }
+];
+
 export function collectionView(collection, filters, game, connected, error = '') {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
@@ -12,10 +25,16 @@ export function collectionView(collection, filters, game, connected, error = '')
     ${!connected ? `<div class="connection-banner offline">Sei offline · mostro l’ultima raccolta sincronizzata. Le modifiche sono disabilitate.</div>` : ''}
     <section class="surface collection-surface inventory-surface">
       <div class="tabs" role="tablist" aria-label="Ambito raccolta"><button type="button" data-collection-scope="mine" class="${filters.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${filters.scope === 'mine'}">La mia raccolta <span>${mine.length}</span></button><button type="button" data-collection-scope="team" class="${filters.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${filters.scope === 'team'}">Raccolta team <span>${team.length}</span></button></div>
-      <div class="collection-toolbar inventory-toolbar"><label class="filter-search">${icon('search')}<input type="search" data-collection-query placeholder="Cerca nome, set o codice…" value="${esc(filters.query)}" aria-label="Cerca nella raccolta"></label>
-        ${filters.scope === 'team' ? `<select id="collection-owner" aria-label="Proprietario"><option value="all">Tutti i proprietari</option>${owners.map(([id,name]) => `<option value="${esc(id)}" ${filters.owner === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>` : ''}
-        <select id="collection-status" aria-label="Disponibilità"><option value="all">Tutte le disponibilità</option><option value="available" ${filters.status === 'available' ? 'selected' : ''}>Disponibili</option><option value="partial" ${filters.status === 'partial' ? 'selected' : ''}>Parziali</option><option value="unavailable" ${filters.status === 'unavailable' ? 'selected' : ''}>Non disponibili</option></select>
-        <div class="view-toggle" aria-label="Visualizzazione"><button type="button" data-collection-layout="grid" class="${filters.layout === 'grid' ? 'active' : ''}" aria-label="Griglia">▦</button><button type="button" data-collection-layout="list" class="${filters.layout === 'list' ? 'active' : ''}" aria-label="Lista">☷</button></div>
+      <div class="collection-toolbar inventory-toolbar">
+        <label class="filter-search sticky-search">${icon('search')}<input type="search" data-collection-query placeholder="Cerca carta, set o codice…" value="${esc(filters.query)}" aria-label="Cerca nella raccolta"></label>
+        <div class="inventory-filter-row">
+          <div class="filter-chips" role="group" aria-label="Disponibilità">${STATUS_CHIPS.map(chip => `<button type="button" class="chip ${filters.status === chip.value ? 'active' : ''}" data-collection-status-chip="${chip.value}">${chip.label}</button>`).join('')}</div>
+          ${filters.scope === 'team' ? `<select id="collection-owner" aria-label="Proprietario"><option value="all">Tutti</option>${owners.map(([id,name]) => `<option value="${esc(id)}" ${filters.owner === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>` : ''}
+        </div>
+        <div class="inventory-sort-row">
+          <select id="collection-sort" aria-label="Ordina">${SORT_OPTIONS.map(option => `<option value="${option.value}" ${filters.sort === option.value ? 'selected' : ''}>Ordina: ${option.label}</option>`).join('')}</select>
+          <div class="view-toggle" aria-label="Visualizzazione"><button type="button" data-collection-layout="grid" class="${filters.layout === 'grid' ? 'active' : ''}" aria-label="Griglia">▦</button><button type="button" data-collection-layout="list" class="${filters.layout === 'list' ? 'active' : ''}" aria-label="Lista">☷</button></div>
+        </div>
       </div>
       <div data-collection-results>${collectionResultsView(collection, filters, game, connected)}</div>
     </section>
@@ -26,9 +45,9 @@ export function collectionResultsView(collection, filters, game, connected) {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const source = filters.scope === 'mine' ? mine : groupTeamItems(team);
-  const visible = source.filter(item => matches(item, filters));
-  return `<div class="collection-count"><strong>${visible.length}</strong> ${visible.length === 1 ? 'printing' : 'printing'} · disponibilità calcolata dai prestiti</div>
-    ${visible.length ? `<div class="inventory-grid ${filters.layout === 'list' ? 'list' : ''}">${visible.map(item => inventoryCard(item, filters.scope)).join('')}</div>` : emptyState(source.length, filters.scope, connected)}`;
+  const visible = sortItems(source.filter(item => matches(item, filters)), filters.sort);
+  return `${visible.length ? `<div class="inventory-grid ${filters.layout === 'list' ? 'list' : ''}">${visible.map(item => inventoryCard(item, filters.scope)).join('')}</div>` : emptyState(source.length, filters.scope, connected)}
+    <div class="collection-count"><strong>${visible.length}</strong> printing · disponibilità calcolata dai prestiti</div>`;
 }
 
 export function collectionDetailView(id, scope, collection, connected, currentUser = '') {
@@ -177,9 +196,30 @@ function matches(item, filters) {
   return queryOk && ownerOk && statusOk;
 }
 
+function sortItems(items, sort) {
+  const sorted = [...items];
+  switch (sort) {
+    case 'name-desc': return sorted.sort((a, b) => b.cardName.localeCompare(a.cardName, 'it'));
+    case 'available-desc': return sorted.sort((a, b) => b.quantityAvailable - a.quantityAvailable || a.cardName.localeCompare(b.cardName, 'it'));
+    case 'quantity-desc': return sorted.sort((a, b) => (b.quantityOwned || 0) - (a.quantityOwned || 0) || a.cardName.localeCompare(b.cardName, 'it'));
+    default: return sorted.sort((a, b) => a.cardName.localeCompare(b.cardName, 'it'));
+  }
+}
+
 function inventoryCard(item, scope) {
   const availability = item.quantityAvailable === 0 ? 'unavailable' : item.quantityLoaned + item.quantityReserved > 0 ? 'partial' : 'available';
-  return `<button type="button" class="inventory-card ${availability}" data-collection-item="${esc(item.id)}"><span class="inventory-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}<i>${availabilityLabel(availability)}</i></span><span class="inventory-card-copy"><strong>${esc(item.cardName)}</strong><small>${esc([item.setCode || 'Set non specificato', item.rarity].filter(Boolean).join(' · '))}</small>${scope === 'team' ? `<em>${item.items.length} ${item.items.length === 1 ? 'proprietario' : 'proprietari'}</em>` : `<em>${esc(item.ownerName)}</em>`}<span class="inventory-quantities">${scope === 'mine' ? `<b>Possedute <i>${item.quantityOwned}</i></b>` : ''}<b>Disponibili <i>${item.quantityAvailable}</i></b></span></span></button>`;
+  const owner = scope === 'team' ? `${item.items.length} ${item.items.length === 1 ? 'proprietario' : 'proprietari'}` : esc(item.ownerName);
+  return `<button type="button" class="inventory-card ${availability}" data-collection-item="${esc(item.id)}">
+    <span class="inventory-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}</span>
+    <span class="inventory-card-copy">
+      <strong>${esc(item.cardName)}</strong>
+      <small>${esc([item.setCode || 'Set non specificato', item.rarity].filter(Boolean).join(' · '))}</small>
+      <em>${item.setName ? esc(item.setName) : owner}</em>
+      <span class="inventory-quantities">${scope === 'mine' ? `<b>Possedute <i>${item.quantityOwned}</i></b>` : ''}<b>Disponibili <i>${item.quantityAvailable}</i></b></span>
+      <i class="inventory-status-pill ${availability}">${availabilityLabel(availability)}</i>
+    </span>
+    <span class="inventory-chevron" aria-hidden="true">${icon('arrow')}</span>
+  </button>`;
 }
 
 function quantityDefinition(item) {

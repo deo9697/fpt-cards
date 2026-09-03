@@ -16,7 +16,7 @@ import { MarketWatchController } from './js/market-watch.js';
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more']);
 let page = routeFromHash();
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
-let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid' };
+let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc' };
 let selectedCardKey = '';
 let selectedCollectionItem = '';
 let collectionEditor = null;
@@ -576,6 +576,7 @@ function installCollectionControls() {
   root.addEventListener('change', event => {
     if (event.target.matches('#collection-owner')) collectionFilters.owner = event.target.value;
     else if (event.target.matches('#collection-status')) collectionFilters.status = event.target.value;
+    else if (event.target.matches('#collection-sort')) collectionFilters.sort = event.target.value;
     else return;
     refreshCollectionResults();
   });
@@ -587,6 +588,13 @@ function installCollectionControls() {
       collectionFilters.status = 'all';
       selectedCollectionItem = '';
       render();
+      return;
+    }
+    const statusChip = event.target.closest('[data-collection-status-chip]');
+    if (statusChip) {
+      collectionFilters.status = statusChip.dataset.collectionStatusChip;
+      root.querySelectorAll('[data-collection-status-chip]').forEach(button => button.classList.toggle('active', button === statusChip));
+      refreshCollectionResults();
       return;
     }
     const layout = event.target.closest('[data-collection-layout]');

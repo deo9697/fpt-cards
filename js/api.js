@@ -29,6 +29,7 @@ export const api = {
     const args={p_token:token(),p_deck:{id,name:deck.name,game:deck.game,format:deck.format,signatureCardId:deck.signatureCardId||null,deckTheme:deck.deckTheme||'arcane-purple',deckBoxTemplate:deck.deckBoxTemplate||'procedural',cards:deck.cards}},result=await client.rpc('save_deck_with_box',args);
     if(!result.error)return result.data;if(!['PGRST202','42883'].includes(result.error.code))throw result.error;return {id:unwrap(await client.rpc('save_deck',args)),deckBoxPersisted:false};
   },
+  async teamDecks({signal}={}) { ensure(); return pagedRpc(client,'list_team_decks',{p_token:token()},{signal,orders:[{column:'owner_name'},{column:'updated_at',ascending:false},{column:'id'}]}); },
   async deleteDeck(id) { ensure(); return unwrap(await client.rpc('delete_deck', { p_token:token(),p_id:id })); },
   async deckPrintingOptions(deckId, catalogCardId) {
     ensure(); return unwrap(await client.rpc('list_deck_printing_options', { p_token:token(),p_deck_id:deckId,p_catalog_card_id:String(catalogCardId) }));
