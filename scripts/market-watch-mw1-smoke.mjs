@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,cardmarketMappingNeedsResolver,isAuthorizedCardmarketMapping,normalizeMarketRarity,resolveCardmarketPrinting} from '../market/providers.js';
+import {CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,buildCardmarketExpansionHints,cardmarketMappingNeedsResolver,isAuthorizedCardmarketMapping,normalizeMarketRarity,resolveCardmarketPrinting} from '../market/providers.js';
 
 const product=(id,name,expansion,rarity='',providerExpansionId='set-1')=>({providerProductId:String(id),providerExpansionId,cardName:name,setName:expansion,rarity,foil:null});
 const printing=(overrides={})=>({game:'yugioh',catalogCardId:'1',cardName:'Test Card',setCode:'TEST-EN001',setName:'Test Set',rarity:'Common',language:'English',edition:'1st Edition',...overrides});
@@ -49,14 +49,34 @@ assert.equal(resolve(printing({rarity:'Ultimate Rare'}),[product(907,'Test Card'
 assert.equal(resolve(printing({rarity:'Platinum Secret Rare'}),[product(908,'Test Card','Test Set')]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
 const encodedExpansion=printing({cardName:'Encoded Card',setName:'Legendary 5D&apos;s Decks',rarity:'Short Print'});
 assert.equal(resolve(encodedExpansion,[product(909,'Encoded Card',"Legendary 5D's Decks")]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'entità HTML non normalizzata nel nome espansione');
-assert.equal(resolve(printing({rarity:'3'}),[oneProduct]).status,CARDMARKET_RESOLUTION_STATES.UNSUPPORTED);
+assert.equal(resolve(printing({rarity:'3'}),[oneProduct]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
 for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Starlight Rare','Platinum Secret Rare',"Collector's Rare",'Quarter Century Secret Rare','Starfoil Rare','Short Print','Prismatic Secret Rare','Gold Secret Rare','Gold Rare','Mosaic Rare','Premium Gold Rare','Shatterfoil Rare'])assert(normalizeMarketRarity(rarity),`Rarità supportata non normalizzata: ${rarity}`);
-for(const rarity of ['2','3','New'])assert.equal(normalizeMarketRarity(rarity),null);
+for(const rarity of ['2','3'])assert.equal(normalizeMarketRarity(rarity),'Common');
+assert.equal(normalizeMarketRarity('Ghost Rare'),'Ghost Rare');
+assert.equal(normalizeMarketRarity('New'),null);
 
-assert.equal(CARDMARKET_RESOLVER_VERSION,4);
+const heroInternal=[
+  printing({catalogCardId:'10',cardName:'Elemental HERO Shadow Mist',setCode:'SDHS-EN001',setName:'HERO Strike Structure Deck'}),
+  printing({catalogCardId:'11',cardName:'Elemental HERO Ocean',setCode:'SDHS-EN002',setName:'HERO Strike Structure Deck'}),
+  printing({catalogCardId:'12',cardName:'Mask Change',setCode:'SDHS-EN021',setName:'HERO Strike Structure Deck'})
+];
+const heroProducts=[product(920,heroInternal[0].cardName,"Structure Deck: HERO's Strike",'', 'hero-set'),product(921,heroInternal[1].cardName,"Structure Deck: HERO's Strike",'', 'hero-set'),product(922,heroInternal[2].cardName,"Structure Deck: HERO's Strike",'', 'hero-set')];
+const heroHints=buildCardmarketExpansionHints(heroInternal,heroProducts);
+assert.equal(heroHints.get('SDHS')?.providerExpansionId,'hero-set');
+assert.equal(resolveCardmarketPrinting(heroInternal[0],heroProducts,{internalPrintings:heroInternal,expansionHints:heroHints}).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'alias espansione Structure Deck non risolto dal crosswalk');
+assert.equal(resolveCardmarketPrinting(heroInternal[0],[heroProducts[0]],{internalPrintings:heroInternal}).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'ordine/prefisso Structure Deck non normalizzato deterministicamente');
+assert.equal(resolveCardmarketPrinting(printing({cardName:'Blue-Eyes White Dragon',setCode:'SDBE-IT001',setName:'Saga of Blue-Eyes White Dragon Structure Deck',rarity:'Ultra Rare'}),[product(925,'Blue-Eyes White Dragon','Structure Deck: Saga of Blue-Eyes White Dragon')]).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'alias Saga of Blue-Eyes Structure Deck non normalizzato');
+const tiedHints=buildCardmarketExpansionHints(heroInternal,[...heroProducts.slice(0,2),product(923,heroInternal[0].cardName,'Wrong Set','', 'wrong-set'),product(924,heroInternal[1].cardName,'Wrong Set','', 'wrong-set')]);
+assert.equal(tiedHints.has('SDHS'),false,'un crosswalk in parità non deve autorizzare un mapping');
+
+const localizedAlias=printing({catalogCardId:'77',cardName:'Giudizio Solenne',setCode:'RA02-EN075',setName:'25th Anniversary Rarity Collection II',rarity:'Ultra Rare'});
+const canonicalAlias=printing({catalogCardId:'77',cardName:'Solemn Judgment',setCode:'RA02-EN075',setName:'25th Anniversary Rarity Collection II',rarity:'Ultra Rare'});
+assert.equal(resolveCardmarketPrinting(localizedAlias,[product(926,'Solemn Judgment','25th Anniversary Rarity Collection II')],{internalPrintings:[localizedAlias,canonicalAlias]}).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'alias nome con catalog_card_id identico non risolto');
+
+assert.equal(CARDMARKET_RESOLVER_VERSION,7);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
-assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:4}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:7}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
@@ -95,9 +115,11 @@ const dryTargetBody=edgeSource.slice(edgeSource.indexOf('async function dryTarge
 assert(dryTargetBody.includes('listCardPrintings')&&dryTargetBody.includes('loadCatalog')&&dryTargetBody.includes('loadPrices'),'dry target incompleto');
 assert(!/\brpc\(|\brest\(/.test(dryTargetBody),'dry target contiene una scrittura DB');
 assert(edgeSource.includes("targets=selectedIds.size?allTargets.filter"),'canary non limita i target prima del resolver');
+assert(edgeSource.includes('pendingResolverLimit:resolverBatchSize,skipPrices:true'),'resolver batch non separa mapping e price feed');
+assert(edgeSource.includes('cardinfo.php?id=')&&edgeSource.includes('withCanonicalCardNames'),'resolver non recupera il nome canonico tramite catalog_card_id');
 const canary=[seaResolution,resolve(shizukuCommon,[shizukuProduct],[shizukuCommon,shizukuStarlight]),resolve(brambleSecret,[brambleProduct],[brambleSecret,brambleStarlight,brambleEnglish]),resolve(printing({rarity:'3'}),[oneProduct]),resolve(printing({cardName:'Missing'}),[])];
-assert.deepEqual(canary.map(row=>row.status),['PROVIDER_AGGREGATE','AMBIGUOUS','AMBIGUOUS','UNSUPPORTED','UNRESOLVED']);
-assert.equal(canary.filter(row=>['EXACT','PROVIDER_AGGREGATE'].includes(row.status)).length,1,'canary autorizza prezzi oltre Sea Monster');
+assert.deepEqual(canary.map(row=>row.status),['PROVIDER_AGGREGATE','AMBIGUOUS','AMBIGUOUS','PROVIDER_AGGREGATE','UNRESOLVED']);
+assert.equal(canary.filter(row=>['EXACT','PROVIDER_AGGREGATE'].includes(row.status)).length,2,'canary non autorizza i mapping deterministici attesi');
 
 let retryCalls=0,retrySleeps=0;
 const {CardmarketPriceGuideProvider}=await import('../market/providers.js');

@@ -1,6 +1,6 @@
 // Deploy manualmente solo dopo aver applicato la migration Market Watch.
 // Il cron delle 03:00 Europe/Rome è intenzionalmente escluso dalla migration.
-import {CardTraderProvider,CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,isAuthorizedCardmarketMapping,cardmarketMappingNeedsResolver} from '../../../market/providers.js';
+import {CardTraderProvider,CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,buildCardmarketExpansionHints,isAuthorizedCardmarketMapping,cardmarketMappingNeedsResolver} from '../../../market/providers.js';
 
 const supabaseUrl=Deno.env.get('SUPABASE_URL')||'';
 const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
@@ -22,6 +22,8 @@ Deno.serve(async request=>{
     new CardTraderProvider({token:Deno.env.get('CARDTRADER_API_TOKEN')||''}),
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
+  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(20,Number(payload?.resolverBatchSize)||10)):0;
+  if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
   const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
   if(dryTargetPrintingIds.length){
@@ -29,12 +31,12 @@ Deno.serve(async request=>{
     return json(await dryTargetCardmarket(cardmarket,dryTargetPrintingIds));
   }
   const results=[];
+  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:10,skipPrices:true}));}
   for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true,pricesOnly,targetPrintingIds:canaryPrintingIds}));
-  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:10}));}
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
 
-async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0}={}){
+async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   if(recoverStale)await releaseProviderSync(provider.name);
@@ -52,10 +54,11 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     if(provider.name==='cardmarket'){
       if(pricesOnly){feedStats=await provider.loadPrices(resolvedTargets);requestCount+=1;}
       else{
-        const catalogStats=await provider.loadCatalog(resolvedTargets);requestCount+=2;
-        const printingResult=await listCardPrintings(),internalPrintings=printingResult.rows;
-        printingPages=printingResult.requests;printingRows=internalPrintings.length;
+        const printingResult=await listCardPrintings(),internalPrintings=await withCanonicalCardNames(printingResult.rows,resolvedTargets);
+        printingPages=printingResult.requests;printingRows=printingResult.rows.length;
+        const catalogStats=await provider.loadCatalog(resolvedTargets,{internalPrintings});requestCount+=3;
         resolvedTargets=await resolveCardmarketTargets(provider,resolvedTargets,internalPrintings);
+        if(skipPrices){const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{}),unresolved=resolvedTargets.filter((target:any)=>!isAuthorizedCardmarketMapping(target)).length,status=unresolved?'partial':'succeeded';await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:unresolved?'target_failures':null,error_message:unresolved?`${unresolved} mapping non risolti`:null,metadata:{targets:unique.size,snapshots:0,resolverOnly:true}});return {provider:provider.name,status,targets:unique.size,snapshots:0,failures:unresolved,feedStats:catalogStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};}
         const priceStats=await provider.loadPrices(resolvedTargets);requestCount+=1;
         feedStats={...catalogStats,...priceStats};
       }
@@ -91,9 +94,9 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
 
 async function dryTargetCardmarket(provider:any,ids:string[]){
   if(provider.getPriceMetadata().status==='unavailable')return {ok:false,mode:'dry_target',provider:'cardmarket',status:'unavailable',reason:'secret_or_feed_missing'};
-  const printingResult=await listCardPrintings(),allPrintings=printingResult.rows,wanted=new Set(ids),targets=allPrintings.filter((row:any)=>wanted.has(String(row.id))).map(printingTarget);
-  const catalogStats=await provider.loadCatalog(targets),resolved:any[]=[];
-  for(const target of targets)resolved.push({target,resolution:await provider.resolvePrinting(target,{internalPrintings:allPrintings})});
+  const printingResult=await listCardPrintings(),wanted=new Set(ids),targets=printingResult.rows.filter((row:any)=>wanted.has(String(row.id))).map(printingTarget),allPrintings=await withCanonicalCardNames(printingResult.rows,targets);
+  const catalogStats=await provider.loadCatalog(targets,{internalPrintings:allPrintings}),resolved:any[]=[],expansionHints=provider.expansionHints;
+  for(const target of targets)resolved.push({target,resolution:await provider.resolvePrinting(target,{internalPrintings:allPrintings,expansionHints})});
   const authorized=resolved.filter((row:any)=>[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(row.resolution.status)).map((row:any)=>({
     ...row.target,resolution_status:'resolved',provider_product_id:row.resolution.candidate?.providerProductId,provider_metadata:{resolverStatus:row.resolution.status,priceScope:row.resolution.priceScope,candidateProductIds:row.resolution.evidence?.candidateProductIds||[]}
   }));
@@ -101,14 +104,16 @@ async function dryTargetCardmarket(provider:any,ids:string[]){
   for(const target of authorized){const value=await provider.getCurrentPrice(target);prices.set(String(target.printing_id),pricesForTarget(value.prices||[],target));}
   return {ok:true,mode:'dry_target',provider:'cardmarket',requested:ids.length,found:targets.length,catalogStats,priceStats,pagination:{printingPages:printingResult.requests,printingRows:allPrintings.length},results:resolved.map((row:any)=>({
     printingId:row.target.printing_id,cardName:row.target.card_name,setCode:row.target.set_code,rarity:row.target.rarity,status:row.resolution.status,reason:row.resolution.reason,
+    expansionHint:expansionHints.get(String(row.target.set_code||'').split('-',1)[0].replace(/[^A-Z0-9]/gi,'').toUpperCase())||null,
     providerProductId:row.resolution.candidate?.providerProductId||null,priceScope:row.resolution.priceScope||null,prices:prices.get(String(row.target.printing_id))||[],
-    candidates:(row.resolution.candidates||[]).map((candidate:any)=>({providerProductId:candidate.providerProductId||candidate.provider_product_id||null,rawName:candidate.rawName||candidate.name||'',cardName:candidate.cardName||'',rarity:candidate.rarity||'',providerExpansionId:candidate.providerExpansionId||candidate.provider_expansion_id||null,expansion:candidate.setName||candidate.expansion||''}))
+    candidates:(row.resolution.candidates||[]).map((candidate:any)=>({providerProductId:candidate.providerProductId||candidate.provider_product_id||null,rawName:candidate.rawName||candidate.name||'',cardName:candidate.cardName||'',rarity:candidate.rarity||'',providerExpansionId:candidate.providerExpansionId||candidate.provider_expansion_id||null,expansion:candidate.setName||candidate.expansion||''})),
+    nameCandidates:provider.catalog.filter((candidate:any)=>String(candidate.cardName||candidate.name||'').trim().toLowerCase()===String(row.target.card_name||'').trim().toLowerCase()).slice(0,12).map((candidate:any)=>({providerProductId:candidate.providerProductId||null,providerExpansionId:candidate.providerExpansionId||null,expansion:candidate.setName||''}))
   }))};
 }
 
 async function resolveCardmarketTargets(provider:any,targets:any[],internalPrintings:any[]){
-  const bodies=[];
-  for(const target of targets){if(target.resolution_status==='manual'&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target,{internalPrintings})));}
+  const bodies=[],expansionHints=provider.expansionHints?.size?provider.expansionHints:buildCardmarketExpansionHints(internalPrintings,provider.catalog);
+  for(const target of targets){if(target.resolution_status==='manual'&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target,{internalPrintings,expansionHints})));}
   const saved=[];
   for(let index=0;index<bodies.length;index+=200){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_printings?on_conflict=printing_id,provider,variant_key`,{method:'POST',headers:{...headers(),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(bodies.slice(index,index+200))});if(!response.ok)throw new Error(`mapping cardmarket: ${response.status} ${await response.text()}`);saved.push(...await response.json());}
   const byPrinting=new Map(saved.map((row:any)=>[row.printing_id,row]));return targets.map(target=>{const row:any=byPrinting.get(target.printing_id);return row?{...target,mapping_id:row.id,provider_product_id:row.provider_product_id,provider_expansion_id:row.provider_expansion_id,resolution_status:row.resolution_status,provider_metadata:row.provider_metadata,variant_key:row.variant_key}:target;});
@@ -129,6 +134,15 @@ function cardmarketResolutionBody(target:any,resolution:any){
 }
 
 async function listCardPrintings(){return restPages('card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&order=id.asc',{key:(row:any)=>row.id});}
+async function withCanonicalCardNames(printings:any[],targets:any[]){
+  const ids=[...new Set((targets||[]).map(row=>String(row.catalog_card_id||row.catalogCardId||'').trim()).filter(id=>/^\d{5,10}$/.test(id)))];if(!ids.length)return printings;
+  const response=await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${encodeURIComponent(ids.join(','))}`,{signal:AbortSignal.timeout(20000)});
+  if(!response.ok)throw new Error(`YGOPRODeck canonical names: ${response.status}`);
+  const payload=await response.json(),names=new Map<string,string>();
+  for(const card of payload?.data||[]){const name=String(card?.name||'').trim();if(!name)continue;names.set(String(card.id||''),name);for(const image of card.card_images||[])names.set(String(image.id||''),name);}
+  const aliases=[];for(const row of printings){const name=names.get(String(row.catalog_card_id||''));if(name&&name.trim().toLowerCase()!==String(row.card_name||'').trim().toLowerCase())aliases.push({...row,id:`${row.id}:canonical-name`,card_name:name});}
+  return aliases.length?[...printings,...aliases]:printings;
+}
 function printingTarget(row:any){return {printing_id:row.id,game:row.game,catalog_card_id:row.catalog_card_id,card_name:row.card_name,set_code:row.set_code,set_name:row.set_name,rarity:row.rarity,language:'',edition:'',foil:null};}
 function pricesForTarget(prices:any[],target:any){const foil=target.foil===true;return (prices||[]).filter(price=>foil?String(price.type).startsWith('foil_'):!String(price.type).startsWith('foil_'));}
 function printingIds(value:any){if(!Array.isArray(value)||value.length>20)return[];const ids=[...new Set(value.map(String))];return ids.length&&ids.every(id=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))?ids:[];}
