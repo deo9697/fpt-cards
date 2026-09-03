@@ -169,7 +169,7 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
 export function normalizeMarketRarity(value){return SUPPORTED_RARITIES.get(norm(value))||null;}
 export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
-export function cardmarketMappingNeedsResolver(mapping){return mapping?.resolution_status!=='manual'&&String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
+export function cardmarketMappingNeedsResolver(mapping){if(mapping?.resolution_status==='manual'||isAuthorizedCardmarketMapping(mapping))return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 function normalizePrinting(row){return {game:norm(row.game),catalogId:norm(row.catalogCardId||row.catalog_card_id),setCode:normCode(row.setCode||row.set_code),
   expansion:norm(row.setName||row.set_name||row.expansion),rarity:norm(row.rarity),language:norm(row.language),edition:norm(row.edition),foil:bool(row.foil)};}

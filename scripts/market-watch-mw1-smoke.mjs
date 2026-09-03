@@ -53,6 +53,7 @@ assert.equal(CARDMARKET_RESOLVER_VERSION,3);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:3}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{}}),'mapping legacy 0.88 ancora autorizzato');
