@@ -102,6 +102,10 @@ typeController.setSort('name-asc');
 assert.deepEqual(typeController.sortCards(typeDeck.cards).map(c=>c.cardName),['Alpha Monster','Beta Spell','Zeta Trap'],'ordinamento Nome A-Z errato');
 typeController.setTypeFilter('trap');const trapHtml=typeController.view();
 assert(trapHtml.includes('Zeta Trap')&&!trapHtml.includes('Alpha Monster')&&!trapHtml.includes('Beta Spell'),'filtro Trappole non isola le sole carte trappola risolte');
+assert(trapHtml.includes('data-deck-sort-cycle')&&!trapHtml.includes('<select data-deck-sort'),"l'ordinamento deve essere un pulsante compatto, non una <select> nativa (ingombrante su mobile)");
+typeController.setTypeFilter('all');const allTypesHtml=typeController.view();
+for(const required of ['Mostri <b>1</b>','Magie <b>1</b>','Trappole <b>1</b>','deck-type-chip monster','deck-type-chip spell','deck-type-chip trap'])assert(allTypesHtml.includes(required),`Conteggio per tipo assente dai chip filtro: ${required}`);
+typeController.cycleSort();assert.equal(typeController.cardSort,'name-desc','cycleSort non avanza alla prossima opzione');
 
 const draftState={game:'yugioh',currentUser:'me',decks:[],collection:{mine:[],team:[]}},draftController=new DeckController({api:{decks:async()=>[]},getState:()=>draftState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});draftController.create(false);draftController.add({id:'99',name:'Synchro Test',type:'Synchro Monster',image:'synchro.jpg',banTcg:'semi-limited'});assert.equal(draftController.active().cards[0].section,'extra','una carta Extra Deck inserita dal Main non viene classificata automaticamente');
 const restoredState={game:'yugioh',currentUser:'me',decks:[],collection:{mine:[],team:[]}},restoredController=new DeckController({api:{decks:async()=>[]},getState:()=>restoredState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});await restoredController.load();assert.equal(restoredController.active().cards[0].cardName,'Synchro Test','hard refresh perde la bozza locale');

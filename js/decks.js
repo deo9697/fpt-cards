@@ -15,10 +15,10 @@ const TYPE_FILTERS = [
 ];
 const TYPE_RANK = { monster: 0, spell: 1, trap: 2, '': 3 };
 const SORT_OPTIONS = [
-  { value: 'type', label: 'Tipo (Mostri → Magie → Trappole)' },
-  { value: 'name-asc', label: 'Nome A–Z' },
-  { value: 'name-desc', label: 'Nome Z–A' },
-  { value: 'qty-desc', label: 'Più copie' }
+  { value: 'type', label: 'Tipo', title: 'Ordina per tipo: Mostri → Magie → Trappole' },
+  { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
+  { value: 'name-desc', label: 'Z–A', title: 'Ordina per nome, Z–A' },
+  { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' }
 ];
 const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limitata a 2 copie', forbidden: 'Proibita' };
 
@@ -70,7 +70,7 @@ export class DeckController {
       ${this.editorHeader(deck, total, report)}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…"></label><div data-deck-search-results class="deck-search-results"></div></div>
       <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina">${TYPE_FILTERS.map(f => `<button type="button" class="chip ${this.cardTypeFilter === f.value ? 'active' : ''}" data-deck-type-filter="${f.value}">${f.label}</button>`).join('')}<select data-deck-sort aria-label="Ordina carte">${SORT_OPTIONS.map(option => `<option value="${option.value}" ${this.cardSort === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina">${this.typeChips(deck)}${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck)}
       ${sheetCard ? this.cardSheet(sheetCard, report) : this.availabilityPeek(report)}
       ${this.moreMenuOpen ? this.moreMenu(deck) : ''}
@@ -98,6 +98,16 @@ export class DeckController {
     return `<div class="deck-mobile-grid">${cards.map(item => this.cardTile(item)).join('')}</div>`;
   }
   matchesTypeFilter(item) { return this.cardTypeFilter === 'all' || this.cardTypes[item.catalogCardId] === this.cardTypeFilter; }
+  typeChips(deck) {
+    const sectionCards = deck.cards.filter(item => item.section === this.activeSection);
+    const counts = { monster: 0, spell: 0, trap: 0 };
+    for (const item of sectionCards) { const type = this.cardTypes[item.catalogCardId]; if (type in counts) counts[type] += item.quantity; }
+    return TYPE_FILTERS.map(f => `<button type="button" class="chip ${f.value !== 'all' ? `deck-type-chip ${f.value}` : ''} ${this.cardTypeFilter === f.value ? 'active' : ''}" data-deck-type-filter="${f.value}">${f.value !== 'all' ? '<i class="deck-type-dot"></i>' : ''}${f.label}${f.value !== 'all' ? ` <b>${counts[f.value]}</b>` : ''}</button>`).join('');
+  }
+  sortButton() {
+    const current = SORT_OPTIONS.find(option => option.value === this.cardSort) || SORT_OPTIONS[0];
+    return `<button type="button" class="deck-mh-sort" data-deck-sort-cycle title="${esc(current.title)} (tocca per cambiare)" aria-label="${esc(current.title)}">${icon('chart')}<span>${esc(current.label)}</span></button>`;
+  }
   sortCards(cards) {
     const sorted = [...cards];
     switch (this.cardSort) {
@@ -180,7 +190,7 @@ export class DeckController {
     root.querySelector('[data-deck-import-run]')?.addEventListener('click', () => void this.importText(root.querySelector('[data-deck-import-text]')?.value || ''));
     root.querySelectorAll('[data-deck-section]').forEach(button => button.addEventListener('click', () => this.setSection(button.dataset.deckSection)));
     root.querySelectorAll('[data-deck-type-filter]').forEach(button => button.addEventListener('click', () => this.setTypeFilter(button.dataset.deckTypeFilter)));
-    root.querySelector('[data-deck-sort]')?.addEventListener('change', event => this.setSort(event.target.value));
+    root.querySelector('[data-deck-sort-cycle]')?.addEventListener('click', () => this.cycleSort());
     root.querySelectorAll('[data-deck-card-select]').forEach(button => button.addEventListener('click', () => this.selectCard(button.dataset.deckCardSelect, button.dataset.deckCardSelectSection)));
     root.querySelector('[data-deck-sheet-close]')?.addEventListener('click', () => this.closeSheet());
     root.querySelectorAll('[data-deck-sheet-qty]').forEach(button => button.addEventListener('click', () => this.sheetQuantity(button.dataset.deckSheetQty === 'plus' ? 1 : -1)));
@@ -224,6 +234,7 @@ export class DeckController {
   toggleMissingPanel(open) { this.missingPanelOpen = open; if (open) this.selectedCard = null; this.onRender(); }
   toggleMoreMenu() { this.moreMenuOpen = !this.moreMenuOpen; this.onRender(); }
   setSort(value) { if (!SORT_OPTIONS.some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
+  cycleSort() { const index = SORT_OPTIONS.findIndex(option => option.value === this.cardSort); this.setSort(SORT_OPTIONS[(index + 1) % SORT_OPTIONS.length].value); }
   async resolveCardTypes(deck) {
     if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds || this.typesLoading) return;
     const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardTypes));
