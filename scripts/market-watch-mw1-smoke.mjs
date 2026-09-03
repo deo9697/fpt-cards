@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,cardmarketMappingNeedsResolver,isAuthorizedCardmarketMapping,normalizeMarketRarity,resolveCardmarketPrinting} from '../market/providers.js';
 
-const product=(id,name,expansion,rarity='')=>({providerProductId:String(id),cardName:name,setName:expansion,rarity,foil:null});
+const product=(id,name,expansion,rarity='',providerExpansionId='set-1')=>({providerProductId:String(id),providerExpansionId,cardName:name,setName:expansion,rarity,foil:null});
 const printing=(overrides={})=>({game:'yugioh',catalogCardId:'1',cardName:'Test Card',setCode:'TEST-EN001',setName:'Test Set',rarity:'Common',language:'English',edition:'1st Edition',...overrides});
 const resolve=(target,candidates,internalPrintings=[target])=>resolveCardmarketPrinting(target,candidates,{internalPrintings});
 
@@ -36,7 +36,11 @@ const deterministic=resolve(one,[oneProduct],[one]);
 assert.deepEqual(resolve(one,[oneProduct],[one]),deterministic,'stesso input produce un risultato differente');
 const extra=product(905,one.cardName,one.setName);
 assert.deepEqual(resolve(one,[extra,oneProduct],[one]),resolve(one,[oneProduct,extra],[one]),'ordine candidati influenza il resolver');
-assert.equal(resolve(one,[extra,oneProduct],[one]).status,CARDMARKET_RESOLUTION_STATES.AMBIGUOUS);
+const multiProduct=resolve(one,[extra,oneProduct],[one]);
+assert.equal(multiProduct.status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE);
+assert.equal(multiProduct.reason,'multiple_provider_products_aggregate_minimum');
+assert.deepEqual(multiProduct.evidence.candidateProductIds,['904','905']);
+assert.equal(multiProduct.priceScope.product,'minimum_across_candidates');
 
 const italian=printing({catalogCardId:'2',cardName:'Localized Card',setCode:'LOC-IT001',setName:'Set Italiano',language:'Italiano'});
 const english={...italian,setCode:'LOC-EN001',setName:'English Set',language:'English'};
@@ -49,10 +53,10 @@ assert.equal(resolve(printing({rarity:'3'}),[oneProduct]).status,CARDMARKET_RESO
 for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Starlight Rare','Platinum Secret Rare',"Collector's Rare",'Quarter Century Secret Rare','Starfoil Rare','Short Print','Prismatic Secret Rare','Gold Secret Rare','Gold Rare','Mosaic Rare','Premium Gold Rare','Shatterfoil Rare'])assert(normalizeMarketRarity(rarity),`Rarità supportata non normalizzata: ${rarity}`);
 for(const rarity of ['2','3','New'])assert.equal(normalizeMarketRarity(rarity),null);
 
-assert.equal(CARDMARKET_RESOLVER_VERSION,3);
+assert.equal(CARDMARKET_RESOLVER_VERSION,4);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
-assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:3}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:4}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
@@ -106,6 +110,13 @@ const retryProvider=new CardmarketPriceGuideProvider({
 assert.equal((await retryProvider.request(retryProvider.priceGuideUrl)).status,200);
 assert.equal(retryCalls,2,'retry Cardmarket non limitato/idempotente');
 assert.equal(retrySleeps,1,'backoff Cardmarket non applicato una sola volta');
+const aggregateProvider=new CardmarketPriceGuideProvider();
+aggregateProvider.loaded=true;aggregateProvider.sourceUpdatedAt='2026-09-03T00:00:00Z';
+aggregateProvider.prices=new Map([['904',{trend:9,low:4}],['905',{trend:6,low:5}]]);
+const aggregatePrice=await aggregateProvider.getCurrentPrice({provider_metadata:{candidateProductIds:['904','905']}});
+assert.equal(aggregatePrice.prices.find(row=>row.type==='trend').value,6,'il multi-product aggregate non usa il trend minimo');
+assert.equal(aggregatePrice.prices.find(row=>row.type==='low').value,4,'il multi-product aggregate non usa il low minimo');
+assert.match(aggregatePrice.conditionReference,/minimo tra 2 prodotti/);
 
 const dryRunSource=fs.readFileSync(new URL('./market-watch-mw1-dry-run.mjs',import.meta.url),'utf8');
 assert(dryRunSource.includes('loadCatalog(input.targets)'),'dry-run non usa il solo catalogo');

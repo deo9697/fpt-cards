@@ -80,7 +80,7 @@ assert(!/update public\.collection_items set[^;]*(quantity_owned|language\s*=|co
 assert.equal(CATALOG_VERIFICATION_VERSION,1);
 
 const sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-assert(sw.includes("const CACHE = 'fpt-cards-v137'"));
+assert(sw.includes("const CACHE = 'fpt-cards-v138'"));
 assert(sw.includes("'./js/catalog-verification.js'"));
 
 console.log('PASS Deck identity ID-first, traduzioni, fallback legacy e alias espliciti');

@@ -1,6 +1,6 @@
 const CARDTRADER_BASE='https://api.cardtrader.com/api/v2';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-export const CARDMARKET_RESOLVER_VERSION=3;
+export const CARDMARKET_RESOLVER_VERSION=4;
 export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -104,7 +104,7 @@ export class CardmarketPriceGuideProvider extends PriceProvider {
   async loadPrices(targets=[]){
     if(!this.priceGuideUrl)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRICE_GUIDE_URL');
     validateOfficialCardmarketUrl(this.priceGuideUrl);
-    const wantedProductIds=new Set((targets||[]).filter(row=>isAuthorizedCardmarketMapping(row)).map(row=>String(row.providerProductId||row.provider_product_id||'')).filter(Boolean));
+    const wantedProductIds=new Set((targets||[]).filter(row=>isAuthorizedCardmarketMapping(row)).flatMap(mappingProductIds));
     this.prices=new Map();
     if(!wantedProductIds.size){this.sourceUpdatedAt=new Date().toISOString();this.loaded=true;return {priceRows:0,retainedPriceRows:0,mode:'prices_only'};}
     const priceResponse=await this.request(this.priceGuideUrl);
@@ -117,13 +117,13 @@ export class CardmarketPriceGuideProvider extends PriceProvider {
   async resolvePrinting(printing,options={}){return resolveCardmarketPrinting(printing,this.catalog,options);}
   async getMarketListings(){return [];}
   async getCurrentPrice(mapping){
-    if(!this.loaded)await this.load([mapping]);const id=String(mapping.providerProductId||mapping.provider_product_id||'');const row=this.prices.get(id);
-    if(!row)return {provider:this.name,status:'unavailable',prices:[],availableQuantity:null,sampleSize:0};
+    if(!this.loaded)await this.load([mapping]);const ids=mappingProductIds(mapping),rows=ids.map(id=>this.prices.get(id)).filter(Boolean);
+    if(!rows.length)return {provider:this.name,status:'unavailable',prices:[],availableQuantity:null,sampleSize:0};
     const definitions={low:['low','Low Price','LOW'],trend:['trend','Trend Price','TREND'],average:['avg','Avg. Sell Price','AVG'],avg1:['avg1','AVG1'],avg7:['avg7','AVG7'],avg30:['avg30','AVG30'],
       foil_low:['low-foil','Foil Low','LOWFOIL'],foil_trend:['trend-foil','Foil Trend','TRENDFOIL'],foil_average:['avg-foil','Foil Sell','SELLFOIL'],foil_avg1:['avg1-foil','Foil AVG1'],foil_avg7:['avg7-foil','Foil AVG7'],foil_avg30:['avg30-foil','Foil AVG30']};
-    const prices=[];for(const [type,keys] of Object.entries(definitions)){const value=numberFrom(row,keys);if(value!=null)prices.push({type,value});}
+    const prices=[];for(const [type,keys] of Object.entries(definitions)){const values=rows.map(row=>numberFrom(row,keys)).filter(value=>value!=null);if(values.length)prices.push({type,value:Math.min(...values)});}
     return {provider:this.name,status:prices.length?'available':'unavailable',currency:'EUR',prices,availableQuantity:null,sampleSize:null,
-      conditionReference:'Price Guide Cardmarket',capturedAt:new Date().toISOString(),sourceUpdatedAt:this.sourceUpdatedAt};
+      conditionReference:ids.length>1?`Price Guide Cardmarket · minimo tra ${ids.length} prodotti`:'Price Guide Cardmarket',capturedAt:new Date().toISOString(),sourceUpdatedAt:this.sourceUpdatedAt};
   }
 }
 
@@ -157,7 +157,9 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
   if(exactRarity.length)matches=exactRarity;
   else if(providerRarityKnown.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_rarity_mismatch',{internalRarities,providerRarities:[...new Set(providerRarityKnown.map(row=>normalizeMarketRarity(row.rarity)))].sort(),candidateCount:products.length});
   else matches=products;
-  if(matches.length>1)return {...fail(CARDMARKET_RESOLUTION_STATES.AMBIGUOUS,'multiple_provider_products',{internalRarities,candidateCount:matches.length}),candidates:matches};
+  if(matches.length>1){const expansionIds=[...new Set(matches.map(row=>String(row.providerExpansionId||row.provider_expansion_id||'')).filter(Boolean))];
+    if(expansionIds.length===1){const first=matches[0],candidateProductIds=matches.map(productId).filter(Boolean);return {status:CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,confidence:1,candidate:{providerExpansionId:expansionIds[0],provider_expansion_id:expansionIds[0],setName:first.setName||first.expansion||'',expansion:first.setName||first.expansion||'',foil:null},candidates:matches,provider:'cardmarket',reason:'multiple_provider_products_aggregate_minimum',priceScope:{product:'minimum_across_candidates',language:'aggregate',edition:'aggregate',rarity:'aggregate',foil:'parallel_columns_unassigned'},resolverVersion:CARDMARKET_RESOLVER_VERSION,evidence:{...base,internalRarities,candidateCount:matches.length,candidateProductIds,providerExpansionId:expansionIds[0],acceptedExpansions:[...expansions].sort(),identityBasis:['card_name','provider_expansion_id','multiple_provider_product_ids','minimum_price']}};}
+    return {...fail(CARDMARKET_RESOLUTION_STATES.AMBIGUOUS,'multiple_provider_expansions',{internalRarities,candidateCount:matches.length,providerExpansionIds:expansionIds}),candidates:matches};}
   const candidate=matches[0],providerRarity=normalizeMarketRarity(candidate.rarity);
   if(!providerRarity&&internalRarities.length>1)return {...fail(CARDMARKET_RESOLUTION_STATES.AMBIGUOUS,'internal_rarity_conflict_provider_rarity_missing',{internalRarities,candidateCount:1}),candidates:[candidate]};
   const priceScope={language:'aggregate',edition:'aggregate',rarity:providerRarity?'specific':'aggregate',foil:candidate.foil==null?'parallel_columns_unassigned':'specific'};
@@ -193,6 +195,7 @@ function eligibleListing(row,mapping){const props=row.properties_hash||row.prope
 function normalizeCardTraderListing(row){const price=row.price||{};return {id:row.id,blueprintId:row.blueprint_id,price:Number(price.cents??row.price_cents)/100,
   currency:String(price.currency||row.price_currency||'EUR').toUpperCase(),quantity:Number(row.quantity||0),properties:row.properties_hash||row.properties||{}};}
 function productId(row){return String(read(row,['providerProductId','provider_product_id','idProduct','Product ID','product_id','id'])||'');}
+function mappingProductIds(mapping){const many=mapping?.provider_metadata?.candidateProductIds||mapping?.candidateProductIds||[];return [...new Set([mapping?.providerProductId||mapping?.provider_product_id||'',...(Array.isArray(many)?many:[])].map(String).filter(Boolean))];}
 function evidenceBase(printing,rarity){return {internalPrintingId:printing.printingId||printing.printing_id||printing.id||null,catalogCardId:String(printing.catalogCardId||printing.catalog_card_id||''),internalSetCode:printing.setCode||printing.set_code||'',internalSetName:printing.setName||printing.set_name||'',internalRarity:rarity,internalLanguage:printing.language||'',internalEdition:printing.edition||''};}
 function setFamilyKey(value){const code=String(value||'').trim().toUpperCase(),match=code.match(/^([A-Z0-9]+)-[A-Z]{1,3}([0-9]+)$/);return match?`${match[1]}:${match[2]}`:normCode(code);}
 function internalFamily(printing,rows){const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),result=(rows||[]).filter(row=>norm(row.catalogCardId||row.catalog_card_id)===catalog&&setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
@@ -202,7 +205,7 @@ export function cardmarketNonSinglesUrl(value){try{const url=new URL(value);if(!
 function buildExpansionNames(rows){const values=new Map();for(const row of rows||[]){const id=String(row.idExpansion||row.expansion_id||'');if(!id)continue;const name=cleanExpansionName(row.name||'');if(!name)continue;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}return values;}
 function addExpansionName(values,row){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
 function cleanExpansionName(value){return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
-function normalizeCardmarketProduct(row,expansions){const parsed=parseProductName(row.name||'');const id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`};}
+function normalizeCardmarketProduct(row,expansions){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`};}
 function parseProductName(value){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/\bfoil\b/i.test(rarity)?true:null};}
 function numberFrom(row,keys){const raw=read(row,keys);if(raw==null||raw==='')return null;const value=Number(String(raw).replace(',','.'));return Number.isFinite(value)&&value>=0?value:null;}
 function read(row,keys){for(const key of keys)if(row?.[key]!=null&&row[key]!=='')return row[key];return null;}

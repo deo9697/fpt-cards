@@ -95,13 +95,14 @@ async function dryTargetCardmarket(provider:any,ids:string[]){
   const catalogStats=await provider.loadCatalog(targets),resolved:any[]=[];
   for(const target of targets)resolved.push({target,resolution:await provider.resolvePrinting(target,{internalPrintings:allPrintings})});
   const authorized=resolved.filter((row:any)=>[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(row.resolution.status)).map((row:any)=>({
-    ...row.target,resolution_status:'resolved',provider_product_id:row.resolution.candidate?.providerProductId,provider_metadata:{resolverStatus:row.resolution.status,priceScope:row.resolution.priceScope}
+    ...row.target,resolution_status:'resolved',provider_product_id:row.resolution.candidate?.providerProductId,provider_metadata:{resolverStatus:row.resolution.status,priceScope:row.resolution.priceScope,candidateProductIds:row.resolution.evidence?.candidateProductIds||[]}
   }));
   const priceStats=await provider.loadPrices(authorized),prices=new Map();
   for(const target of authorized){const value=await provider.getCurrentPrice(target);prices.set(String(target.printing_id),pricesForTarget(value.prices||[],target));}
   return {ok:true,mode:'dry_target',provider:'cardmarket',requested:ids.length,found:targets.length,catalogStats,priceStats,pagination:{printingPages:printingResult.requests,printingRows:allPrintings.length},results:resolved.map((row:any)=>({
     printingId:row.target.printing_id,cardName:row.target.card_name,setCode:row.target.set_code,rarity:row.target.rarity,status:row.resolution.status,reason:row.resolution.reason,
-    providerProductId:row.resolution.candidate?.providerProductId||null,priceScope:row.resolution.priceScope||null,prices:prices.get(String(row.target.printing_id))||[]
+    providerProductId:row.resolution.candidate?.providerProductId||null,priceScope:row.resolution.priceScope||null,prices:prices.get(String(row.target.printing_id))||[],
+    candidates:(row.resolution.candidates||[]).map((candidate:any)=>({providerProductId:candidate.providerProductId||candidate.provider_product_id||null,rawName:candidate.rawName||candidate.name||'',cardName:candidate.cardName||'',rarity:candidate.rarity||'',providerExpansionId:candidate.providerExpansionId||candidate.provider_expansion_id||null,expansion:candidate.setName||candidate.expansion||''}))
   }))};
 }
 
@@ -120,6 +121,7 @@ function cardmarketResolutionBody(target:any,resolution:any){
     provider_expansion_id:candidate.providerExpansionId||candidate.provider_expansion_id||null,language:target.language||'',condition_reference:'Price Guide Cardmarket',foil:target.foil,
     edition:target.edition||'',resolution_status:databaseStatus,confidence:active?1:0,resolved_at:active?now:null,last_checked_at:now,last_error:null,
     provider_metadata:{...(target.provider_metadata||{}),active,resolverStatus:resolution.status,resolverVersion:resolution.resolverVersion,reason:resolution.reason,priceScope:resolution.priceScope,
+      candidateProductIds:active?(resolution.evidence?.candidateProductIds||[]):[],
       productUrl:active?(candidate.productUrl||null):(target.provider_metadata?.productUrl||null),productName:active?(candidate.cardName||candidate.name||null):(target.provider_metadata?.productName||null),
       expansion:active?(candidate.setName||candidate.expansion||null):(target.provider_metadata?.expansion||null),rarity:active?(candidate.rarity||null):(target.provider_metadata?.rarity||null),
       foil:active?(candidate.foil??null):(target.provider_metadata?.foil??null),evidence:resolution.evidence||null,candidateCount:resolution.candidates?.length||0,
