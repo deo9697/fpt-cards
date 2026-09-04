@@ -1,9 +1,11 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 
 const root = process.cwd();
-const host = '127.0.0.1';
+const listenHost = '0.0.0.0';
+const host = 'localhost';
 const port = Number(process.env.FPT_PREVIEW_PORT || 8080);
 const mime = {
   '.css':'text/css; charset=utf-8', '.html':'text/html; charset=utf-8',
@@ -30,6 +32,10 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => {
+server.listen(port, listenHost, () => {
   console.log(`FPT Cards disponibile su http://localhost:${port}`);
+  const lanAddresses = Object.values(os.networkInterfaces()).flat()
+    .filter(item => item && item.family === 'IPv4' && !item.internal)
+    .map(item => item.address);
+  for (const address of lanAddresses) console.log(`Da un altro dispositivo sulla stessa rete (es. telefono): http://${address}:${port}`);
 });
