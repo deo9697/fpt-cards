@@ -78,6 +78,16 @@ const enneacraftReport=deckAvailability(enneacraft,collection,'daniele');
 assert.equal(enneacraftReport.rows.find(row=>row.catalogCardId==='47084486'),undefined,'Demone della Vanità non risulta 1/1');
 assert.equal(enneacraftReport.rows.find(row=>row.catalogCardId==='87602890'),undefined,'Zaborg non risulta 2/2');
 assert.deepEqual(enneacraftReport.rows.find(row=>row.catalogCardId==='81674782')&&{owned:2,missing:1},{owned:2,missing:1});
+const activeLoan={id:'loan-fissure',game:'yugioh',status:'active',owner:'cristian',borrower:'daniele',externalId:'81674782',cardName:'Dimensional Fissure',quantity:1,acceptedQuantity:1,returnedQuantity:0};
+const enneacraftWithLoan=deckAvailability(enneacraft,collection,'daniele',{loans:[activeLoan]});
+assert.equal(enneacraftWithLoan.rows.find(row=>row.catalogCardId==='81674782'),undefined,'Dimensional Fissure con prestito ricevuto attivo non risulta 3/3');
+assert.equal(enneacraftWithLoan.percent,100,'Enneacraft con prestito ricevuto non raggiunge il 100%');
+const fissureInfo=[...enneacraftWithLoan.perCard.values()].find(entry=>entry.catalogCardId==='81674782');
+assert.deepEqual({ownedMine:fissureInfo.ownedMine,borrowed:fissureInfo.borrowed},{ownedMine:2,borrowed:1},'Il resolver non espone la provenienza (tue/prestate) della disponibilità');
+assert.equal(fissureInfo.borrowedFrom[0]?.ownerSlug,'cristian','Il resolver non indica da chi arriva la copia in prestito');
+const returnedLoan={...activeLoan,status:'returned',returnedQuantity:1};
+const enneacraftAfterReturn=deckAvailability(enneacraft,collection,'daniele',{loans:[returnedLoan]});
+assert.deepEqual(enneacraftAfterReturn.rows.find(row=>row.catalogCardId==='81674782')&&{owned:2,missing:1},{owned:2,missing:1},'Un prestito restituito non deve più contare come disponibilità');
 const sacredReport=deckAvailability(sacred,collection,'daniele');
 assert.equal(sacredReport.rows.find(row=>row.catalogCardId==='23856331'),undefined,'Uria non risulta 1/1');
 assert.equal(sacredReport.rows.find(row=>row.catalogCardId==='70636044'),undefined,'Varudras disponibile non riconosciuto');
@@ -94,6 +104,30 @@ const committedGhost={mine:mine.map(row=>row.id==='ghost-canonical'?{...row,quan
 const committedReport=deckAvailability({cards:[sacred.cards[2]]},committedGhost,'daniele');
 assert.deepEqual(committedReport.rows[0]&&{owned:committedReport.rows[0].owned,missing:committedReport.rows[0].missing},{owned:2,missing:1},'prestiti/riservate non sottratti dalla disponibilità Ghost Belle');
 
+const {DeckController}=await import('../js/decks.js');
+const aliasAddState={game:'yugioh',currentUser:'daniele',decks:[],collection:{mine:[],team:[]}};
+const aliasAddController=new DeckController({api:{decks:async()=>[]},getState:()=>aliasAddState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
+aliasAddController.create(false);
+aliasAddController.add({id:'73642296',name:'Ghost Belle & Haunted Mansion',image:'',type:'Effect Monster'});
+assert.equal(aliasAddController.active().cards[0].catalogCardId,'73642297','add() (ricerca) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
+
+const aliasImportState={game:'yugioh',currentUser:'daniele',decks:[],collection:{mine:[],team:[]}};
+const aliasImportController=new DeckController({api:{decks:async()=>[]},getState:()=>aliasImportState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
+aliasImportController.create(false);
+aliasImportController.addSilent({id:'73642296',name:'Ghost Belle & Haunted Mansion',image:''},'main',2);
+assert.equal(aliasImportController.active().cards[0].catalogCardId,'73642297','addSilent() (import) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
+
+let savedDeckPayload=null;
+const aliasSaveState={game:'yugioh',currentUser:'daniele',decks:[{id:'legacy-draft',persisted:false,dirty:true,ownerSlug:'daniele',name:'Legacy Draft',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'73642296',cardName:'Ghost Belle & Haunted Mansion',imageUrl:'',banTcg:'',section:'main',quantity:1}],cover:'',signatureCardId:null,deckTheme:'default',deckBoxTemplate:'default'}],collection:{mine:[],team:[]}};
+const aliasSaveController=new DeckController({api:{decks:async()=>[],saveDeck:async deck=>{savedDeckPayload=JSON.parse(JSON.stringify(deck));return {id:deck.id,deckBoxPersisted:true};}},getState:()=>aliasSaveState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
+aliasSaveController.activeId='legacy-draft';aliasSaveController.previewId='legacy-draft';
+await aliasSaveController.save();
+assert.equal(savedDeckPayload?.cards[0].catalogCardId,'73642297','save() non normalizza un ID legacy già presente nella bozza prima di persisterlo');
+
+const hardenedCollection={mine:[{id:'ghost-canonical-2',game:'yugioh',catalogCardId:'73642297',cardName:'Ghost Belle & Haunted Mansion',quantityAvailable:1}],team:[]};
+const hardenedReport=deckAvailability({cards:aliasAddController.active().cards},hardenedCollection,'daniele');
+assert.equal(hardenedReport.percent,100,'alias ID nel mazzo (canonicalizzato in scrittura) non combacia più con l\'ID canonico in Raccolta');
+
 const marketPayload={items:rows(1052,'market'),deckUnresolved:[]};
 assert.equal(marketPayload.items.length,1052,'Market Watch JSON aggregato troncato nel consumer');
 const appSource=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
@@ -107,6 +141,7 @@ const mineMetrics=paginationMetrics('list_my_collection');
 assert.equal(mineMetrics.requests,3);assert.equal(mineMetrics.rows,1048);assert(mineMetrics.payloadBytes>0);assert(mineMetrics.durationMs>=0);
 console.log(`PASS P0 pagination Raccolta 1048/1048 e 1792 copie · Team 1052/1052 · 3 pagine · 0 duplicati`);
 console.log('PASS ricerca oltre riga 1000 · errore pagina 2 atomico · modifica concorrente deduplicata');
-console.log('PASS Deck: Demone 1/1 · Zaborg 2/2 · Uria 1/1 · Fissure 2/3 · Ghost Belle legacy 3/3 · Varudras 1 disponibile');
+console.log('PASS Deck: Demone 1/1 · Zaborg 2/2 · Uria 1/1 · Fissure 2/3 (3/3 con prestito ricevuto attivo, provenienza possedute/prestate esposta) · Ghost Belle legacy 3/3 · Varudras 1 disponibile');
 console.log(`PASS metriche sintetiche mobile: ${mineMetrics.requests} richieste · ${mineMetrics.payloadBytes} byte · ${mineMetrics.durationMs} ms collector`);
 console.log('PASS Market Watch JSON aggregato non troncato nel consumer frontend');
+console.log('PASS Identità carta: add/import/save canonicalizzano l\'ID alias in scrittura, alias nel mazzo combacia con canonico in Raccolta');
