@@ -534,7 +534,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .mobile-profile { display: none; padding: 2px; }
 .mobile-profile .avatar { width: 36px; height: 36px; font-size: .7rem; }
 .page-stage { width: min(1420px, 100%); min-height: 60vh; margin: 0 auto; }
-.page-stack { display: grid; gap: 16px; }
+.page-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.page-stack > * { min-width: 0; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; min-height: 68px; }
 .page-header h1 { margin: 4px 0; font-size: clamp(1.55rem, 2.2vw, 2.1rem); }
 .page-header p { margin: 0; color: var(--muted); font-size: .85rem; }
@@ -1018,7 +1019,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .recent-decks { padding:14px; }.recent-decks>div:last-child { display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px; }.recent-decks button { display:flex;align-items:center;gap:9px;padding:8px;border:1px solid #303648;border-radius:9px;background:#0c1019;color:var(--text);text-align:left; }.recent-decks button.active { border-color:#a649d7;box-shadow:0 0 14px #a649d720; }.recent-decks img,.recent-decks button>.icon { width:48px;height:58px;object-fit:cover;border-radius:4px; }.recent-decks strong,.recent-decks small { display:block; }.recent-decks small { color:var(--muted); }.deck-import { width:min(620px,calc(100% - 24px)); }.deck-import textarea { font-family:ui-monospace,monospace; }.deck-import input[type=file] { padding:9px; }
 
 /* Mazzi — editor mobile-first (Opzione C: tab a sezioni + bottom sheet per carta) */
-.deck-mobile { position:relative;max-width:640px;margin:0 auto;padding-bottom:112px; }
+.deck-mobile { position:relative;width:100%;max-width:640px;margin:0 auto;padding-bottom:112px; }
 .deck-mh-head { display:flex;align-items:center;gap:8px;padding:4px 2px 8px; }
 .deck-mh-icon { display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid #2c2740;border-radius:11px;background:#12101c;color:#cbb8e6; }
 .deck-mh-icon .icon { width:16px;height:16px; }
@@ -1044,7 +1045,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .deck-mh-tabs button.active { background:linear-gradient(155deg,#3a1e5c,#24123d);color:#e6c9ff;box-shadow:0 0 0 1px #7b3fc555; }
 .deck-mh-tabs button i { display:inline-grid;place-items:center;min-width:17px;height:16px;padding:0 4px;border-radius:8px;background:#ffffff10;font-style:normal;font-size:.6rem; }
 .deck-mh-tabs button.active i { background:#c66cff2e;color:#e6c9ff; }
-.deck-mh-filters { display:flex;align-items:center;gap:7px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px; }
+.deck-mh-filters { display:flex;align-items:center;gap:7px;margin-bottom:10px; }
+.deck-mh-chip-scroll { display:flex;align-items:center;flex:1;min-width:0;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none; }
+.deck-mh-chip-scroll::-webkit-scrollbar { display:none; }
 .deck-mh-filters .chip { flex:none;display:flex;align-items:center;gap:5px; }
 .deck-mh-filters .chip b { color:inherit;font-weight:800;opacity:.75; }
 .deck-type-dot { width:7px;height:7px;border-radius:50%;background:currentColor; }
@@ -1054,7 +1057,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .deck-type-chip.active.monster { background:#c99a5c22;border-color:#c99a5c88;color:#e8c690!important; }
 .deck-type-chip.active.spell { background:#5cc98e22;border-color:#5cc98e88;color:#8fe8b5!important; }
 .deck-type-chip.active.trap { background:#d872a822;border-color:#d872a888;color:#f0a3ce!important; }
-.deck-mh-sort { flex:none;display:flex;align-items:center;gap:5px;margin-left:auto;padding:6px 11px;border:1px solid #241f38;border-radius:999px;background:#0c0a17aa;color:#8b86a3;font-size:.68rem;font-weight:700;white-space:nowrap; }
+.deck-mh-sort { flex:none;display:flex;align-items:center;gap:5px;padding:6px 11px;border:1px solid #241f38;border-radius:999px;background:#0c0a17aa;color:#8b86a3;font-size:.68rem;font-weight:700;white-space:nowrap; }
 .deck-mh-sort .icon { width:13px;height:13px; }
 .deck-mh-types-loading { display:flex;align-items:center;gap:8px;margin:-4px 0 10px;color:var(--muted);font-size:.7rem; }
 .deck-mh-types-loading .loading-spinner { width:14px;height:14px;border-width:2px; }

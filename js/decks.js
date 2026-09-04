@@ -58,7 +58,7 @@ export class DeckController {
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
       <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina">${this.typeChips(deck)}${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, { readonly:true }) : this.availabilityPeek(report)}
       ${this.missingPanelOpen ? this.missingOverlay(report, { readonly:true, ownerName:deck.ownerName }) : ''}
@@ -87,7 +87,7 @@ export class DeckController {
       ${this.editorHeader(deck, total, report)}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…"></label><div data-deck-search-results class="deck-search-results"></div></div>
       <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina">${this.typeChips(deck)}${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report) : this.availabilityPeek(report)}
       ${this.moreMenuOpen ? this.moreMenu(deck) : ''}
