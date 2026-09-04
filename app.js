@@ -6,7 +6,7 @@ import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
-import { initEasterEgg, triggerRickrollVideo } from './js/easter-egg.js';
+import { triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
@@ -62,6 +62,7 @@ const fastScan = new FastScanController({
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
+function showFab() { return page !== 'new' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
     const image = event.target;
@@ -115,7 +116,7 @@ function renderRoute() {
   stage.innerHTML = pageContent();
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
   shell.querySelector(':scope > .fab')?.remove();
-  if (page !== 'new') shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
+  if (showFab()) shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
     button.classList.toggle('active', target === page || (target === 'more' && ['decks','market','team','settings'].includes(page)));
@@ -176,7 +177,7 @@ function appView() {
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
       <section class="page-stage" aria-live="polite">${pageContent()}</section>
     </section>
-    ${page !== 'new' ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
+    ${showFab() ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser) : ''}
@@ -1061,7 +1062,6 @@ async function login(e) {
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
     state.role = profile.role;
-    initEasterEgg();
     loginDraft = { member:'', pin:'' };
     saveState();
     render();
@@ -1472,7 +1472,6 @@ async function start() {
     void registerAutoUpdates();
     return;
   }
-  initEasterEgg();
   render();
   try { await loadMembers(); } catch {}
   if (state.currentUser) {
