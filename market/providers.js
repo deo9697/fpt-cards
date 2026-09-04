@@ -1,6 +1,6 @@
 const CARDTRADER_BASE='https://api.cardtrader.com/api/v2';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-export const CARDMARKET_RESOLVER_VERSION=7;
+export const CARDMARKET_RESOLVER_VERSION=8;
 export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -8,7 +8,19 @@ const SUPPORTED_RARITIES=new Map([
   ["collector's rare","Collector's Rare"],['collectors rare',"Collector's Rare"],['quarter century secret rare','Quarter Century Secret Rare'],
   ['starfoil rare','Starfoil Rare'],['short print','Short Print'],['prismatic secret rare','Prismatic Secret Rare'],
   ['gold secret rare','Gold Secret Rare'],['gold rare','Gold Rare'],['mosaic rare','Mosaic Rare'],
-  ['premium gold rare','Premium Gold Rare'],['shatterfoil rare','Shatterfoil Rare'],['ghost rare','Ghost Rare']
+  ['premium gold rare','Premium Gold Rare'],['shatterfoil rare','Shatterfoil Rare'],['ghost rare','Ghost Rare'],
+  // Rarità reali del catalogo YGOPRODeck non coperte sopra: senza queste voci il resolver
+  // scartava la printing come UNSUPPORTED prima ancora di cercarla su Cardmarket.
+  ['ghost/gold rare','Ghost/Gold Rare'],['platinum rare','Platinum Rare'],
+  ['prismatic ultimate rare','Prismatic Ultimate Rare'],["prismatic collector's rare","Prismatic Collector's Rare"],['prismatic collectors rare',"Prismatic Collector's Rare"],
+  ['extra secret rare','Extra Secret Rare'],['20th secret rare','20th Secret Rare'],['20th anniversary secret rare','20th Secret Rare'],
+  ['super short print','Super Short Print'],['ultra short print','Ultra Short Print'],
+  ['parallel rare','Parallel Rare'],['normal parallel rare','Normal Parallel Rare'],['super parallel rare','Super Parallel Rare'],['ultra parallel rare','Ultra Parallel Rare'],
+  ['duel terminal normal parallel rare','Duel Terminal Normal Parallel Rare'],['duel terminal rare parallel rare','Duel Terminal Rare Parallel Rare'],
+  ['duel terminal super parallel rare','Duel Terminal Super Parallel Rare'],['duel terminal ultra parallel rare','Duel Terminal Ultra Parallel Rare'],
+  ['millennium rare','Millennium Rare'],['millennium super rare','Millennium Super Rare'],['millennium ultra rare','Millennium Ultra Rare'],
+  ['millennium secret rare','Millennium Secret Rare'],['millennium gold rare','Millennium Gold Rare'],
+  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"]
 ]);
 
 export class PriceProvider {

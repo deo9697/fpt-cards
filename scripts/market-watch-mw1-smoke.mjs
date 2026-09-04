@@ -54,6 +54,13 @@ for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ul
 for(const rarity of ['2','3'])assert.equal(normalizeMarketRarity(rarity),'Common');
 assert.equal(normalizeMarketRarity('Ghost Rare'),'Ghost Rare');
 assert.equal(normalizeMarketRarity('New'),null);
+// Rarità reali del catalogo YGOPRODeck che il resolver scartava come UNSUPPORTED prima di
+// tentare qualunque match su Cardmarket, escludendo dal Market Watch carte altrimenti valide.
+for(const rarity of ['Ghost/Gold Rare','Platinum Rare','Prismatic Ultimate Rare',"Prismatic Collector's Rare",'Extra Secret Rare','20th Secret Rare','Super Short Print','Ultra Short Print','Parallel Rare','Normal Parallel Rare','Super Parallel Rare','Ultra Parallel Rare','Duel Terminal Normal Parallel Rare','Duel Terminal Rare Parallel Rare','Duel Terminal Super Parallel Rare','Duel Terminal Ultra Parallel Rare','Millennium Rare','Millennium Super Rare','Millennium Ultra Rare','Millennium Secret Rare','Millennium Gold Rare','Holographic Rare',"Ultra Rare (Pharaoh's Rare)"])assert(normalizeMarketRarity(rarity),`Rarità reale del catalogo esclusa dal resolver: ${rarity}`);
+const parallelRareCard=printing({catalogCardId:'50',cardName:'Parallel Test Card',setCode:'PARA-EN050',setName:'Parallel Test Set',rarity:'Parallel Rare'});
+assert.notEqual(resolve(parallelRareCard,[product(950,'Parallel Test Card','Parallel Test Set')]).status,CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,'Parallel Rare ancora scartata come UNSUPPORTED');
+const millenniumCard=printing({catalogCardId:'51',cardName:'Millennium Test Card',setCode:'MILL-EN051',setName:'Millennium Test Set',rarity:'Millennium Ultra Rare'});
+assert.notEqual(resolve(millenniumCard,[product(951,'Millennium Test Card','Millennium Test Set')]).status,CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,'Millennium Ultra Rare ancora scartata come UNSUPPORTED');
 
 const heroInternal=[
   printing({catalogCardId:'10',cardName:'Elemental HERO Shadow Mist',setCode:'SDHS-EN001',setName:'HERO Strike Structure Deck'}),
@@ -73,10 +80,10 @@ const localizedAlias=printing({catalogCardId:'77',cardName:'Giudizio Solenne',se
 const canonicalAlias=printing({catalogCardId:'77',cardName:'Solemn Judgment',setCode:'RA02-EN075',setName:'25th Anniversary Rarity Collection II',rarity:'Ultra Rare'});
 assert.equal(resolveCardmarketPrinting(localizedAlias,[product(926,'Solemn Judgment','25th Anniversary Rarity Collection II')],{internalPrintings:[localizedAlias,canonicalAlias]}).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'alias nome con catalog_card_id identico non risolto');
 
-assert.equal(CARDMARKET_RESOLVER_VERSION,7);
+assert.equal(CARDMARKET_RESOLVER_VERSION,8);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
-assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:7}}));
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:CARDMARKET_RESOLVER_VERSION}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
@@ -147,5 +154,6 @@ assert(!/supabase|rpc\(|market_price_snapshots|market_provider_printings/i.test(
 console.log('PASS MW1 resolver deterministico e fallback 0.88 rimosso');
 console.log('PASS MW1 Common/Starlight, Secret/Starlight e ordine candidati protetti');
 console.log('PASS MW1 price scope aggregato, rarità supportate e legacy mapping esclusi');
+console.log('PASS MW1 rarità reali del catalogo (Parallel/Millennium/Platinum/Prismatic/...) non più scartate come UNSUPPORTED');
 console.log('PASS MW1 Edge pricesOnly, cron guard, secret e snapshot idempotenti preservati');
 console.log('PASS MW1 retry Cardmarket limitato e dry-run privo di scritture');
