@@ -46,6 +46,9 @@ export const api = {
   async marketPriceHistory(printingId, days = 30) {
     ensure(); return unwrap(await client.rpc('list_market_price_history', { p_token:token(),p_printing_id:printingId,p_days:days }));
   },
+  async setMarketMappingManual(printingId, providerProductId, { productName = '', expansion = '', rarity = '' } = {}) {
+    ensure(); return unwrap(await client.rpc('set_market_mapping_manual', { p_token:token(),p_printing_id:printingId,p_provider_product_id:String(providerProductId),p_product_name:productName,p_expansion:expansion,p_rarity:rarity }));
+  },
   async setMarketWatchItem(printingId, enabled) {
     ensure(); return unwrap(await client.rpc('set_market_watch_item', { p_token:token(),p_printing_id:printingId,p_enabled:Boolean(enabled) }));
   },
