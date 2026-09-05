@@ -1,5 +1,14 @@
 -- F.P.T Cards — segnali Cardmarket per "Carte in evidenza".
 -- Additiva: non modifica snapshot o dati esistenti.
+--
+-- Usa market_active_price_snapshots (manuale + EXACT + PROVIDER_AGGREGATE),
+-- non market_derived_price_snapshots (manuale + EXACT soltanto): quest'ultima
+-- richiede un mapping verificato per singola printing, che oggi hanno solo le
+-- carte confermate manualmente ("Conferma questa" nel dettaglio) — su un
+-- resolver che per Cardmarket restituisce quasi sempre PROVIDER_AGGREGATE,
+-- questo lasciava "Carte in evidenza" sempre vuota. Qui è solo una vetrina
+-- (non un valore definitivo), quindi il prezzo aggregato è accettabile: lo
+-- stesso criterio usato per il resto della lista Market Watch.
 
 create or replace function public.list_market_dashboard_movers(p_token text,p_game text default 'yugioh')
 returns jsonb language plpgsql security definer set search_path=public,extensions as $$
@@ -13,7 +22,7 @@ begin
     group by ci.printing_id
   ), latest as (
     select distinct on (s.printing_id,s.price_type) s.printing_id,s.price_type,s.normalized_price,s.captured_at
-    from market_derived_price_snapshots s join owned o on o.printing_id=s.printing_id
+    from market_active_price_snapshots s join owned o on o.printing_id=s.printing_id
     where s.provider='cardmarket' and s.normalized_currency='EUR' and s.normalized_price is not null
       and s.price_type in ('trend','avg1','avg7','avg30') and s.captured_at>=now()-interval '48 hours'
     order by s.printing_id,s.price_type,s.captured_at desc,s.id desc
