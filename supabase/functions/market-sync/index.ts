@@ -146,7 +146,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
 }
 function normalizeMarketRarity(value:any):string|null{const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 function isAuthorizedCardmarketMapping(mapping:any):boolean{if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
-function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual'||isAuthorizedCardmarketMapping(mapping))return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
+function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 function buildCardmarketExpansionHints(printings:any[]=[],products:any[]=[]):Map<string,any>{
   const groups=new Map<string,Set<string>>(),productsByName=new Map<string,any[]>();

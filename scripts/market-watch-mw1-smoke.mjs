@@ -96,8 +96,13 @@ assert.equal(CARDMARKET_RESOLVER_VERSION,8);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:CARDMARKET_RESOLVER_VERSION}}));
-assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}));
-assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}));
+// Le mapping già "autorizzate" (EXACT/PROVIDER_AGGREGATE) risolte con un resolver più vecchio
+// devono rientrare nel lotto di re-resolve: altrimenti restano bloccate per sempre a un
+// risultato calcolato prima di miglioramenti successivi (es. tabella rarità ampliata),
+// anche quando il resolver attuale le risolverebbe subito in modo corretto.
+assert(cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:2,resolverStatus:'PROVIDER_AGGREGATE'}}),'mapping aggregata legacy non rientra nel re-resolve incrementale');
+assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:CARDMARKET_RESOLVER_VERSION,resolverStatus:'PROVIDER_AGGREGATE'}}),'mapping aggregata già aggiornata viene ripassata inutilmente');
+assert(!cardmarketMappingNeedsResolver({resolution_status:'manual',provider_metadata:{resolverVersion:1}}),'una conferma manuale non deve mai essere sovrascritta dal resolver automatico');
 assert(isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{resolverStatus:'PROVIDER_AGGREGATE'}}));
 assert(!isAuthorizedCardmarketMapping({resolution_status:'resolved',provider_metadata:{}}),'mapping legacy 0.88 ancora autorizzato');
 assert(isAuthorizedCardmarketMapping({resolution_status:'manual'}));
@@ -112,6 +117,7 @@ const frontendSource=fs.readFileSync(new URL('../js/market-watch.js',import.meta
 assert(!providerSource.includes("confidence:rarityMatches.length ? .98 : .88"),'fallback 0.88 ancora presente');
 for(const required of ['pricesOnly','payload?.scheduled===true','loadPrices','outside_03_europe_rome','x-market-sync-secret','resolution=ignore-duplicates','source_updated_at:value.sourceUpdatedAt','isAuthorizedCardmarketMapping','dryTargetPrintingIds','canaryPrintingIds','canary_requires_full_mode','pricesForTarget'])assert(edgeSource.includes(required),`Contratto Edge v10/MW1 assente: ${required}`);
 assert(edgeSource.includes("candidates:candidateDetails}),candidates:providerRarityKnown};"),'Edge function non allineata al fix candidati su rarità non corrispondente');
+assert(edgeSource.includes("function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;"),'Edge function non allineata al re-resolve incrementale delle mapping aggregate legacy');
 for(const required of ['pendingResolverLimit:500','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
 const manualCapMatch=edgeSource.match(/Math\.min\((\d+),Number\(payload\?\.resolverBatchSize\)\|\|(\d+)\)/);
 assert(manualCapMatch&&Number(manualCapMatch[1])>=500,'Il tetto manuale del resolver batch on-demand è ancora troppo basso per smaltire un arretrato reale (un utente attivo può aggiungere più di 10-20 carte nuove al giorno, restando bloccato in coda per giorni)');

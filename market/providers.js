@@ -144,7 +144,7 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
 export function normalizeMarketRarity(value){const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
-export function cardmarketMappingNeedsResolver(mapping){if(mapping?.resolution_status==='manual'||isAuthorizedCardmarketMapping(mapping))return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
+export function cardmarketMappingNeedsResolver(mapping){if(mapping?.resolution_status==='manual')return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 export function buildCardmarketExpansionHints(printings=[],products=[]){
   const groups=new Map(),productsByName=new Map();
