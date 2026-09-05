@@ -19,6 +19,18 @@ const brambleProduct=product(901,'Bramble Rose Dragon','Doom of Dimensions');
 assert.equal(resolve(brambleSecret,[brambleProduct],[brambleSecret,brambleStarlight,brambleEnglish]).status,CARDMARKET_RESOLUTION_STATES.AMBIGUOUS);
 assert.equal(resolve(brambleStarlight,[brambleProduct],[brambleSecret,brambleStarlight,brambleEnglish]).status,CARDMARKET_RESOLUTION_STATES.AMBIGUOUS);
 
+// Rarità etichettata su Cardmarket ma diversa da quella interna (es. printing corretta a mano
+// dopo il fatto): il resolver deve restare UNRESOLVED ma offrire comunque il prodotto trovato
+// come candidato per la conferma manuale, invece di scartarlo senza lasciare via d'uscita.
+const mismatchPrinting=printing({catalogCardId:'60',cardName:'Rarity Mismatch Card',setCode:'RMIS-EN060',setName:'Rarity Mismatch Set',rarity:'Secret Rare'});
+const mismatchProduct=product(960,'Rarity Mismatch Card','Rarity Mismatch Set','Starlight Rare');
+const mismatchResolution=resolve(mismatchPrinting,[mismatchProduct]);
+assert.equal(mismatchResolution.status,CARDMARKET_RESOLUTION_STATES.UNRESOLVED);
+assert.equal(mismatchResolution.reason,'provider_rarity_mismatch');
+assert.equal(mismatchResolution.evidence.candidates?.length,1,'candidato trovato ma non salvato per la conferma manuale su rarità non corrispondente');
+assert.equal(mismatchResolution.evidence.candidates[0].productId,'960');
+assert.equal(mismatchResolution.evidence.candidates[0].rarity,'Starlight Rare');
+
 const utopiaRare=printing({catalogCardId:'84124261',cardName:'Number 39: Utopia Roots',setCode:'LVAL-IT048',setName:'Legacy of the Valiant',rarity:'Rare'});
 const utopiaUltimate={...utopiaRare,rarity:'Ultimate Rare'};
 assert.equal(resolve(utopiaUltimate,[product(902,utopiaUltimate.cardName,utopiaUltimate.setName)],[utopiaRare,utopiaUltimate]).status,CARDMARKET_RESOLUTION_STATES.AMBIGUOUS);
@@ -99,6 +111,7 @@ const moversSql=fs.readFileSync(new URL('../supabase-market-dashboard-movers.sql
 const frontendSource=fs.readFileSync(new URL('../js/market-watch.js',import.meta.url),'utf8');
 assert(!providerSource.includes("confidence:rarityMatches.length ? .98 : .88"),'fallback 0.88 ancora presente');
 for(const required of ['pricesOnly','payload?.scheduled===true','loadPrices','outside_03_europe_rome','x-market-sync-secret','resolution=ignore-duplicates','source_updated_at:value.sourceUpdatedAt','isAuthorizedCardmarketMapping','dryTargetPrintingIds','canaryPrintingIds','canary_requires_full_mode','pricesForTarget'])assert(edgeSource.includes(required),`Contratto Edge v10/MW1 assente: ${required}`);
+assert(edgeSource.includes("candidates:candidateDetails}),candidates:providerRarityKnown};"),'Edge function non allineata al fix candidati su rarità non corrispondente');
 for(const required of ['pendingResolverLimit:500','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
 const manualCapMatch=edgeSource.match(/Math\.min\((\d+),Number\(payload\?\.resolverBatchSize\)\|\|(\d+)\)/);
 assert(manualCapMatch&&Number(manualCapMatch[1])>=500,'Il tetto manuale del resolver batch on-demand è ancora troppo basso per smaltire un arretrato reale (un utente attivo può aggiungere più di 10-20 carte nuove al giorno, restando bloccato in coda per giorni)');
@@ -113,6 +126,7 @@ assert((integritySql.match(/security_invoker=true/g)||[]).length>=3,'viste MW1 n
 for(const role of ['public','anon','authenticated'])assert(integritySql.includes(`from public,anon,authenticated`),`revoche viste MW1 incomplete: ${role}`);
 for(const field of ['resolver_status','resolver_version','price_scope','language_scope','edition_scope','rarity_scope','foil_scope','mapping_reason','mapping_evidence'])assert(operationalSql.includes(field),`RPC non espone ${field}`);
 for(const required of ['Prezzo Cardmarket aggregato','derivedPriceEligible','market-row-badge aggregate','resolverStatus','priceScope'])assert(frontendSource.includes(required),`Frontend aggregate incompleto: ${required}`);
+for(const required of ['provider_rarity_mismatch','hasRarityMismatchCandidates','rarityMismatchNotice','Rarità non corrispondente su Cardmarket'])assert(frontendSource.includes(required),`Conferma manuale su rarità non corrispondente incompleta: ${required}`);
 assert(!/delete\s+from\s+(public\.)?market_price_snapshots/i.test(integritySql),'migration MW1 elimina snapshot');
 assert(rollbackSql.includes('create or replace view public.market_latest_prices'),'rollback MW1 non ripristina market_latest_prices');
 assert(rollbackSql.includes('create or replace function public.list_market_watch'),'rollback MW1 non ripristina list_market_watch');
@@ -155,6 +169,7 @@ assert(!/supabase|rpc\(|market_price_snapshots|market_provider_printings/i.test(
 
 console.log('PASS MW1 resolver deterministico e fallback 0.88 rimosso');
 console.log('PASS MW1 Common/Starlight, Secret/Starlight e ordine candidati protetti');
+console.log('PASS MW1 candidato salvato per conferma manuale su rarità non corrispondente');
 console.log('PASS MW1 price scope aggregato, rarità supportate e legacy mapping esclusi');
 console.log('PASS MW1 rarità reali del catalogo (Parallel/Millennium/Platinum/Prismatic/...) non più scartate come UNSUPPORTED');
 console.log('PASS MW1 Edge pricesOnly, cron guard, secret e snapshot idempotenti preservati');

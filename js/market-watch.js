@@ -47,7 +47,7 @@ export class MarketWatchController {
           <span class="market-detail-hero-sub">${priceTypeLabel(primaryProvider?.[1]?.type)}${primaryProvider?` · ${providerName(primaryProvider[0])}`:''} · ${formatTimestamp(item.latestAt)}</span>
         </div>
       </div>
-      ${aggregate?aggregateNotice(item):''}
+      ${aggregate?aggregateNotice(item):hasRarityMismatchCandidates(item)?rarityMismatchNotice(item):''}
       <section class="market-chart">
         <div class="market-chart-head"><h3>Storico prezzo</h3>${aggregate?'':`<div class="market-range-tabs" role="group" aria-label="Intervallo storico">${RANGES.map(range=>`<button type="button" class="${this.historyRange===range.days?'active':''}" data-market-range="${range.days}">${range.label}</button>`).join('')}</div>`}</div>
         ${aggregate?'<p class="market-detail-empty">Trend escluso: il prezzo non è specifico della printing.</p>':this.historyLoading?'<div class="loading-spinner"></div>':richPriceChart(stats)}
@@ -136,6 +136,8 @@ function rowSparkline(history,delta){
 export function isAggregatePrice(item){return item?.resolverStatus==='PROVIDER_AGGREGATE';}
 export function derivedPriceEligible(item){return item?.mappingStatus==='manual'||(item?.referencePrice!=null&&item?.resolverStatus!=='PROVIDER_AGGREGATE');}
 function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Prezzo Cardmarket aggregato</strong><br>Indicativo e non specifico per ${esc(labels.join(', ')||'la variante')}.${productNote} Non alimenta il valore preciso della raccolta, trend o mover.</span></p>${mappingConfirmBlock(item)}`;}
+function hasRarityMismatchCandidates(item){return item.mappingReason==='provider_rarity_mismatch'&&Array.isArray(item.mappingEvidence?.candidates)&&item.mappingEvidence.candidates.length>0;}
+function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
 function mappingConfirmBlock(item){
   const evidence=item.mappingEvidence||{};
   const candidates=Array.isArray(evidence.candidates)&&evidence.candidates.length?evidence.candidates:evidence.providerProductId?[{productId:evidence.providerProductId,cardName:evidence.providerCardName||item.cardName,rarity:evidence.providerRarity||'',expansion:evidence.providerExpansion||'',productUrl:evidence.providerProductUrl||''}]:[];
