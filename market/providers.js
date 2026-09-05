@@ -1,4 +1,3 @@
-const CARDTRADER_BASE='https://api.cardtrader.com/api/v2';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
 export const CARDMARKET_RESOLVER_VERSION=8;
 export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
@@ -29,46 +28,6 @@ export class PriceProvider {
   async getCurrentPrice(){throw new Error('getCurrentPrice() non implementato');}
   async getMarketListings(){throw new Error('getMarketListings() non implementato');}
   getPriceMetadata(){throw new Error('getPriceMetadata() non implementato');}
-}
-
-export class CardTraderProvider extends PriceProvider {
-  constructor({token='',fetchImpl=globalThis.fetch,sleep=delay,baseUrl=CARDTRADER_BASE}={}){
-    super({name:'cardtrader',fetchImpl});this.token=token;this.sleep=sleep;this.baseUrl=baseUrl;this.lastMarketplaceAt=0;
-  }
-  get available(){return Boolean(this.token);}
-  getPriceMetadata(){return {provider:this.name,status:this.available?'available':'unavailable',currency:'account',
-    priceTypes:['lowest','reference'],conditionReference:'listing property',marketplaceLimitPerSecond:1};}
-  async resolvePrinting(printing,candidates=[]){return resolveExactPrinting(printing,candidates,'cardtrader');}
-  async request(path,{marketplace=false,maxAttempts=4}={}){
-    if(!this.available)throw unavailable('CardTrader','CARDTRADER_API_TOKEN');
-    if(marketplace){const wait=Math.max(0,1050-(Date.now()-this.lastMarketplaceAt));if(wait)await this.sleep(wait);this.lastMarketplaceAt=Date.now();}
-    for(let attempt=0;attempt<maxAttempts;attempt++){
-      let response;
-      try{response=await this.fetch(`${this.baseUrl}${path}`,{headers:{Authorization:`Bearer ${this.token}`,Accept:'application/json'}});}catch(error){if(attempt===maxAttempts-1)throw error;await this.sleep(backoff(attempt));continue;}
-      if(response.ok)return response.json();
-      if(![429,500,502,503,504].includes(response.status)||attempt===maxAttempts-1)throw new ProviderHttpError(this.name,response.status,await safeText(response));
-      const retryAfter=Number(response.headers?.get?.('retry-after'));
-      await this.sleep(Number.isFinite(retryAfter)&&retryAfter>0?retryAfter*1000:backoff(attempt));
-    }
-  }
-  async getMarketListings(mapping){
-    if(!mapping?.providerBlueprintId&&!mapping?.provider_blueprint_id)throw new Error('Blueprint CardTrader mancante');
-    const blueprint=String(mapping.providerBlueprintId||mapping.provider_blueprint_id);
-    const params=new URLSearchParams({blueprint_id:blueprint});
-    const language=locale(mapping.language);if(language)params.set('language',language);
-    if(typeof mapping.foil==='boolean')params.set('foil',String(mapping.foil));
-    const body=await this.request(`/marketplace/products?${params}`,{marketplace:true});
-    const rows=Array.isArray(body)?body:(body[String(blueprint)]||Object.values(body||{}).flat());
-    return rows.filter(row=>eligibleListing(row,mapping)).map(normalizeCardTraderListing);
-  }
-  async getCurrentPrice(mapping){
-    const listings=await this.getMarketListings(mapping),priced=listings.filter(row=>Number.isFinite(row.price)&&row.price>=0).sort((a,b)=>a.price-b.price);
-    if(!priced.length)return {provider:this.name,status:'unavailable',prices:[],availableQuantity:0,sampleSize:0};
-    const currency=priced[0].currency,compatible=priced.filter(row=>row.currency===currency),values=compatible.map(row=>row.price);
-    return {provider:this.name,status:'available',currency,availableQuantity:compatible.reduce((sum,row)=>sum+row.quantity,0),sampleSize:compatible.length,
-      conditionReference:mapping.conditionReference||mapping.condition_reference||'Near Mint',capturedAt:new Date().toISOString(),
-      prices:[{type:'lowest',value:values[0]},{type:'reference',value:median(values)}]};
-  }
 }
 
 export class CardmarketPriceGuideProvider extends PriceProvider {
@@ -149,12 +108,6 @@ export class CardmarketApiProvider extends PriceProvider {
   async getMarketListings(){return [];}
 }
 
-export function resolveExactPrinting(printing,candidates,provider){
-  const normalized=normalizePrinting(printing),matches=(candidates||[]).filter(candidate=>candidateMatches(normalized,normalizeCandidate(candidate)));
-  if(matches.length===1)return {status:'resolved',confidence:1,candidate:matches[0],provider};
-  if(matches.length>1)return {status:'ambiguous',confidence:0.5,candidates:matches,provider};
-  return {status:'unresolved',confidence:0,candidates:[],provider};
-}
 export function resolveCardmarketPrinting(printing,candidates,options={}){
   const local=normalizePrinting(printing),internalRarity=normalizeMarketRarity(printing.rarity),name=norm(printing.cardName||printing.card_name),catalogId=norm(printing.catalogCardId||printing.catalog_card_id);
   const base=evidenceBase(printing,internalRarity),fail=(status,reason,extra={})=>({status,confidence:0,candidates:[],provider:'cardmarket',reason,evidence:{...base,...extra},priceScope:null,resolverVersion:CARDMARKET_RESOLVER_VERSION});
@@ -207,25 +160,6 @@ export function buildCardmarketExpansionHints(printings=[],products=[]){
 
 function normalizePrinting(row){return {game:norm(row.game),catalogId:norm(row.catalogCardId||row.catalog_card_id),setCode:normCode(row.setCode||row.set_code),
   expansion:norm(row.setName||row.set_name||row.expansion),rarity:norm(row.rarity),language:norm(row.language),edition:norm(row.edition),foil:bool(row.foil)};}
-function normalizeCandidate(row){return {game:norm(read(row,['game','gameName','Game'])),catalogId:norm(read(row,['catalog_card_id','catalogCardId','passcode','collector_number','number','Number'])),
-  setCode:normCode(read(row,['set_code','setCode','expansion_code','Expansion Code'])),expansion:norm(read(row,['set_name','setName','expansion','expansionName','Expansion Name'])),
-  rarity:norm(read(row,['rarity','Rarity'])),language:norm(read(row,['language','Language'])),edition:norm(read(row,['edition','Edition'])),foil:bool(read(row,['foil','Foil']))};}
-function candidateMatches(local,candidate){
-  if(!local.game||!candidate.game||local.game!==candidate.game)return false;
-  if(!local.catalogId||!candidate.catalogId||local.catalogId!==candidate.catalogId)return false;
-  if(!local.setCode||!candidate.setCode||local.setCode!==candidate.setCode)return false;
-  if(local.expansion&&(!candidate.expansion||local.expansion!==candidate.expansion))return false;
-  if(local.rarity&&(!candidate.rarity||local.rarity!==candidate.rarity))return false;
-  if(local.language&&(!candidate.language||local.language!==candidate.language))return false;
-  if(local.edition&&(!candidate.edition||local.edition!==candidate.edition))return false;
-  if(local.foil!=null&&(candidate.foil==null||local.foil!==candidate.foil))return false;
-  return true;
-}
-function eligibleListing(row,mapping){const props=row.properties_hash||row.properties||{};if(row.graded&&String(row.graded)!=='0')return false;if(row.user?.on_vacation||row.user_on_vacation)return false;
-  const expected=norm(mapping.conditionReference||mapping.condition_reference);if(expected&&norm(props.condition)!==expected)return false;
-  if(typeof mapping.foil==='boolean'){const actual=bool(props.yugioh_foil??props.mtg_foil??props.foil);if(actual!==mapping.foil)return false;}return true;}
-function normalizeCardTraderListing(row){const price=row.price||{};return {id:row.id,blueprintId:row.blueprint_id,price:Number(price.cents??row.price_cents)/100,
-  currency:String(price.currency||row.price_currency||'EUR').toUpperCase(),quantity:Number(row.quantity||0),properties:row.properties_hash||row.properties||{}};}
 function productId(row){return String(read(row,['providerProductId','provider_product_id','idProduct','Product ID','product_id','id'])||'');}
 function mappingProductIds(mapping){const many=mapping?.provider_metadata?.candidateProductIds||mapping?.candidateProductIds||[];return [...new Set([mapping?.providerProductId||mapping?.provider_product_id||'',...(Array.isArray(many)?many:[])].map(String).filter(Boolean))];}
 function evidenceBase(printing,rarity){return {internalPrintingId:printing.printingId||printing.printing_id||printing.id||null,catalogCardId:String(printing.catalogCardId||printing.catalog_card_id||''),internalSetCode:printing.setCode||printing.set_code||'',internalSetName:printing.setName||printing.set_name||'',internalRarity:rarity,internalLanguage:printing.language||'',internalEdition:printing.edition||''};}
@@ -248,8 +182,6 @@ function norm(value){return decodeEntities(value).normalize('NFD').replace(/[\u0
 function decodeEntities(value){return String(value??'').replace(/&(apos|#39|#x27);/gi,"'").replace(/&(quot|#34|#x22);/gi,'"').replace(/&amp;/gi,'&').replace(/&nbsp;/gi,' ').replace(/&#(x?[0-9a-f]+);/gi,(_,raw)=>{const radix=raw[0].toLowerCase()==='x'?16:10,code=Number.parseInt(raw.replace(/^x/i,''),radix);return Number.isFinite(code)&&code>0&&code<=0x10ffff?String.fromCodePoint(code):_;});}
 function normCode(value){return norm(value).replace(/[^a-z0-9]/g,'');}
 function bool(value){if(value==null||value==='')return null;if(typeof value==='boolean')return value;return ['1','true','yes','foil'].includes(norm(value));}
-function locale(value){const known={italiano:'it',italian:'it',inglese:'en',english:'en',francese:'fr',french:'fr',tedesco:'de',german:'de',spagnolo:'es',spanish:'es'};return known[norm(value)]||(/^[a-z]{2}$/.test(norm(value))?norm(value):'');}
-function median(values){const middle=Math.floor(values.length/2);return values.length%2?values[middle]:(values[middle-1]+values[middle])/2;}
 function backoff(attempt){return Math.min(16000,2000*(2**attempt))+Math.floor(Math.random()*250);}
 function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
 function unavailable(provider,secret){const error=new Error(`${provider} non disponibile: configurare ${secret}`);error.code='provider_unavailable';return error;}

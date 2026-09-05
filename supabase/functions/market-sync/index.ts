@@ -1,6 +1,6 @@
 // Deploy manualmente solo dopo aver applicato la migration Market Watch.
 // Il cron delle 03:00 Europe/Rome è intenzionalmente escluso dalla migration.
-import {CardTraderProvider,CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,buildCardmarketExpansionHints,isAuthorizedCardmarketMapping,cardmarketMappingNeedsResolver} from '../../../market/providers.js';
+import {CardmarketPriceGuideProvider,CARDMARKET_RESOLUTION_STATES,CARDMARKET_RESOLVER_VERSION,buildCardmarketExpansionHints,isAuthorizedCardmarketMapping,cardmarketMappingNeedsResolver} from '../../../market/providers.js';
 
 const supabaseUrl=Deno.env.get('SUPABASE_URL')||'';
 const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
@@ -19,7 +19,6 @@ Deno.serve(async request=>{
   if(dryTargetPrintingIds.length&&canaryPrintingIds.length)return json({error:'dry_target_and_canary_are_mutually_exclusive'},400);
   if(payload?.scheduled===true&&!isThreeInRome(new Date()))return json({ok:true,status:'skipped',reason:'outside_03_europe_rome'});
   const providers=[
-    new CardTraderProvider({token:Deno.env.get('CARDTRADER_API_TOKEN')||''}),
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
   const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(20,Number(payload?.resolverBatchSize)||10)):0;
@@ -68,7 +67,7 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
       try{
         const authorized=provider.name==='cardmarket'?isAuthorizedCardmarketMapping(target):['resolved','manual'].includes(target.resolution_status);
         if(!authorized||!target.mapping_id){failures++;continue;}
-        const value=await provider.getCurrentPrice(target);requestCount+=provider.name==='cardtrader'?1:0;
+        const value=await provider.getCurrentPrice(target);
         if(value.status!=='available')continue;
         const capturedAt=value.capturedAt||new Date().toISOString(),day=capturedAt.slice(0,10);
         for(const price of pricesForTarget(value.prices,target)){

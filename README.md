@@ -76,11 +76,10 @@ La funzione server-side è in `supabase/functions/market-sync/index.ts`. Prima d
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `MARKET_SYNC_SECRET`
-- `CARDTRADER_API_TOKEN`
 - `CARDMARKET_PRODUCT_CATALOG_URL`
 - `CARDMARKET_PRICE_GUIDE_URL`
 
-Gli ultimi due URL devono puntare direttamente ai file ufficiali Product Catalogue e Price Guide Cardmarket, mai a pagine HTML. Se un token/feed manca, il provider viene riportato come `unavailable` senza interrompere l'applicazione.
+I due URL devono puntare direttamente ai file ufficiali Product Catalogue e Price Guide Cardmarket, mai a pagine HTML. Se il feed manca, il provider viene riportato come `unavailable` senza interrompere l'applicazione. Cardmarket è l'unica fonte prezzi: CardTrader è stato rimosso, i collezionisti fanno riferimento a Cardmarket come mercato di riferimento.
 
 Per Yu-Gi-Oh! i feed ufficiali correnti sono JSON (`products_singles_3.json` e `price_guide_3.json`). Il sync deriva anche il catalogo non-singles ufficiale per associare `idExpansion` al nome dell'espansione; un mapping viene risolto automaticamente solo quando nome + espansione (+ rarità, se disponibile) individuano un unico prodotto. I casi multipli restano `ambiguous`.
 
