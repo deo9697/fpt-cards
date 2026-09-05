@@ -99,7 +99,9 @@ const moversSql=fs.readFileSync(new URL('../supabase-market-dashboard-movers.sql
 const frontendSource=fs.readFileSync(new URL('../js/market-watch.js',import.meta.url),'utf8');
 assert(!providerSource.includes("confidence:rarityMatches.length ? .98 : .88"),'fallback 0.88 ancora presente');
 for(const required of ['pricesOnly','payload?.scheduled===true','loadPrices','outside_03_europe_rome','x-market-sync-secret','resolution=ignore-duplicates','source_updated_at:value.sourceUpdatedAt','isAuthorizedCardmarketMapping','dryTargetPrintingIds','canaryPrintingIds','canary_requires_full_mode','pricesForTarget'])assert(edgeSource.includes(required),`Contratto Edge v10/MW1 assente: ${required}`);
-for(const required of ['pendingResolverLimit:10','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
+for(const required of ['pendingResolverLimit:500','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
+const manualCapMatch=edgeSource.match(/Math\.min\((\d+),Number\(payload\?\.resolverBatchSize\)\|\|(\d+)\)/);
+assert(manualCapMatch&&Number(manualCapMatch[1])>=500,'Il tetto manuale del resolver batch on-demand è ancora troppo basso per smaltire un arretrato reale (un utente attivo può aggiungere più di 10-20 carte nuove al giorno, restando bloccato in coda per giorni)');
 assert(edgeSource.includes('queryPagination:true'),'La paginazione RPC Edge deve usare limit/offset espliciti');
 assert(edgeSource.includes('limit=${pageSize}&offset=${from}'),'Offset RPC PostgREST non applicato');
 for(const required of ["rpcPages('market_sync_targets'","restPages('card_printings?",'Range:`${from}-${to}`',"'Range-Unit':'items'",'from<=maxRows','from===maxRows&&page.length','seen.has(normalized)'])assert(edgeSource.includes(required),`Paginazione Edge incompleta: ${required}`);

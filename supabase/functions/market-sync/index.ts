@@ -21,7 +21,7 @@ Deno.serve(async request=>{
   const providers=[
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
-  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(20,Number(payload?.resolverBatchSize)||10)):0;
+  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(500,Number(payload?.resolverBatchSize)||100)):0;
   if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
   const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
@@ -30,7 +30,7 @@ Deno.serve(async request=>{
     return json(await dryTargetCardmarket(cardmarket,dryTargetPrintingIds));
   }
   const results=[];
-  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:10,skipPrices:true}));}
+  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:500,skipPrices:true}));}
   for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true,pricesOnly,targetPrintingIds:canaryPrintingIds}));
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
