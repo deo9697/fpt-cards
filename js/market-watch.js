@@ -1,6 +1,6 @@
 import {esc} from './core.js';
 import {icon} from './icons.js';
-import {renderDeckBoxCard,renderDeckBoxVisual} from './deck-box.js';
+import {renderDeckBoxCard,renderDeckBoxVisual,preferredDeckArtwork} from './deck-box.js';
 import {canonicalCatalogCardId} from './cards.js';
 
 const TABS=['owned','deck','manual'];
@@ -36,15 +36,18 @@ export class MarketWatchController {
     const delta=!aggregate&&item.referencePrice!=null&&item.price24h!=null?item.referencePrice-item.price24h:null,percent=delta!=null&&item.price24h?delta/item.price24h*100:null;
     const primaryProvider=providers.find(([name])=>name==='cardmarket')||providers[0]||null;
     const owned=item.sources.includes('owned')&&item.ownedQuantity>0;
+    const heroArt=preferredDeckArtwork(item);
     return `<div class="detail-backdrop" data-market-detail-close><aside class="card-detail market-detail" role="dialog" aria-modal="true">
-      <header class="market-detail-topbar"><button type="button" class="detail-close" data-market-detail-close aria-label="Chiudi">${icon('arrow')}</button><strong>Dettaglio printing</strong></header>
-      <div class="market-detail-head">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:icon('card')}<div><h2>${esc(item.cardName)}</h2><p>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</p><div class="market-detail-badges">${item.sources.map(source=>`<i class="market-row-badge ${source}">${esc(LABELS[source])}${source==='owned'?` · ${item.ownedQuantity} ${item.ownedQuantity===1?'copia':'copie'}`:''}</i>`).join('')}${aggregate?'<i class="market-row-badge aggregate">Aggregato</i>':''}</div></div></div>
+      <div class="market-detail-hero"${heroArt?` style="--hero-image:url(&quot;${esc(heroArt)}&quot;)"`:''}>
+        <header class="market-detail-topbar"><button type="button" class="detail-close" data-market-detail-close aria-label="Chiudi">${icon('arrow')}</button><div class="market-detail-badges">${item.sources.map(source=>`<i class="market-row-badge ${source}">${esc(LABELS[source])}${source==='owned'?` · ${item.ownedQuantity} ${item.ownedQuantity===1?'copia':'copie'}`:''}</i>`).join('')}${aggregate?'<i class="market-row-badge aggregate">Aggregato</i>':''}</div></header>
+        <div class="market-detail-hero-body">
+          <span class="market-detail-hero-meta">${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</span>
+          <h2>${esc(item.cardName)}</h2>
+          <div class="market-detail-hero-price"><strong>${item.referencePrice==null?'—':money(item.referencePrice)}</strong>${percent!=null?`<b class="market-price-card-badge ${tone(delta)}">${changePercent(percent)}</b>`:''}</div>
+          <span class="market-detail-hero-sub">${priceTypeLabel(primaryProvider?.[1]?.type)}${primaryProvider?` · ${providerName(primaryProvider[0])}`:''} · ${formatTimestamp(item.latestAt)}</span>
+        </div>
+      </div>
       ${aggregate?aggregateNotice(item):''}
-      <section class="market-price-card ${tone(delta)}">
-        <span class="market-price-card-icon">${icon('chart')}</span>
-        <div class="market-price-card-copy"><small>Prezzo attuale${primaryProvider?` · ${providerName(primaryProvider[0])}`:''}</small><strong>${item.referencePrice==null?'—':money(item.referencePrice)}</strong><span>${priceTypeLabel(primaryProvider?.[1]?.type)} · ${formatTimestamp(item.latestAt)}${delta!=null?` · ${changeMoney(delta)}`:''}</span></div>
-        ${percent!=null?`<b class="market-price-card-badge ${tone(delta)}">${changePercent(percent)}</b>`:''}
-      </section>
       <section class="market-chart">
         <div class="market-chart-head"><h3>Storico prezzo</h3>${aggregate?'':`<div class="market-range-tabs" role="group" aria-label="Intervallo storico">${RANGES.map(range=>`<button type="button" class="${this.historyRange===range.days?'active':''}" data-market-range="${range.days}">${range.label}</button>`).join('')}</div>`}</div>
         ${aggregate?'<p class="market-detail-empty">Trend escluso: il prezzo non è specifico della printing.</p>':this.historyLoading?'<div class="loading-spinner"></div>':richPriceChart(stats)}
@@ -116,7 +119,8 @@ function marketRow(item,history,tab){
     </span>
     <span class="market-price">
       <span class="market-price-top"><strong>${item.referencePrice==null?'—':money(item.referencePrice)}</strong>${percent!=null?`<b class="${tone(delta)}">${changePercent(percent)}</b>`:''}</span>
-      ${position!=null?`<span class="market-price-position"><b>${money(position)}</b><small>Totale posizione</small></span>`:`<small class="market-price-note">${aggregate?'Indicativo · non specifico':item.minPrice==null?'Min. non disponibile':`A partire da ${money(item.minPrice)}`}</small>`}
+      ${position!=null?`<span class="market-price-position"><b>${money(position)}</b><small>Totale posizione</small></span>`:''}
+      <small class="market-price-note">${aggregate?'Indicativo · non specifico':item.minPrice==null?'Min. non disponibile':`Da ${money(item.minPrice)}`}</small>
     </span>
     ${rowSparkline(history,delta)}
   </button>`;
@@ -147,7 +151,7 @@ function historyStats(history){
 }
 function richPriceChart(stats){
   if(!stats)return '<div class="market-detail-empty">Il grafico comparirà dopo almeno due snapshot in questo intervallo.</div>';
-  const {points,min,max}=stats,span=(max-min)||1,width=300,height=150,padL=40,padR=10,padT=32,padB=20,plotW=width-padL-padR,plotH=height-padT-padB;
+  const {points,min,max}=stats,span=(max-min)||1,width=300,height=150,padL=40,padR=10,padT=32,padB=28,plotW=width-padL-padR,plotH=height-padT-padB;
   const x=index=>padL+(points.length>1?(index/(points.length-1))*plotW:plotW/2),y=value=>padT+plotH-((value-min)/span)*plotH;
   const linePath=points.map((point,index)=>`${index?'L':'M'} ${x(index).toFixed(1)} ${y(point.price).toFixed(1)}`).join(' ');
   const areaPath=`${linePath} L ${x(points.length-1).toFixed(1)} ${(padT+plotH).toFixed(1)} L ${x(0).toFixed(1)} ${(padT+plotH).toFixed(1)} Z`;
@@ -157,7 +161,7 @@ function richPriceChart(stats){
     <circle cx="${x(maxIndex).toFixed(1)}" cy="${y(max).toFixed(1)}" r="3" class="market-chart-callout-dot max"/>
     <text x="${Math.min(width-padR-4,Math.max(padL+4,x(maxIndex))).toFixed(1)}" y="${Math.max(10,y(max)-8).toFixed(1)}" class="market-chart-callout max" text-anchor="middle">MAX ${money(max)}</text>
     <circle cx="${x(minIndex).toFixed(1)}" cy="${y(min).toFixed(1)}" r="3" class="market-chart-callout-dot min"/>
-    <text x="${Math.min(width-padR-4,Math.max(padL+4,x(minIndex))).toFixed(1)}" y="${Math.min(height-6,y(min)+15).toFixed(1)}" class="market-chart-callout min" text-anchor="middle">MIN ${money(min)}</text>
+    <text x="${Math.min(width-padR-4,Math.max(padL+4,x(minIndex))).toFixed(1)}" y="${Math.min(height-16,y(min)+15).toFixed(1)}" class="market-chart-callout min" text-anchor="middle">MIN ${money(min)}</text>
   `:'';
   return `<svg class="market-rich-chart ${positive?'positive':'negative'}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento prezzo">
     <line x1="${padL}" y1="${padT}" x2="${width-padR}" y2="${padT}" class="market-chart-grid"/>
