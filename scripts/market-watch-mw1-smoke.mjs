@@ -110,7 +110,7 @@ assert(integritySql.includes('market_derived_price_snapshots')&&integritySql.inc
 assert((integritySql.match(/security_invoker=true/g)||[]).length>=3,'viste MW1 non security_invoker');
 for(const role of ['public','anon','authenticated'])assert(integritySql.includes(`from public,anon,authenticated`),`revoche viste MW1 incomplete: ${role}`);
 for(const field of ['resolver_status','resolver_version','price_scope','language_scope','edition_scope','rarity_scope','foil_scope','mapping_reason','mapping_evidence'])assert(operationalSql.includes(field),`RPC non espone ${field}`);
-for(const required of ['Prezzo Cardmarket aggregato','derivedPriceEligible','Escluso da valore e trend','resolverStatus','priceScope'])assert(frontendSource.includes(required),`Frontend aggregate incompleto: ${required}`);
+for(const required of ['Prezzo Cardmarket aggregato','derivedPriceEligible','market-row-badge aggregate','resolverStatus','priceScope'])assert(frontendSource.includes(required),`Frontend aggregate incompleto: ${required}`);
 assert(!/delete\s+from\s+(public\.)?market_price_snapshots/i.test(integritySql),'migration MW1 elimina snapshot');
 assert(rollbackSql.includes('create or replace view public.market_latest_prices'),'rollback MW1 non ripristina market_latest_prices');
 assert(rollbackSql.includes('create or replace function public.list_market_watch'),'rollback MW1 non ripristina list_market_watch');
