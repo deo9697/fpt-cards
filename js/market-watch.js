@@ -37,8 +37,8 @@ export class MarketWatchController {
     const primaryProvider=providers.find(([name])=>name==='cardmarket')||providers[0]||null;
     const owned=item.sources.includes('owned')&&item.ownedQuantity>0;
     return `<div class="detail-backdrop" data-market-detail-close><aside class="card-detail market-detail" role="dialog" aria-modal="true">
-      <button class="detail-close" data-market-detail-close aria-label="Chiudi">×</button>
-      <div class="market-detail-head">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:icon('card')}<div><span class="eyebrow">Dettaglio printing</span><h2>${esc(item.cardName)}</h2><p>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</p><div class="market-detail-badges">${item.sources.map(source=>`<span class="market-badge">${LABELS[source]}${source==='owned'?` · ${item.ownedQuantity} copie`:''}</span>`).join('')}</div></div></div>
+      <header class="market-detail-topbar"><button type="button" class="detail-close" data-market-detail-close aria-label="Chiudi">${icon('arrow')}</button><strong>Dettaglio printing</strong></header>
+      <div class="market-detail-head">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:icon('card')}<div><h2>${esc(item.cardName)}</h2><p>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</p><div class="market-detail-badges">${item.sources.map(source=>`<i class="market-row-badge ${source}">${esc(LABELS[source])}${source==='owned'?` · ${item.ownedQuantity} ${item.ownedQuantity===1?'copia':'copie'}`:''}</i>`).join('')}${aggregate?'<i class="market-row-badge aggregate">Aggregato</i>':''}</div></div></div>
       ${aggregate?aggregateNotice(item):''}
       <section class="market-price-card ${tone(delta)}">
         <span class="market-price-card-icon">${icon('chart')}</span>
@@ -147,11 +147,18 @@ function historyStats(history){
 }
 function richPriceChart(stats){
   if(!stats)return '<div class="market-detail-empty">Il grafico comparirà dopo almeno due snapshot in questo intervallo.</div>';
-  const {points,min,max}=stats,span=(max-min)||1,width=300,height=150,padL=40,padR=10,padT=24,padB=20,plotW=width-padL-padR,plotH=height-padT-padB;
+  const {points,min,max}=stats,span=(max-min)||1,width=300,height=150,padL=40,padR=10,padT=32,padB=20,plotW=width-padL-padR,plotH=height-padT-padB;
   const x=index=>padL+(points.length>1?(index/(points.length-1))*plotW:plotW/2),y=value=>padT+plotH-((value-min)/span)*plotH;
   const linePath=points.map((point,index)=>`${index?'L':'M'} ${x(index).toFixed(1)} ${y(point.price).toFixed(1)}`).join(' ');
   const areaPath=`${linePath} L ${x(points.length-1).toFixed(1)} ${(padT+plotH).toFixed(1)} L ${x(0).toFixed(1)} ${(padT+plotH).toFixed(1)} Z`;
   const positive=points.at(-1).price>=points[0].price;
+  const maxIndex=points.findIndex(point=>point.price===max),minIndex=points.findIndex(point=>point.price===min);
+  const callouts=min!==max?`
+    <circle cx="${x(maxIndex).toFixed(1)}" cy="${y(max).toFixed(1)}" r="3" class="market-chart-callout-dot max"/>
+    <text x="${Math.min(width-padR-4,Math.max(padL+4,x(maxIndex))).toFixed(1)}" y="${Math.max(10,y(max)-8).toFixed(1)}" class="market-chart-callout max" text-anchor="middle">MAX ${money(max)}</text>
+    <circle cx="${x(minIndex).toFixed(1)}" cy="${y(min).toFixed(1)}" r="3" class="market-chart-callout-dot min"/>
+    <text x="${Math.min(width-padR-4,Math.max(padL+4,x(minIndex))).toFixed(1)}" y="${Math.min(height-6,y(min)+15).toFixed(1)}" class="market-chart-callout min" text-anchor="middle">MIN ${money(min)}</text>
+  `:'';
   return `<svg class="market-rich-chart ${positive?'positive':'negative'}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento prezzo">
     <line x1="${padL}" y1="${padT}" x2="${width-padR}" y2="${padT}" class="market-chart-grid"/>
     <line x1="${padL}" y1="${(padT+plotH/2).toFixed(1)}" x2="${width-padR}" y2="${(padT+plotH/2).toFixed(1)}" class="market-chart-grid"/>
@@ -162,6 +169,7 @@ function richPriceChart(stats){
     <path d="${areaPath}" class="market-chart-area"/>
     <path d="${linePath}" class="market-chart-line"/>
     <circle cx="${x(points.length-1).toFixed(1)}" cy="${y(points.at(-1).price).toFixed(1)}" r="3.5" class="market-chart-dot"/>
+    ${callouts}
     <text x="${padL}" y="${height-3}" class="market-chart-axis start">${formatChartDate(points[0].capturedAt)}</text>
     <text x="${width-padR}" y="${height-3}" class="market-chart-axis end">${formatChartDate(points.at(-1).capturedAt)}</text>
   </svg>`;
@@ -179,9 +187,9 @@ function positionCard(item,stats){
 function quickActions(item){
   const inWatchlist=item.sources.includes('manual');
   return `<div class="market-quick-actions">
-    <button type="button" class="market-quick-btn" data-market-watch-toggle="${esc(item.printingId)}" data-market-watch-state="${inWatchlist?'remove':'add'}">${inWatchlist?'Rimuovi da Watchlist':'Aggiungi a Watchlist'}</button>
-    ${item.cardmarketUrl?`<a class="market-quick-btn" href="${esc(item.cardmarketUrl)}" target="_blank" rel="noopener noreferrer">Apri su Cardmarket</a>`:''}
-    <button type="button" class="market-quick-btn" data-market-share="${esc(item.printingId)}">Condividi</button>
+    <button type="button" class="market-quick-btn ${inWatchlist?'active':''}" data-market-watch-toggle="${esc(item.printingId)}" data-market-watch-state="${inWatchlist?'remove':'add'}">${icon('star')}<span>${inWatchlist?'Rimuovi watchlist':'Watchlist'}</span></button>
+    ${item.cardmarketUrl?`<a class="market-quick-btn" href="${esc(item.cardmarketUrl)}" target="_blank" rel="noopener noreferrer">${icon('chart')}<span>Apri su Cardmarket</span></a>`:''}
+    <button type="button" class="market-quick-btn" data-market-share="${esc(item.printingId)}">${icon('share')}<span>Condividi</span></button>
   </div>`;
 }
 function formatChartDate(value){const date=new Date(value);return Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'2-digit'}).format(date);}
