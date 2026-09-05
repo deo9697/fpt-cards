@@ -14,7 +14,7 @@ export class FastScanController {
     Object.assign(this,{api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute});
     this.camera=camera||new FastScanCamera();this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
     this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';
-    this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
+    this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.backgroundStopTimer=0; this.backgroundCameraStopped=false; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
     if(this.debugMode)this.camera.onDiagnostic=(event,payload)=>this.debugTrace(`camera:${event}`,payload);
     this.visibilityHandler=()=>void this.handleVisibilityChange(); document.addEventListener('visibilitychange',this.visibilityHandler);
     this.focusHandler=event=>{if(event.target.closest?.('.live-roi,#fast-scan-video'))void this.refocus();}; document.addEventListener('click',this.focusHandler);
@@ -47,8 +47,25 @@ export class FastScanController {
   }
   async disposeProductionOcr(){if(this.primaryOcrPreparing)await this.primaryOcrPreparing.catch(()=>{});await this.paddleOcr.dispose?.();this.paddleState='idle';this.paddleError='';}
   async handleVisibilityChange(){
-    if(document.hidden){if(this.phase==='scanning'){this.hiddenSuspended=true;this.stopLoop();this.scanState='BACKGROUND';this.debugTrace('visibility:hidden',this.camera.stateSnapshot?.()||{});}return;}
-    if(!this.hiddenSuspended||this.phase!=='scanning')return;this.hiddenSuspended=false;this.debugTrace('visibility:visible',this.camera.stateSnapshot?.()||{});try{await this.camera.video?.play?.();}catch{}
+    // Stopping just the scan loop used to leave the actual camera MediaStream
+    // running the whole time the app sat backgrounded (screen off, app
+    // switched away) — the sensor/ISP never released, which is what was
+    // heating phones up during long scan sessions. A brief interruption
+    // (permission dialog, quick app switch) should still resume instantly
+    // though, so only release the stream once the background has lasted long
+    // enough that it's clearly not coming right back.
+    if(document.hidden){
+      if(this.phase==='scanning'){
+        this.hiddenSuspended=true;this.stopLoop();this.scanState='BACKGROUND';this.debugTrace('visibility:hidden',this.camera.stateSnapshot?.()||{});
+        clearTimeout(this.backgroundStopTimer);
+        this.backgroundStopTimer=setTimeout(()=>{if(document.hidden&&this.hiddenSuspended){this.backgroundCameraStopped=true;this.camera.stop('background-timeout');}},4000);
+      }
+      return;
+    }
+    clearTimeout(this.backgroundStopTimer);
+    if(!this.hiddenSuspended||this.phase!=='scanning')return;this.hiddenSuspended=false;this.debugTrace('visibility:visible',this.camera.stateSnapshot?.()||{});
+    if(this.backgroundCameraStopped){this.backgroundCameraStopped=false;await this.recoverCamera('visibility:restore');return;}
+    try{await this.camera.video?.play?.();}catch{}
     const issue=this.camera.healthIssue?.();if(issue)await this.recoverCamera(`visibility:${issue}`);else{this.scanState='LIVE';this.setStatus('Pronto allo scatto');this.schedule(120);}
   }
   showRestartControl(){const state=document.querySelector('.live-ocr-state');if(state&&!state.querySelector('[data-scan-restart-camera]'))state.insertAdjacentHTML('beforeend','<button type="button" class="btn secondary small" data-scan-restart-camera>Riavvia fotocamera</button>');}
@@ -61,11 +78,11 @@ export class FastScanController {
   async requestExit(){if(!this.hasScans)return this.exitToCollection();this.stopLoop();this.exitOpen=true;document.querySelector('[data-scan-exit-sheet]')?.classList.remove('hidden');}
   cancelExit(){this.exitOpen=false;document.querySelector('[data-scan-exit-sheet]')?.classList.add('hidden');if(this.phase==='scanning'&&this.camera.stream)this.schedule(120);}
   toggleManual(open){this.manualOpen=open;document.querySelector('[data-scan-manual-sheet]')?.classList.toggle('hidden',!open);if(open)this.stopLoop();else if(this.phase==='scanning'&&this.camera.stream)this.schedule(120);if(open)setTimeout(()=>document.querySelector('#scan-manual-code')?.focus(),0);}
-  async openReview(){this.exitOpen=false;this.manualOpen=false;this.stopLoop();this.camera.stop('open-review');this.phase='review';await this.persist(true);this.onRoute?.('review');this.onRender();}
+  async openReview(){this.exitOpen=false;this.manualOpen=false;this.stopLoop();clearTimeout(this.backgroundStopTimer);this.backgroundCameraStopped=false;this.camera.stop('open-review');this.phase='review';await this.persist(true);this.onRoute?.('review');this.onRender();}
   async exitToCollection(){await this.leave();this.phase='setup';this.onRoute?.('collection');}
   async discardAndExit(){await this.discard(false);await this.exitToCollection();}
   async leave(){
-    this.startRequestId+=1;this.stopLoop();clearTimeout(this.feedbackTimer);clearTimeout(this.persistTimer);this.camera.stop('leave-route');
+    this.startRequestId+=1;this.stopLoop();clearTimeout(this.feedbackTimer);clearTimeout(this.persistTimer);clearTimeout(this.backgroundStopTimer);this.backgroundCameraStopped=false;this.camera.stop('leave-route');
     // Keep the OCR engine warm across a plain nav back to the Collection —
     // reloading its ONNX models from the CDN on every re-entry into Fast Scan
     // was the main source of perceived slowness. Only save()/discard() free it.
@@ -121,7 +138,7 @@ export class FastScanController {
     }catch(error){const reason=saveRejectionReason(error,stage);this.debugTrace('save:rejected',{saveAccepted:false,saveRejected:true,saveRejectionReason:reason,stage,error:error?.message||String(error),details:error?.details||null});this.onToast?.('Sincronizzazione interrotta. I tuoi scan sono salvati sul dispositivo.');}
     finally{this.saving=false;this.onRender();}
   }
-  async discard(render=true){this.startRequestId+=1;this.stopLoop();this.camera.stop('discard-session');await this.disposeProductionOcr();this.buffer=new ScanSessionBuffer();this.sync=null;this.hasRecovery=false;this.exitOpen=false;this.manualOpen=false;await clearScanSession();this.phase='setup';if(render)this.onRender();}
+  async discard(render=true){this.startRequestId+=1;this.stopLoop();clearTimeout(this.backgroundStopTimer);this.backgroundCameraStopped=false;this.camera.stop('discard-session');await this.disposeProductionOcr();this.buffer=new ScanSessionBuffer();this.sync=null;this.hasRecovery=false;this.exitOpen=false;this.manualOpen=false;await clearScanSession();this.phase='setup';if(render)this.onRender();}
   async switchCamera(){if(this.devices.length<2)return;const index=this.devices.findIndex(item=>item.deviceId===this.camera.deviceId);const next=this.devices[(index+1)%this.devices.length];this.camera.deviceId=next.deviceId;await this.start();}
   persist(now=false){clearTimeout(this.persistTimer);const save=()=>saveScanSession({...this.buffer.snapshot(),sync:this.sync});if(now)return save();this.persistTimer=setTimeout(()=>void save().catch(()=>{}),180);}
   feedback(){if(this.buffer.settings.vibration)navigator.vibrate?.(35);if(this.buffer.settings.sound)beep();}

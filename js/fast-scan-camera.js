@@ -11,7 +11,12 @@ export class FastScanCamera {
   get zoomSupported() { return Boolean(this.capabilities.zoom && this.track?.applyConstraints); }
   async start(video, deviceId = '') {
     this.stop('restart-before-start'); const generation=this.generation; if(!this.supported) throw cameraError('unsupported');this.diagnostic('start-request',{generation,deviceId:deviceId||'environment'});
-    const videoConstraint=deviceId?{deviceId:{exact:deviceId},width:{ideal:1920},height:{ideal:1080}}:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}};
+    // 1280x720 @ ~24fps is plenty: performScanOnce()'s OCR crop is always
+    // upsampled to a fixed 900-1280px analysis width regardless of source
+    // resolution (see captureSnapshot's target/ceiling clamp), so a 1920x1080
+    // stream buys no extra OCR accuracy — it only makes the sensor/ISP work
+    // harder for the whole scan session, which is what was heating phones up.
+    const videoConstraint=deviceId?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}}:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}};
     const request=this.mediaDevices.getUserMedia({audio:false,video:videoConstraint});
     let timeout; const timeoutPromise=new Promise((_,reject)=>{timeout=setTimeout(()=>reject(cameraError('timeout')),this.timeoutMs);});
     let acquired=null;try { acquired=await Promise.race([request,timeoutPromise]); }
