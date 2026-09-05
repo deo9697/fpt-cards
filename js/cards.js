@@ -225,15 +225,17 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
       if(!response.ok)continue;
       const payload=await response.json(); const rows=Array.isArray(payload)?payload:payload?.data?payload.data:payload?.id?[payload]:[];
       const exact=rows.filter(row=>String(row.set_code||'').trim().toUpperCase()===catalogCode);
-      for(const row of exact.slice(0,8)){
-        const card=await findCardById(row.id,row.name,'yugioh');
-        if(!card)continue;
-        const localized=catalogCode!==code;
+      const localized=catalogCode!==code;
+      // Cards behind the same set code resolve independently, so fetch them
+      // concurrently instead of one round trip at a time.
+      const cards=await Promise.all(exact.slice(0,8).map(row=>findCardById(row.id,row.name,'yugioh')));
+      exact.slice(0,8).forEach((row,index)=>{
+        const card=cards[index];if(!card)return;
         const variants=card.printings.filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
         for(const printing of variants){
           mapped.push({printingId:'',game:'yugioh',catalogCardId:String(row.id),cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
         }
-      }
+      });
       if(mapped.length)break;
     }
     const unique=[...new Map(mapped.map(item=>[[item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];printingCache.set(code,unique);return unique;
@@ -345,10 +347,12 @@ export function normalizeCatalogRarity(value) {
 export function normalizeCatalogPrintings(rows = []) {
   const printings = new Map();
   for (const printing of rows) {
+    const rawRarity = String(printing?.set_rarity || printing?.rarity || '').trim();
+    // "New"/"Reprint" rarities (common on Structure Decks) must not vanish entirely, or the printing never matches.
     const normalized = {
       setCode:String(printing?.set_code || printing?.setCode || '').trim().toUpperCase(),
       setName:String(printing?.set_name || printing?.setName || '').trim(),
-      rarity:normalizeCatalogRarity(printing?.set_rarity || printing?.rarity || '')
+      rarity:normalizeCatalogRarity(rawRarity) || (NON_RARITY_CATALOG_VALUES.has(rawRarity.toLocaleLowerCase('en')) ? 'Common' : '')
     };
     if (!normalized.setCode || !normalized.rarity) continue;
     const key = `${normalized.setCode}\u0000${normalized.rarity.toLocaleLowerCase('en')}`;

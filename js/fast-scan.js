@@ -7,11 +7,13 @@ import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } fro
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
 import { resolveStoredCard } from './cards.js';
 
+const MISS_CACHE_TTL=20000;
+
 export class FastScanController {
   constructor({api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute,camera,paddleOcr}={}) {
     Object.assign(this,{api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute});
     this.camera=camera||new FastScanCamera();this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
-    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';
+    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';
     this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
     if(this.debugMode)this.camera.onDiagnostic=(event,payload)=>this.debugTrace(`camera:${event}`,payload);
     this.visibilityHandler=()=>void this.handleVisibilityChange(); document.addEventListener('visibilitychange',this.visibilityHandler);
@@ -62,19 +64,30 @@ export class FastScanController {
   async openReview(){this.exitOpen=false;this.manualOpen=false;this.stopLoop();this.camera.stop('open-review');this.phase='review';await this.persist(true);this.onRoute?.('review');this.onRender();}
   async exitToCollection(){await this.leave();this.phase='setup';this.onRoute?.('collection');}
   async discardAndExit(){await this.discard(false);await this.exitToCollection();}
-  async leave(){this.startRequestId+=1;this.stopLoop();clearTimeout(this.feedbackTimer);clearTimeout(this.persistTimer);this.camera.stop('leave-route');await this.disposeProductionOcr();if(this.hasScans)await saveScanSession({...this.buffer.snapshot(),sync:this.sync});}
+  async leave(){
+    this.startRequestId+=1;this.stopLoop();clearTimeout(this.feedbackTimer);clearTimeout(this.persistTimer);this.camera.stop('leave-route');
+    // Keep the OCR engine warm across a plain nav back to the Collection —
+    // reloading its ONNX models from the CDN on every re-entry into Fast Scan
+    // was the main source of perceived slowness. Only save()/discard() free it.
+    if(this.hasScans)await saveScanSession({...this.buffer.snapshot(),sync:this.sync});
+  }
   schedule(delay=120){this.stopLoop();this.timer=setTimeout(()=>void this.scanOnce(),delay);} stopLoop(){clearTimeout(this.timer);this.timer=0;}
   buildLocalCatalog(){
-    this.localCatalog.clear();const collection=this.getCollection?.()||{mine:[],team:[]},buffered=[...(this.buffer.entries?.values?.()||[])];
+    this.localCatalog.clear();this.missCache.clear();const collection=this.getCollection?.()||{mine:[],team:[]},buffered=[...(this.buffer.entries?.values?.()||[])];
     for(const raw of [...(collection.mine||[]),...(collection.team||[]),...buffered]){const item=mapPrinting(raw),code=String(item.setCode||'').toUpperCase();if(!code)continue;this.localCatalog.set(code,dedupe([...(this.localCatalog.get(code)||[]),item]));}
   }
   lookupMemory(code){const key=String(code||'').toUpperCase();if(this.resolutionCache.has(key))return {matches:this.resolutionCache.get(key),source:'session-cache'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
   cacheResolution(code,matches){const clean=dedupe(matches||[]);if(clean.length)this.resolutionCache.set(String(code).toUpperCase(),clean);return clean;}
   async lookupDetailed(code,{allowRpc=true,allowExternal=true}={}){
     const key=String(code||'').toUpperCase(),memory=this.lookupMemory(key);if(memory.matches.length)return memory;
+    // A full (RPC+external) miss is remembered briefly so re-scanning the same
+    // still-uncatalogued code doesn't redo the whole slow lookup cascade.
+    const fullAttempt=allowRpc&&allowExternal,missedAt=fullAttempt?this.missCache.get(key):0;
+    if(missedAt&&Date.now()-missedAt<MISS_CACHE_TTL)return {matches:[],source:'recent-miss'};
     if(this.isOnline?.()===false)return {matches:[],source:'offline'};
     if(allowRpc&&this.api?.lookupPrintings){try{const rows=await this.api.lookupPrintings(key,this.buffer.settings.game);const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch{}}
     if(allowExternal&&this.externalLookup){try{const matches=this.cacheResolution(key,await this.externalLookup(key,this.buffer.settings.game));if(matches.length)return {matches,source:'external'};}catch{}}
+    if(fullAttempt)this.missCache.set(key,Date.now());
     return {matches:[],source:'not-found'};
   }
   async lookup(code,options){return (await this.lookupDetailed(code,options)).matches;}
@@ -196,7 +209,7 @@ export class FastScanController {
     if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,catalogMismatch:plausibleCandidateCount>1,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
     if(!fast.fastMiss&&fast.corrected)return fast;
     let corrected=(await Promise.all(candidates.slice(1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
-    if(!corrected.length&&this.externalLookup){for(const candidate of candidates.slice(1,5)){const lookup=await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true});if(lookup.matches.length)corrected.push({candidate,...lookup});}}
+    if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus};
     const matches=dedupe(corrected.flatMap(item=>item.matches)),classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount}),code=classified.code||(corrected.length===1?corrected[0].candidate.code:exact.code);
     return {...classified,code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
