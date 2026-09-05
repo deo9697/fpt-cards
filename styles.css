@@ -716,7 +716,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .inventory-grid.list .inventory-quantities b:last-child { grid-column: auto; }
 .inventory-grid.list .inventory-chevron { display: grid; place-items: center; flex: none; width: 18px; height: 18px; color: var(--muted); }
 .inventory-grid.list .inventory-chevron .icon { width: 16px; height: 16px; }
-.inventory-detail .detail-copy dl { grid-template-columns: repeat(3, 1fr); }
 .inventory-detail .detail-copy dl div { min-width: 0; }
 .inventory-detail .data-note { margin: 12px 0; }
 .data-note.warning { border-color: #d99b3540; background: #d99b350c; }
@@ -1156,10 +1155,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .detail-art .icon { width: 70px; height: 70px; color: var(--muted); }
 .detail-copy h2 { margin: 6px 0 2px; font-size: 1.6rem; }
 .detail-copy > p { color: var(--muted); font-size: .75rem; }
-.detail-copy dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 20px 0; }
+.detail-copy dl { display: grid; gap: 8px; margin: 20px 0; }
+.detail-copy dl.stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.detail-copy dl.stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .detail-copy dl div { padding: 10px; border: 1px solid var(--line); border-radius: 9px; }
 .detail-copy dt { color: var(--muted); font-size: .58rem; }
 .detail-copy dd { margin: 2px 0 0; font-weight: 800; }
+.detail-actions { margin-top: 14px; }
+.detail-actions-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.detail-actions-row .btn { padding-inline: 6px; font-size: .85rem; }
 .owner-list { display: grid; gap: 7px; }
 .owner-list > span { display: flex; align-items: center; gap: 9px; padding: 7px; border: 1px solid var(--line); border-radius: 9px; }
 .owner-list .mini-avatar { width: 30px; height: 30px; border-radius: 8px; font-size: .58rem; }
@@ -1325,7 +1329,6 @@ img.card-image-unavailable { opacity: 0; }
   .inventory-grid.list .inventory-card-copy > strong { display: block; overflow: hidden; white-space: nowrap; }
   .inventory-grid.list .inventory-quantities { grid-template-columns: repeat(2, minmax(50px, auto)); }
   .inventory-grid.list .inventory-quantities b { padding: 4px 5px; font-size: .44rem; }
-  .inventory-detail .detail-copy dl { grid-template-columns: 1fr 1fr; }
   .collection-editor { max-height: 94vh; border-radius: 18px 18px 0 0; }
   .team-availability > div { align-items: stretch; flex-wrap: wrap; }
   .team-availability > div > span { min-width: 140px; flex: 1; }
@@ -1364,7 +1367,7 @@ img.card-image-unavailable { opacity: 0; }
   .deck-dialog-backdrop .card-detail { width: 100%; max-height: 88vh; max-height: 88dvh; border-radius: 18px; overflow-y: auto; }
   .detail-layout { grid-template-columns: 1fr; }
   .detail-art { width: 180px; margin: 0 auto; }
-  .detail-copy dl { grid-template-columns: 1fr 1fr; }
+  .detail-copy dl.stat-grid-4 { grid-template-columns: repeat(2, 1fr); }
   .more-grid { grid-template-columns: 1fr; }
   .settings-list > div { align-items: flex-start; flex-direction: column; }
   .settings-list .btn { width: 100%; }
