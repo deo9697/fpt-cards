@@ -16,10 +16,20 @@ export class MarketWatchController {
   dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
   async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
   view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null);
-    return `<section class="page-stack market-page"><header class="market-hero"><div><span class="eyebrow">Valore e andamento</span><h1>Market Watch</h1><p>Segui le printing esatte della raccolta, dei mazzi e della watchlist.</p></div><div class="market-sync-state"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i><span><small>Ultimo aggiornamento</small><strong>${this.data.lastSync?formatTimestamp(this.data.lastSync):'In attesa del primo sync'}</strong></span></div></header>
+    return `<section class="page-stack market-page"><header class="market-hero">
+        <h1 class="market-hero-eyebrow">Market Watch</h1>
+        <div class="market-hero-spin" aria-hidden="true"><span class="market-hero-glow"></span><span class="market-hero-card"><span class="face front"></span><span class="face back">${icon('chart')}</span></span></div>
+        <span class="market-hero-label">La tua collezione vale</span>
+        <strong class="market-hero-value">${summary.complete?money(summary.current):'Dati parziali'}</strong>
+        <div class="market-hero-stats">
+          <span><b>${this.data.items.length}</b><small>Printing</small></span>
+          <span><b class="${tone(summary.delta24)}">${summary.delta24Complete?changePercent(summary.delta24Percent):'—'}</b><small>24h</small></span>
+          <span><b class="${tone(summary.delta7)}">${summary.delta7Complete?changePercent(summary.delta7Percent):'—'}</b><small>7g</small></span>
+        </div>
+        <span class="market-hero-sync"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}</span>
+      </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
       <section class="market-kpis">
-        ${kpi('Valore raccolta',summary.complete?money(summary.current):'Dati parziali',summary.complete?`${summary.coveredUnits}/${summary.totalUnits} copie valorizzate`:`Dati parziali · ${summary.coveredPrintings}/${summary.totalPrintings} printing valorizzate`,'value')}
         ${kpi('Variazione 24h',summary.delta24Complete?changeMoney(summary.delta24):'Dati parziali',summary.delta24Complete?changePercent(summary.delta24Percent):'Snapshot non sufficiente',tone(summary.delta24))}
         ${kpi('Variazione 7d',summary.delta7Complete?changeMoney(summary.delta7):'Dati parziali',summary.delta7Complete?changePercent(summary.delta7Percent):'Snapshot non sufficiente',tone(summary.delta7))}
         ${kpi('Printing monitorate',String(this.data.items.length),`${summary.freshPrintings} aggiornate entro 48h`,'count')}
