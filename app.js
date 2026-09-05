@@ -63,7 +63,7 @@ const fastScan = new FastScanController({
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
-function showFab() { return page !== 'new' && !(page === 'decks' && decks.screen !== 'gallery'); }
+function showFab() { return page !== 'new' && page !== 'market' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
     const image = event.target;
@@ -1542,3 +1542,15 @@ setInterval(async () => {
     if (!editing) renderRoute();
   } catch {}
 }, 120000);
+
+// Deep link dal tap su una notifica di sistema: sw.js manda un postMessage
+// invece di navigare da solo, perché è la pagina già aperta a sapere come
+// interpretare la rotta (vedi notificationclick in sw.js).
+navigator.serviceWorker?.addEventListener('message', event => {
+  if (event.data?.type !== 'fpt-notification-click' || !state.currentUser) return;
+  const url = new URL(event.data.url, location.href);
+  const target = url.hash.replace(/^#\//, '').split('?')[0] || 'home';
+  const params = new URLSearchParams(url.hash.split('?')[1] || '');
+  if (target === 'market' && params.get('printingId')) { navigate('market'); marketWatch.selected = params.get('printingId'); render(true); }
+  else navigate(target);
+});
