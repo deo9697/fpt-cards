@@ -25,14 +25,14 @@ export class MarketWatchController {
   async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
   view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
+        <div class="market-hero-art" aria-hidden="true"></div>
         <h1 class="market-hero-eyebrow">Market Watch</h1>
         ${heroParticles()}
-        <div class="market-hero-dollar-stage" aria-hidden="true">
-          <span class="market-hero-dollar-glow"></span>
-          ${sparkle('top:2px;left:36%;width:14px;height:14px;animation-delay:0s')}
-          ${sparkle('bottom:8px;right:18%;width:10px;height:10px;animation-delay:.9s')}
-          <span class="market-hero-dollar-spin">${dollarFace('front')}${dollarFace('back')}</span>
-        </div>
+        ${heroCoins()}
+        ${sparkle('top:6px;left:14%;width:14px;height:14px;animation-delay:0s')}
+        ${sparkle('top:18px;right:12%;width:11px;height:11px;animation-delay:.9s')}
+        ${sparkle('top:44px;left:30%;width:9px;height:9px;animation-delay:1.6s')}
+        ${sparkle('top:36px;right:28%;width:10px;height:10px;animation-delay:.4s')}
         <span class="market-hero-label">La tua collezione vale</span>
         <strong class="market-hero-value">${summary.complete?money(summary.current):'Dati parziali'}</strong>
         <div class="market-hero-stats">
@@ -251,22 +251,12 @@ function unresolvedDeckRow(row){return `<article class="market-row unresolved"><
 function emptyPreparing(){return '<div class="market-preparing"><span class="market-orbit">'+icon('chart')+'</span><div><h2>Il Market Watch sta preparando i primi dati.</h2><p>Le printing sono pronte; i valori compariranno dopo il primo aggiornamento server-side.</p></div></div>';}
 function emptyNoCards(){return '<div class="empty-state market-empty">'+icon('collection')+'<h2>Aggiungi carte alla Raccolta o alla Watchlist per iniziare.</h2><p>Le carte possedute entrano automaticamente nel monitoraggio.</p></div>';}
 function kpi(label,value,detail,kind){return `<article class="surface market-kpi ${kind}"><small>${label}</small><strong>${value}</strong><span>${detail}</span></article>`;}
-const HERO_PARTICLES=[[12,5,4.5,0],[28,3,3.8,1.1],[45,6,5.2,.4],[62,4,4,2],[76,3,4.7,.8],[88,5,3.6,1.6],[20,4,5.5,2.6],[55,3,4.2,3.1],[70,5,5,1.8]];
+const HERO_PARTICLES=[[8,4,4.5,0],[16,6,3.8,1.1],[24,3,5.2,.4],[32,5,4,2],[40,4,4.7,.8],[48,6,3.6,1.6],[56,3,5.5,2.6],[64,5,4.2,3.1],[72,4,5,1.8],[80,6,4.3,.6],[88,3,3.9,2.3],[94,5,4.8,1.3],[6,4,5.1,3.4],[60,3,4.6,.2],[38,5,3.7,2.9],[84,4,5.4,1.9]];
 function heroParticles(){return `<div class="market-hero-particles" aria-hidden="true">${HERO_PARTICLES.map(([left,size,duration,delay])=>`<span class="market-hero-particle" style="left:${left}%;width:${size}px;height:${size}px;animation-duration:${duration}s;animation-delay:${delay}s"></span>`).join('')}</div>`;}
 function sparkle(style){return `<svg class="market-hero-sparkle" style="${style}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0l2 10 10 2-10 2-2 10-2-10L0 12l10-2z"/></svg>`;}
-function dollarFace(kind){
-  const grad=`marketHeroGold-${kind}`,clip=`marketHeroDollarClip-${kind}`;
-  return `<svg class="market-hero-dollar-face ${kind}" viewBox="0 0 100 100" aria-hidden="true">
-    <defs>
-      <linearGradient id="${grad}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#fff3c4"/><stop offset="30%" stop-color="#f6cf5b"/><stop offset="55%" stop-color="#d99a1e"/><stop offset="80%" stop-color="#a8690a"/><stop offset="100%" stop-color="#c98a1c"/>
-      </linearGradient>
-      ${kind==='front'?`<clipPath id="${clip}"><text x="50" y="76" font-family="Georgia, 'Times New Roman', serif" font-size="88" font-weight="700" text-anchor="middle">$</text></clipPath>`:''}
-    </defs>
-    <text x="50" y="76" font-family="Georgia, 'Times New Roman', serif" font-size="88" font-weight="700" text-anchor="middle" fill="url(#${grad})" stroke="#5c3a0a" stroke-width="3.5" paint-order="stroke">$</text>
-    ${kind==='front'?`<ellipse cx="42" cy="26" rx="26" ry="15" fill="#fff" opacity=".55" clip-path="url(#${clip})"/><ellipse cx="34" cy="20" rx="12" ry="7" fill="#fff" opacity=".5" clip-path="url(#${clip})"/>`:''}
-  </svg>`;
-}
+const HERO_COINS=[[10,3.4,0],[24,2.8,.6],[38,3.8,1.3],[52,3,.2],[66,3.6,1.8],[80,2.9,.9],[92,3.3,1.5],[17,3.1,2.4],[46,3.5,2.9],[74,3.2,2.1]];
+function heroCoin(){return `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#f6cf5b" stroke="#a8690a" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="none" stroke="#c98a1c" stroke-width="1.5"/><text x="16" y="21" font-family="Georgia, 'Times New Roman', serif" font-size="14" font-weight="700" text-anchor="middle" fill="#a8690a">$</text></svg>`;}
+function heroCoins(){return `<div class="market-hero-coins" aria-hidden="true">${HERO_COINS.map(([left,duration,delay])=>`<span class="market-hero-coin" style="left:${left}%;animation-duration:${duration}s;animation-delay:${delay}s">${heroCoin()}</span>`).join('')}</div>`;}
 function countFor(data,tab,deckCount=0){return tab==='deck'?deckCount:data.items.filter(item=>item.sources.includes(tab)).length;}
 function normalizeProviders(value){if(!value||typeof value!=='object')return{};return Object.fromEntries(Object.entries(value).map(([key,row])=>[key,{...row,capturedAt:row.capturedAt||row.captured_at,conditionReference:row.conditionReference||row.condition_reference,price:nullableNumber(row.price)}]));}
 function nullableNumber(value){if(value==null||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null;}
