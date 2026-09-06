@@ -1722,7 +1722,7 @@ button.market-row:hover { background:#15121d; }
   .market-tabs { overflow-x:auto; }
   .market-board-tools { align-items:stretch;flex-direction:column; }
   .market-board-tools>label { justify-content:space-between;padding:0 10px 10px; }
-  .market-board-tools .market-search { max-width:none;padding:0 10px 10px; }
+  .market-board-tools .market-search { flex:0 0 auto;max-width:none;padding:0 10px 10px; }
   .market-tabs button { flex:1;min-width:105px;padding-inline:10px; }
   .market-row { grid-template-columns:43px minmax(0,1fr) auto 30px;gap:8px;padding-inline:7px; }
   .market-row>img,.market-art-empty { width:43px;height:61px; }
