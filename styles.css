@@ -1759,3 +1759,23 @@ button.market-row:hover { background:#15121d; }
 .share-guest-cart > span b { color: #fff; }
 .share-guest-cart input { width: 100%; padding: 11px 14px; border: 1px solid #40324d; border-radius: 10px; background: #0d0f18; color: #f3f4f7; font-size: 16px; }
 .share-guest-cart .btn { width: 100%; }
+
+/* Condivisione raccolta — lato proprietario: modal link + sezione Richieste */
+.more-grid > button { position: relative; }
+.more-badge { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--danger, #e2596b); color: #fff; font-size: .58rem; font-weight: 800; }
+.share-owner-modal p { color: var(--muted); font-size: .8rem; }
+.share-link-box { display: flex; gap: 8px; margin: 14px 0; }
+.share-link-box input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #0d0f18; color: var(--text); font-size: .78rem; }
+.share-owner-actions { display: flex; gap: 8px; }
+.share-owner-actions .btn { flex: 1; }
+.share-owner-actions .btn.danger { border-color: #4a1f2b; color: var(--danger); }
+.share-request-list { display: grid; gap: 12px; }
+.share-request-row { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; }
+.share-request-row.pending { border-color: #9b5cff55; }
+.share-request-row header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.share-request-row header small { display: block; color: var(--muted); font-size: .68rem; }
+.share-request-seen-badge { color: var(--muted); font-size: .62rem; font-style: normal; }
+.share-request-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-request-item { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 5px; border: 1px solid var(--line); border-radius: 999px; background: #10131b; font-size: .68rem; }
+.share-request-item img { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; }
+.share-request-item small { color: var(--muted); }

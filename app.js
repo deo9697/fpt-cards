@@ -24,6 +24,10 @@ let loanFiltersExpanded = false;
 let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc' };
 let collectionVisibleCount = COLLECTION_PAGE_SIZE;
 let collectionSentinelObserver;
+let collectionShareModal = false;
+let collectionShareLink = null;
+let collectionSharePending = false;
+let collectionShareRequests = [];
 let selectedCardKey = '';
 let selectedCollectionItem = '';
 let collectionEditor = null;
@@ -191,11 +195,12 @@ function appView() {
     ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
+    ${collectionShareModal ? collectionShareModalView() : ''}
   </main>`;
 }
 
 function navButton(id, iconName, label, notifications) {
-  const active = page === id || (id === 'more' && ['decks','market','team','settings'].includes(page));
+  const active = page === id || (id === 'more' && ['decks','market','team','settings','requests'].includes(page));
   return `<button data-page="${id}" class="${active ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`;
 }
 
@@ -209,6 +214,7 @@ function pageContent() {
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount);
   if (page === 'market') return marketWatch.view();
   if (page === 'decks') return decks.view();
+  if (page === 'requests') return requestsView();
   if (page === 'settings') return settingsView();
   if (page === 'more') return moreView();
   return dashboardView(state, state.game, marketWatch.dashboardState());
@@ -266,8 +272,9 @@ function settingsView() {
 }
 
 function moreView() {
-  const links = [['decks','deck','Mazzi','Costruzione e disponibilità'],['market','chart','Market Watch','Prezzi e watchlist'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${icon('arrow')}</button>`).join('')}</section></section>`;
+  const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
+  const links = [['decks','deck','Mazzi','Costruzione e disponibilità'],['market','chart','Market Watch','Prezzi e watchlist'],['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
+  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
 function newLoanView() {
@@ -542,6 +549,20 @@ function bind() {
   });
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
+  document.querySelectorAll('[data-collection-share]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per condividere la raccolta'); void openCollectionShareModal(); }));
+  document.querySelectorAll('[data-close-collection-share]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionShareModal = false; render(); }));
+  document.querySelector('[data-generate-share]')?.addEventListener('click', () => void generateCollectionShareLink());
+  document.querySelector('[data-regenerate-share]')?.addEventListener('click', () => void generateCollectionShareLink());
+  document.querySelector('[data-revoke-share]')?.addEventListener('click', () => void revokeCollectionShareLink());
+  document.querySelector('[data-copy-share-link]')?.addEventListener('click', async () => {
+    const field = document.querySelector('[data-share-url]');
+    try { await navigator.clipboard.writeText(field.value); toast('Link copiato'); }
+    catch { field.select(); toast('Seleziona e copia il link'); }
+  });
+  document.querySelectorAll('[data-mark-request-seen]').forEach(button => button.addEventListener('click', async () => {
+    try { await api.markCollectionShareRequestSeen(button.dataset.markRequestSeen); await loadCollectionShareRequests(); render(); }
+    catch (error) { toast(error.message || 'Operazione non riuscita'); }
+  }));
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => { selectedCollectionItem = button.dataset.collectionItem; render(); }));
   if (page === 'collection') observeCollectionSentinel();
   document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCollectionItem = ''; render(); }));
@@ -697,6 +718,69 @@ function refreshCollectionResults() {
   observeCollectionSentinel();
 }
 
+async function loadCollectionShareRequests() {
+  // Best-effort: the sharing migration may not be applied yet on some
+  // installs, and this is a secondary feature — never let a failure here
+  // block the rest of loadPrimaryData()'s Promise.allSettled batch.
+  try { collectionShareRequests = await api.collectionShareRequests(); }
+  catch {}
+}
+
+function collectionShareUrl(id) { return `${location.origin}${location.pathname}#/share/${id}`; }
+
+async function openCollectionShareModal() {
+  collectionShareModal = true; collectionShareLink = null; render();
+  try {
+    const shares = await api.collectionShares();
+    collectionShareLink = shares.find(share => share.game === state.game && share.active) || null;
+  } catch (error) { toast(error.message || 'Impossibile caricare il link di condivisione'); }
+  render();
+}
+
+async function generateCollectionShareLink() {
+  collectionSharePending = true; render();
+  try {
+    const id = await api.createCollectionShare(state.game);
+    collectionShareLink = { id, game: state.game, active:true };
+  } catch (error) { toast(error.message || 'Generazione del link non riuscita'); }
+  finally { collectionSharePending = false; render(); }
+}
+
+async function revokeCollectionShareLink() {
+  if (!collectionShareLink) return;
+  collectionSharePending = true; render();
+  try { await api.revokeCollectionShare(collectionShareLink.id); collectionShareLink = null; toast('Link revocato'); }
+  catch (error) { toast(error.message || 'Revoca non riuscita'); }
+  finally { collectionSharePending = false; render(); }
+}
+
+function collectionShareModalView() {
+  const url = collectionShareLink ? collectionShareUrl(collectionShareLink.id) : '';
+  return `<div class="detail-backdrop" data-close-collection-share><aside class="card-detail share-owner-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+    <button class="detail-close" data-close-collection-share aria-label="Chiudi">×</button>
+    <span class="eyebrow">Condividi raccolta</span><h2 id="share-modal-title">Link pubblico</h2>
+    <p>Chi apre questo link vede le tue carte (${esc(GAMES[state.game]?.short || state.game)}) e può segnalarti quali gli interessano — non serve un account F.P.T Cards.</p>
+    ${collectionShareLink ? `
+      <div class="share-link-box"><input type="text" readonly value="${esc(url)}" data-share-url onclick="this.select()"><button type="button" class="btn secondary small" data-copy-share-link>Copia</button></div>
+      <div class="share-owner-actions"><button type="button" class="btn secondary" data-regenerate-share ${collectionSharePending ? 'disabled' : ''}>Rigenera</button><button type="button" class="btn secondary danger" data-revoke-share ${collectionSharePending ? 'disabled' : ''}>Revoca</button></div>
+    ` : `<button type="button" class="btn" data-generate-share ${collectionSharePending ? 'disabled' : ''}>${collectionSharePending ? 'Genero…' : 'Genera link'}</button>`}
+  </aside></div>`;
+}
+
+function requestsView() {
+  const requests = collectionShareRequests;
+  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Interesse ricevuto</span><h1>Richieste</h1><p>Chi ha visto la tua raccolta condivisa e ti ha segnalato interesse.</p></div></header>
+    <section class="surface">${requests.length ? `<div class="share-request-list">${requests.map(requestRowHtml).join('')}</div>` : `<div class="inline-empty">${icon('bell')}<div><strong>Nessuna richiesta</strong><span>Condividi la tua raccolta da Raccolta per iniziare a ricevere richieste.</span></div></div>`}</section>
+  </section>`;
+}
+
+function requestRowHtml(request) {
+  const items = request.items || [];
+  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Segna come vista</button>` : `<i class="share-request-seen-badge">Vista</i>`}</header>
+    <div class="share-request-items">${items.map(item => `<span class="share-request-item">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}<b>${esc(item.cardName)}</b><small>${item.quantity}×</small></span>`).join('')}</div>
+  </article>`;
+}
+
 // The results grid only ever renders collectionVisibleCount items — this
 // grows the window in batches as the sentinel (rendered right after the
 // last visible tile whenever more items remain) scrolls into view, instead
@@ -827,7 +911,8 @@ async function loadPrimaryData() {
     loadCloudLoans(),
     loadCollection(),
     loadDecks(),
-    marketWatch.load()
+    marketWatch.load(),
+    loadCollectionShareRequests()
   ]);
   if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';

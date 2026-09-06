@@ -20,7 +20,7 @@ export function collectionView(collection, filters, game, connected, error = '',
   const owners = [...new Map(team.map(item => [item.ownerSlug, item.ownerName])).entries()];
 
   return `<section class="page-stack collection-page">
-    <header class="page-header split"><div><span class="eyebrow">Inventario persistente</span><h1>Raccolta</h1><p>Carte possedute e copie realmente disponibili per il team.</p></div><div class="actions collection-add-actions"><button class="btn secondary" data-fast-scan>${icon('search')} Scansione rapida</button><button class="btn" data-collection-add ${connected ? '' : 'disabled title="Disponibile quando torni online"'}>${icon('plus')} Aggiungi carta</button></div></header>
+    <header class="page-header split"><div><span class="eyebrow">Inventario persistente</span><h1>Raccolta</h1><p>Carte possedute e copie realmente disponibili per il team.</p></div><div class="actions collection-add-actions"><button class="btn secondary" data-collection-share ${connected ? '' : 'disabled title="Disponibile quando torni online"'}>${icon('share')} Condividi</button><button class="btn secondary" data-fast-scan>${icon('search')} Scansione rapida</button><button class="btn" data-collection-add ${connected ? '' : 'disabled title="Disponibile quando torni online"'}>${icon('plus')} Aggiungi carta</button></div></header>
     ${error ? `<div class="connection-banner error">${icon('bell')} ${esc(error)} <button id="retry-collection">Riprova</button></div>` : ''}
     ${!connected ? `<div class="connection-banner offline">Sei offline · mostro l’ultima raccolta sincronizzata. Le modifiche sono disabilitate.</div>` : ''}
     <section class="surface collection-surface inventory-surface">
