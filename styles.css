@@ -823,6 +823,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .suggestion-status { padding: 14px; color: var(--muted); font-size: .7rem; text-align: center; }
 .suggestion-status.error { color: #ef9aa8; }
 .connection-banner.error { border-color: #ff647733; color: #ff9aaa; }
+.connection-banner.warn { border-color: #f4b94240; color: #ffd27a; background: #f4b94212; }
 .connection-banner button { margin-left: auto; border: 0; background: transparent; color: inherit; text-decoration: underline; }
 .availability.busy b { color: var(--danger); }
 
@@ -1124,6 +1125,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .card-detail.deck-missing-panel > .eyebrow { flex:none; }
 .card-detail.deck-missing-panel .missing-card-list { flex:1;min-height:0;overflow-y:auto;margin:14px 0; }
 .card-detail.deck-missing-panel > .btn.wide { flex:none; }
+.card-detail.market-confirm-queue { display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(24px,env(safe-area-inset-bottom)); }
+.market-confirm-queue-head { display:flex;align-items:flex-start;gap:12px;flex:none; }
+.market-confirm-queue-head .detail-close { flex:none; }
+.market-confirm-queue-head p { margin:4px 0 0;color:var(--muted);font-size:.7rem; }
+.market-confirm-queue-list { flex:1;min-height:0;overflow-y:auto;margin-top:14px;display:grid;gap:12px; }
+.market-confirm-queue-row { padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d0f18; }
+.market-confirm-queue-card { display:flex;align-items:center;gap:10px; }
+.market-confirm-queue-card img,.market-confirm-queue-card .market-art-empty { width:44px;height:44px;flex:none;border-radius:6px;object-fit:cover; }
+.market-confirm-queue-card strong,.market-confirm-queue-card small { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.market-confirm-queue-card small { color:var(--muted);font-size:.62rem; }
 @media (max-width:340px) { .deck-mobile-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (min-width:420px) { .deck-mobile-grid { grid-template-columns:repeat(5,minmax(0,1fr)); } }
 @media (min-width:560px) { .deck-mobile-grid { grid-template-columns:repeat(6,minmax(0,1fr)); } }
