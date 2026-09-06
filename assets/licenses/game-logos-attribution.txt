@@ -1,0 +1,13 @@
+assets/game-logos/*
+
+These logos are trademarks of their respective owners and are used here
+solely to identify the trading card game formats supported (or planned)
+by this private, non-commercial team collection tracker:
+
+- yugioh.png    "Yu-Gi-Oh!" - trademark of Konami Digital Entertainment / Studio Dice / Shueisha
+- onepiece.webp "One Piece Card Game" - trademark of Bandai
+- magic.png     "Magic: The Gathering" - trademark of Wizards of the Coast
+- pokemon.png   "Pokémon Trading Card Game" - trademark of The Pokémon Company / Nintendo / Creatures / GAME FREAK
+
+Source: official product logos, retrieved via Wikimedia Commons / Wikipedia.
+No affiliation with or endorsement by any of the above rights holders is implied.

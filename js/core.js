@@ -28,9 +28,13 @@ if (!Array.isArray(state.collection.team)) state.collection.team = [];
 if (!Array.isArray(state.decks)) state.decks = [];
 if (Array.isArray(state.members) && state.members.length) setMembers(state.members);
 export const GAMES = {
-  yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', mark:'Y' },
-  onepiece: { id:'onepiece', name:'One Piece Card Game', short:'One Piece', mark:'OP' }
+  yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', logo:'assets/game-logos/yugioh.png' },
+  onepiece: { id:'onepiece', name:'One Piece Card Game', short:'One Piece', logo:'assets/game-logos/onepiece.webp' }
 };
+export const FUTURE_GAMES = [
+  { id:'magic', name:'Magic: The Gathering', logo:'assets/game-logos/magic.png' },
+  { id:'pokemon', name:'Pokémon TCG', logo:'assets/game-logos/pokemon.png' }
+];
 export function saveState() { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
 export function member(id) { return MEMBERS.find(item => item.id === id); }
 export function initials(name) { return name.split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase(); }

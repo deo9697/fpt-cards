@@ -247,24 +247,29 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .game-switcher > .menu-trigger { cursor: pointer; }
 .game-switcher.open .game-menu { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
 .menu-trigger .icon { width: 21px; height: 21px; }
-.game-menu { position: fixed; z-index: 21; top: 78px; left: max(12px, calc((100vw - 760px) / 2 + 16px)); width: 300px; padding: 14px; visibility: hidden; border: 1px solid #465382aa; border-radius: 20px; background: #0d142df8; box-shadow: 0 22px 55px #0009; opacity: 0; transform: translateY(-8px) scale(.97); transform-origin: top left; transition: opacity .16s, transform .18s cubic-bezier(.2,.8,.2,1), visibility .18s; }
+.menu-trigger { position: relative; }
+.game-trigger-chip { position: absolute; right: -3px; bottom: -3px; width: 15px; height: 15px; border-radius: 5px; background: #f4f2ea; display: grid; place-items: center; overflow: hidden; box-shadow: 0 0 0 2px var(--panel-2, #10131b); }
+.game-trigger-chip img { width: 100%; height: 100%; object-fit: contain; padding: 1px; }
+.game-menu { position: fixed; z-index: 21; top: 78px; left: max(12px, calc((100vw - 760px) / 2 + 16px)); width: 320px; padding: 14px; visibility: hidden; border: 1px solid #465382aa; border-radius: 20px; background: #0d142df8; box-shadow: 0 22px 55px #0009; opacity: 0; transform: translateY(-8px) scale(.97); transform-origin: top left; transition: opacity .16s, transform .18s cubic-bezier(.2,.8,.2,1), visibility .18s; }
 .game-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 3px 11px; }
 .game-menu-head small { color: var(--muted); font-size: .62rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .game-menu-head h2 { margin: 0; font-size: 1rem; }
-.game-options { display: grid; gap: 5px; }
-.game-options > button { display: grid; grid-template-columns: 38px 1fr 20px; align-items: center; gap: 10px; width: 100%; padding: 9px; border: 1px solid transparent; border-radius: 13px; background: transparent; color: var(--text); text-align: left; transition: border-color .2s, transform .2s, background .2s; }
+.game-options { display: grid; gap: 6px; }
+.game-options > button, .game-options > .game-option-locked { display: grid; grid-template-columns: 64px 1fr 20px; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 1px solid transparent; border-radius: 13px; background: transparent; color: var(--text); text-align: left; transition: border-color .2s, transform .2s, background .2s; }
 .game-options > button:hover { background: #ffffff06; }
 .game-options > button.active { border-color: #f4b94255; background: #f4b9420d; }
 .game-options > button:active { transform: scale(.98); }
+.game-options > .game-option-locked { opacity: .48; cursor: not-allowed; }
 .game-options strong, .game-options small { display: block; }
 .game-options small { margin-top: 3px; color: var(--muted); }
-.game-options b { color: var(--muted); font-size: 1rem; text-align: center; }
+.game-options b { display: grid; place-items: center; color: var(--muted); font-size: 1rem; text-align: center; }
+.game-options b .icon { width: 15px; height: 15px; }
 .game-options > button.active b { color: var(--accent); }
-.game-mark, .game-pill { display: grid; place-items: center; border-radius: 14px; font-weight: 850; }
-.game-mark { width: 38px; height: 38px; border-radius: 11px; font-size: .75rem; }
-.game-mark.yugioh, .game-pill.yugioh { background: linear-gradient(145deg, #f4b942, #be7620); color: #241603; }
-.game-mark.onepiece, .game-pill.onepiece { background: linear-gradient(145deg, #e94d63, #8e2038); color: white; }
-.game-pill { min-width: 42px; height: 34px; padding: 0 9px; font-size: .75rem; }
+.game-logo { width: 64px; height: 42px; border-radius: 10px; background: #f4f2ea; display: grid; place-items: center; overflow: hidden; }
+.game-logo img { width: 86%; height: 78%; object-fit: contain; }
+.game-pill { display: grid; place-items: center; border-radius: 14px; font-weight: 850; min-width: 42px; height: 34px; padding: 0 9px; font-size: .75rem; }
+.game-pill.yugioh { background: linear-gradient(145deg, #f4b942, #be7620); color: #241603; }
+.game-pill.onepiece { background: linear-gradient(145deg, #e94d63, #8e2038); color: white; }
 @media (max-width: 520px) { .game-menu { top: 74px; left: 12px; right: 12px; width: auto; } }
 .toast { position: fixed; z-index: 10; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; border-radius: 12px; background: var(--text); color: var(--bg); padding: 10px 15px; transition: .2s; font-weight: 650; white-space: nowrap; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -369,7 +374,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .game-menu { top: 92px; border: 1px solid transparent; background: linear-gradient(145deg, #111933f2, #080c1cf2) padding-box, linear-gradient(135deg, rgba(var(--accent-rgb), .65), #46547a66, rgba(var(--duel-glow-rgb, 93, 77, 179), .48)) border-box; box-shadow: 0 28px 70px #000c, inset 0 1px #ffffff0c; }
 .game-options > button.active { border-color: rgba(var(--accent-rgb), .48); background: linear-gradient(90deg, rgba(var(--accent-rgb), .14), transparent); }
-.game-mark { border: 1px solid #ffffff26; box-shadow: 0 7px 16px #0006; }
+.game-logo, .game-trigger-chip { border: 1px solid #ffffff26; box-shadow: 0 7px 16px #0006; }
 
 .fab { width: 58px; height: 58px; border: 1px solid #fff2b455; border-radius: 20px; background: linear-gradient(145deg, #ffdc82, var(--accent) 50%, var(--accent-dark)); box-shadow: 0 14px 34px #000b, 0 0 0 5px rgba(var(--accent-rgb), .1), inset 0 1px #fff9; }
 .nav { bottom: max(10px, env(safe-area-inset-bottom)); width: min(750px, calc(100% - 20px)); padding: 8px 10px; border: 1px solid #46537a88; border-radius: 22px; background: linear-gradient(120deg, #0e142beF, #080c1def); box-shadow: 0 18px 45px #000a, inset 0 1px #ffffff0d; backdrop-filter: blur(22px) saturate(135%); }
