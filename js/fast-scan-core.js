@@ -66,9 +66,9 @@ function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-
 function confusionPriority(code,index,replacement){const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<3&&/[A-Z]/.test(replacement))return 82;return 72;}
 function characterDistance(left,right){if(left.length!==right.length)return Math.max(left.length,right.length);let count=0;for(let index=0;index<left.length;index++)if(left[index]!==right[index])count+=1;return count;}
 
-export function classifyPrintingMatch({normalized,matches=[],corrected=false,catalogMismatch=false,consensus=0,ocrConfidence=0,manual=false}) {
+export function classifyPrintingMatch({normalized,matches=[],corrected=false,consensus=0,ocrConfidence=0,manual=false}) {
   if(!normalized?.valid)return {status:'not_found',decision:SCAN_DECISION.NOT_FOUND,matches:[]};
-  if(catalogMismatch||matches.length>1)return {status:'needs_review',decision:SCAN_DECISION.AMBIGUOUS,matches};
+  if(matches.length>1)return {status:'needs_review',decision:SCAN_DECISION.AMBIGUOUS,matches};
   if(matches.length===1&&!corrected)return {status:'high_confidence',decision:SCAN_DECISION.EXACT_UNIQUE,matches};
   if(matches.length)return {status:'needs_review',decision:SCAN_DECISION.AMBIGUOUS,matches};
   return {status:'not_found',decision:SCAN_DECISION.NOT_FOUND,matches:[]};

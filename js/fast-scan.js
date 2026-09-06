@@ -214,7 +214,7 @@ export class FastScanController {
   async processManual(raw){const normalized=normalizeSetCode(raw);if(!normalized.valid){this.onToast?.('Formato printing code non valido');return;}const result=await this.resolve(raw,100,{manual:true,consensus:2});await this.commitResolution(result,raw,true);}
   async resolveFast(raw,ocrConfidence,{consensus=0,manual=false}={}){
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};const exact=candidates[0],hit=this.lookupMemory(exact.code);
-    if(hit.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,catalogMismatch:plausibleCandidateCount>1,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
+    if(hit.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
     const corrected=candidates.slice(1).map(candidate=>({candidate,...this.lookupMemory(candidate.code)})).filter(item=>item.matches.length);
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
@@ -223,7 +223,7 @@ export class FastScanController {
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};
     const fast=await this.resolveFast(raw,ocrConfidence,{consensus,manual});if(!fast.fastMiss&&!fast.corrected)return fast;
     const exact=candidates[0],exactLookup=await this.lookupDetailed(exact.code);
-    if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,catalogMismatch:plausibleCandidateCount>1,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
+    if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
     if(!fast.fastMiss&&fast.corrected)return fast;
     let corrected=(await Promise.all(candidates.slice(1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
     if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}

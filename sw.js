@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v168';
+const CACHE = 'fpt-cards-v169';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
