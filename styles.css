@@ -1579,15 +1579,23 @@ img.card-image-unavailable { opacity: 0; }
 .positive { color:#65df84!important; }
 .negative { color:#ff6879!important; }
 .market-board { overflow:hidden;padding:0;border-color:#493355;background:#0a0d15e8; }
-.market-board-tools { display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #332a3c;background:#0d1019; }
-.market-board-tools .market-tabs { flex:1;border-bottom:0; }
-.market-board-tools>label { display:flex;align-items:center;gap:8px;padding-right:12px;color:#aaa0b1;font-size:.7rem; }
-.market-confirm-all { flex:none;white-space:nowrap;color:#ffd27a;border-color:#f4b94240;background:#f4b9420f; }
+/* flex-wrap invece di un flex-direction:column separato per mobile: le tab
+   (min-width 130px l'una) riempiono già da sole la riga su schermi stretti,
+   quindi .market-board-controls va a capo da sola SENZA bisogno di un
+   secondo set di regole — niente più flex-basis condiviso tra riga e
+   colonna (quello ha causato il bug del riquadro alto 180px: un basis
+   pensato come larghezza diventava un'altezza minima in flex-direction:
+   column). search+ordina stanno inoltre su una griglia interna con colonne
+   esplicite, indifferente alla direzione del genitore. */
+.market-board-tools { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;border-bottom:1px solid #332a3c;background:#0d1019;padding-bottom:10px; }
+.market-board-tools .market-tabs { flex:1 1 auto;border-bottom:0; }
+.market-board-controls { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;flex:1 1 auto;min-width:200px;padding:0 10px; }
+.market-confirm-all { flex:1 1 100%;order:1;margin:0 10px;white-space:nowrap;color:#ffd27a;border-color:#f4b94240;background:#f4b9420f; }
 .market-confirm-all:disabled { opacity:.6;cursor:progress; }
-.market-board-tools select { min-width:150px;padding:8px;border:1px solid #3b3344;border-radius:7px;background:#111520;color:#fff; }
-.market-board-tools .market-search { flex:1 1 180px;max-width:260px;padding-right:0; }
-.market-board-tools .market-search input { width:100%;height:38px;padding-left:36px;border:1px solid #3b3344;border-radius:7px;background:#111520;color:#fff;font-size:.78rem; }
-.market-board-tools .market-search .icon { left:11px;top:50%;width:14px;height:14px;transform:translateY(-50%); }
+.market-search { position:relative; }
+.market-search .icon { position:absolute;left:11px;top:50%;width:14px;height:14px;transform:translateY(-50%);color:#aaa0b1; }
+.market-search input { width:100%;height:38px;padding-left:34px;border:1px solid #3b3344;border-radius:9px;background:#111520;color:#fff;font-size:.78rem; }
+.market-sort select { width:100%;height:38px;padding:0 10px;border:1px solid #3b3344;border-radius:9px;background:#111520;color:#fff;font-size:.74rem;font-weight:700;max-width:132px; }
 .market-tabs { display:flex;gap:4px;padding:8px;border-bottom:1px solid #332a3c;background:#0d1019; }
 .market-tabs button { display:flex;align-items:center;justify-content:center;gap:7px;min-width:130px;padding:11px 16px;border:1px solid transparent;border-radius:8px;background:transparent;color:#a9a1af;font-weight:750; }
 .market-tabs button span { display:grid;place-items:center;min-width:21px;height:20px;padding-inline:5px;border-radius:10px;background:#282330;color:#c9becf;font-size:.58rem; }
@@ -1720,9 +1728,7 @@ button.market-row:hover { background:#15121d; }
   .market-hero-dollar-stage { height:96px; }
   .market-hero-dollar-spin, .market-hero-dollar-face { width:76px; height:76px; }
   .market-tabs { overflow-x:auto; }
-  .market-board-tools { align-items:stretch;flex-direction:column; }
-  .market-board-tools>label { justify-content:space-between;padding:0 10px 10px; }
-  .market-board-tools .market-search { flex:0 0 auto;max-width:none;padding:0 10px 10px; }
+  .market-board-controls { min-width:100%; }
   .market-tabs button { flex:1;min-width:105px;padding-inline:10px; }
   .market-row { grid-template-columns:43px minmax(0,1fr) auto 30px;gap:8px;padding-inline:7px; }
   .market-row>img,.market-art-empty { width:43px;height:61px; }
