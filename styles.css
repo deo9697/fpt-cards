@@ -271,7 +271,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .game-pill.yugioh { background: linear-gradient(145deg, #f4b942, #be7620); color: #241603; }
 .game-pill.onepiece { background: linear-gradient(145deg, #e94d63, #8e2038); color: white; }
 @media (max-width: 520px) { .game-menu { top: 74px; left: 12px; right: 12px; width: auto; } }
-.toast { position: fixed; z-index: 10; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; border-radius: 12px; background: var(--text); color: var(--bg); padding: 10px 15px; transition: .2s; font-weight: 650; white-space: nowrap; }
+.toast { position: fixed; z-index: 200; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; border-radius: 12px; background: var(--text); color: var(--bg); padding: 10px 15px; transition: .2s; font-weight: 650; white-space: nowrap; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .rickroll-video { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; overflow: hidden; background: #03040a; animation: rick-video-in .2s ease both; }
 .rickroll-video video { width: 100vw; height: 100vh; border: 0; object-fit: contain; background: #03040a; pointer-events: none; }
