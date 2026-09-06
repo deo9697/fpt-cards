@@ -14,7 +14,7 @@ const SORT_OPTIONS = [
   { value:'quantity-desc', label:'Più possedute' }
 ];
 
-export function collectionView(collection, filters, game, connected, error = '') {
+export function collectionView(collection, filters, game, connected, error = '', visibleCount = COLLECTION_PAGE_SIZE) {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const owners = [...new Map(team.map(item => [item.ownerSlug, item.ownerName])).entries()];
@@ -36,18 +36,51 @@ export function collectionView(collection, filters, game, connected, error = '')
           <div class="view-toggle" aria-label="Visualizzazione"><button type="button" data-collection-layout="grid" class="${filters.layout === 'grid' ? 'active' : ''}" aria-label="Griglia">▦</button><button type="button" data-collection-layout="list" class="${filters.layout === 'list' ? 'active' : ''}" aria-label="Lista">☷</button></div>
         </div>
       </div>
-      <div data-collection-results>${collectionResultsView(collection, filters, game, connected)}</div>
+      <div data-collection-results>${collectionResultsView(collection, filters, game, connected, visibleCount)}</div>
     </section>
   </section>`;
 }
 
-export function collectionResultsView(collection, filters, game, connected) {
+// Rendering every matching card into one innerHTML string used to mean
+// thousands of DOM nodes at once for a large collection. visibleCount caps
+// what actually gets built; a sentinel element (app.js observes it) grows
+// it in batches as the user scrolls, so the full sorted/filtered list still
+// exists for correctness (counts, the A-Z jump index) but only a slice of
+// it ever becomes real DOM.
+export const COLLECTION_PAGE_SIZE = 60;
+
+function computeCollectionItems(collection, filters, game) {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const source = filters.scope === 'mine' ? mine : groupTeamItems(team);
-  const visible = sortItems(source.filter(item => matches(item, filters)), filters.sort);
-  return `${visible.length ? `<div class="inventory-grid ${filters.layout === 'list' ? 'list' : ''}">${visible.map(item => inventoryCard(item, filters.scope)).join('')}</div>` : emptyState(source.length, filters.scope, connected)}
-    <div class="collection-count"><strong>${visible.length}</strong> printing · disponibilità calcolata dai prestiti</div>`;
+  return { source, all: sortItems(source.filter(item => matches(item, filters)), filters.sort) };
+}
+
+export function collectionResultsView(collection, filters, game, connected, visibleCount = COLLECTION_PAGE_SIZE) {
+  const { source, all } = computeCollectionItems(collection, filters, game);
+  const visible = all.slice(0, visibleCount);
+  const isList = filters.layout === 'list';
+  return `${all.length ? `${!isList ? azIndexView(all) : ''}<div class="inventory-grid ${isList ? 'list' : 'tiles'}">${visible.map(item => isList ? inventoryCard(item, filters.scope) : inventoryTile(item, filters.scope)).join('')}</div>${visible.length < all.length ? `<div class="inventory-load-more" data-collection-sentinel><span class="loading-spinner"></span></div>` : ''}` : emptyState(source.length, filters.scope, connected)}
+    <div class="collection-count"><strong>${all.length}</strong> printing · disponibilità calcolata dai prestiti</div>`;
+}
+
+// Finds where a letter would land in the sorted/filtered list even though
+// most of it hasn't been rendered yet — app.js uses this to know how many
+// items visibleCount needs to reveal before it can scroll the tile into view.
+export function collectionJumpTarget(collection, filters, game, letter) {
+  const { all } = computeCollectionItems(collection, filters, game);
+  const index = all.findIndex(item => firstLetter(item.cardName) === letter);
+  return index < 0 ? null : { index, id: all[index].id };
+}
+
+function firstLetter(name) {
+  const char = String(name || '').trim().charAt(0).toUpperCase();
+  return /[A-Z]/.test(char) ? char : '#';
+}
+
+function azIndexView(items) {
+  const present = new Set(items.map(item => firstLetter(item.cardName)));
+  return `<div class="inventory-az-index" role="group" aria-label="Salta alla lettera">${[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'].map(letter => `<button type="button" data-collection-jump="${letter}" ${present.has(letter) ? '' : 'disabled'}>${letter}</button>`).join('')}</div>`;
 }
 
 export function collectionDetailView(id, scope, collection, connected, currentUser = '') {
@@ -206,8 +239,20 @@ function sortItems(items, sort) {
   }
 }
 
+function itemAvailability(item) {
+  return item.quantityAvailable === 0 ? 'unavailable' : item.quantityLoaned + item.quantityReserved > 0 ? 'partial' : 'available';
+}
+
+function inventoryTile(item, scope) {
+  const availability = itemAvailability(item);
+  return `<button type="button" class="inventory-tile" data-collection-item="${esc(item.id)}">
+    <span class="inventory-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}${scope === 'mine' ? `<b class="inventory-tile-qty">${item.quantityOwned}×</b>` : ''}<i class="inventory-tile-status ${availability}" title="${esc(availabilityLabel(availability))}"></i></span>
+    <small class="inventory-tile-name">${esc(item.cardName)}</small>
+  </button>`;
+}
+
 function inventoryCard(item, scope) {
-  const availability = item.quantityAvailable === 0 ? 'unavailable' : item.quantityLoaned + item.quantityReserved > 0 ? 'partial' : 'available';
+  const availability = itemAvailability(item);
   const owner = scope === 'team' ? `${item.items.length} ${item.items.length === 1 ? 'proprietario' : 'proprietari'}` : esc(item.ownerName);
   return `<button type="button" class="inventory-card ${availability}" data-collection-item="${esc(item.id)}">
     <span class="inventory-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}</span>

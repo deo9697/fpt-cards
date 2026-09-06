@@ -4,7 +4,7 @@ import { searchCards, findCard, findCardById, cardTypesByIds, resolveStoredCard,
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting } from './js/collection.js';
+import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -19,6 +19,8 @@ let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let selectedLoanId = '';
 let loanFiltersExpanded = false;
 let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc' };
+let collectionVisibleCount = COLLECTION_PAGE_SIZE;
+let collectionSentinelObserver;
 let selectedCardKey = '';
 let selectedCollectionItem = '';
 let collectionEditor = null;
@@ -201,7 +203,7 @@ function pageContent() {
   if (page === 'team') return teamView();
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScan.view();
-  if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError);
+  if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount);
   if (page === 'market') return marketWatch.view();
   if (page === 'decks') return decks.view();
   if (page === 'settings') return settingsView();
@@ -538,6 +540,7 @@ function bind() {
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => { selectedCollectionItem = button.dataset.collectionItem; render(); }));
+  if (page === 'collection') observeCollectionSentinel();
   document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCollectionItem = ''; render(); }));
   document.querySelectorAll('[data-close-collection-editor]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionEditor = null; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionLoanRequest = null; render(); }));
@@ -609,6 +612,7 @@ function installCollectionControls() {
   root.addEventListener('input', event => {
     if (!event.target.matches('[data-collection-query]')) return;
     collectionFilters.query = event.target.value;
+    collectionVisibleCount = COLLECTION_PAGE_SIZE;
     // Filtering+sorting+re-rendering the whole grid on every keystroke was
     // visibly janky on a large collection — debounce both paths the same way
     // instead of only the (rarer) first-render path.
@@ -628,6 +632,7 @@ function installCollectionControls() {
     else if (event.target.matches('#collection-status')) collectionFilters.status = event.target.value;
     else if (event.target.matches('#collection-sort')) collectionFilters.sort = event.target.value;
     else return;
+    collectionVisibleCount = COLLECTION_PAGE_SIZE;
     refreshCollectionResults();
   });
   root.addEventListener('click', event => {
@@ -637,6 +642,7 @@ function installCollectionControls() {
       collectionFilters.owner = 'all';
       collectionFilters.status = 'all';
       selectedCollectionItem = '';
+      collectionVisibleCount = COLLECTION_PAGE_SIZE;
       render();
       return;
     }
@@ -644,21 +650,37 @@ function installCollectionControls() {
     if (statusChip) {
       collectionFilters.status = statusChip.dataset.collectionStatusChip;
       root.querySelectorAll('[data-collection-status-chip]').forEach(button => button.classList.toggle('active', button === statusChip));
+      collectionVisibleCount = COLLECTION_PAGE_SIZE;
       refreshCollectionResults();
       return;
     }
     const layout = event.target.closest('[data-collection-layout]');
-    if (!layout) return;
-    collectionFilters.layout = layout.dataset.collectionLayout;
-    root.querySelectorAll('[data-collection-layout]').forEach(button => button.classList.toggle('active', button === layout));
+    if (layout) {
+      collectionFilters.layout = layout.dataset.collectionLayout;
+      root.querySelectorAll('[data-collection-layout]').forEach(button => button.classList.toggle('active', button === layout));
+      refreshCollectionResults();
+      return;
+    }
+    const jump = event.target.closest('[data-collection-jump]');
+    if (!jump || jump.disabled) return;
+    const letter = jump.dataset.collectionJump;
+    const target = collectionJumpTarget(state.collection, collectionFilters, state.game, letter);
+    if (!target) return;
+    // The tapped letter's card may be well past what's currently rendered —
+    // grow the window just enough to include it (plus a page of headroom)
+    // before re-rendering and scrolling, rather than revealing everything.
+    if (target.index >= collectionVisibleCount) collectionVisibleCount = target.index + COLLECTION_PAGE_SIZE;
     refreshCollectionResults();
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-collection-item="${CSS.escape(target.id)}"]`)?.scrollIntoView({ block:'center', behavior:'smooth' });
+    });
   });
 }
 
 function refreshCollectionResults() {
   const results = document.querySelector('[data-collection-results]');
   if (!results) return;
-  results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online());
+  results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount);
   results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => {
     selectedCollectionItem = button.dataset.collectionItem;
     render();
@@ -669,6 +691,26 @@ function refreshCollectionResults() {
     collectionSearchResults = [];
     render();
   }));
+  observeCollectionSentinel();
+}
+
+// The results grid only ever renders collectionVisibleCount items — this
+// grows the window in batches as the sentinel (rendered right after the
+// last visible tile whenever more items remain) scrolls into view, instead
+// of building thousands of DOM nodes for a large collection up front. The
+// sentinel node is replaced on every render, so the observer needs
+// reattaching each time rather than being set up once.
+function observeCollectionSentinel() {
+  collectionSentinelObserver?.disconnect();
+  const sentinel = document.querySelector('[data-collection-sentinel]');
+  if (!sentinel) return;
+  collectionSentinelObserver = new IntersectionObserver(entries => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+    collectionSentinelObserver.disconnect();
+    collectionVisibleCount += COLLECTION_PAGE_SIZE;
+    refreshCollectionResults();
+  }, { rootMargin: '400px' });
+  collectionSentinelObserver.observe(sentinel);
 }
 
 function secretRickroll() {

@@ -120,7 +120,7 @@ async function snapshot(evaluate) {
     const grid=document.querySelector('.inventory-grid');
     const probe=element=>{const r=element.getBoundingClientRect(); const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {tag:hit?.tagName || '', matches:hit===element || element.contains(hit)};};
     const listActive=document.querySelector('[data-collection-layout="list"]')?.classList.contains('active');
-    return {hash:location.hash,query:query?.value,status:status?.dataset.collectionStatusChip,layout:listActive?'list':'grid',visible:document.querySelectorAll('.inventory-card').length,queryHit:query?probe(query):null,statusHit:status?probe(status):null,appReplacements:window.__appReplacements,errors:window.__uiErrors};
+    return {hash:location.hash,query:query?.value,status:status?.dataset.collectionStatusChip,layout:listActive?'list':'grid',visible:document.querySelectorAll('.inventory-card, .inventory-tile').length,queryHit:query?probe(query):null,statusHit:status?probe(status):null,appReplacements:window.__appReplacements,errors:window.__uiErrors};
   })()`);
 }
 
