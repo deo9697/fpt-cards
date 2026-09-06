@@ -191,21 +191,21 @@ export function collectionCardWithLocalizedPrintings(card, language = 'Italiano'
 
 export function localizeSetCode(setCode, targetLanguageCode = 'IT') {
   const normalized = normalizeSetCode(setCode);
-  const match = normalized.match(/^([A-Z0-9]+)-([A-Z]{2})(\d{3,4}[A-Z]?)$/);
+  const match = normalized.match(/^([A-Z0-9]+)-([A-Z]{2})([A-Z]{0,2}\d{1,4}[A-Z]?)$/);
   if (!match || !['EN','IT','FR','DE','SP','PT'].includes(targetLanguageCode)) return normalized;
   return `${match[1]}-${targetLanguageCode}${match[3]}`;
 }
 
 export function setCodeMatchesLanguage(setCode, language) {
   const expected = SET_LANGUAGE_CODES.get(String(language || '').trim());
-  const marker = normalizeSetCode(setCode).match(/^[A-Z0-9]+-([A-Z]{2})\d{3,4}[A-Z]?$/)?.[1];
+  const marker = normalizeSetCode(setCode).match(/^[A-Z0-9]+-([A-Z]{2})[A-Z]{0,2}\d{1,4}[A-Z]?$/)?.[1];
   return !expected || !marker || marker === expected;
 }
 
 function localizeCatalogPrinting(printing, localizedSetCode) {
   const setCode = normalizeSetCode(localizedSetCode);
   const prefix = setCode.split('-')[0];
-  const language = setCode.match(/-([A-Z]{2})\d/)?.[1] || '';
+  const language = setCode.match(/-([A-Z]{2})[A-Z]{0,2}\d/)?.[1] || '';
   return {
     ...printing,
     setCode,
@@ -243,7 +243,11 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
 }
 
 function catalogSetCodeCandidates(code) {
-  const output=[code]; const localized=code.match(/^(.+)-(IT|FR|DE|SP|PT)(\d{1,4}[A-Z]?)$/);
+  // Konami usa anche codici tipo "YS13-ITV04" o "L5DD-ITS04": una lettera di
+  // categoria tra la sigla lingua e il numero (Speed Duel, Structure/Starter
+  // Deck a più mazzi). Senza [A-Z]{0,2} qui il fallback IT->EN non scattava
+  // e queste carte restavano NOT_FOUND pur essendo lette correttamente.
+  const output=[code]; const localized=code.match(/^(.+)-(IT|FR|DE|SP|PT)([A-Z]{0,2}\d{1,4}[A-Z]?)$/);
   if(localized)output.push(`${localized[1]}-EN${localized[3]}`);
   return output;
 }
