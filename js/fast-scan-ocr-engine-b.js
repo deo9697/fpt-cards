@@ -2,6 +2,23 @@ export const PADDLE_SDK_URL='https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-j
 export const PADDLE_DET_MODEL_URL='https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_tiny_det_onnx_infer.tar';
 export const PADDLE_REC_MODEL_URL='https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_tiny_rec_onnx_infer.tar';
 export const PADDLE_WASM_BASE_URL='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
+// L'inferenza gira in un Web Worker dedicato così ogni scatto non blocca il
+// thread principale (HUD, animazioni) per la durata della predict(). Un
+// Worker però non può puntare direttamente a uno script di un altro
+// dominio anche con CORS — va scaricato una volta e avvolto in un blob:
+// URL locale. Il nome del file è l'hash del bundler per QUESTA versione
+// del pacchetto: se PADDLE_SDK_URL cambia versione, verificare che esista
+// ancora a questo percorso (altrimenti prepareWorkerBlobUrl() fallisce e
+// si torna semplicemente al thread principale, vedi prepare()).
+const PADDLE_WORKER_ENTRY_URL=new URL('./assets/worker-entry-C9UNuyOJ.js',new URL('/npm/@paddleocr/paddleocr-js@0.4.2/dist/index.mjs','https://cdn.jsdelivr.net').href).href;
+let workerBlobUrlPromise=null;
+function prepareWorkerBlobUrl(){
+  if(!workerBlobUrlPromise)workerBlobUrlPromise=(async()=>{
+    const scriptText=await(await fetch(PADDLE_WORKER_ENTRY_URL)).text();
+    return URL.createObjectURL(new Blob([scriptText],{type:'text/javascript'}));
+  })().catch(error=>{workerBlobUrlPromise=null;throw error;});
+  return workerBlobUrlPromise;
+}
 
 function weightedConfidence(items=[]){let score=0,weight=0;for(const item of items){const text=String(item?.text||''),itemWeight=Math.max(1,text.length),confidence=Number(item?.score);if(Number.isFinite(confidence)){score+=(confidence<=1?confidence*100:confidence)*itemWeight;weight+=itemWeight;}}return weight?Math.round(score/weight*100)/100:0;}
 function readItems(result){const candidates=[result?.items,result?.texts,result?.data,result];const items=candidates.find(value=>Array.isArray(value))||[];return items.filter(item=>item&&typeof item==='object'&&'text' in item);}
@@ -15,7 +32,18 @@ export class PaddleOcrEngine {
   async prepare(){
     if(this.engine)return;
     if(this.preparing)return this.preparing;
-    this.preparing=(async()=>{const module=await this.loader(),PaddleOCR=module.PaddleOCR||module.default?.PaddleOCR||module.default;if(!PaddleOCR?.create)throw new Error('PaddleOCR.js non espone PaddleOCR.create');this.engine=await PaddleOCR.create({textDetectionModelName:'PP-OCRv6_tiny_det',textRecognitionModelName:'PP-OCRv6_tiny_rec',textDetectionModelAsset:{url:PADDLE_DET_MODEL_URL},textRecognitionModelAsset:{url:PADDLE_REC_MODEL_URL},worker:false,ortOptions:{backend:'wasm',wasmPaths:PADDLE_WASM_BASE_URL,numThreads:1,simd:true}});})();
+    this.preparing=(async()=>{
+      const module=await this.loader(),PaddleOCR=module.PaddleOCR||module.default?.PaddleOCR||module.default;
+      if(!PaddleOCR?.create)throw new Error('PaddleOCR.js non espone PaddleOCR.create');
+      const baseOptions={textDetectionModelName:'PP-OCRv6_tiny_det',textRecognitionModelName:'PP-OCRv6_tiny_rec',textDetectionModelAsset:{url:PADDLE_DET_MODEL_URL},textRecognitionModelAsset:{url:PADDLE_REC_MODEL_URL},ortOptions:{backend:'wasm',wasmPaths:PADDLE_WASM_BASE_URL,numThreads:1,simd:true}};
+      try{
+        const blobUrl=await prepareWorkerBlobUrl();
+        this.engine=await PaddleOCR.create({...baseOptions,worker:{createWorker:()=>new Worker(blobUrl,{type:'module'})}});
+      }catch(error){
+        console.warn('[FastScan] OCR worker non disponibile, torno al thread principale',error);
+        this.engine=await PaddleOCR.create({...baseOptions,worker:false});
+      }
+    })();
     try{await this.preparing;}catch(error){this.engine=null;throw error;}finally{this.preparing=null;}
   }
   async recognize(canvas){if(!canvas?.width||!canvas?.height)throw new Error('Crop OCR non disponibile');await this.prepare();const response=await this.engine.predict(canvas,{textRecScoreThresh:0}),result=Array.isArray(response)?response[0]:response,items=readItems(result).sort((left,right)=>leftEdge(left)-leftEdge(right)),selected=selectCodeItems(items),text=selected.map(item=>String(item.text||'').trim()).filter(Boolean).join('');return {text,confidence:weightedConfidence(selected),engine:'paddle'};}
