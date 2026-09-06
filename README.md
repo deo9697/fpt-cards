@@ -63,6 +63,8 @@ Generare le chiavi localmente eseguendo `powershell -ExecutionPolicy Bypass -Fil
 
 Creare inoltre un Database Webhook Supabase per INSERT e UPDATE su `public.loans`, diretto a `https://DOMINIO/api/send-push`, con header `x-webhook-secret` uguale a `PUSH_WEBHOOK_SECRET`.
 
+Se è stato applicato anche `supabase-notifications-center.sql` (usato da market alert, condivisione raccolta, ecc.), creare un secondo Database Webhook per INSERT su `public.notifications`, diretto allo stesso `https://DOMINIO/api/send-push` con lo stesso header — senza questo webhook, `/api/send-push` non viene mai chiamato per queste notifiche e restano solo in-app (visibili in Altro → Richieste/notifiche, ma senza push).
+
 Senza configurazione Supabase l'app continua a funzionare in modalità locale.
 
 ## Market Watch Core (pre-deploy)
