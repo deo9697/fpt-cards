@@ -1545,11 +1545,17 @@ img.card-image-unavailable { opacity: 0; }
 /* Market Watch Core */
 .market-page { position:relative;isolation:isolate; }
 .market-page::before { content:'';position:absolute;z-index:-1;inset:-30px;pointer-events:none;background:radial-gradient(circle at 78% 4%,#7d2fb32b,transparent 30%),radial-gradient(circle at 10% 28%,#244a5b24,transparent 28%); }
-.market-hero { position:relative; margin-bottom:16px; padding:22px 18px 20px; border-radius:20px; overflow:hidden; text-align:center; background:radial-gradient(120% 140% at 20% -10%,#3a2359 0%,#1a1226 55%,#0d0a16 100%); border:1px solid #ffffff14; }
+.market-hero { position:relative; margin-bottom:16px; padding:0 0 20px; border-radius:20px; overflow:hidden; text-align:center; background:radial-gradient(120% 140% at 20% -10%,#3a2359 0%,#1a1226 55%,#0d0a16 100%); border:1px solid #ffffff14; }
 .market-hero::before { content:''; position:absolute; inset:0; background:repeating-linear-gradient(115deg,#ffffff06 0 2px,transparent 2px 26px); pointer-events:none; }
 .market-hero>* { position:relative; }
+/* Zona illustrazione isolata dal resto della card: prima l'immagine di sfondo
+   copriva l'intera testata (inset:0 sull'header), quindi il pannello delle
+   statistiche ci finiva sopra a metà e ne nascondeva la parte più leggibile.
+   Ora l'arte vive solo qui, con un fade più corto che si dissolve nello sfondo
+   scuro della card prima delle statistiche, che restano sotto su base piena. */
+.market-hero-art-zone { position:relative; min-height:190px; padding:22px 18px 18px; overflow:hidden; }
 .market-hero-eyebrow { display:block; margin:0 0 14px; font-size:.62rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#c9a8ff; }
-.market-hero-art { position:absolute; inset:0; background-image:linear-gradient(180deg,#0d0a16f0 0%,#0d0a1690 26%,#0d0a1640 48%,#0d0a16d8 82%,#0d0a16f5 100%),url('assets/market-watch-dan.png'); background-size:cover,cover; background-position:center,center 18%; background-repeat:no-repeat,no-repeat; }
+.market-hero-art { position:absolute; inset:0; background-image:linear-gradient(180deg,#0d0a16b0 0%,#0d0a1650 24%,#0d0a1633 44%,#0d0a1692 74%,#0d0a16f8 100%),url('assets/market-watch-dan.png'); background-size:cover,cover; background-position:center,center 18%; background-repeat:no-repeat,no-repeat; }
 .market-hero-particles { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
 .market-hero-particle { position:absolute; bottom:-10px; border-radius:50%; background:radial-gradient(circle,#ffe9a8 0%,#e8c766 55%,transparent 75%); opacity:0; animation:market-hero-rise linear infinite; }
 @keyframes market-hero-rise { 0% { transform:translateY(0) scale(1); opacity:0; } 10% { opacity:.85; } 90% { opacity:.3; } 100% { transform:translateY(-140px) scale(.4); opacity:0; } }
@@ -1561,7 +1567,7 @@ img.card-image-unavailable { opacity: 0; }
 @keyframes market-hero-coin-fall { 0% { top:-12%; opacity:0; transform:rotate(0deg); } 10% { opacity:1; } 88% { opacity:1; } 100% { top:112%; opacity:0; transform:rotate(480deg); } }
 .market-hero-label { display:block; font-size:.78rem; color:#c9bfe0; margin-bottom:4px; }
 .market-hero-value { display:block; font-size:clamp(1.7rem,5vw,2.3rem); font-weight:800; margin-bottom:12px; }
-.market-hero-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-bottom:14px; border:1px solid #ffffff1c; border-radius:14px; background:#0a0713a3; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); overflow:hidden; }
+.market-hero-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin:0 18px 14px; border:1px solid #ffffff1c; border-radius:14px; background:#15102390; overflow:hidden; }
 .market-hero-metric { display:grid; gap:2px; padding:9px 6px; text-align:center; }
 .market-hero-metric+.market-hero-metric { border-left:1px solid #ffffff1c; }
 .market-hero-metric small { font-size:.56rem; color:#a89bc4; text-transform:uppercase; letter-spacing:.03em; }
@@ -1766,6 +1772,7 @@ button.market-row:hover { background:#15121d; }
 .share-owner-modal p { color: var(--muted); font-size: .8rem; }
 .share-link-box { display: flex; gap: 8px; margin: 14px 0; }
 .share-link-box input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #0d0f18; color: var(--text); font-size: .78rem; }
+.share-send-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-bottom: 10px; }
 .share-owner-actions { display: flex; gap: 8px; }
 .share-owner-actions .btn { flex: 1; }
 .share-owner-actions .btn.danger { border-color: #4a1f2b; color: var(--danger); }

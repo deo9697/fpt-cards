@@ -559,6 +559,7 @@ function bind() {
     try { await navigator.clipboard.writeText(field.value); toast('Link copiato'); }
     catch { field.select(); toast('Seleziona e copia il link'); }
   });
+  document.querySelector('[data-share-collection-link]')?.addEventListener('click', () => void shareCollectionShareLink());
   document.querySelectorAll('[data-mark-request-seen]').forEach(button => button.addEventListener('click', async () => {
     try { await api.markCollectionShareRequestSeen(button.dataset.markRequestSeen); await loadCollectionShareRequests(); render(); }
     catch (error) { toast(error.message || 'Operazione non riuscita'); }
@@ -746,6 +747,15 @@ async function generateCollectionShareLink() {
   finally { collectionSharePending = false; render(); }
 }
 
+async function shareCollectionShareLink() {
+  if (!collectionShareLink) return;
+  const url = collectionShareUrl(collectionShareLink.id);
+  try {
+    if (navigator.share) { await navigator.share({ title:'La mia raccolta F.P.T Cards', text:'Dai un\'occhiata alle mie carte e dimmi cosa ti interessa', url }); return; }
+    await navigator.clipboard.writeText(url); toast('Link copiato negli appunti');
+  } catch (error) { if (error?.name !== 'AbortError') toast('Condivisione non riuscita'); }
+}
+
 async function revokeCollectionShareLink() {
   if (!collectionShareLink) return;
   collectionSharePending = true; render();
@@ -762,6 +772,7 @@ function collectionShareModalView() {
     <p>Chi apre questo link vede le tue carte (${esc(GAMES[state.game]?.short || state.game)}) e può segnalarti quali gli interessano — non serve un account F.P.T Cards.</p>
     ${collectionShareLink ? `
       <div class="share-link-box"><input type="text" readonly value="${esc(url)}" data-share-url onclick="this.select()"><button type="button" class="btn secondary small" data-copy-share-link>Copia</button></div>
+      <button type="button" class="btn share-send-btn" data-share-collection-link>${icon('share')} Condividi con…</button>
       <div class="share-owner-actions"><button type="button" class="btn secondary" data-regenerate-share ${collectionSharePending ? 'disabled' : ''}>Rigenera</button><button type="button" class="btn secondary danger" data-revoke-share ${collectionSharePending ? 'disabled' : ''}>Revoca</button></div>
     ` : `<button type="button" class="btn" data-generate-share ${collectionSharePending ? 'disabled' : ''}>${collectionSharePending ? 'Genero…' : 'Genera link'}</button>`}
   </aside></div>`;
