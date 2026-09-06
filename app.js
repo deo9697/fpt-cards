@@ -10,7 +10,7 @@ import { triggerRickrollVideo } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
-import { DeckController } from './js/decks.js';
+import { DeckController, deckUsageIndex } from './js/decks.js';
 import { MarketWatchController } from './js/market-watch.js';
 import { CollectionShareController } from './js/collection-share.js';
 
@@ -211,7 +211,7 @@ function pageContent() {
   if (page === 'team') return teamView();
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScan.view();
-  if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount);
+  if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch.view();
   if (page === 'decks') return decks.view();
   if (page === 'requests') return requestsView();
@@ -705,7 +705,7 @@ function installCollectionControls() {
 function refreshCollectionResults() {
   const results = document.querySelector('[data-collection-results]');
   if (!results) return;
-  results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount);
+  results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => {
     selectedCollectionItem = button.dataset.collectionItem;
     render();

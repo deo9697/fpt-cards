@@ -1,5 +1,6 @@
 import { esc } from './core.js';
 import { icon } from './icons.js';
+import { deckNamesForCollectionItem } from './decks.js';
 
 const STATUS_CHIPS = [
   { value:'all', label:'Tutte' },
@@ -14,7 +15,7 @@ const SORT_OPTIONS = [
   { value:'quantity-desc', label:'Più possedute' }
 ];
 
-export function collectionView(collection, filters, game, connected, error = '', visibleCount = COLLECTION_PAGE_SIZE) {
+export function collectionView(collection, filters, game, connected, error = '', visibleCount = COLLECTION_PAGE_SIZE, deckIndex = null) {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const owners = [...new Map(team.map(item => [item.ownerSlug, item.ownerName])).entries()];
@@ -36,7 +37,7 @@ export function collectionView(collection, filters, game, connected, error = '',
           <div class="view-toggle" aria-label="Visualizzazione"><button type="button" data-collection-layout="grid" class="${filters.layout === 'grid' ? 'active' : ''}" aria-label="Griglia">▦</button><button type="button" data-collection-layout="list" class="${filters.layout === 'list' ? 'active' : ''}" aria-label="Lista">☷</button></div>
         </div>
       </div>
-      <div data-collection-results>${collectionResultsView(collection, filters, game, connected, visibleCount)}</div>
+      <div data-collection-results>${collectionResultsView(collection, filters, game, connected, visibleCount, deckIndex)}</div>
     </section>
   </section>`;
 }
@@ -56,11 +57,17 @@ function computeCollectionItems(collection, filters, game) {
   return { source, all: sortItems(source.filter(item => matches(item, filters)), filters.sort) };
 }
 
-export function collectionResultsView(collection, filters, game, connected, visibleCount = COLLECTION_PAGE_SIZE) {
+export function collectionResultsView(collection, filters, game, connected, visibleCount = COLLECTION_PAGE_SIZE, deckIndex = null) {
   const { source, all } = computeCollectionItems(collection, filters, game);
   const visible = all.slice(0, visibleCount);
   const isList = filters.layout === 'list';
-  return `${all.length ? `${!isList ? azIndexView(all) : ''}<div class="inventory-grid ${isList ? 'list' : 'tiles'}">${visible.map(item => isList ? inventoryCard(item, filters.scope) : inventoryTile(item, filters.scope)).join('')}</div>${visible.length < all.length ? `<div class="inventory-load-more" data-collection-sentinel><span class="loading-spinner"></span></div>` : ''}` : emptyState(source.length, filters.scope, connected)}
+  // L'indicazione "nel mazzo X" ha senso solo per la propria raccolta: in
+  // "team" un item è già un aggregato di più proprietari, quindi il mazzo
+  // di uno solo di loro non è un'informazione affidabile da mostrare lì.
+  const withDeckNames = filters.scope === 'mine' && deckIndex
+    ? item => deckNamesForCollectionItem(deckIndex, item)
+    : () => [];
+  return `${all.length ? `${!isList ? azIndexView(all) : ''}<div class="inventory-grid ${isList ? 'list' : 'tiles'}">${visible.map(item => isList ? inventoryCard(item, filters.scope, withDeckNames(item)) : inventoryTile(item, filters.scope, withDeckNames(item))).join('')}</div>${visible.length < all.length ? `<div class="inventory-load-more" data-collection-sentinel><span class="loading-spinner"></span></div>` : ''}` : emptyState(source.length, filters.scope, connected)}
     <div class="collection-count"><strong>${all.length}</strong> printing · disponibilità calcolata dai prestiti</div>`;
 }
 
@@ -243,15 +250,16 @@ function itemAvailability(item) {
   return item.quantityAvailable === 0 ? 'unavailable' : item.quantityLoaned + item.quantityReserved > 0 ? 'partial' : 'available';
 }
 
-function inventoryTile(item, scope) {
+function inventoryTile(item, scope, deckNames = []) {
   const availability = itemAvailability(item);
   return `<button type="button" class="inventory-tile" data-collection-item="${esc(item.id)}">
     <span class="inventory-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}${scope === 'mine' ? `<b class="inventory-tile-qty">${item.quantityOwned}×</b>` : ''}<i class="inventory-tile-status ${availability}" title="${esc(availabilityLabel(availability))}"></i></span>
     <small class="inventory-tile-name">${esc(item.cardName)}</small>
+    ${deckNames.length ? `<small class="inventory-tile-deck" title="${esc(deckHintText(deckNames))}">${icon('deck')} ${esc(deckNames[0])}${deckNames.length > 1 ? ` +${deckNames.length - 1}` : ''}</small>` : ''}
   </button>`;
 }
 
-function inventoryCard(item, scope) {
+function inventoryCard(item, scope, deckNames = []) {
   const availability = itemAvailability(item);
   const owner = scope === 'team' ? `${item.items.length} ${item.items.length === 1 ? 'proprietario' : 'proprietari'}` : esc(item.ownerName);
   return `<button type="button" class="inventory-card ${availability}" data-collection-item="${esc(item.id)}">
@@ -262,9 +270,14 @@ function inventoryCard(item, scope) {
       <em>${item.setName ? esc(item.setName) : owner}</em>
       <span class="inventory-quantities">${scope === 'mine' ? `<b>Possedute <i>${item.quantityOwned}</i></b>` : ''}<b>Disponibili <i>${item.quantityAvailable}</i></b></span>
       <i class="inventory-status-pill ${availability}">${availabilityLabel(availability)}</i>
+      ${deckNames.length ? `<i class="inventory-deck-pill">${icon('deck')} ${esc(deckHintText(deckNames))}</i>` : ''}
     </span>
     <span class="inventory-chevron" aria-hidden="true">${icon('arrow')}</span>
   </button>`;
+}
+
+function deckHintText(deckNames) {
+  return deckNames.length === 1 ? `Nel mazzo ${deckNames[0]}` : `Nei mazzi ${deckNames.join(', ')}`;
 }
 
 function quantityDefinition(item) {

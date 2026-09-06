@@ -347,6 +347,26 @@ function borrowedForCard(card, loans, reference, game) {
 }
 
 function deckCardIdentityKey(card) { const game = card?.game || 'yugioh', id = canonicalCatalogCardId(card?.catalogCardId, game), name = normalizeDeckCardName(card?.cardName); return id ? `id:${game}:${id}` : `name:${game}:${name}`; }
+
+// Reverse of deckAvailability: for a Raccolta card, which of the owner's own
+// mazzi already use it. Keyed with the same identity as deckAvailability so
+// a card matches a deck slot regardless of which printing is on file.
+export function deckUsageIndex(decks, ownerSlug, game) {
+  const index = new Map();
+  for (const deck of decks || []) {
+    if (deck.game !== game || (deck.ownerSlug || '') !== ownerSlug) continue;
+    for (const card of deck.cards || []) {
+      const key = deckCardIdentityKey({ ...card, game });
+      const names = index.get(key) || new Set();
+      names.add(deck.name);
+      index.set(key, names);
+    }
+  }
+  return index;
+}
+export function deckNamesForCollectionItem(index, item) {
+  return [...(index?.get(deckCardIdentityKey(item)) || [])];
+}
 export function sameDeckCardIdentity(card, item) {
   const game = card?.game || item?.game || 'yugioh';
   const cardHasId = validCatalogCardId(card?.catalogCardId, game), itemHasId = validCatalogCardId(item?.catalogCardId, game);
