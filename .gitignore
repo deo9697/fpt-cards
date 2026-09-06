@@ -1,7 +1,7 @@
 .agents/
 .chrome-test/
 node_modules/
-.netlify/
+.vercel/
 .env
 .env.*
 !.env.example

@@ -33,7 +33,7 @@ Per nascondere all'amministratore gli scambi tra altri membri, eseguire `supabas
 
 Per aggiornamenti immediati e notifiche mentre la PWA è attiva, eseguire `supabase-realtime-upgrade.sql`.
 
-Per notifiche Web Push ad app chiusa, eseguire `supabase-web-push-upgrade.sql` e configurare le variabili Netlify descritte nella sezione Web Push.
+Per notifiche Web Push ad app chiusa, eseguire `supabase-web-push-upgrade.sql` e configurare le variabili Vercel descritte nella sezione Web Push.
 
 La migration della raccolta personale/team è preparata in `supabase-milestone-2-collection.sql`, ma non è ancora applicata al database reale: eseguirla soltanto dopo la revisione pre-deploy. Aggiunge `card_printings`, `collection_items`, le RPC protette e il collegamento opzionale ai prestiti senza modificare lo storico esistente.
 
@@ -53,15 +53,15 @@ In production il codice OCR esatto ha precedenza assoluta sulle correzioni: look
 
 Prima del preprocessing viene eliminato soltanto il 5% superiore e inferiore della ROI. Il precedente ritaglio al 46% dell'altezza poteva mozzare la parte inferiore dei caratteri e impedire il riconoscimento. L'input OCR viene portato a 900 px con margine bianco, quindi il canvas temporaneo viene subito liberato.
 
-Su Vercel gli endpoint equivalenti sono `/api/push-public-key` e `/api/send-push`. Le stesse variabili d'ambiente devono essere configurate nel progetto Vercel.
+## Web Push su Vercel
 
-## Web Push su Netlify
+Gli endpoint sono `/api/push-public-key` e `/api/send-push` (vedi `api/`).
 
 Variabili richieste: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `PUSH_WEBHOOK_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
-Generare le chiavi localmente eseguendo `powershell -ExecutionPolicy Bypass -File scripts/generate-vapid.ps1`, quindi copiarle direttamente nelle variabili Netlify senza inserirle nel repository.
+Generare le chiavi localmente eseguendo `powershell -ExecutionPolicy Bypass -File scripts/generate-vapid.ps1`, quindi copiarle direttamente nelle variabili d'ambiente del progetto Vercel senza inserirle nel repository.
 
-Creare inoltre un Database Webhook Supabase per INSERT e UPDATE su `public.loans`, diretto a `https://DOMINIO/.netlify/functions/send-push`, con header `x-webhook-secret` uguale a `PUSH_WEBHOOK_SECRET`.
+Creare inoltre un Database Webhook Supabase per INSERT e UPDATE su `public.loans`, diretto a `https://DOMINIO/api/send-push`, con header `x-webhook-secret` uguale a `PUSH_WEBHOOK_SECRET`.
 
 Senza configurazione Supabase l'app continua a funzionare in modalità locale.
 

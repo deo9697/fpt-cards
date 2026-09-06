@@ -32,7 +32,7 @@ try {
   }
 
   Write-Host ''
-  Write-Host 'Copia questi valori direttamente in Netlify > Environment variables:' -ForegroundColor Green
+  Write-Host 'Copia questi valori direttamente in Vercel > Settings > Environment Variables:' -ForegroundColor Green
   Write-Host ('VAPID_PUBLIC_KEY=' + (ConvertTo-Base64Url $publicKey))
   Write-Host ('VAPID_PRIVATE_KEY=' + (ConvertTo-Base64Url $privateKey))
   Write-Host ('PUSH_WEBHOOK_SECRET=' + (ConvertTo-Base64Url $secret))
