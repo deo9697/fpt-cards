@@ -609,16 +609,19 @@ function installCollectionControls() {
   root.addEventListener('input', event => {
     if (!event.target.matches('[data-collection-query]')) return;
     collectionFilters.query = event.target.value;
-    if (document.querySelector('[data-collection-results]')) refreshCollectionResults();
-    else {
-      clearTimeout(collectionSearchTimer);
-      collectionSearchTimer = setTimeout(() => {
+    // Filtering+sorting+re-rendering the whole grid on every keystroke was
+    // visibly janky on a large collection — debounce both paths the same way
+    // instead of only the (rarer) first-render path.
+    clearTimeout(collectionSearchTimer);
+    collectionSearchTimer = setTimeout(() => {
+      if (document.querySelector('[data-collection-results]')) refreshCollectionResults();
+      else {
         render();
         const field = document.querySelector('[data-collection-query]');
         field?.focus();
         field?.setSelectionRange(field.value.length, field.value.length);
-      }, 220);
-    }
+      }
+    }, 220);
   });
   root.addEventListener('change', event => {
     if (event.target.matches('#collection-owner')) collectionFilters.owner = event.target.value;

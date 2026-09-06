@@ -68,7 +68,8 @@ try {
   await delay(350);
   const afterTyping = await snapshot(evaluate);
 
-  await evaluate(`(()=>{const field=document.querySelector('#collection-status'); field.value='unavailable'; field.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  const statusChipPoint = await center(evaluate, '[data-collection-status-chip="unavailable"]');
+  await click(send, statusChipPoint);
   await delay(100);
   const afterStatus = await snapshot(evaluate);
 
@@ -115,11 +116,11 @@ async function waitForTarget(port) {
 async function snapshot(evaluate) {
   return evaluate(`(()=>{
     const query=document.querySelector('[data-collection-query]');
-    const status=document.querySelector('#collection-status');
+    const status=document.querySelector('[data-collection-status-chip].active');
     const grid=document.querySelector('.inventory-grid');
     const probe=element=>{const r=element.getBoundingClientRect(); const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {tag:hit?.tagName || '', matches:hit===element || element.contains(hit)};};
     const listActive=document.querySelector('[data-collection-layout="list"]')?.classList.contains('active');
-    return {hash:location.hash,query:query?.value,status:status?.value,layout:listActive?'list':'grid',visible:document.querySelectorAll('.inventory-card').length,queryHit:query?probe(query):null,statusHit:status?probe(status):null,appReplacements:window.__appReplacements,errors:window.__uiErrors};
+    return {hash:location.hash,query:query?.value,status:status?.dataset.collectionStatusChip,layout:listActive?'list':'grid',visible:document.querySelectorAll('.inventory-card').length,queryHit:query?probe(query):null,statusHit:status?probe(status):null,appReplacements:window.__appReplacements,errors:window.__uiErrors};
   })()`);
 }
 
