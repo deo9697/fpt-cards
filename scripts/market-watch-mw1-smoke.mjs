@@ -139,7 +139,7 @@ assert(rollbackSql.includes('create or replace function public.list_market_watch
 assert(rollbackSql.includes('drop view if exists public.market_derived_price_snapshots'),'rollback MW1 non rimuove le viste derivate');
 assert(!/delete\s+from\s+(public\.)?(market_provider_printings|market_price_snapshots|market_price_events|market_provider_sync_runs)/i.test(rollbackSql),'rollback MW1 elimina dati storici');
 assert(!/from market_price_snapshots s/i.test(operationalSql),'query operativa usa snapshot superseded');
-assert(moversSql.includes('from market_derived_price_snapshots s'),'dashboard include prezzi aggregate nei mover');
+assert(moversSql.includes('from market_active_price_snapshots s'),'dashboard include prezzi aggregate nei mover');
 const dryTargetBody=edgeSource.slice(edgeSource.indexOf('async function dryTargetCardmarket'),edgeSource.indexOf('async function resolveCardmarketTargets'));
 assert(dryTargetBody.includes('listCardPrintings')&&dryTargetBody.includes('loadCatalog')&&dryTargetBody.includes('loadPrices'),'dry target incompleto');
 assert(!/\brpc\(|\brest\(/.test(dryTargetBody),'dry target contiene una scrittura DB');
