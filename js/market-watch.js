@@ -14,14 +14,21 @@ export class MarketWatchController {
   }
   async load(){if(this.loadInFlight)return this.loadInFlight;this.loading=true;const request=(async()=>{try{const game=this.getGame(),moversRequest=this.api.marketDashboardMovers?this.api.marketDashboardMovers(game).catch(()=>[]):Promise.resolve([]),[payload,movers]=await Promise.all([this.api.marketWatch(game),moversRequest]),next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}this.data=next;this.error='';void this.loadFeaturedHistories();}catch(error){this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}finally{this.loading=false;}return this.data;})();this.loadInFlight=request;try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}}
   dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
-  // Cards where Cardmarket has a real product match but under a different
-  // rarity than the one we have on file: resolveCardmarketPrinting() leaves
-  // these unresolved on purpose rather than guessing, so without this queue
-  // they'd just silently show no price forever unless someone happened to
-  // open that exact card's detail. Kept as a permanent, always-available
-  // section (not a one-off cleanup) since new mismatches can appear any time
-  // a new printing or a Cardmarket catalog change introduces one.
-  rarityMismatchQueue(){return this.data.items.filter(hasRarityMismatchCandidates);}
+  // Cards where the resolver deliberately refused to guess a price:
+  // - provider_rarity_mismatch: Cardmarket has a real match but under a
+  //   different rarity than the one we have on file.
+  // - AMBIGUOUS (multiple_provider_expansions / internal_rarity_conflict_
+  //   provider_rarity_missing): resolveCardmarketPrinting() found more than
+  //   one plausible product and can't tell which is right on its own.
+  // All three leave the printing unresolved on purpose rather than guessing.
+  // Before this queue existed for AMBIGUOUS too, those cards just silently
+  // showed no price forever with no way for anyone to notice or act on it —
+  // confirmed by reading resolveCardmarketPrinting(): AMBIGUOUS never had a
+  // reason:'provider_rarity_mismatch', so the old queue (which only checked
+  // that one reason) never caught it. Kept as a permanent, always-available
+  // section (not a one-off cleanup) since new cases can appear any time a
+  // new printing or a Cardmarket catalog change introduces one.
+  rarityMismatchQueue(){return this.data.items.filter(needsMappingReview);}
   // Aggregate items only ever surface ONE candidate (the Cardmarket product
   // the resolver itself already matched at expansion level) — confirming here
   // doesn't ask the user to pick anything, it just accepts what the resolver
@@ -83,7 +90,7 @@ export class MarketWatchController {
           <span class="market-detail-hero-sub">${priceTypeLabel(primaryProvider?.[1]?.type)}${primaryProvider?` · ${providerName(primaryProvider[0])}`:''} · ${formatTimestamp(item.latestAt)}</span>
         </div>
       </div>
-      ${aggregate?aggregateNotice(item):hasRarityMismatchCandidates(item)?rarityMismatchNotice(item):''}
+      ${aggregate?aggregateNotice(item):needsMappingReview(item)?mappingIssueNotice(item):''}
       <section class="market-chart">
         <div class="market-chart-head"><h3>Storico prezzo</h3>${aggregate?'':`<div class="market-range-tabs" role="group" aria-label="Intervallo storico">${RANGES.map(range=>`<button type="button" class="${this.historyRange===range.days?'active':''}" data-market-range="${range.days}">${range.label}</button>`).join('')}</div>`}</div>
         ${aggregate?'<p class="market-detail-empty">Trend escluso: il prezzo non è specifico della printing.</p>':this.historyLoading?'<div class="loading-spinner"></div>':richPriceChart(stats)}
@@ -242,12 +249,32 @@ function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scop
   // hand via "Vedi", since nothing on the Cardmarket side states it.
   const ownRarity=item.rarity?`<br>La tua rarità: <strong>${esc(item.rarity)}</strong>.`:'';
   return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Prezzo Cardmarket aggregato</strong><br>Indicativo e non specifico per ${esc(labels.join(', ')||'la variante')}.${productNote} Non alimenta il valore preciso della raccolta, trend o mover.${ownRarity}</span></p>${mappingConfirmBlock(item)}`;}
-function hasRarityMismatchCandidates(item){return item.mappingReason==='provider_rarity_mismatch'&&Array.isArray(item.mappingEvidence?.candidates)&&item.mappingEvidence.candidates.length>0;}
+// Copre entrambi i motivi per cui resolveCardmarketPrinting() lascia una
+// printing senza prezzo invece di indovinare: mismatch di rarità dichiarato
+// da Cardmarket, e i due casi AMBIGUOUS (più espansioni provider possibili,
+// o rarità interna in conflitto senza che Cardmarket la dichiari). item.mappingStatus
+// è già 'manual' una volta confermata, quindi qui non ricompare più.
+function needsMappingReview(item){return item.mappingStatus!=='manual'&&(item.mappingReason==='provider_rarity_mismatch'||item.resolverStatus==='AMBIGUOUS');}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
     <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
-    ${rarityMismatchNotice(item)}
+    ${mappingIssueNotice(item)}
   </div>`;}
 function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
+// I due casi AMBIGUOUS non hanno un messaggio dedicato lato client da prima
+// d'ora: resolveCardmarketPrinting() li segnalava, ma senza nessuna coda che
+// li mostrasse la carta restava senza prezzo senza che nessuno se ne
+// accorgesse. Messaggio specifico per motivo, così chi legge sa cosa
+// verificare invece di un generico "qualcosa non va".
+function mappingIssueNotice(item){
+  if(item.mappingReason==='provider_rarity_mismatch')return rarityMismatchNotice(item);
+  const reason=item.mappingReason==='multiple_provider_expansions'
+    ? 'Cardmarket ha più espansioni possibili per questa carta e il sistema non può stabilire da solo quale sia quella giusta.'
+    : item.mappingReason==='internal_rarity_conflict_provider_rarity_missing'
+    ? 'In raccolta questa carta esiste con più rarità diverse, e su Cardmarket non è indicata la rarità: non è possibile scegliere automaticamente quale stai confermando.'
+    : 'Il prezzo non può essere assegnato automaticamente: serve una verifica manuale su Cardmarket.';
+  const ownRarity=item.rarity?`<br>La tua rarità: <strong>${esc(item.rarity)}</strong>.`:'';
+  return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Verifica manuale necessaria</strong><br>${esc(reason)}${ownRarity}</span></p>${mappingConfirmBlock(item)}`;
+}
 // Cardmarket only encodes rarity in a product's name when that expansion has
 // multiple print variants — plenty of real products carry none at all, which
 // otherwise leaves every candidate row showing the exact same name+expansion
@@ -265,7 +292,10 @@ function mappingCandidates(item){
 }
 function mappingConfirmBlock(item){
   const candidates=mappingCandidates(item);
-  if(!candidates.length)return '<p class="mapping-confirm-empty">Nessun candidato salvato per la conferma manuale: attendi il prossimo sync o verifica a mano su Cardmarket.</p>';
+  if(!candidates.length){
+    const searchUrl=item.cardName?`https://www.cardmarket.com/en/YuGiOh/Products/Search?searchString=${encodeURIComponent(item.cardName)}`:'';
+    return `<p class="mapping-confirm-empty">Nessun candidato salvato per la conferma manuale.${searchUrl?` <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Cerca "${esc(item.cardName)}" su Cardmarket</a>.`:' Attendi il prossimo sync o verifica a mano su Cardmarket.'}</p>`;
+  }
   return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${candidates.map(candidate=>`<div class="mapping-confirm-row"><span><strong>${esc(candidate.cardName||item.cardName)}</strong><small>${esc(candidate.expansion||'—')}${confirmCandidateDetail(candidate)}</small></span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
 }
 export function sortItems(items,mode='value'){return [...items].sort((a,b)=>{if(mode==='name')return a.cardName.localeCompare(b.cardName,'it');if(mode==='price')return (b.referencePrice??-1)-(a.referencePrice??-1);if(mode==='change'){const av=a.referencePrice!=null&&a.price24h!=null?a.referencePrice-a.price24h:-Infinity,bv=b.referencePrice!=null&&b.price24h!=null?b.referencePrice-b.price24h:-Infinity;return bv-av;}return ((b.referencePrice??-1)*b.ownedQuantity)-((a.referencePrice??-1)*a.ownedQuantity);});}
