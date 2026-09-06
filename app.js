@@ -1702,6 +1702,8 @@ async function start() {
 }
 start();
 window.addEventListener('hashchange', () => {
+  const shareMatch = location.hash.match(SHARE_HASH);
+  if (shareMatch) { void startGuestShare(shareMatch[1]); return; }
   const next = routeFromHash();
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();
