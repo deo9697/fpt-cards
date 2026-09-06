@@ -119,7 +119,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
   if(local.expansion)expansions.add(local.expansion);
   if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
   const hint=options.expansionHints?.get?.(setSeriesKey(printing.setCode||printing.set_code))||null;
-  const products=dedupeProducts((candidates||[]).filter((row:any)=>acceptedNames.has(norm(row.cardName||row.name))&&(
+  const products=dedupeProducts((candidates||[]).filter((row:any)=>acceptedNames.has(row._normName??norm(row.cardName||row.name))&&(
     [...expansions].some(expansion=>sameCardmarketExpansion(expansion as string,row.setName||row.expansion))||(hint&&String(row.providerExpansionId||row.provider_expansion_id||'')===hint.providerExpansionId)
   )));
   if(!products.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_product_not_found',{acceptedNames:[...acceptedNames].sort(),acceptedExpansions:[...expansions].sort(),expansionHint:hint});
@@ -177,7 +177,14 @@ function dedupeProducts(rows:any[]):any[]{const byId=new Map<string,any>();for(c
 function cardmarketNonSinglesUrl(value:string):string{try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
 function addExpansionName(values:Map<string,string>,row:any){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
 function cleanExpansionName(value:any):string{return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
-function normalizeCardmarketProduct(row:any,expansions:Map<string,string>){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`};}
+function normalizeCardmarketProduct(row:any,expansions:Map<string,string>){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`,
+  // norm() does Unicode NFD normalization + several regex passes — cheap once,
+  // but resolveCardmarketPrinting() used to call it fresh on every catalog row
+  // for EVERY target being resolved (T targets x N catalog rows), which is
+  // almost certainly what was burning the Edge Function's CPU-time budget on
+  // a real production-sized catalogue (confirmed via "CPU Time exceeded",
+  // 2026-09-06). Precomputing it once per row here turns that into O(N).
+  _normName:norm(parsed.cardName)};}
 function parseProductName(value:any){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/\bfoil\b/i.test(rarity)?true:null};}
 function numberFrom(row:any,keys:string[]):number|null{const raw=read(row,keys);if(raw==null||raw==='')return null;const value=Number(String(raw).replace(',','.'));return Number.isFinite(value)&&value>=0?value:null;}
 function read(row:any,keys:string[]):any{for(const key of keys)if(row?.[key]!=null&&row[key]!=='')return row[key];return null;}
@@ -192,9 +199,19 @@ async function safeText(response:any):Promise<string>{try{return (await response
 function validateOfficialCardmarketUrl(value:string){const url=new URL(value);if(url.protocol!=='https:'||!(url.hostname==='www.cardmarket.com'||url.hostname==='cardmarket.com'||url.hostname.endsWith('.cardmarket.com')||url.hostname==='downloads.s3.cardmarket.com'))throw new Error('URL Cardmarket non ufficiale rifiutato');}
 async function streamCardmarketRows(response:any,key:string,onRow:(row:any)=>void=()=>{}):Promise<{rows:number,createdAt:string}>{
   if(!response?.body)throw new Error(`Feed Cardmarket ${key} senza contenuto`);
-  const reader=response.body.getReader(),decoder=new TextDecoder();let header='',started=false,finished=false,inString=false,escaped=false,depth=0,object='',rows=0,createdAt='';
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  // Building each row's JSON text one character at a time via `object+=char`
+  // used to burn Edge Function CPU-time badly on Cardmarket's full catalogue
+  // (tens/hundreds of thousands of rows -> that many repeated string copies)
+  // and got the whole sync killed with "CPU Time exceeded" before it ever
+  // got to run a query. Tracking start/end indexes and slicing once per row
+  // (joining only the rare row that straddles two stream chunks) does the
+  // exact same boundary detection with none of the per-character copying.
+  let header='',started=false,finished=false,inString=false,escaped=false,depth=0,rows=0,createdAt='',parts:string[]=[],partStart=0;
   const consume=(text:string)=>{let index=0;if(!started){header+=text;const match=header.match(new RegExp(`"${key}"\\s*:\\s*\\[`));if(!match){if(header.length>131072)throw new Error(`Array ${key} non trovato nel feed Cardmarket`);return;}createdAt=header.match(/"createdAt"\s*:\s*"([^"]+)"/)?.[1]||'';index=match.index!+match[0].length;header=header.slice(index);text=header;index=0;header='';started=true;}
-    for(;index<text.length&&!finished;index++){const char=text[index];if(depth===0){if(char==='{'){depth=1;object='{';inString=false;escaped=false;}else if(char===']')finished=true;continue;}object+=char;if(inString){if(escaped)escaped=false;else if(char==='\\')escaped=true;else if(char==='"')inString=false;continue;}if(char==='"'){inString=true;continue;}if(char==='{')depth++;else if(char==='}'&&--depth===0){onRow(JSON.parse(object));rows++;object='';}}
+    if(depth>0)partStart=0;
+    for(;index<text.length&&!finished;index++){const char=text[index];if(depth===0){if(char==='{'){depth=1;partStart=index;inString=false;escaped=false;}else if(char===']')finished=true;continue;}if(inString){if(escaped)escaped=false;else if(char==='\\')escaped=true;else if(char==='"')inString=false;continue;}if(char==='"'){inString=true;continue;}if(char==='{')depth++;else if(char==='}'&&--depth===0){parts.push(text.slice(partStart,index+1));onRow(JSON.parse(parts.length>1?parts.join(''):parts[0]));rows++;parts=[];}}
+    if(depth>0)parts.push(text.slice(partStart));
   };
   while(true){const {value,done}=await reader.read();if(done)break;consume(decoder.decode(value,{stream:true}));}
   consume(decoder.decode());if(!started||!finished)throw new Error(`Feed Cardmarket ${key} incompleto`);return {rows,createdAt};
