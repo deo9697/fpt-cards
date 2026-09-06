@@ -95,15 +95,15 @@ class CardmarketPriceGuideProvider extends PriceProvider {
     console.log('[market-sync] loadCatalog: main catalog fetched',{ms:Date.now()-t0});
     const catalog:any[]=[];
     let scanned=0;
-    // TEMPORARY: dumping raw feed rows to find out whether Cardmarket's bulk
-    // JSON carries rarity in a dedicated field we've never read (we've only
-    // ever parsed it out of a "(V.n - Rarity)" suffix in `name`) — a real
-    // Cardmarket product PAGE for "Atori.MAR" showed exactly that suffix and
-    // an explicit Rarità field, yet our resolver got zero rarity from every
-    // candidate for it, so the raw feed's `name` likely differs from what
-    // the website page displays. Remove once the real field is found.
-    let loggedSample=false;
-    const catalogPayload=await streamCardmarketRows(catalogResponse,'products',(row:any)=>{scanned++;if(scanned%50000===0)console.log('[market-sync] loadCatalog: scanning',{scanned,retained:catalog.length,ms:Date.now()-t0});if(!loggedSample){loggedSample=true;console.log('[market-sync] DEBUG sample raw row',JSON.stringify(row).slice(0,2000));}if(String(row.name||'').toLowerCase().includes('atori'))console.log('[market-sync] DEBUG atori raw row',JSON.stringify(row).slice(0,2000));const parsed=parseProductName(row.name||''),name=norm(parsed.cardName);if(!wantedNames.size||wantedNames.has(name))catalog.push(normalizeCardmarketProduct(row,expansions));if(hintNames.has(name)){const candidate=normalizeCardmarketProduct(row,expansions),key=`${name}:${candidate.providerExpansionId}`;if(candidate.providerExpansionId&&!hintSeen.has(key)){hintSeen.add(key);hintProducts.push({cardName:candidate.cardName,setName:candidate.setName,providerExpansionId:candidate.providerExpansionId});}}});
+    // Confirmed 2026-09-06 by dumping a raw feed row: Cardmarket's bulk
+    // Product Catalogue has NO rarity anywhere (name is bare, e.g. "Enneacraft
+    // - Atori.MAR" — no "(V.n - Rarity)" suffix, no dedicated field). The
+    // "(V.1 - Ultra Rare)" title format only exists on the individual product
+    // PAGE, which this feed doesn't provide. So when multiple products share
+    // a name+expansion with no rarity to disambiguate them, there is no data
+    // this resolver can use to pick automatically — manual "Vedi" + visual
+    // confirm is the only option for those, not a parsing bug to fix here.
+    const catalogPayload=await streamCardmarketRows(catalogResponse,'products',(row:any)=>{scanned++;if(scanned%50000===0)console.log('[market-sync] loadCatalog: scanning',{scanned,retained:catalog.length,ms:Date.now()-t0});const parsed=parseProductName(row.name||''),name=norm(parsed.cardName);if(!wantedNames.size||wantedNames.has(name))catalog.push(normalizeCardmarketProduct(row,expansions));if(hintNames.has(name)){const candidate=normalizeCardmarketProduct(row,expansions),key=`${name}:${candidate.providerExpansionId}`;if(candidate.providerExpansionId&&!hintSeen.has(key)){hintSeen.add(key);hintProducts.push({cardName:candidate.cardName,setName:candidate.setName,providerExpansionId:candidate.providerExpansionId});}}});
     console.log('[market-sync] loadCatalog: main catalog parsed',{totalRows:catalogPayload.rows,retainedRows:catalog.length,ms:Date.now()-t0});
     if(catalogPayload.rows<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
     this.catalog=catalog;this.expansionHints=buildCardmarketExpansionHints(internalPrintings,hintProducts);

@@ -69,6 +69,14 @@ export class CardmarketPriceGuideProvider extends PriceProvider {
     const catalogResponse=await this.request(this.catalogUrl);
     if(!catalogResponse.ok)throw new ProviderHttpError(this.name,catalogResponse.status,'Product Catalogue non disponibile');
     const catalog=[];
+    // Confirmed 2026-09-06 by dumping a raw feed row: Cardmarket's bulk
+    // Product Catalogue has NO rarity anywhere (name is bare, e.g. "Enneacraft
+    // - Atori.MAR" — no "(V.n - Rarity)" suffix, no dedicated field). The
+    // "(V.1 - Ultra Rare)" title format only exists on the individual product
+    // PAGE, which this feed doesn't provide. So when multiple products share
+    // a name+expansion with no rarity to disambiguate them, there is no data
+    // this resolver can use to pick automatically — manual "Vedi" + visual
+    // confirm is the only option for those, not a parsing bug to fix here.
     const catalogPayload=await streamCardmarketRows(catalogResponse,'products',row=>{const parsed=parseProductName(row.name||''),name=norm(parsed.cardName);if(!wantedNames.size||wantedNames.has(name))catalog.push(normalizeCardmarketProduct(row,expansions));if(hintNames.has(name)){const candidate=normalizeCardmarketProduct(row,expansions),key=`${name}:${candidate.providerExpansionId}`;if(candidate.providerExpansionId&&!hintSeen.has(key)){hintSeen.add(key);hintProducts.push({cardName:candidate.cardName,setName:candidate.setName,providerExpansionId:candidate.providerExpansionId});}}});
     if(catalogPayload.rows<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
     this.catalog=catalog;this.expansionHints=buildCardmarketExpansionHints(internalPrintings,hintProducts);
