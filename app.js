@@ -16,6 +16,8 @@ import { MarketWatchController } from './js/market-watch.js';
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more']);
 let page = routeFromHash();
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
+let selectedLoanId = '';
+let loanFiltersExpanded = false;
 let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc' };
 let selectedCardKey = '';
 let selectedCollectionItem = '';
@@ -87,7 +89,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
 
 function render(force = false) {
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
@@ -360,23 +362,24 @@ function loansView() {
   const attention = base.filter(loan => ['pending','requested','reserved','return_pending'].includes(loan.status)).length;
   const active = base.filter(loan => loan.status === 'active').length;
   const returned = base.filter(loan => ['returned','completed'].includes(loan.status)).length;
+  const selectedLoan = selectedLoanId ? base.find(loan => loan.id === selectedLoanId) : null;
   return `<section class="loan-archive-page">
-    <header class="loan-archive-hero"><div class="loan-builder-emblem">${icon('swap')}</div><div><span class="eyebrow">Sala prestiti · ${esc(GAMES[state.game].short)}</span><h1>Prestiti</h1><p>Controlla ogni movimento del team e gestisci consegne e restituzioni.</p></div><aside><strong>${base.length} movimenti registrati</strong><span>${attention ? `${attention} ${attention === 1 ? 'richiede' : 'richiedono'} la tua attenzione.` : 'Tutti i movimenti sono sotto controllo.'}</span><button type="button" class="btn" data-page="new">${icon('plus')} Nuovo prestito</button></aside></header>
-    <div class="loan-kpi-strip" aria-label="Riepilogo prestiti"><article class="attention"><span>${icon('bell')}</span><div><small>Da gestire</small><strong>${attention}</strong><em>azioni richieste</em></div></article><article class="active"><span>${icon('swap')}</span><div><small>Prestiti attivi</small><strong>${active}</strong><em>in corso</em></div></article><article class="returned"><span>${icon('collection')}</span><div><small>Restituiti</small><strong>${returned}</strong><em>movimenti conclusi</em></div></article></div>
+    <header class="loan-hero-compact"><div class="loan-hero-emblem">${icon('swap')}</div><div class="loan-hero-copy"><h1>Prestiti</h1><span>${esc(GAMES[state.game].short)} · Sala prestiti del team</span></div><button type="button" class="loan-hero-new" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button></header>
+    <div class="loan-stat-strip" aria-label="Riepilogo prestiti"><div class="loan-stat-chip attn"><b>${attention}</b><small>Da gestire</small></div><div class="loan-stat-chip active"><b>${active}</b><small>Attivi</small></div><div class="loan-stat-chip done"><b>${returned}</b><small>Conclusi</small></div></div>
     <section class="surface loan-manager">
-      <header class="loan-manager-head"><div><span class="eyebrow">Archivio operativo</span><h2>Movimenti del team</h2></div><span class="total-pill">${base.length} totali</span></header>
-      <div class="loan-toolbar"><div class="search-field"><span aria-hidden="true">${icon('search')}</span><input id="loan-query" type="search" aria-label="Cerca carta" value="${esc(loanFilters.query)}" placeholder="Cerca una carta..."></div>
-      <div class="filter-grid"><div><label for="loan-direction">Movimento</label><select id="loan-direction">
+      <div class="loan-search-row"><div class="search-field"><span aria-hidden="true">${icon('search')}</span><input id="loan-query" type="search" aria-label="Cerca carta" value="${esc(loanFilters.query)}" placeholder="Cerca una carta..."></div><button type="button" class="loan-more-filters ${loanFiltersExpanded ? 'active' : ''}" id="loan-filters-toggle" aria-label="Altri filtri" aria-expanded="${loanFiltersExpanded}">${icon('more')}</button></div>
+      <div class="filter-grid loan-extra-filters" ${loanFiltersExpanded ? '' : 'hidden'}><div><label for="loan-direction">Movimento</label><select id="loan-direction">
         <option value="all" ${loanFilters.direction === 'all' ? 'selected' : ''}>Tutti</option>
         <option value="received" ${loanFilters.direction === 'received' ? 'selected' : ''}>Ricevute da</option>
         <option value="lent" ${loanFilters.direction === 'lent' ? 'selected' : ''}>Prestate a</option>
       </select></div><div><label for="loan-member">Membro</label><select id="loan-member">
         <option value="all" ${loanFilters.member === 'all' ? 'selected' : ''}>Tutti i membri</option>${others.map(m => `<option value="${esc(m.id)}" ${loanFilters.member === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
-      </select></div></div></div>
-      <div class="filter-chips">${[['all','Tutti'],['attention','Da gestire'],['requested','Richieste'],['reserved','Riservati'],['active','Attivi'],['completed','Conclusi'],['rejected','Rifiutati']].map(([id,label]) => `<button type="button" class="chip ${loanFilters.status === id ? 'active' : ''}" data-status-filter="${id}">${label}</button>`).join('')}</div>
+      </select></div></div>
+      <div class="filter-chips loan-status-chips">${[['all','Tutti',null],['attention','Da gestire',attention],['active','Attivi',active],['history','Storico',null]].map(([id,label,count]) => `<button type="button" class="chip ${loanFilters.status === id ? 'active' : ''}" data-status-filter="${id}">${label}${count ? `<span class="count">${count}</span>` : ''}</button>`).join('')}</div>
       <div class="list-summary"><span id="loan-result-count"><strong>${relevant.length}</strong> ${relevant.length === 1 ? 'risultato' : 'risultati'}</span><button type="button" class="clear-filters ${loanFilters.direction === 'all' && loanFilters.member === 'all' && loanFilters.status === 'all' && !loanFilters.query ? 'hidden' : ''}" id="clear-filters">Azzera filtri</button></div>
       <div class="loan-list">${loanRowsHtml(relevant)}</div>
     </section>
+    ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
   </section>`;
 }
 
@@ -395,9 +398,9 @@ function filteredLoans() {
     const memberOk = loanFilters.member === 'all' || otherMember === loanFilters.member;
     const queryOk = l.cardName.toLowerCase().includes(loanFilters.query.toLowerCase());
     const statusOk = loanFilters.status === 'all'
-      || (loanFilters.status === 'attention' ? ['pending','requested','reserved','return_pending'].includes(l.status) : false)
-      || (loanFilters.status === 'requested' ? ['pending','requested'].includes(l.status) : false)
-      || (loanFilters.status === 'completed' ? ['returned','completed'].includes(l.status) : l.status === loanFilters.status);
+      || (loanFilters.status === 'attention' && ['pending','requested','reserved','return_pending'].includes(l.status))
+      || (loanFilters.status === 'active' && l.status === 'active')
+      || (loanFilters.status === 'history' && ['returned','completed','rejected'].includes(l.status));
     return directionOk && memberOk && queryOk && statusOk;
   });
 }
@@ -411,6 +414,20 @@ function loanListRow(l) {
   const borrower = member(l.borrower);
   const person = outgoing ? borrower : owner;
   const presentation = loanPresentation(l, outgoing, incoming, owner, borrower);
+  const remaining = Math.max(0, (l.acceptedQuantity || l.quantity) - (l.returnedQuantity || 0));
+  const shownQuantity = ['returned','completed'].includes(l.status) ? l.quantity : remaining;
+  const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt="" loading="lazy"><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
+  const memberMarker = person ? `<i class="member-dot ${person.id}"></i>` : '';
+  const printing = [l.setCode,l.setName,l.rarity].filter(Boolean).join(' · ');
+  return `<button type="button" class="loan-row ${presentation.kind}" data-loan-open="${l.id}">${visual}<div class="loan-main"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="direction-line"><b class="direction-tag ${presentation.kind}">${presentation.direction}</b> ${memberMarker}${presentation.person}</span><small class="next-action ${presentation.urgent ? 'urgent' : ''}">${presentation.action}</small></div><span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></button>`;
+}
+
+function loanDetailSheetView(l) {
+  const outgoing = l.owner === state.currentUser;
+  const incoming = l.borrower === state.currentUser;
+  const owner = member(l.owner);
+  const borrower = member(l.borrower);
+  const presentation = loanPresentation(l, outgoing, incoming, owner, borrower);
   let buttons = '';
   const isAdmin = state.role === 'admin';
   const remaining = Math.max(0, (l.acceptedQuantity || l.quantity) - (l.returnedQuantity || 0));
@@ -422,12 +439,16 @@ function loanListRow(l) {
   if (l.status === 'active' && !outgoing) buttons = `<div class="partial-return"><input type="number" min="1" max="${remaining}" value="${remaining}" data-return-qty="${l.id}" aria-label="Quantità da restituire"><button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button></div>`;
   if (l.status === 'return_pending' && outgoing) buttons = `<button class="btn small" data-action="confirm-return" data-id="${l.id}">Conferma ${l.pendingReturnQuantity || remaining} pz</button>`;
   if (isAdmin && !buttons) buttons = `<button class="btn secondary danger small" data-action="admin-delete" data-id="${l.id}">Elimina</button>`;
-  const shownQuantity = ['returned','completed'].includes(l.status) ? l.quantity : remaining;
-  const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt="" loading="lazy"><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
-  const memberMarker = person ? `<i class="member-dot ${person.id}"></i>` : '';
   const printing = [l.setCode,l.setName,l.rarity].filter(Boolean).join(' · ');
   const quantities = l.acceptedQuantity > 0 && l.requestedQuantity !== l.acceptedQuantity ? `<p class="quantity-help">Richieste ${l.requestedQuantity} · accettate ${l.acceptedQuantity} · rimanenti ${remaining}</p>` : l.status === 'requested' ? `<p class="quantity-help">Richieste ${l.requestedQuantity}${Number.isFinite(available) ? ` · disponibili ora ${available}` : ''}</p>` : '';
-  return `<details class="loan-row ${presentation.kind}"><summary>${visual}<div class="loan-main"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="direction-line"><b class="direction-tag ${presentation.kind}">${presentation.direction}</b> ${memberMarker}${presentation.person}</span><small class="next-action ${presentation.urgent ? 'urgent' : ''}">${presentation.action}</small></div><span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></summary><div class="loan-detail"><div class="ownership"><span><small>Proprietario</small><b>${owner.name}</b></span><span>→</span><span><small>Richiedente</small><b>${borrower.name}</b></span></div><span>Registrato il ${formatDate(l.createdAt)}</span>${quantities}${l.notes ? `<p>${esc(l.notes)}</p>` : '<p>Nessuna nota</p>'}${buttons ? `<div class="actions loan-actions">${buttons}</div>` : ''}</div></details>`;
+  return `<div class="detail-backdrop" data-close-loan-detail><aside class="card-detail loan-detail-sheet" role="dialog" aria-modal="true"><button class="detail-close" data-close-loan-detail aria-label="Chiudi">×</button>
+    <div class="deck-sheet-body"><span class="deck-sheet-art">${l.image ? `<img src="${l.image}" alt="">` : icon('card')}</span><span class="deck-sheet-copy"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></span></div>
+    <div class="ownership"><span><small>Proprietario</small><b>${owner.name}</b></span><span>→</span><span><small>Richiedente</small><b>${borrower.name}</b></span></div>
+    <p class="quantity-help">Registrato il ${formatDate(l.createdAt)}</p>
+    ${quantities}
+    <p>${l.notes ? esc(l.notes) : 'Nessuna nota'}</p>
+    ${buttons ? `<div class="actions loan-actions">${buttons}</div>` : ''}
+  </aside></div>`;
 }
 
 function loanPresentation(l, outgoing, incoming, owner, borrower) {
@@ -567,6 +588,9 @@ function bind() {
   document.querySelector('#loan-query')?.addEventListener('input', e => { loanFilters.query = e.target.value; refreshLoanRows(); });
   document.querySelectorAll('[data-status-filter]').forEach(b => b.addEventListener('click', () => { loanFilters.status = b.dataset.statusFilter; refreshLoanRows(); }));
   document.querySelector('#clear-filters')?.addEventListener('click', () => { loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' }; refreshLoanRows(true); });
+  document.querySelector('#loan-filters-toggle')?.addEventListener('click', () => { loanFiltersExpanded = !loanFiltersExpanded; render(); });
+  document.querySelectorAll('[data-loan-open]').forEach(button => button.addEventListener('click', () => { selectedLoanId = button.dataset.loanOpen; render(); }));
+  document.querySelectorAll('[data-close-loan-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedLoanId = ''; render(); }));
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
@@ -686,6 +710,7 @@ function refreshLoanRows(resetControls = false) {
     if (query) query.value = loanFilters.query;
   }
   document.querySelectorAll('.loan-list [data-action]').forEach(b => b.addEventListener('click', () => updateLoan(b.dataset.id, b.dataset.action)));
+  document.querySelectorAll('.loan-list [data-loan-open]').forEach(button => button.addEventListener('click', () => { selectedLoanId = button.dataset.loanOpen; render(); }));
 }
 
 function quickNavigate(target) {
@@ -1460,7 +1485,7 @@ async function updateLoan(id, action) {
       const quantity = Number(document.querySelector(`[data-return-qty="${id}"]`)?.value);
       await api.returnQuantity(id, quantity);
     } else await api.transition(id, action);
-    await loadCloudLoans(); try { await loadCollection(); } catch {} saveState(); render(); toast('Prestito aggiornato');
+    await loadCloudLoans(); try { await loadCollection(); } catch {} saveState(); selectedLoanId = ''; render(); toast('Prestito aggiornato');
   } catch (error) { toast(error.message); }
 }
 
