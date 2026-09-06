@@ -169,11 +169,22 @@ function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
     ${mappingConfirmBlock(item)}
   </div>`;}
 function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
+// Cardmarket only encodes rarity in a product's name when that expansion has
+// multiple print variants — plenty of real products carry none at all, which
+// otherwise leaves every candidate row showing the exact same name+expansion
+// with nothing to tell them apart by. Fall back to foil status, then the raw
+// product id, so a row is never fully indistinguishable from its siblings.
+function confirmCandidateDetail(candidate){
+  if(candidate.rarity)return ` · ${esc(candidate.rarity)}`;
+  if(candidate.foil===true)return ' · Foil';
+  if(candidate.foil===false)return ' · Non foil';
+  return candidate.productId?` · ID ${esc(candidate.productId)}`:'';
+}
 function mappingConfirmBlock(item){
   const evidence=item.mappingEvidence||{};
   const candidates=Array.isArray(evidence.candidates)&&evidence.candidates.length?evidence.candidates:evidence.providerProductId?[{productId:evidence.providerProductId,cardName:evidence.providerCardName||item.cardName,rarity:evidence.providerRarity||'',expansion:evidence.providerExpansion||'',productUrl:evidence.providerProductUrl||''}]:[];
   if(!candidates.length)return '<p class="mapping-confirm-empty">Nessun candidato salvato per la conferma manuale: attendi il prossimo sync o verifica a mano su Cardmarket.</p>';
-  return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${candidates.map(candidate=>`<div class="mapping-confirm-row"><span><strong>${esc(candidate.cardName||item.cardName)}</strong><small>${esc(candidate.expansion||'—')}${candidate.rarity?` · ${esc(candidate.rarity)}`:''}</small></span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
+  return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${candidates.map(candidate=>`<div class="mapping-confirm-row"><span><strong>${esc(candidate.cardName||item.cardName)}</strong><small>${esc(candidate.expansion||'—')}${confirmCandidateDetail(candidate)}</small></span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
 }
 export function sortItems(items,mode='value'){return [...items].sort((a,b)=>{if(mode==='name')return a.cardName.localeCompare(b.cardName,'it');if(mode==='price')return (b.referencePrice??-1)-(a.referencePrice??-1);if(mode==='change'){const av=a.referencePrice!=null&&a.price24h!=null?a.referencePrice-a.price24h:-Infinity,bv=b.referencePrice!=null&&b.price24h!=null?b.referencePrice-b.price24h:-Infinity;return bv-av;}return ((b.referencePrice??-1)*b.ownedQuantity)-((a.referencePrice??-1)*a.ownedQuantity);});}
 function historyStats(history){
