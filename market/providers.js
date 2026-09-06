@@ -112,7 +112,7 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
   const local=normalizePrinting(printing),internalRarity=normalizeMarketRarity(printing.rarity),name=norm(printing.cardName||printing.card_name),catalogId=norm(printing.catalogCardId||printing.catalog_card_id);
   const base=evidenceBase(printing,internalRarity),fail=(status,reason,extra={})=>({status,confidence:0,candidates:[],provider:'cardmarket',reason,evidence:{...base,...extra},priceScope:null,resolverVersion:CARDMARKET_RESOLVER_VERSION});
   if(!internalRarity)return fail(CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,'unsupported_internal_rarity');
-  const allPrintings=options.internalPrintings||[],family=internalFamily(printing,allPrintings),acceptedNames=new Set([name,...(catalogId?allPrintings.filter(row=>norm(row.catalogCardId||row.catalog_card_id)===catalogId).map(row=>norm(row.cardName||row.card_name)):[])].filter(Boolean)),expansions=new Set(family.map(row=>norm(row.setName||row.set_name)).filter(Boolean));
+  const allPrintings=options.internalPrintings||[],family=internalFamily(printing,allPrintings),acceptedNames=new Set([name,...(catalogId?(internalPrintingsByCatalogId(allPrintings).get(catalogId)||[]).map(row=>norm(row.cardName||row.card_name)):[])].filter(Boolean)),expansions=new Set(family.map(row=>norm(row.setName||row.set_name)).filter(Boolean));
   if(local.expansion)expansions.add(local.expansion);
   if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
   const hint=options.expansionHints?.get?.(setSeriesKey(printing.setCode||printing.set_code))||null;
@@ -170,7 +170,28 @@ function setFamilyKey(value){const code=String(value||'').trim().toUpperCase(),m
 function setSeriesKey(value){return String(value||'').trim().toUpperCase().split('-',1)[0].replace(/[^A-Z0-9]/g,'');}
 function sameCardmarketExpansion(left,right){const a=norm(left),b=norm(right);return a===b||Boolean(a&&b&&cardmarketExpansionKey(a)===cardmarketExpansionKey(b));}
 function cardmarketExpansionKey(value){return norm(value).replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
-function internalFamily(printing,rows){const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),result=(rows||[]).filter(row=>norm(row.catalogCardId||row.catalog_card_id)===catalog&&setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
+// resolveCardmarketPrinting() used to scan the FULL internalPrintings array
+// (the app's own card_printings table, easily thousands of rows) TWICE per
+// target being resolved — once here, once more inline for acceptedNames —
+// each re-running norm() per row. Same class of bug as the Cardmarket
+// catalog hotspot (see normalizeCardmarketProduct's _normName), just on a
+// different dataset; together these two were still enough to blow the Edge
+// Function's CPU-time budget even after the catalog-side fix alone.
+// internalPrintings is the SAME array reference for every target within one
+// resolver batch, so indexing it once by catalogCardId and caching that
+// index by array identity turns both O(targets x printings) scans into a
+// one-time O(printings) build plus O(1) lookups per target.
+const internalPrintingsIndexCache=new WeakMap();
+function internalPrintingsByCatalogId(rows){
+  let index=internalPrintingsIndexCache.get(rows);
+  if(!index){
+    index=new Map();
+    for(const row of rows||[]){const key=norm(row.catalogCardId||row.catalog_card_id);if(!key)continue;if(!index.has(key))index.set(key,[]);index.get(key).push(row);}
+    internalPrintingsIndexCache.set(rows,index);
+  }
+  return index;
+}
+function internalFamily(printing,rows){const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),sameCatalog=internalPrintingsByCatalogId(rows).get(catalog)||[],result=sameCatalog.filter(row=>setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
 function dedupeProducts(rows){const byId=new Map();for(const row of rows||[]){const id=productId(row);if(id&&!byId.has(id))byId.set(id,row);}return [...byId.values()].sort((a,b)=>productId(a).localeCompare(productId(b),'en',{numeric:true}));}
 export function parseCardmarketPayload(text,key){const value=String(text||'').trim();if(!value)return {rows:[],createdAt:''};if(value[0]==='{'||value[0]==='['){const parsed=JSON.parse(value),rows=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.[key])?parsed[key]:[]);return {rows,createdAt:parsed?.createdAt||''};}return {rows:parseDelimited(value),createdAt:''};}
 export function cardmarketNonSinglesUrl(value){try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}

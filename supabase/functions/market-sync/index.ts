@@ -115,7 +115,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
   const local=normalizePrinting(printing),internalRarity=normalizeMarketRarity(printing.rarity),name=norm(printing.cardName||printing.card_name),catalogId=norm(printing.catalogCardId||printing.catalog_card_id);
   const base=evidenceBase(printing,internalRarity),fail=(status:string,reason:string,extra:any={})=>({status,confidence:0,candidates:[],provider:'cardmarket',reason,evidence:{...base,...extra},priceScope:null,resolverVersion:CARDMARKET_RESOLVER_VERSION});
   if(!internalRarity)return fail(CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,'unsupported_internal_rarity');
-  const allPrintings=options.internalPrintings||[],family=internalFamily(printing,allPrintings),acceptedNames=new Set([name,...(catalogId?allPrintings.filter((row:any)=>norm(row.catalogCardId||row.catalog_card_id)===catalogId).map((row:any)=>norm(row.cardName||row.card_name)):[])].filter(Boolean)),expansions=new Set(family.map((row:any)=>norm(row.setName||row.set_name)).filter(Boolean));
+  const allPrintings=options.internalPrintings||[],family=internalFamily(printing,allPrintings),acceptedNames=new Set([name,...(catalogId?(internalPrintingsByCatalogId(allPrintings).get(catalogId)||[]).map((row:any)=>norm(row.cardName||row.card_name)):[])].filter(Boolean)),expansions=new Set(family.map((row:any)=>norm(row.setName||row.set_name)).filter(Boolean));
   if(local.expansion)expansions.add(local.expansion);
   if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
   const hint=options.expansionHints?.get?.(setSeriesKey(printing.setCode||printing.set_code))||null;
@@ -172,7 +172,28 @@ function setFamilyKey(value:any):string{const code=String(value||'').trim().toUp
 function setSeriesKey(value:any):string{return String(value||'').trim().toUpperCase().split('-',1)[0].replace(/[^A-Z0-9]/g,'');}
 function sameCardmarketExpansion(left:any,right:any):boolean{const a=norm(left),b=norm(right);return a===b||Boolean(a&&b&&cardmarketExpansionKey(a)===cardmarketExpansionKey(b));}
 function cardmarketExpansionKey(value:any):string{return norm(value).replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
-function internalFamily(printing:any,rows:any[]):any[]{const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),result=(rows||[]).filter((row:any)=>norm(row.catalogCardId||row.catalog_card_id)===catalog&&setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
+// resolveCardmarketPrinting() used to scan the FULL internalPrintings array
+// (the app's own card_printings table, easily thousands of rows) TWICE per
+// target being resolved — once here, once more inline for acceptedNames —
+// each re-running norm() per row. Same class of bug as the Cardmarket
+// catalog hotspot (see normalizeCardmarketProduct's _normName), just on a
+// different dataset; together these two were still enough to blow the Edge
+// Function's CPU-time budget even after the catalog-side fix alone.
+// internalPrintings is the SAME array reference for every target within one
+// resolver batch, so indexing it once by catalogCardId and caching that
+// index by array identity turns both O(targets x printings) scans into a
+// one-time O(printings) build plus O(1) lookups per target.
+const internalPrintingsIndexCache=new WeakMap<any[],Map<string,any[]>>();
+function internalPrintingsByCatalogId(rows:any[]){
+  let index=internalPrintingsIndexCache.get(rows);
+  if(!index){
+    index=new Map();
+    for(const row of rows||[]){const key=norm(row.catalogCardId||row.catalog_card_id);if(!key)continue;if(!index.has(key))index.set(key,[]);index.get(key)!.push(row);}
+    internalPrintingsIndexCache.set(rows,index);
+  }
+  return index;
+}
+function internalFamily(printing:any,rows:any[]):any[]{const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),sameCatalog=internalPrintingsByCatalogId(rows).get(catalog)||[],result=sameCatalog.filter((row:any)=>setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
 function dedupeProducts(rows:any[]):any[]{const byId=new Map<string,any>();for(const row of rows||[]){const id=productId(row);if(id&&!byId.has(id))byId.set(id,row);}return [...byId.values()].sort((a,b)=>productId(a).localeCompare(productId(b),'en',{numeric:true}));}
 function cardmarketNonSinglesUrl(value:string):string{try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
 function addExpansionName(values:Map<string,string>,row:any){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
