@@ -66,23 +66,40 @@ class CardmarketPriceGuideProvider extends PriceProvider {
     return {...catalogStats,...priceStats};
   }
   async loadCatalog(targets:any[]=[],options:any={}){
+    // Two rounds of fixes (catalog-row norm() caching, internalPrintings
+    // indexing) each measured as a big win in isolation but the real batch
+    // STILL hit "CPU Time exceeded" afterward — meaning there's cost here
+    // neither one touched, most likely the unavoidable per-row
+    // parseProductName()+norm() scan below over the FULL feed (every row,
+    // not just matches, since we can't know a row matches before parsing its
+    // name). Rather than guess a fourth fix blind, these checkpoints log
+    // real row counts/timings to Supabase's Logs tab so the actual feed size
+    // and slow stage are visible even if this invocation still gets killed.
+    const t0=Date.now();
     if(!this.catalogUrl)throw unavailable('Cardmarket Product Catalogue','CARDMARKET_PRODUCT_CATALOG_URL');
     validateOfficialCardmarketUrl(this.catalogUrl);
     const nonSinglesUrl=cardmarketNonSinglesUrl(this.catalogUrl);
     const nonSinglesResponse=nonSinglesUrl?await this.request(nonSinglesUrl):null;
     if(!nonSinglesResponse?.ok)throw new ProviderHttpError(this.name,nonSinglesResponse?.status||503,'Catalogo espansioni non disponibile');
+    console.log('[market-sync] loadCatalog: non-singles fetched',{ms:Date.now()-t0});
     const expansions=new Map();
     const expansionPayload=await streamCardmarketRows(nonSinglesResponse,'products',(row:any)=>addExpansionName(expansions,row));
+    console.log('[market-sync] loadCatalog: non-singles parsed',{rows:expansionPayload.rows,expansions:expansions.size,ms:Date.now()-t0});
     if(expansions.size<100)throw new Error('Catalogo espansioni Cardmarket non disponibile dal link Product Catalogue');
     const internalPrintings=options.internalPrintings||[],targetCatalogIds=new Set((targets||[]).map((row:any)=>norm(row.catalogCardId||row.catalog_card_id)).filter(Boolean));
     const wantedNames=new Set([...(targets||[]),...internalPrintings.filter((row:any)=>targetCatalogIds.has(norm(row.catalogCardId||row.catalog_card_id)))].map((row:any)=>norm(row.cardName||row.card_name)).filter(Boolean));
     const hintNames=new Set(internalPrintings.map((row:any)=>norm(row.cardName||row.card_name)).filter(Boolean)),hintProducts:any[]=[],hintSeen=new Set();
+    console.log('[market-sync] loadCatalog: wantedNames built',{targets:targets.length,internalPrintings:internalPrintings.length,wantedNames:wantedNames.size,hintNames:hintNames.size,ms:Date.now()-t0});
     const catalogResponse=await this.request(this.catalogUrl);
     if(!catalogResponse.ok)throw new ProviderHttpError(this.name,catalogResponse.status,'Product Catalogue non disponibile');
+    console.log('[market-sync] loadCatalog: main catalog fetched',{ms:Date.now()-t0});
     const catalog:any[]=[];
-    const catalogPayload=await streamCardmarketRows(catalogResponse,'products',(row:any)=>{const parsed=parseProductName(row.name||''),name=norm(parsed.cardName);if(!wantedNames.size||wantedNames.has(name))catalog.push(normalizeCardmarketProduct(row,expansions));if(hintNames.has(name)){const candidate=normalizeCardmarketProduct(row,expansions),key=`${name}:${candidate.providerExpansionId}`;if(candidate.providerExpansionId&&!hintSeen.has(key)){hintSeen.add(key);hintProducts.push({cardName:candidate.cardName,setName:candidate.setName,providerExpansionId:candidate.providerExpansionId});}}});
+    let scanned=0;
+    const catalogPayload=await streamCardmarketRows(catalogResponse,'products',(row:any)=>{scanned++;if(scanned%50000===0)console.log('[market-sync] loadCatalog: scanning',{scanned,retained:catalog.length,ms:Date.now()-t0});const parsed=parseProductName(row.name||''),name=norm(parsed.cardName);if(!wantedNames.size||wantedNames.has(name))catalog.push(normalizeCardmarketProduct(row,expansions));if(hintNames.has(name)){const candidate=normalizeCardmarketProduct(row,expansions),key=`${name}:${candidate.providerExpansionId}`;if(candidate.providerExpansionId&&!hintSeen.has(key)){hintSeen.add(key);hintProducts.push({cardName:candidate.cardName,setName:candidate.setName,providerExpansionId:candidate.providerExpansionId});}}});
+    console.log('[market-sync] loadCatalog: main catalog parsed',{totalRows:catalogPayload.rows,retainedRows:catalog.length,ms:Date.now()-t0});
     if(catalogPayload.rows<1000)throw new Error('Product Catalogue Cardmarket non valido: usa il link JSON diretto products_singles_3.json');
     this.catalog=catalog;this.expansionHints=buildCardmarketExpansionHints(internalPrintings,hintProducts);
+    console.log('[market-sync] loadCatalog: done',{ms:Date.now()-t0});
     return {catalogRows:catalogPayload.rows,retainedCatalogRows:this.catalog.length,expansionRows:expansions.size,expansionHints:this.expansionHints.size};
   }
   async loadPrices(targets:any[]=[]){
@@ -370,8 +387,12 @@ async function dryTargetCardmarket(provider:any,ids:string[]){
 }
 
 async function resolveCardmarketTargets(provider:any,targets:any[],internalPrintings:any[]){
+  const t0=Date.now();
+  console.log('[market-sync] resolveCardmarketTargets: start',{targets:targets.length,catalog:provider.catalog?.length||0,internalPrintings:internalPrintings.length});
   const bodies=[],expansionHints=provider.expansionHints?.size?provider.expansionHints:buildCardmarketExpansionHints(internalPrintings,provider.catalog);
-  for(const target of targets){if(target.resolution_status==='manual'&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target,{internalPrintings,expansionHints})));}
+  let index=0;
+  for(const target of targets){index++;if(index%100===0)console.log('[market-sync] resolveCardmarketTargets: resolving',{index,total:targets.length,ms:Date.now()-t0});if(target.resolution_status==='manual'&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target,{internalPrintings,expansionHints})));}
+  console.log('[market-sync] resolveCardmarketTargets: resolved',{targets:targets.length,ms:Date.now()-t0});
   const saved=[];
   for(let index=0;index<bodies.length;index+=200){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_printings?on_conflict=printing_id,provider,variant_key`,{method:'POST',headers:{...headers(),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(bodies.slice(index,index+200))});if(!response.ok)throw new Error(`mapping cardmarket: ${response.status} ${await response.text()}`);saved.push(...await response.json());}
   const byPrinting=new Map(saved.map((row:any)=>[row.printing_id,row]));return targets.map(target=>{const row:any=byPrinting.get(target.printing_id);return row?{...target,mapping_id:row.id,provider_product_id:row.provider_product_id,provider_expansion_id:row.provider_expansion_id,resolution_status:row.resolution_status,provider_metadata:row.provider_metadata,variant_key:row.variant_key}:target;});
