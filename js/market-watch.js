@@ -162,7 +162,13 @@ function rowSparkline(history,delta){
 }
 export function isAggregatePrice(item){return item?.resolverStatus==='PROVIDER_AGGREGATE';}
 export function derivedPriceEligible(item){return item?.mappingStatus==='manual'||(item?.referencePrice!=null&&item?.resolverStatus!=='PROVIDER_AGGREGATE');}
-function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Prezzo Cardmarket aggregato</strong><br>Indicativo e non specifico per ${esc(labels.join(', ')||'la variante')}.${productNote} Non alimenta il valore preciso della raccolta, trend o mover.</span></p>${mappingConfirmBlock(item)}`;}
+function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';
+  // Cardmarket's own candidates carry no rarity here (that's WHY this is
+  // aggregate, not a rarity mismatch) — but the user still needs a fixed
+  // reference point for what THEY'RE holding while comparing candidates by
+  // hand via "Vedi", since nothing on the Cardmarket side states it.
+  const ownRarity=item.rarity?`<br>La tua rarità: <strong>${esc(item.rarity)}</strong>.`:'';
+  return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Prezzo Cardmarket aggregato</strong><br>Indicativo e non specifico per ${esc(labels.join(', ')||'la variante')}.${productNote} Non alimenta il valore preciso della raccolta, trend o mover.${ownRarity}</span></p>${mappingConfirmBlock(item)}`;}
 function hasRarityMismatchCandidates(item){return item.mappingReason==='provider_rarity_mismatch'&&Array.isArray(item.mappingEvidence?.candidates)&&item.mappingEvidence.candidates.length>0;}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
     <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
