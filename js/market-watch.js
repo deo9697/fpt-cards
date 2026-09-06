@@ -166,7 +166,7 @@ function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scop
 function hasRarityMismatchCandidates(item){return item.mappingReason==='provider_rarity_mismatch'&&Array.isArray(item.mappingEvidence?.candidates)&&item.mappingEvidence.candidates.length>0;}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
     <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
-    ${mappingConfirmBlock(item)}
+    ${rarityMismatchNotice(item)}
   </div>`;}
 function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
 // Cardmarket only encodes rarity in a product's name when that expansion has
