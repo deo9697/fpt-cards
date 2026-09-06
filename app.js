@@ -28,6 +28,7 @@ let collectionShareModal = false;
 let collectionShareLink = null;
 let collectionSharePending = false;
 let collectionShareRequests = [];
+let requestsTab = 'pending';
 let selectedCardKey = '';
 let selectedCollectionItem = '';
 let collectionEditor = null;
@@ -566,9 +567,10 @@ function bind() {
   });
   document.querySelector('[data-share-collection-link]')?.addEventListener('click', () => void shareCollectionShareLink());
   document.querySelectorAll('[data-mark-request-seen]').forEach(button => button.addEventListener('click', async () => {
-    try { await api.markCollectionShareRequestSeen(button.dataset.markRequestSeen); await loadCollectionShareRequests(); render(); }
+    try { await api.markCollectionShareRequestSeen(button.dataset.markRequestSeen); await loadCollectionShareRequests(); requestsTab = 'confirmed'; render(); }
     catch (error) { toast(error.message || 'Operazione non riuscita'); }
   }));
+  document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => { selectedCollectionItem = button.dataset.collectionItem; render(); }));
   if (page === 'collection') observeCollectionSentinel();
   document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCollectionItem = ''; render(); }));
@@ -800,15 +802,24 @@ function collectionShareModalView() {
 }
 
 function requestsView() {
-  const requests = collectionShareRequests;
+  const pending = collectionShareRequests.filter(request => request.status === 'pending');
+  const confirmed = collectionShareRequests.filter(request => request.status === 'seen');
+  const list = requestsTab === 'confirmed' ? confirmed : pending;
+  const emptyCopy = requestsTab === 'confirmed'
+    ? { title:'Nessuna richiesta confermata', body:'Le richieste che confermi finiscono qui: un archivio di tutti gli scambi conclusi con chi ha visto la tua raccolta.' }
+    : { title:'Nessuna richiesta in attesa', body:'Condividi la tua raccolta da Raccolta per iniziare a ricevere richieste.' };
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Interesse ricevuto</span><h1>Richieste</h1><p>Chi ha visto la tua raccolta condivisa e ti ha segnalato interesse.</p></div></header>
-    <section class="surface">${requests.length ? `<div class="share-request-list">${requests.map(requestRowHtml).join('')}</div>` : `<div class="inline-empty">${icon('bell')}<div><strong>Nessuna richiesta</strong><span>Condividi la tua raccolta da Raccolta per iniziare a ricevere richieste.</span></div></div>`}</section>
+    <nav class="market-tabs" aria-label="Filtri richieste">
+      <button type="button" data-requests-tab="pending" class="${requestsTab === 'pending' ? 'active' : ''}">In attesa <span>${pending.length}</span></button>
+      <button type="button" data-requests-tab="confirmed" class="${requestsTab === 'confirmed' ? 'active' : ''}">Confermate <span>${confirmed.length}</span></button>
+    </nav>
+    <section class="surface">${list.length ? `<div class="share-request-list">${list.map(requestRowHtml).join('')}</div>` : `<div class="inline-empty">${icon('bell')}<div><strong>${emptyCopy.title}</strong><span>${emptyCopy.body}</span></div></div>`}</section>
   </section>`;
 }
 
 function requestRowHtml(request) {
   const items = request.items || [];
-  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Segna come vista</button>` : `<i class="share-request-seen-badge">Vista</i>`}</header>
+  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Conferma</button>` : ''}</header>
     <div class="share-receipt">
       ${items.map(requestReceiptRowHtml).join('')}
       <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
