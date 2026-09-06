@@ -1758,8 +1758,12 @@ button.market-row:hover { background:#15121d; }
 .share-guest-cart { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; gap: 8px; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: #10131bf5; border-top: 1px solid #292f3d; backdrop-filter: blur(12px); }
 .share-guest-cart > span { font-size: .76rem; color: #c9bfe0; }
 .share-guest-cart > span b { color: #fff; }
-.share-guest-cart input { width: 100%; padding: 11px 14px; border: 1px solid #40324d; border-radius: 10px; background: #0d0f18; color: #f3f4f7; font-size: 16px; }
 .share-guest-cart .btn { width: 100%; }
+.share-guest-search { position: relative; margin-bottom: 14px; }
+.share-guest-search .icon-wrap { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; color: #7d8394; transform: translateY(-50%); pointer-events: none; }
+.share-guest-search .icon-wrap .icon { width: 100%; height: 100%; }
+.share-guest-search input { width: 100%; padding: 11px 14px 11px 36px; border: 1px solid #292f3d; border-radius: 10px; background: #10131b; color: #f3f4f7; font-size: 16px; }
+.share-guest-message.compact { min-height: 30dvh; gap: 6px; }
 
 /* Condivisione raccolta — lato proprietario: modal link + sezione Richieste */
 .more-grid > button { position: relative; }
@@ -1781,3 +1785,20 @@ button.market-row:hover { background:#15121d; }
 .share-request-item { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 5px; border: 1px solid var(--line); border-radius: 999px; background: #10131b; font-size: .68rem; }
 .share-request-item img { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; }
 .share-request-item small { color: var(--muted); }
+.share-review-modal { width: min(480px, 100%); }
+.share-review-list { display: grid; gap: 8px; margin: 14px 0; max-height: 46vh; overflow-y: auto; }
+.share-review-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; }
+.share-review-art { display: block; width: 40px; aspect-ratio: .686; overflow: hidden; border-radius: 6px; background: #171b25; }
+.share-review-art img { width: 100%; height: 100%; object-fit: cover; }
+.share-review-art > .icon { width: 100%; height: 100%; padding: 20%; color: #9363aa; }
+.share-review-info { min-width: 0; }
+.share-review-info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+.share-review-info small { display: block; color: var(--muted); font-size: .66rem; }
+.share-review-qty { display: flex; align-items: center; gap: 6px; }
+.share-review-qty button { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: #171b25; color: var(--text); font-weight: 800; }
+.share-review-qty button:disabled { opacity: .35; }
+.share-review-qty span { min-width: 16px; text-align: center; font-weight: 700; }
+.share-review-remove { display: grid; place-items: center; width: 30px; height: 30px; border: 0; background: transparent; color: var(--danger); }
+.share-review-remove .icon { width: 16px; height: 16px; }
+.share-review-modal input[data-share-name] { width: 100%; padding: 11px 14px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; color: var(--text); font-size: 16px; }
+.share-review-submit { width: 100%; }

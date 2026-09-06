@@ -184,6 +184,12 @@ function appView() {
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
   const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
   const mobileNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
+  // Va renderizzato qui (fuori da .page-stage), non dentro loansView(): .page-stage
+  // ha view-transition-name, che in Chrome le dà una propria stacking context.
+  // Un .detail-backdrop con z-index:50 annidato lì dentro resta comunque
+  // intrappolato sotto quella stacking context, e la bottom nav (z-index:30,
+  // fuori da .page-stage) ci finiva visivamente sopra tagliando la scheda.
+  const selectedLoan = selectedLoanId ? loanBase().find(loan => loan.id === selectedLoanId) : null;
   return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
     <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div><label class="global-search">${icon('search')}<input id="global-search" type="search" placeholder="Cerca carte o prestiti…" aria-label="Ricerca globale"></label><button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-page="settings"><span class="avatar member-${u.id}">${initials(u.name)}</span></button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
@@ -192,6 +198,7 @@ function appView() {
     ${showFab() ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
+    ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
     ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
@@ -374,7 +381,6 @@ function loansView() {
   const attention = base.filter(loan => ['pending','requested','reserved','return_pending'].includes(loan.status)).length;
   const active = base.filter(loan => loan.status === 'active').length;
   const returned = base.filter(loan => ['returned','completed'].includes(loan.status)).length;
-  const selectedLoan = selectedLoanId ? base.find(loan => loan.id === selectedLoanId) : null;
   return `<section class="loan-archive-page">
     <header class="loan-hero-compact"><div class="loan-hero-emblem">${icon('swap')}</div><div class="loan-hero-copy"><h1>Prestiti</h1><span>${esc(GAMES[state.game].short)} · Sala prestiti del team</span></div><button type="button" class="loan-hero-new" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button></header>
     <div class="loan-stat-strip" aria-label="Riepilogo prestiti"><div class="loan-stat-chip attn"><b>${attention}</b><small>Da gestire</small></div><div class="loan-stat-chip active"><b>${active}</b><small>Attivi</small></div><div class="loan-stat-chip done"><b>${returned}</b><small>Conclusi</small></div></div>
@@ -391,7 +397,6 @@ function loansView() {
       <div class="list-summary"><span id="loan-result-count"><strong>${relevant.length}</strong> ${relevant.length === 1 ? 'risultato' : 'risultati'}</span><button type="button" class="clear-filters ${loanFilters.direction === 'all' && loanFilters.member === 'all' && loanFilters.status === 'all' && !loanFilters.query ? 'hidden' : ''}" id="clear-filters">Azzera filtri</button></div>
       <div class="loan-list">${loanRowsHtml(relevant)}</div>
     </section>
-    ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
   </section>`;
 }
 
@@ -734,8 +739,16 @@ async function openCollectionShareModal() {
   try {
     const shares = await api.collectionShares();
     collectionShareLink = shares.find(share => share.game === state.game && share.active) || null;
+    if (!collectionShareLink) {
+      const id = await api.createCollectionShare(state.game);
+      collectionShareLink = { id, game: state.game, active:true };
+    }
   } catch (error) { toast(error.message || 'Impossibile caricare il link di condivisione'); }
   render();
+  // The whole point of tapping "Condividi" is to hand the link to someone —
+  // jump straight to the native share sheet instead of making that a second
+  // tap inside the modal, which stays open underneath for copy/regenerate/revoke.
+  if (collectionShareLink) void shareCollectionShareLink();
 }
 
 async function generateCollectionShareLink() {
