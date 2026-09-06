@@ -29,8 +29,13 @@ const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{pr
 const exactMover={mappingStatus:'resolved',resolverStatus:'EXACT'};
 const movers=positiveMovers([{...exactMover,printingId:'a',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:12,price24h:10},{...exactMover,printingId:'a2',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:15,price24h:10},{...exactMover,printingId:'b',catalogCardId:'2',cardName:'B',sources:['owned'],referencePrice:5.5,price24h:5},{...exactMover,printingId:'c',catalogCardId:'3',cardName:'C',sources:['owned'],referencePrice:4,price24h:5}],3);assert.deepEqual(movers.map(item=>item.printingId),['a2','b'],'Le carte in crescita non sono ordinate/deduplicate correttamente');
 const aggregateItem={printingId:'aggregate',catalogCardId:'9',cardName:'Aggregata',sources:['owned'],ownedQuantity:2,referencePrice:99,price24h:1,latestAt:fresh,mappingStatus:'resolved',resolverStatus:'PROVIDER_AGGREGATE',priceScope:{language:'aggregate',edition:'aggregate',rarity:'aggregate',foil:'parallel_columns_unassigned'}};
-assert.equal(portfolioSummary([aggregateItem],now).current,0,'prezzo aggregate incluso nel portafoglio');
-assert.equal(positiveMovers([aggregateItem],3).length,0,'prezzo aggregate incluso nei mover');
+// Il valore totale della raccolta conta anche i prezzi aggregate (sono comunque
+// prezzi reali, solo non specifici per rarità/edizione): escluderli teneva "La
+// tua collezione vale" bloccato su "Dati parziali" quasi sempre, dato che la
+// maggior parte delle raccolte reali è a maggioranza aggregate finché non
+// vengono confermate a mano. Mover e trend restano invece rigorosamente esatti.
+assert.equal(portfolioSummary([aggregateItem],now).current,198,'prezzo aggregate deve contribuire al valore totale della raccolta');
+assert.equal(positiveMovers([aggregateItem],3).length,0,'prezzo aggregate escluso dai mover (nessuna base di confronto affidabile)');
 const aggregateDeck=buildMarketDecks([{id:'aggregate-deck',name:'Aggregate',cards:[{printingId:'aggregate',quantity:1}]}],[aggregateItem],[])[0];assert.equal(aggregateDeck.marketValue,99);assert.equal(aggregateDeck.marketIndicative,true);assert.equal(aggregateDeck.indicativeValuedCopies,1);assert.equal(aggregateDeck.delta24,null,'un prezzo aggregato non deve generare trend mazzo');
 const catalogDeck=buildMarketDecks([{id:'catalog-deck',name:'Catalog fallback',game:'yugioh',cards:[{catalogCardId:'73642296',quantity:3}]}],[{...aggregateItem,printingId:'ghost-belle-printing',catalogCardId:'73642297',referencePrice:2}],[])[0];assert.equal(catalogDeck.marketValue,6);assert.equal(catalogDeck.marketIndicative,true);assert.equal(catalogDeck.valuedCopies,3,'alias catalogo non valorizzato nel deck senza printing');
 // Un mapping risolto senza uno specifico tag resolverStatus 'EXACT' non deve essere trattato come
