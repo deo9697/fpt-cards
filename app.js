@@ -1777,15 +1777,25 @@ window.addEventListener('hashchange', () => {
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
   if(previous==='fastscan'||page==='fastscan')render();else renderRoute();
 });
-setInterval(async () => {
-  if (!state.currentUser) return;
+// document.hidden qui è quello che manca a un setInterval: il timer da solo
+// continua a girare anche a schermo spento/app in background (a differenza
+// delle animazioni CSS, che i browser sospendono da soli), rifacendo 5
+// fetch in parallelo + un render completo ogni 2 minuti per sempre — una
+// causa comune di surriscaldamento/consumo batteria per una PWA "aperta"
+// ma non in primo piano. Skippa mentre è nascosta, e si allinea subito al
+// ritorno invece di aspettare fino a 2 minuti (stesso pattern già usato in
+// pwa-update.js per il controllo aggiornamenti).
+async function syncPrimaryData() {
+  if (!state.currentUser || document.hidden) return;
   try {
     await loadPrimaryData();
     saveState();
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
     if (!editing) renderRoute();
   } catch {}
-}, 120000);
+}
+setInterval(syncPrimaryData, 120000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void syncPrimaryData(); });
 
 // Deep link dal tap su una notifica di sistema: sw.js manda un postMessage
 // invece di navigare da solo, perché è la pagina già aperta a sapere come
