@@ -693,6 +693,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .inventory-status-pill.private { border-color: #8d95a766; background: #10121ae8; color: #b3bac9; }
 .inventory-card-copy { display: flex; min-width: 0; padding: 12px; flex-direction: column; gap: 4px; }
 .inventory-card-copy > .inventory-status-pill { margin-top: 2px; }
+.inventory-deck-pill { display: inline-flex; align-items: center; gap: 4px; width: fit-content; padding: 3px 7px; margin-top: 4px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: .48rem; font-style: normal; font-weight: 700; }
+.inventory-deck-pill .icon { width: 10px; height: 10px; }
 .inventory-card-copy > strong, .inventory-card-copy > small, .inventory-card-copy > em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inventory-card-copy > strong { color: #fff8e8; font-family: var(--display-font); font-size: .72rem; }
 .inventory-card-copy > small { color: #b493c4; font-size: .55rem; }
@@ -724,6 +726,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .inventory-tile-status.partial { background: #f2b957; }
 .inventory-tile-status.unavailable { background: #ff7f91; }
 .inventory-tile-name { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d7cbe0; font-size: .56rem; text-align: center; }
+.inventory-tile-deck { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-size: .5rem; text-align: center; }
+.inventory-tile-deck .icon { flex-shrink: 0; width: 9px; height: 9px; }
 .inventory-az-index { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 18px 12px; }
 .inventory-az-index button { min-width: 20px; height: 20px; padding: 0 3px; border: 0; border-radius: 5px; background: #ffffff08; color: var(--muted); font-size: .54rem; font-weight: 700; }
 .inventory-az-index button:disabled { opacity: .25; }
@@ -1545,18 +1549,11 @@ img.card-image-unavailable { opacity: 0; }
 /* Market Watch Core */
 .market-page { position:relative;isolation:isolate; }
 .market-page::before { content:'';position:absolute;z-index:-1;inset:-30px;pointer-events:none;background:radial-gradient(circle at 78% 4%,#7d2fb32b,transparent 30%),radial-gradient(circle at 10% 28%,#244a5b24,transparent 28%); }
-.market-hero { position:relative; margin-bottom:16px; padding:0 0 20px; border-radius:20px; overflow:hidden; text-align:center; background:radial-gradient(120% 140% at 20% -10%,#3a2359 0%,#1a1226 55%,#0d0a16 100%); border:1px solid #ffffff14; }
+.market-hero { position:relative; margin-bottom:16px; padding:22px 18px 20px; border-radius:20px; overflow:hidden; text-align:center; background:radial-gradient(120% 140% at 20% -10%,#3a2359 0%,#1a1226 55%,#0d0a16 100%); border:1px solid #ffffff14; }
 .market-hero::before { content:''; position:absolute; inset:0; background:repeating-linear-gradient(115deg,#ffffff06 0 2px,transparent 2px 26px); pointer-events:none; }
 .market-hero>* { position:relative; }
-/* Zona illustrazione isolata dal resto della card: prima l'immagine di sfondo
-   copriva l'intera testata (inset:0 sull'header), quindi il pannello delle
-   statistiche ci finiva sopra a metà e ne nascondeva la parte più leggibile.
-   Ora l'arte vive solo qui, con un fade più corto che si dissolve nello sfondo
-   scuro della card prima delle statistiche, che restano sotto su base piena. */
-.market-hero-art-zone { position:relative; min-height:190px; padding:22px 18px 18px; overflow:hidden; }
-.market-hero-art-zone > * { position:relative; }
 .market-hero-eyebrow { display:block; margin:0 0 14px; font-size:.62rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#c9a8ff; }
-.market-hero-art { position:absolute; inset:0; background-image:linear-gradient(180deg,#0d0a16b0 0%,#0d0a1650 24%,#0d0a1633 44%,#0d0a1692 74%,#0d0a16f8 100%),url('assets/market-watch-dan.png'); background-size:cover,cover; background-position:center,center 18%; background-repeat:no-repeat,no-repeat; }
+.market-hero-art { position:absolute; inset:0; background-image:linear-gradient(180deg,#0d0a16c0 0%,#0d0a1655 30%,#0d0a1640 55%,#0d0a1690 80%,#0d0a16f2 100%),url('assets/market-watch-dan.png'); background-size:cover,cover; background-position:center,center 18%; background-repeat:no-repeat,no-repeat; }
 .market-hero-particles { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
 .market-hero-particle { position:absolute; bottom:-10px; border-radius:50%; background:radial-gradient(circle,#ffe9a8 0%,#e8c766 55%,transparent 75%); opacity:0; animation:market-hero-rise linear infinite; }
 @keyframes market-hero-rise { 0% { transform:translateY(0) scale(1); opacity:0; } 10% { opacity:.85; } 90% { opacity:.3; } 100% { transform:translateY(-140px) scale(.4); opacity:0; } }
@@ -1567,15 +1564,14 @@ img.card-image-unavailable { opacity: 0; }
 .market-hero-coin svg { display:block; width:100%; height:100%; }
 @keyframes market-hero-coin-fall { 0% { top:-12%; opacity:0; transform:rotate(0deg); } 10% { opacity:1; } 88% { opacity:1; } 100% { top:112%; opacity:0; transform:rotate(480deg); } }
 .market-hero-label { display:block; font-size:.78rem; color:#c9bfe0; margin-bottom:4px; }
-.market-hero-value { display:block; font-size:clamp(1.7rem,5vw,2.3rem); font-weight:800; margin-bottom:12px; }
-.market-hero-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin:0 18px 14px; border:1px solid #ffffff1c; border-radius:14px; background:#15102390; overflow:hidden; }
-.market-hero-metric { display:grid; gap:2px; padding:9px 6px; text-align:center; }
-.market-hero-metric+.market-hero-metric { border-left:1px solid #ffffff1c; }
-.market-hero-metric small { font-size:.56rem; color:#a89bc4; text-transform:uppercase; letter-spacing:.03em; }
-.market-hero-metric b { font-size:.92rem; color:#f3eefb; }
-.market-hero-metric em { font-style:normal; font-size:.56rem; color:#8b7fa8; }
-.market-hero-metric.positive b { color:#65df84; }
-.market-hero-metric.negative b { color:#ff6879; }
+.market-hero-value-wrap { position:relative; display:block; width:fit-content; margin:0 auto; }
+.market-hero-value-wrap .market-hero-sparkle { color:#ffe9a8; filter:drop-shadow(0 0 5px #f6cf5b); }
+/* Il totale della raccolta è il numero più importante della card: oro pieno
+   (stessa palette delle monete che cadono nell'illustrazione) invece del
+   bianco standard, con un bagliore caldo e due sparkle fisse accanto al
+   testo così le "particelle dorate" restano legate al numero anche quando
+   quelle ambientali (heroParticles/heroCoins) sono altrove sullo sfondo. */
+.market-hero-value { display:block; font-size:clamp(1.7rem,5vw,2.3rem); font-weight:800; margin-bottom:12px; background:linear-gradient(180deg,#fff3c4 0%,#f6cf5b 45%,#c98a1c 100%); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 2px 10px #f6cf5b4d); }
 .market-hero-sync { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; background:#ffffff0d; font-size:.58rem; color:#a89bc4; }
 .market-hero-sync i { width:6px; height:6px; border-radius:50%; background:#d5a72e; box-shadow:0 0 8px #d5a72e88; }
 .market-hero-sync i.ok { background:#65df84; box-shadow:0 0 8px #65df8488; }
@@ -1720,8 +1716,6 @@ button.market-row:hover { background:#15121d; }
   .market-hero { padding:18px 14px 16px; }
   .market-hero-dollar-stage { height:96px; }
   .market-hero-dollar-spin, .market-hero-dollar-face { width:76px; height:76px; }
-  .market-hero-metric { padding:7px 4px; }
-  .market-hero-metric b { font-size:.8rem; }
   .market-tabs { overflow-x:auto; }
   .market-board-tools { align-items:stretch;flex-direction:column; }
   .market-board-tools>label { justify-content:space-between;padding:0 10px 10px; }

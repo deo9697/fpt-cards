@@ -32,23 +32,20 @@ export class MarketWatchController {
   async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
   view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
-        <div class="market-hero-art-zone">
-          <div class="market-hero-art" aria-hidden="true"></div>
-          <h1 class="market-hero-eyebrow">Market Watch</h1>
-          ${heroParticles()}
-          ${heroCoins()}
-          ${sparkle('top:6px;left:14%;width:14px;height:14px;animation-delay:0s')}
-          ${sparkle('top:18px;right:12%;width:11px;height:11px;animation-delay:.9s')}
-          ${sparkle('top:44px;left:30%;width:9px;height:9px;animation-delay:1.6s')}
-          ${sparkle('top:36px;right:28%;width:10px;height:10px;animation-delay:.4s')}
-          <span class="market-hero-label">La tua collezione vale</span>
+        <div class="market-hero-art" aria-hidden="true"></div>
+        <h1 class="market-hero-eyebrow">Market Watch</h1>
+        ${heroParticles()}
+        ${heroCoins()}
+        ${sparkle('top:6px;left:14%;width:14px;height:14px;animation-delay:0s')}
+        ${sparkle('top:18px;right:12%;width:11px;height:11px;animation-delay:.9s')}
+        ${sparkle('top:44px;left:30%;width:9px;height:9px;animation-delay:1.6s')}
+        ${sparkle('top:36px;right:28%;width:10px;height:10px;animation-delay:.4s')}
+        <span class="market-hero-label">La tua collezione vale</span>
+        <span class="market-hero-value-wrap">
+          ${sparkle('top:-6px;left:6%;width:13px;height:13px;animation-delay:.2s')}
           <strong class="market-hero-value">${summary.complete?money(summary.current):'Dati parziali'}</strong>
-        </div>
-        <div class="market-hero-metrics">
-          ${heroMetric('Variazione 24h',summary.delta24Complete?changeMoney(summary.delta24):'Dati parziali',summary.delta24Complete?changePercent(summary.delta24Percent):'Snapshot non sufficiente',tone(summary.delta24))}
-          ${heroMetric('Variazione 7d',summary.delta7Complete?changeMoney(summary.delta7):'Dati parziali',summary.delta7Complete?changePercent(summary.delta7Percent):'Snapshot non sufficiente',tone(summary.delta7))}
-          ${heroMetric('Printing monitorate',String(this.data.items.length),`${summary.freshPrintings} aggiornate entro 48h`,'count')}
-        </div>
+          ${sparkle('bottom:-4px;right:6%;width:15px;height:15px;animation-delay:1.1s')}
+        </span>
         <span class="market-hero-sync"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
@@ -285,7 +282,6 @@ function formatChartDate(value){const date=new Date(value);return Number.isNaN(d
 function unresolvedDeckRow(row){return `<article class="market-row unresolved"><span class="market-art-empty">${icon('deck')}</span><span class="market-card-copy"><strong>${esc(row.cardName)}</strong><small>${esc(row.deckName)} · ${esc(row.section)} · ${row.quantity} copie</small><em>Printing da selezionare</em></span><button class="btn secondary small" data-market-resolve-deck>Seleziona</button></article>`;}
 function emptyPreparing(){return '<div class="market-preparing"><span class="market-orbit">'+icon('chart')+'</span><div><h2>Il Market Watch sta preparando i primi dati.</h2><p>Le printing sono pronte; i valori compariranno dopo il primo aggiornamento server-side.</p></div></div>';}
 function emptyNoCards(){return '<div class="empty-state market-empty">'+icon('collection')+'<h2>Aggiungi carte alla Raccolta o alla Watchlist per iniziare.</h2><p>Le carte possedute entrano automaticamente nel monitoraggio.</p></div>';}
-function heroMetric(label,value,detail,kind){return `<span class="market-hero-metric ${kind}"><small>${label}</small><b>${value}</b><em>${detail}</em></span>`;}
 const HERO_PARTICLES=[[8,4,4.5,0],[24,3,5.2,.4],[40,4,4.7,.8],[56,3,5.5,2.6],[72,4,5,1.8],[88,3,3.9,2.3],[6,4,5.1,3.4],[38,5,3.7,2.9]];
 function heroParticles(){return `<div class="market-hero-particles" aria-hidden="true">${HERO_PARTICLES.map(([left,size,duration,delay])=>`<span class="market-hero-particle" style="left:${left}%;width:${size}px;height:${size}px;animation-duration:${duration}s;animation-delay:${delay}s"></span>`).join('')}</div>`;}
 function sparkle(style){return `<svg class="market-hero-sparkle" style="${style}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0l2 10 10 2-10 2-2 10-2-10L0 12l10-2z"/></svg>`;}
