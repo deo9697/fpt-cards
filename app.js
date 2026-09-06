@@ -98,7 +98,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); if(page==='requests')void refreshCollectionShareRequests(); }
 
 function render(force = false) {
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
@@ -730,6 +730,14 @@ async function loadCollectionShareRequests() {
   // block the rest of loadPrimaryData()'s Promise.allSettled batch.
   try { collectionShareRequests = await api.collectionShareRequests(); }
   catch {}
+}
+async function refreshCollectionShareRequests() {
+  // Unlike loadCollectionShareRequests() above, this one is a deliberate,
+  // visible refresh (tapping the Richieste tab) — errors here should be
+  // seen, not swallowed, since a silent failure here looks identical to
+  // "no new requests" and is impossible to tell apart from the UI alone.
+  try { collectionShareRequests = await api.collectionShareRequests(); renderRoute(); }
+  catch (error) { toast(error.message || 'Impossibile aggiornare le richieste'); }
 }
 
 function collectionShareUrl(id) { return `${location.origin}${location.pathname}#/share/${id}`; }
@@ -1668,8 +1676,18 @@ async function startGuestShare(shareId) {
   await guestShare.load();
 }
 function renderGuestShare() {
+  // The focused field (e.g. the search box) has to be read BEFORE innerHTML
+  // wipes it out — by the time bind() runs afterward, document.activeElement
+  // has already reverted to <body>, so restoring focus there is always too late.
+  const active = document.activeElement;
+  const focusedAttr = ['data-share-query', 'data-share-name'].find(attr => active?.hasAttribute?.(attr));
+  const focusedPos = focusedAttr ? active.selectionStart : null;
   document.querySelector('#app').innerHTML = guestShare.view();
   guestShare.bind(document);
+  if (focusedAttr) {
+    const field = document.querySelector(`[${focusedAttr}]`);
+    if (field) { field.focus(); if (focusedPos != null) field.setSelectionRange(focusedPos, focusedPos); }
+  }
 }
 
 async function start() {

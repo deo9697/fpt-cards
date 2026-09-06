@@ -111,9 +111,6 @@ export class CollectionShareController {
     </div>`;
   }
   bind(root = document) {
-    const focusedAttr = ['data-share-query', 'data-share-name'].find(attr => document.activeElement?.hasAttribute?.(attr));
-    const focusedPos = focusedAttr ? document.activeElement.selectionStart : null;
-
     root.querySelectorAll('[data-share-toggle]').forEach(button => button.addEventListener('click', () => this.toggle(button.dataset.shareToggle)));
     root.querySelector('[data-share-query]')?.addEventListener('input', event => this.search(event.target.value));
     root.querySelector('[data-share-review-open]')?.addEventListener('click', () => this.openReview());
@@ -129,9 +126,6 @@ export class CollectionShareController {
       this._focusName = false;
       const field = root.querySelector('[data-share-name]');
       if (field) { field.focus(); field.setSelectionRange(field.value.length, field.value.length); }
-    } else if (focusedAttr) {
-      const field = root.querySelector(`[${focusedAttr}]`);
-      if (field) { field.focus(); if (focusedPos != null) field.setSelectionRange(focusedPos, focusedPos); }
     }
   }
 }
