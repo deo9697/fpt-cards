@@ -12,8 +12,11 @@ import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
 import { DeckController } from './js/decks.js';
 import { MarketWatchController } from './js/market-watch.js';
+import { CollectionShareController } from './js/collection-share.js';
 
-const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more']);
+const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests']);
+const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
+let guestShare;
 let page = routeFromHash();
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let selectedLoanId = '';
@@ -1534,7 +1537,23 @@ async function updateLoan(id, action) {
   } catch (error) { toast(error.message); }
 }
 
+async function startGuestShare(shareId) {
+  document.body.dataset.page = 'share';
+  guestShare = new CollectionShareController({ api, shareId, onRender:renderGuestShare, onToast:toast });
+  renderGuestShare();
+  await guestShare.load();
+}
+function renderGuestShare() {
+  document.querySelector('#app').innerHTML = guestShare.view();
+  guestShare.bind(document);
+}
+
 async function start() {
+  // A share link has no session at all — never let it fall into the normal
+  // login-gated boot below, which would otherwise show a login screen to
+  // someone who was never meant to need an account.
+  const shareMatch = location.hash.match(SHARE_HASH);
+  if (shareMatch) { await startGuestShare(shareMatch[1]); return; }
   installCardImageRecovery();
   installCollectionControls();
   await fastScan.restore();

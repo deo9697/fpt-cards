@@ -150,5 +150,14 @@ export const api = {
     collectionChannel = null;
   },
   paginationMetrics(resource) { return paginationMetrics(resource); },
-  async transition(id, action) { ensure(); unwrap(await client.rpc('transition_loan', { p_token:token(), p_id:id, p_action:action })); }
+  async transition(id, action) { ensure(); unwrap(await client.rpc('transition_loan', { p_token:token(), p_id:id, p_action:action })); },
+  async createCollectionShare(game) { ensure(); return unwrap(await client.rpc('create_collection_share', { p_token:token(), p_game:game })); },
+  async revokeCollectionShare(shareId) { ensure(); return unwrap(await client.rpc('revoke_collection_share', { p_token:token(), p_share_id:shareId })); },
+  async collectionShares() { ensure(); return unwrap(await client.rpc('list_collection_shares', { p_token:token() })); },
+  async collectionShareRequests() { ensure(); return unwrap(await client.rpc('list_collection_share_requests', { p_token:token() })); },
+  async markCollectionShareRequestSeen(requestId) { ensure(); return unwrap(await client.rpc('mark_collection_share_request_seen', { p_token:token(), p_request_id:requestId })); },
+  // Guest-facing: no session token — the share id itself is the only
+  // credential, validated server-side against collection_shares.
+  async getCollectionShare(shareId) { ensure(); return unwrap(await client.rpc('get_collection_share', { p_share_id:shareId })); },
+  async submitCollectionShareRequest(shareId, requesterName, items) { ensure(); return unwrap(await client.rpc('submit_collection_share_request', { p_share_id:shareId, p_requester_name:requesterName, p_items:items })); }
 };

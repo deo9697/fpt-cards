@@ -1579,6 +1579,8 @@ img.card-image-unavailable { opacity: 0; }
 .market-board-tools { display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #332a3c;background:#0d1019; }
 .market-board-tools .market-tabs { flex:1;border-bottom:0; }
 .market-board-tools>label { display:flex;align-items:center;gap:8px;padding-right:12px;color:#aaa0b1;font-size:.7rem; }
+.market-confirm-all { flex:none;white-space:nowrap;color:#ffd27a;border-color:#f4b94240;background:#f4b9420f; }
+.market-confirm-all:disabled { opacity:.6;cursor:progress; }
 .market-board-tools select { min-width:150px;padding:8px;border:1px solid #3b3344;border-radius:7px;background:#111520;color:#fff; }
 .market-tabs { display:flex;gap:4px;padding:8px;border-bottom:1px solid #332a3c;background:#0d1019; }
 .market-tabs button { display:flex;align-items:center;justify-content:center;gap:7px;min-width:130px;padding:11px 16px;border:1px solid transparent;border-radius:8px;background:transparent;color:#a9a1af;font-weight:750; }
@@ -1729,3 +1731,31 @@ button.market-row:hover { background:#15121d; }
   .market-preparing .market-orbit { width:42px;height:42px; }
   .market-detail-hero { margin:-20px -16px 16px; }
 }
+
+/* Condivisione raccolta — vista ospite, nessuna shell dell'app attorno */
+.share-guest-shell { min-height: 100dvh; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); background: #07080d; color: #f3f4f7; }
+.share-guest-loading { display: grid; place-items: center; min-height: 60dvh; }
+.share-guest-message { display: grid; justify-items: center; gap: 10px; min-height: 60dvh; align-content: center; text-align: center; color: #9299aa; }
+.share-guest-message .icon { width: 40px; height: 40px; color: #9b5cff; }
+.share-guest-message h2 { margin: 0; color: #f3f4f7; font-family: var(--display-font); }
+.share-guest-message p { margin: 0; max-width: 320px; }
+.share-guest-header { text-align: center; margin-bottom: 18px; }
+.share-guest-header .eyebrow { display: block; margin-bottom: 4px; color: #c9a8ff; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.share-guest-header h1 { margin: 0 0 4px; font-family: var(--display-font); font-size: 1.6rem; }
+.share-guest-header p { margin: 0; color: #9299aa; font-size: .82rem; }
+.share-guest-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-bottom: 90px; }
+@media (min-width: 480px) { .share-guest-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 720px) { .share-guest-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.share-guest-tile { position: relative; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; }
+.share-guest-art { position: relative; display: block; aspect-ratio: .686; overflow: hidden; border-radius: 8px; border: 2px solid transparent; background: radial-gradient(circle, #301742, #0c0e15 70%); box-shadow: 0 4px 10px #0007; transition: border-color .15s, transform .15s; }
+.share-guest-tile.selected .share-guest-art { border-color: #9b5cff; transform: scale(.97); }
+.share-guest-art img { width: 100%; height: 100%; object-fit: cover; }
+.share-guest-art > .icon { width: 100%; height: 100%; padding: 26%; color: #9363aa; }
+.share-guest-qty { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #0a0812e8; color: #f7f4eb; font-size: .56rem; font-weight: 800; }
+.share-guest-check { position: absolute; inset: 0; display: grid; place-items: center; background: #9b5cffbb; color: #fff; font-size: 1.4rem; font-weight: 800; }
+.share-guest-tile small { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d7cbe0; font-size: .56rem; text-align: center; }
+.share-guest-cart { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; gap: 8px; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: #10131bf5; border-top: 1px solid #292f3d; backdrop-filter: blur(12px); }
+.share-guest-cart > span { font-size: .76rem; color: #c9bfe0; }
+.share-guest-cart > span b { color: #fff; }
+.share-guest-cart input { width: 100%; padding: 11px 14px; border: 1px solid #40324d; border-radius: 10px; background: #0d0f18; color: #f3f4f7; font-size: 16px; }
+.share-guest-cart .btn { width: 100%; }
