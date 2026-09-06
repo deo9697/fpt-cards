@@ -9,7 +9,7 @@ const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{d
 const FRESH_MS=48*60*60*1000;
 
 export class MarketWatchController {
-  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;
+  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
   async load(){if(this.loadInFlight)return this.loadInFlight;this.loading=true;const request=(async()=>{try{const game=this.getGame(),moversRequest=this.api.marketDashboardMovers?this.api.marketDashboardMovers(game).catch(()=>[]):Promise.resolve([]),[payload,movers]=await Promise.all([this.api.marketWatch(game),moversRequest]),next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}this.data=next;this.error='';void this.loadFeaturedHistories();}catch(error){this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}finally{this.loading=false;}return this.data;})();this.loadInFlight=request;try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}}
@@ -22,8 +22,15 @@ export class MarketWatchController {
   // section (not a one-off cleanup) since new mismatches can appear any time
   // a new printing or a Cardmarket catalog change introduces one.
   rarityMismatchQueue(){return this.data.items.filter(hasRarityMismatchCandidates);}
+  // Aggregate items only ever surface ONE candidate (the Cardmarket product
+  // the resolver itself already matched at expansion level) — confirming here
+  // doesn't ask the user to pick anything, it just accepts what the resolver
+  // already found, in bulk, instead of clicking "Conferma questa" one card at
+  // a time. Rarity-mismatch items are deliberately excluded: those carry real
+  // alternative candidates that need a human to actually choose between them.
+  aggregatePendingQueue(){return this.data.items.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
   async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
-  view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue();
+  view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
         <div class="market-hero-art" aria-hidden="true"></div>
         <h1 class="market-hero-eyebrow">Market Watch</h1>
@@ -35,20 +42,15 @@ export class MarketWatchController {
         ${sparkle('top:36px;right:28%;width:10px;height:10px;animation-delay:.4s')}
         <span class="market-hero-label">La tua collezione vale</span>
         <strong class="market-hero-value">${summary.complete?money(summary.current):'Dati parziali'}</strong>
-        <div class="market-hero-stats">
-          <span><b>${this.data.items.length}</b><small>Printing</small></span>
-          <span><b class="${tone(summary.delta24)}">${summary.delta24Complete?changePercent(summary.delta24Percent):'—'}</b><small>24h</small></span>
-          <span><b class="${tone(summary.delta7)}">${summary.delta7Complete?changePercent(summary.delta7Percent):'—'}</b><small>7g</small></span>
+        <div class="market-hero-metrics">
+          ${heroMetric('Variazione 24h',summary.delta24Complete?changeMoney(summary.delta24):'Dati parziali',summary.delta24Complete?changePercent(summary.delta24Percent):'Snapshot non sufficiente',tone(summary.delta24))}
+          ${heroMetric('Variazione 7d',summary.delta7Complete?changeMoney(summary.delta7):'Dati parziali',summary.delta7Complete?changePercent(summary.delta7Percent):'Snapshot non sufficiente',tone(summary.delta7))}
+          ${heroMetric('Printing monitorate',String(this.data.items.length),`${summary.freshPrintings} aggiornate entro 48h`,'count')}
         </div>
         <span class="market-hero-sync"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
-      <section class="market-kpis">
-        ${kpi('Variazione 24h',summary.delta24Complete?changeMoney(summary.delta24):'Dati parziali',summary.delta24Complete?changePercent(summary.delta24Percent):'Snapshot non sufficiente',tone(summary.delta24))}
-        ${kpi('Variazione 7d',summary.delta7Complete?changeMoney(summary.delta7):'Dati parziali',summary.delta7Complete?changePercent(summary.delta7Percent):'Snapshot non sufficiente',tone(summary.delta7))}
-        ${kpi('Printing monitorate',String(this.data.items.length),`${summary.freshPrintings} aggiornate entro 48h`,'count')}
-      </section>
-      <section class="surface market-board"><div class="market-board-tools"><nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this.data,tab,marketDecks.length)}</span></button>`).join('')}${confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${confirmQueue.length}</span></button>`:''}</nav><label>Ordina<select data-market-sort><option value="value" ${this.sort==='value'?'selected':''}>Valore posseduto</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo più alto</option><option value="change" ${this.sort==='change'?'selected':''}>Variazione 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label></div>
+      <section class="surface market-board"><div class="market-board-tools"><nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this.data,tab,marketDecks.length)}</span></button>`).join('')}${confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${confirmQueue.length}</span></button>`:''}</nav>${aggregatePending.length?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:`Conferma ${aggregatePending.length} prezzi aggregate`}</button>`:''}<label>Ordina<select data-market-sort><option value="value" ${this.sort==='value'?'selected':''}>Valore posseduto</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo più alto</option><option value="change" ${this.sort==='change'?'selected':''}>Variazione 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label></div>
         ${this.tab==='confirm'?this.confirmRows(confirmQueue):this.tab==='deck'?this.deckRows(marketDecks):!this.data.items.length?emptyNoCards():!hasSnapshots?`${emptyPreparing()}${this.rows(items,[])}`:this.rows(items,[])}
       </section>${this.selected?this.detailView():''}${this.selectedDeck?this.deckDetailView(marketDecks):''}</section>`;}
   confirmRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):'<div class="market-tab-empty">Nessuna carta da confermare al momento.</div>'}</div>`;}
@@ -85,7 +87,7 @@ export class MarketWatchController {
       <p class="mapping-state">Mapping Cardmarket: ${esc(mappingStatusLabel(item))}</p>
     </aside></div>`;
   }
-  bind(root=document){root.querySelector('[data-market-retry]')?.addEventListener('click',()=>void this.load().then(()=>this.onRender()));root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{this.tab=button.dataset.marketTab;this.selected='';this.selectedDeck='';this.onRender();}));root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;this.onRender();});root.querySelectorAll('[data-market-card]').forEach(button=>button.addEventListener('click',()=>void this.openDetail(button.dataset.marketCard)));root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));root.querySelectorAll('[data-market-deck-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDeckDetail)history.back();else{this.selectedDeck='';this.onRender();}}));root.querySelectorAll('[data-market-detail-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDetail)history.back();else{this.selected='';this.onRender();}}));root.querySelectorAll('[data-market-unwatch]').forEach(button=>button.addEventListener('click',()=>void this.unwatch(button.dataset.marketUnwatch)));root.querySelectorAll('[data-market-watch-toggle]').forEach(button=>button.addEventListener('click',()=>void (button.dataset.marketWatchState==='remove'?this.unwatch(button.dataset.marketWatchToggle):this.watch(button.dataset.marketWatchToggle))));root.querySelectorAll('[data-market-share]').forEach(button=>button.addEventListener('click',()=>void this.share(button.dataset.marketShare)));root.querySelectorAll('[data-market-confirm-mapping]').forEach(button=>button.addEventListener('click',()=>void this.confirmMapping(button.dataset.marketConfirmMapping,button.dataset.marketConfirmProduct,{productName:button.dataset.marketConfirmName||'',expansion:button.dataset.marketConfirmExpansion||'',rarity:button.dataset.marketConfirmRarity||''})));root.querySelectorAll('[data-market-range]').forEach(button=>button.addEventListener('click',()=>this.setHistoryRange(Number(button.dataset.marketRange))));root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));this.observeRows(root);}
+  bind(root=document){root.querySelector('[data-market-retry]')?.addEventListener('click',()=>void this.load().then(()=>this.onRender()));root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{this.tab=button.dataset.marketTab;this.selected='';this.selectedDeck='';this.onRender();}));root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;this.onRender();});root.querySelectorAll('[data-market-card]').forEach(button=>button.addEventListener('click',()=>void this.openDetail(button.dataset.marketCard)));root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));root.querySelectorAll('[data-market-deck-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDeckDetail)history.back();else{this.selectedDeck='';this.onRender();}}));root.querySelectorAll('[data-market-detail-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDetail)history.back();else{this.selected='';this.onRender();}}));root.querySelectorAll('[data-market-unwatch]').forEach(button=>button.addEventListener('click',()=>void this.unwatch(button.dataset.marketUnwatch)));root.querySelectorAll('[data-market-watch-toggle]').forEach(button=>button.addEventListener('click',()=>void (button.dataset.marketWatchState==='remove'?this.unwatch(button.dataset.marketWatchToggle):this.watch(button.dataset.marketWatchToggle))));root.querySelectorAll('[data-market-share]').forEach(button=>button.addEventListener('click',()=>void this.share(button.dataset.marketShare)));root.querySelectorAll('[data-market-confirm-mapping]').forEach(button=>button.addEventListener('click',()=>void this.confirmMapping(button.dataset.marketConfirmMapping,button.dataset.marketConfirmProduct,{productName:button.dataset.marketConfirmName||'',expansion:button.dataset.marketConfirmExpansion||'',rarity:button.dataset.marketConfirmRarity||''})));root.querySelector('[data-market-confirm-all-aggregate]')?.addEventListener('click',()=>void this.confirmAllAggregate());root.querySelectorAll('[data-market-range]').forEach(button=>button.addEventListener('click',()=>this.setHistoryRange(Number(button.dataset.marketRange))));root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));this.observeRows(root);}
   observeRows(root=document){
     if(typeof IntersectionObserver==='undefined'||!this.api?.marketPriceHistory)return;
     this.rowObserver?.disconnect();
@@ -108,6 +110,26 @@ export class MarketWatchController {
     if(!productId)return;
     try{await this.api.setMarketMappingManual(printingId,productId,meta);await this.load();this.onToast('Printing confermata — il prossimo aggiornamento userà questo prezzo reale');}
     catch(error){this.onToast(error.message||'Conferma non riuscita');}
+    this.onRender();
+  }
+  async confirmAllAggregate(){
+    const pending=this.aggregatePendingQueue();
+    if(!pending.length||this.bulkConfirmBusy)return;
+    this.bulkConfirmBusy=true;this.bulkConfirmProgress={done:0,total:pending.length};this.onRender();
+    let confirmed=0,failed=0;
+    for(let i=0;i<pending.length;i+=5){
+      const batch=pending.slice(i,i+5);
+      await Promise.all(batch.map(async item=>{
+        const candidate=mappingCandidates(item)[0];
+        try{await this.api.setMarketMappingManual(item.printingId,candidate.productId,{productName:candidate.cardName||item.cardName,expansion:candidate.expansion||'',rarity:candidate.rarity||''});confirmed++;}
+        catch{failed++;}
+        finally{this.bulkConfirmProgress.done++;}
+      }));
+      this.onRender();
+    }
+    this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;
+    await this.load();
+    this.onToast(failed?`Confermate ${confirmed} carte, ${failed} non riuscite — riprova più tardi`:`Confermate ${confirmed} carte con prezzo aggregato`);
     this.onRender();
   }
   async share(printingId){const item=this.data.items.find(row=>row.printingId===printingId);if(!item)return;const url=item.cardmarketUrl||(typeof location!=='undefined'?location.href:''),text=`${item.cardName}${item.referencePrice!=null?` · ${money(item.referencePrice)}`:''}`;try{if(typeof navigator!=='undefined'&&navigator.share){await navigator.share({title:item.cardName,text,url});return;}await navigator.clipboard.writeText(url);this.onToast('Link copiato negli appunti');}catch(error){if(error?.name!=='AbortError')this.onToast('Condivisione non riuscita');}}
@@ -186,9 +208,12 @@ function confirmCandidateDetail(candidate){
   if(candidate.foil===false)return ' · Non foil';
   return candidate.productId?` · ID ${esc(candidate.productId)}`:'';
 }
-function mappingConfirmBlock(item){
+function mappingCandidates(item){
   const evidence=item.mappingEvidence||{};
-  const candidates=Array.isArray(evidence.candidates)&&evidence.candidates.length?evidence.candidates:evidence.providerProductId?[{productId:evidence.providerProductId,cardName:evidence.providerCardName||item.cardName,rarity:evidence.providerRarity||'',expansion:evidence.providerExpansion||'',productUrl:evidence.providerProductUrl||''}]:[];
+  return Array.isArray(evidence.candidates)&&evidence.candidates.length?evidence.candidates:evidence.providerProductId?[{productId:evidence.providerProductId,cardName:evidence.providerCardName||item.cardName,rarity:evidence.providerRarity||'',expansion:evidence.providerExpansion||'',productUrl:evidence.providerProductUrl||''}]:[];
+}
+function mappingConfirmBlock(item){
+  const candidates=mappingCandidates(item);
   if(!candidates.length)return '<p class="mapping-confirm-empty">Nessun candidato salvato per la conferma manuale: attendi il prossimo sync o verifica a mano su Cardmarket.</p>';
   return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${candidates.map(candidate=>`<div class="mapping-confirm-row"><span><strong>${esc(candidate.cardName||item.cardName)}</strong><small>${esc(candidate.expansion||'—')}${confirmCandidateDetail(candidate)}</small></span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
 }
@@ -250,11 +275,14 @@ function formatChartDate(value){const date=new Date(value);return Number.isNaN(d
 function unresolvedDeckRow(row){return `<article class="market-row unresolved"><span class="market-art-empty">${icon('deck')}</span><span class="market-card-copy"><strong>${esc(row.cardName)}</strong><small>${esc(row.deckName)} · ${esc(row.section)} · ${row.quantity} copie</small><em>Printing da selezionare</em></span><button class="btn secondary small" data-market-resolve-deck>Seleziona</button></article>`;}
 function emptyPreparing(){return '<div class="market-preparing"><span class="market-orbit">'+icon('chart')+'</span><div><h2>Il Market Watch sta preparando i primi dati.</h2><p>Le printing sono pronte; i valori compariranno dopo il primo aggiornamento server-side.</p></div></div>';}
 function emptyNoCards(){return '<div class="empty-state market-empty">'+icon('collection')+'<h2>Aggiungi carte alla Raccolta o alla Watchlist per iniziare.</h2><p>Le carte possedute entrano automaticamente nel monitoraggio.</p></div>';}
-function kpi(label,value,detail,kind){return `<article class="surface market-kpi ${kind}"><small>${label}</small><strong>${value}</strong><span>${detail}</span></article>`;}
-const HERO_PARTICLES=[[8,4,4.5,0],[16,6,3.8,1.1],[24,3,5.2,.4],[32,5,4,2],[40,4,4.7,.8],[48,6,3.6,1.6],[56,3,5.5,2.6],[64,5,4.2,3.1],[72,4,5,1.8],[80,6,4.3,.6],[88,3,3.9,2.3],[94,5,4.8,1.3],[6,4,5.1,3.4],[60,3,4.6,.2],[38,5,3.7,2.9],[84,4,5.4,1.9]];
+function heroMetric(label,value,detail,kind){return `<span class="market-hero-metric ${kind}"><small>${label}</small><b>${value}</b><em>${detail}</em></span>`;}
+const HERO_PARTICLES=[[8,4,4.5,0],[24,3,5.2,.4],[40,4,4.7,.8],[56,3,5.5,2.6],[72,4,5,1.8],[88,3,3.9,2.3],[6,4,5.1,3.4],[38,5,3.7,2.9]];
 function heroParticles(){return `<div class="market-hero-particles" aria-hidden="true">${HERO_PARTICLES.map(([left,size,duration,delay])=>`<span class="market-hero-particle" style="left:${left}%;width:${size}px;height:${size}px;animation-duration:${duration}s;animation-delay:${delay}s"></span>`).join('')}</div>`;}
 function sparkle(style){return `<svg class="market-hero-sparkle" style="${style}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0l2 10 10 2-10 2-2 10-2-10L0 12l10-2z"/></svg>`;}
-const HERO_COINS=[[10,3.4,0],[24,2.8,.6],[38,3.8,1.3],[52,3,.2],[66,3.6,1.8],[80,2.9,.9],[92,3.3,1.5],[17,3.1,2.4],[46,3.5,2.9],[74,3.2,2.1]];
+// Ridotte da 10 a 5 monete: il filter:drop-shadow per elemento animato è costoso
+// (forza repaint non compositato ad ogni frame) ed era la causa più probabile
+// dei rallentamenti/blocchi segnalati sull'header di Market Watch.
+const HERO_COINS=[[10,3.4,0],[38,3.8,1.3],[66,3.6,1.8],[92,3.3,1.5],[52,3,.2]];
 function heroCoin(){return `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#f6cf5b" stroke="#a8690a" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="none" stroke="#c98a1c" stroke-width="1.5"/><text x="16" y="21" font-family="Georgia, 'Times New Roman', serif" font-size="14" font-weight="700" text-anchor="middle" fill="#a8690a">$</text></svg>`;}
 function heroCoins(){return `<div class="market-hero-coins" aria-hidden="true">${HERO_COINS.map(([left,duration,delay])=>`<span class="market-hero-coin" style="left:${left}%;animation-duration:${duration}s;animation-delay:${delay}s">${heroCoin()}</span>`).join('')}</div>`;}
 function countFor(data,tab,deckCount=0){return tab==='deck'?deckCount:data.items.filter(item=>item.sources.includes(tab)).length;}
