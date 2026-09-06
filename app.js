@@ -801,8 +801,23 @@ function requestsView() {
 function requestRowHtml(request) {
   const items = request.items || [];
   return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Segna come vista</button>` : `<i class="share-request-seen-badge">Vista</i>`}</header>
-    <div class="share-request-items">${items.map(item => `<span class="share-request-item">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}<b>${esc(item.cardName)}</b><small>${item.quantity}×</small></span>`).join('')}</div>
+    <div class="share-receipt">
+      ${items.map(requestReceiptRowHtml).join('')}
+      <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
+    </div>
   </article>`;
+}
+function requestReceiptRowHtml(item) {
+  const unit = formatEuro(item.unitPrice);
+  const lineTotal = typeof item.unitPrice === 'number' ? formatEuro(item.unitPrice * item.quantity) : null;
+  return `<div class="share-receipt-row">
+    <span class="share-receipt-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}</span>
+    <div class="share-receipt-info"><b>${esc(item.cardName)}</b><small>${item.quantity}× ${unit ? `· ${unit} cad.` : '· prezzo n/d'}</small></div>
+    <b class="share-receipt-price">${lineTotal || '—'}</b>
+  </div>`;
+}
+function formatEuro(value) {
+  return typeof value === 'number' ? value.toLocaleString('it-IT', { style:'currency', currency:'EUR' }) : null;
 }
 
 // The results grid only ever renders collectionVisibleCount items — this
