@@ -73,7 +73,7 @@ const fastScan = new FastScanController({
   onRoute:mode=>setFastScanRoute(mode)
 });
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
-const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>render(true),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
+const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function showFab() { return page !== 'new' && page !== 'market' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
@@ -132,7 +132,7 @@ function renderRoute() {
   if (showFab()) shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
-    button.classList.toggle('active', target === page || (target === 'more' && ['decks','market','team','settings'].includes(page)));
+    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests'].includes(page)));
   });
   // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
   // ricostruire la pagina e le sue immagini.
