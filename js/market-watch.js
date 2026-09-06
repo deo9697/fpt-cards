@@ -218,7 +218,7 @@ function marketRow(item,history,tab){
   const aggregate=isAggregatePrice(item),delta=!aggregate&&item.referencePrice!=null&&item.price24h!=null?item.referencePrice-item.price24h:null,percent=delta!=null&&item.price24h?delta/item.price24h*100:null;
   const owned=tab==='owned'&&item.ownedQuantity>0,position=owned&&item.referencePrice!=null?item.referencePrice*item.ownedQuantity:null;
   return `<button class="market-row" data-market-card="${esc(item.printingId)}">
-    ${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:`<span class="market-art-empty">${icon('card')}</span>`}
+    ${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="" loading="lazy">`:`<span class="market-art-empty">${icon('card')}</span>`}
     <span class="market-card-copy">
       <strong>${esc(item.cardName)}</strong>
       <small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small>
@@ -256,7 +256,7 @@ function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scop
 // è già 'manual' una volta confermata, quindi qui non ricompare più.
 function needsMappingReview(item){return item.mappingStatus!=='manual'&&(item.mappingReason==='provider_rarity_mismatch'||item.resolverStatus==='AMBIGUOUS');}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
-    <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
+    <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="" loading="lazy">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
     ${mappingIssueNotice(item)}
   </div>`;}
 function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
