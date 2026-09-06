@@ -235,6 +235,27 @@ Deno.serve(async request=>{
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
 
+// request()'s per-attempt AbortSignal.timeout(180000) only bounds a single
+// HTTP attempt; with maxAttempts=3 retries plus backoff, one loadCatalog()/
+// loadPrices() call can legitimately run ~15-20 minutes if Cardmarket's feed
+// is slow that day — long past any Edge Function platform time limit. When
+// that happens the platform kills the isolate outright, skipping our own
+// catch block entirely: the sync_runs row is left at status='running' with
+// no error, and (since the scheduled sync only runs once a day) it silently
+// blocks all price updates until the next day's attempt notices the >2h-old
+// stale lock. Observed twice in a row (2026-09-05 and 2026-09-06). Racing
+// each call against a much shorter internal deadline turns that into a
+// prompt, diagnosable 'failed' row instead of a day-long silent hang.
+// Generous relative to a normal run (a few seconds), but well under any
+// plausible platform execution ceiling — pending confirmation of the actual
+// limit from Supabase's own dashboard/logs, worth tuning once known.
+const CATALOG_DEADLINE_MS=90_000,PRICES_DEADLINE_MS=60_000;
+function withDeadline<T>(promise:Promise<T>,ms:number,label:string):Promise<T>{
+  let timer:any;
+  const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error(`${label}: timeout interno dopo ${Math.round(ms/1000)}s`),{code:'internal_timeout'})),ms);});
+  return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
+}
+
 async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
@@ -251,14 +272,14 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
     let resolvedTargets=[...unique.values()];
     if(provider.name==='cardmarket'){
-      if(pricesOnly){feedStats=await provider.loadPrices(resolvedTargets);requestCount+=1;}
+      if(pricesOnly){feedStats=await withDeadline(provider.loadPrices(resolvedTargets),PRICES_DEADLINE_MS,'loadPrices');requestCount+=1;}
       else{
         const printingResult=await listCardPrintings(),internalPrintings=await withCanonicalCardNames(printingResult.rows,resolvedTargets);
         printingPages=printingResult.requests;printingRows=printingResult.rows.length;
-        const catalogStats=await provider.loadCatalog(resolvedTargets,{internalPrintings});requestCount+=3;
+        const catalogStats=await withDeadline(provider.loadCatalog(resolvedTargets,{internalPrintings}),CATALOG_DEADLINE_MS,'loadCatalog');requestCount+=3;
         resolvedTargets=await resolveCardmarketTargets(provider,resolvedTargets,internalPrintings);
         if(skipPrices){const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{}),unresolved=resolvedTargets.filter((target:any)=>!isAuthorizedCardmarketMapping(target)).length,status=unresolved?'partial':'succeeded';await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:unresolved?'target_failures':null,error_message:unresolved?`${unresolved} mapping non risolti`:null,metadata:{targets:unique.size,snapshots:0,resolverOnly:true}});return {provider:provider.name,status,targets:unique.size,snapshots:0,failures:unresolved,feedStats:catalogStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};}
-        const priceStats=await provider.loadPrices(resolvedTargets);requestCount+=1;
+        const priceStats=await withDeadline(provider.loadPrices(resolvedTargets),PRICES_DEADLINE_MS,'loadPrices');requestCount+=1;
         feedStats={...catalogStats,...priceStats};
       }
     }
