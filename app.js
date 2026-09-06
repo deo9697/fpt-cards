@@ -208,7 +208,7 @@ function appView() {
 }
 
 function navButton(id, iconName, label, notifications) {
-  const active = page === id || (id === 'more' && ['decks','market','team','settings','requests'].includes(page));
+  const active = page === id || (id === 'more' && ['team','settings','requests'].includes(page));
   return `<button data-page="${id}" class="${active ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`;
 }
 
@@ -281,7 +281,7 @@ function settingsView() {
 
 function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
-  const links = [['decks','deck','Mazzi','Costruzione e disponibilità'],['market','chart','Market Watch','Prezzi e watchlist'],['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
+  const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
