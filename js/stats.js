@@ -7,6 +7,7 @@ const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
 function ringColor(winRate) { return winRate >= 70 ? '#9cf07a' : winRate >= 45 ? '#f2c974' : '#ff8fa0'; }
 const PERIODS = [{ value:'all', label:'Sempre' }, { value:'30d', label:'30 giorni' }, { value:'7d', label:'7 giorni' }];
 const SCOPES = ['mine', 'team', 'board'];
+const NEW_DECK_VALUE = '__new__';
 
 export class StatsController {
   constructor({ api, getState, onRender, onToast } = {}) {
@@ -103,27 +104,37 @@ export class StatsController {
   }
   setOpponentMember(slug) {
     this.matchForm.opponentMemberSlug = slug;
-    this.matchForm.opponentDeckId = this.opponentDecksForMember(slug)[0]?.id || '';
+    const decks = this.opponentDecksForMember(slug);
+    this.matchForm.opponentDeckId = decks[0]?.id || (slug ? NEW_DECK_VALUE : '');
+    this.matchForm.opponentDeckName = '';
     this.onRender();
   }
-  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; this.onRender(); }
+  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; if (deckId !== NEW_DECK_VALUE) this.matchForm.opponentDeckName = ''; this.onRender(); }
+  get teamOpponentValid() {
+    if (this.opponentMode !== 'team') return true;
+    if (!this.matchForm.opponentMemberSlug) return false;
+    if (this.matchForm.opponentDeckId === NEW_DECK_VALUE) return this.matchForm.opponentDeckName.trim().length > 0;
+    return !!this.matchForm.opponentDeckId;
+  }
   async registerMatch() {
     const form = this.matchForm;
-    const teamValid = this.opponentMode !== 'team' || (form.opponentMemberSlug && form.opponentDeckId);
-    if (this.busy || !form.deckId || !form.result || !teamValid) return;
+    if (this.busy || !form.deckId || !form.result || !this.teamOpponentValid) return;
+    const isNewOpponentDeck = this.opponentMode === 'team' && form.opponentDeckId === NEW_DECK_VALUE;
     this.busy = true; this.onRender();
     try {
       const response = await this.api.registerMatch({
         game:this.state.game, deckId:form.deckId, result:form.result,
         opponentLabel:form.opponentLabel, opponentDeck:this.opponentMode === 'external' ? form.opponentDeck : '', notes:form.notes,
         opponentMemberSlug:this.opponentMode === 'team' ? form.opponentMemberSlug : null,
-        opponentDeckId:this.opponentMode === 'team' ? form.opponentDeckId : null
+        opponentDeckId:this.opponentMode === 'team' && !isNewOpponentDeck ? form.opponentDeckId : null,
+        opponentDeckName:isNewOpponentDeck ? form.opponentDeckName.trim() : ''
       });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
       this.lastResult = { result:form.result, ...response };
       const [, streak] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game)]);
       this.streak = streak;
       if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab
+      if (isNewOpponentDeck) { this.teamDecksLoaded = false; this.teamDecksAll = []; } // il mazzo appena creato per il compagno deve comparire nel prossimo dialog
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
     finally { this.busy = false; this.onRender(); }
   }
@@ -197,7 +208,8 @@ export class StatsController {
     if (this.lastResult) return this.feedbackView();
     const form = this.matchForm;
     const opponentDecks = form.opponentMemberSlug ? this.opponentDecksForMember(form.opponentMemberSlug) : [];
-    const teamValid = this.opponentMode !== 'team' || (form.opponentMemberSlug && form.opponentDeckId);
+    const opponentName = this.teammates.find(m => m.id === form.opponentMemberSlug)?.name || 'il compagno';
+    const showNewDeckField = this.opponentMode === 'team' && form.opponentMemberSlug && form.opponentDeckId === NEW_DECK_VALUE;
     return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail" role="dialog" aria-modal="true" aria-label="Registra match">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
       <span class="eyebrow">Registra match</span><h2>Nuovo risultato</h2>
@@ -209,10 +221,11 @@ export class StatsController {
       </div>
       ${this.opponentMode === 'team' ? `
       <label>Compagno<select data-match-opponent-member><option value="">Scegli un compagno</option>${this.teammates.map(m => `<option value="${esc(m.id)}" ${form.opponentMemberSlug === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
-      ${form.opponentMemberSlug ? `<label>Mazzo del compagno<select data-match-opponent-deck>${opponentDecks.length ? opponentDecks.map(d => `<option value="${esc(d.id)}" ${form.opponentDeckId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('') : '<option value="">Nessun mazzo per questo gioco</option>'}</select></label>` : ''}
+      ${form.opponentMemberSlug && opponentDecks.length ? `<label>Mazzo del compagno<select data-match-opponent-deck>${opponentDecks.map(d => `<option value="${esc(d.id)}" ${form.opponentDeckId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}<option value="${NEW_DECK_VALUE}" ${form.opponentDeckId === NEW_DECK_VALUE ? 'selected' : ''}>+ Nuovo mazzo…</option></select></label>` : ''}
+      ${showNewDeckField ? `<label>${opponentDecks.length ? `Nome del nuovo mazzo di ${esc(opponentName)}` : `Che mazzo sta usando ${esc(opponentName)}? (non ha ancora un mazzo salvato)`}<input data-match-opponent-deck-name maxlength="80" value="${esc(form.opponentDeckName)}" placeholder="Es. Blue-Eyes"></label>` : ''}
       ` : `<label>Avversario / Deck<input data-match-field="opponentDeck" maxlength="120" value="${esc(form.opponentDeck)}" placeholder="Es. Labrynth"></label>`}
       <label>Note<textarea data-match-field="notes" maxlength="500" placeholder="Facoltative">${esc(form.notes)}</textarea></label>
-      <button class="btn wide" data-match-submit ${this.busy || !form.deckId || !form.result || !teamValid ? 'disabled' : ''}>${this.busy ? 'Registro…' : 'Registra'}</button>
+      <button class="btn wide" data-match-submit ${this.busy || !form.deckId || !form.result || !this.teamOpponentValid ? 'disabled' : ''}>${this.busy ? 'Registro…' : 'Registra'}</button>
     </aside></div>`;
   }
   feedbackView() {
@@ -241,12 +254,17 @@ export class StatsController {
     root.querySelectorAll('[data-opponent-mode]').forEach(button => button.addEventListener('click', () => this.setOpponentMode(button.dataset.opponentMode)));
     root.querySelector('[data-match-opponent-member]')?.addEventListener('change', event => this.setOpponentMember(event.currentTarget.value));
     root.querySelector('[data-match-opponent-deck]')?.addEventListener('change', event => this.setOpponentDeck(event.currentTarget.value));
+    root.querySelector('[data-match-opponent-deck-name]')?.addEventListener('input', event => {
+      this.matchForm.opponentDeckName = event.currentTarget.value;
+      const submit = root.querySelector('[data-match-submit]');
+      if (submit) submit.disabled = this.busy || !this.matchForm.deckId || !this.matchForm.result || !this.teamOpponentValid;
+    });
     root.querySelectorAll('[data-match-field]').forEach(field => field.addEventListener('input', event => this.setMatchField(event.currentTarget.dataset.matchField, event.currentTarget.value)));
     root.querySelector('[data-match-submit]')?.addEventListener('click', () => void this.registerMatch());
   }
 }
 
-function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'', opponentMemberSlug:'', opponentDeckId:'' }; }
+function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'', opponentMemberSlug:'', opponentDeckId:'', opponentDeckName:'' }; }
 
 function normalizeRows(rows) {
   return (rows || []).map(row => ({ deckId:row.deck_id, deckName:row.deck_name, matches:row.matches, wins:row.wins, losses:row.losses, draws:row.draws, winRate:Number(row.win_rate) }));
