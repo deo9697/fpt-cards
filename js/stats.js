@@ -1,6 +1,7 @@
 import { esc, initials, MEMBERS } from './core.js';
 import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
+import { newlyUnlockedCosmetics } from './cosmetics.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
@@ -13,7 +14,7 @@ export class StatsController {
   constructor({ api, getState, onRender, onToast } = {}) {
     Object.assign(this, { api, getState, onRender, onToast });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
-    this.progression = null; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
+    this.progression = null; this.cosmetics = null; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
     this.loadInFlight = null;
     this.teamDecksAll = []; this.teamDecksLoaded = false; this.teamDecksLoadInFlight = null;
@@ -45,12 +46,25 @@ export class StatsController {
     if (this.loadInFlight) return this.loadInFlight;
     const request = (async () => {
       try {
-        const [progression, streak] = await Promise.all([this.api.progression(), this.api.matchStreak(this.state.game), this.loadStats()]);
-        this.progression = progression; this.streak = streak; this.error = '';
+        const [progression, cosmetics, streak] = await Promise.all([this.api.progression(), this.api.myCosmetics(), this.api.matchStreak(this.state.game), this.loadStats()]);
+        this.progression = progression; this.cosmetics = cosmetics; this.streak = streak; this.error = '';
+        await this.claimNewCosmetics();
       } catch (error) { this.error = error.message || 'Statistiche non disponibili'; }
     })();
     this.loadInFlight = request;
     try { return await request; } finally { if (this.loadInFlight === request) this.loadInFlight = null; }
+  }
+  // Sblocco silenzioso: appena il livello aggiorna copre un cosmetic non
+  // ancora "claim"-ato, lo registra subito lato server senza bisogno di un
+  // popup dedicato — l'utente lo trova già disponibile in Personalizza.
+  async claimNewCosmetics() {
+    if (!this.progression || !this.cosmetics) return;
+    const fresh = newlyUnlockedCosmetics(this.progression, this.cosmetics.unlocked);
+    if (!fresh.length) return;
+    try {
+      await Promise.all(fresh.map(item => this.api.claimCosmetic(item.id)));
+      this.cosmetics = { ...this.cosmetics, unlocked: [...this.cosmetics.unlocked, ...fresh.map(item => item.id)] };
+    } catch {}
   }
   async loadStats() {
     const period = this.periodFilter;
@@ -131,6 +145,7 @@ export class StatsController {
       });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
       this.lastResult = { result:form.result, ...response };
+      void this.claimNewCosmetics();
       const [, streak] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game)]);
       this.streak = streak;
       if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab

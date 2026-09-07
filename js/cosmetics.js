@@ -1,0 +1,70 @@
+// Catalogo cosmetici (avatar/titoli sbloccabili ed equipaggiabili) — un solo
+// posto dove aggiungere nuovi item o nuovi tipi di sblocco, niente
+// `if (level >= 5) ...` sparso per l'app. Lo stato "cosa ho sbloccato/cosa
+// ho equipaggiato" vive nel database (supabase-milestone-9-cosmetics.sql);
+// questo file decide solo QUANDO un item è sbloccabile e COME mostrarlo.
+//
+// Ogni cosmetic: { id, type:'avatar'|'title', label, unlock:{type,value}, ... }.
+// Tipi di unlock supportati oggi: 'level' (richiede progression.level >= value,
+// sempre vero per value<=1). Pensato per estendersi ad 'achievement' | 'daily'
+// | 'event' | 'admin' | 'special' senza cambiare la struttura sopra — un
+// domani isCosmeticUnlocked() imparerà a leggere anche quei tipi.
+
+export const COSMETICS = [
+  // Avatar: uno sempre sbloccato, poi il primo vero reward cosmetico a LV5 —
+  // un pacchetto di 4, non uno solo, per dare la sensazione di aver
+  // "sbloccato la personalizzazione" e non ricevuto un singolo oggetto.
+  // Immagini placeholder (assets/avatars/*) — da sostituire con l'artwork
+  // reale del personaggio "Blattaman" quando pronto.
+  { id:'avatar_default', type:'avatar', label:'Predefinito', image:'assets/avatars/avatar-default.png', unlock:{ type:'level', value:1 } },
+  { id:'avatar_blattaman_chill', type:'avatar', label:'Blattaman Chill', image:'assets/avatars/avatar-blattaman-chill.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
+  { id:'avatar_blattaman_rage', type:'avatar', label:'Blattaman Rage', image:'assets/avatars/avatar-blattaman-rage.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
+  { id:'avatar_blattaman_laugh', type:'avatar', label:'Blattaman Laugh', image:'assets/avatars/avatar-blattaman-laugh.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
+  { id:'avatar_blattaman_gremlin', type:'avatar', label:'Blattaman Gremlin', image:'assets/avatars/avatar-blattaman-gremlin.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
+
+  // Titoli: gli stessi 5 già calcolati automaticamente da titleForLevel() in
+  // progression.js, portati nel catalogo così passano dallo stesso sistema
+  // sblocca/equipaggia invece di essere "sempre quello massimo raggiunto" —
+  // un membro di LV20 può tornare a mostrare "Tonno" se preferisce.
+  { id:'title_tonno', type:'title', label:'Tonno', unlock:{ type:'level', value:1 } },
+  { id:'title_totonno', type:'title', label:'Totonno', unlock:{ type:'level', value:10 } },
+  { id:'title_totorchio', type:'title', label:'Totorchio', unlock:{ type:'level', value:20 } },
+  { id:'title_totorchiomon', type:'title', label:'Totorchiomon', unlock:{ type:'level', value:30 } },
+  { id:'title_metal_war_totorchiomon', type:'title', label:'Metal War Totorchiomon', unlock:{ type:'level', value:40 } }
+];
+
+export function isCosmeticUnlocked(cosmetic, progression) {
+  if (!cosmetic?.unlock) return false;
+  const { type, value } = cosmetic.unlock;
+  if (type === 'level') return (progression?.level || 1) >= value;
+  return false;
+}
+
+export function cosmeticsByType(type) {
+  return COSMETICS.filter(item => item.type === type);
+}
+
+export function findCosmetic(id) {
+  return COSMETICS.find(item => item.id === id) || null;
+}
+
+// Cosmetici appena diventati sblocca-bili ma non ancora "claim"-ati lato
+// server — chi chiama questa decide cosa farne (di solito: claim silenzioso
+// uno per uno all'apertura del profilo, vedi app.js).
+export function newlyUnlockedCosmetics(progression, alreadyUnlockedIds) {
+  const known = new Set(alreadyUnlockedIds || []);
+  return COSMETICS.filter(item => !known.has(item.id) && isCosmeticUnlocked(item, progression));
+}
+
+// Pacchetti (più cosmetici sbloccati dalla stessa condizione, es. il primo
+// Avatar Pack a LV5) raggruppati per mostrarli insieme invece che uno alla
+// volta — usato dalla vista "Personalizza" per l'intestazione di gruppo.
+export function cosmeticPacks(type) {
+  const packs = new Map();
+  for (const item of cosmeticsByType(type)) {
+    const key = item.pack || item.label;
+    if (!packs.has(key)) packs.set(key, []);
+    packs.get(key).push(item);
+  }
+  return [...packs.entries()].map(([label, items]) => ({ label, items }));
+}

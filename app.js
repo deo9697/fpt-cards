@@ -15,6 +15,7 @@ import { MarketWatchController } from './js/market-watch.js';
 import { CollectionShareController } from './js/collection-share.js';
 import { StatsController } from './js/stats.js';
 import { progressForXp, titleForLevel } from './js/progression.js';
+import { cosmeticsByType, cosmeticPacks, findCosmetic, isCosmeticUnlocked } from './js/cosmetics.js';
 
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
@@ -79,6 +80,9 @@ const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDec
 const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onToast:message=>toast(message)});
 let progressionDrawerOpen = false;
 let avatarPanelOpen = false;
+let profileCustomizeOpen = false;
+let profileCustomizeTab = 'avatar';
+let cosmeticActionPending = '';
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function showFab() { return page !== 'new' && page !== 'market' && page !== 'stats' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
@@ -196,8 +200,8 @@ function appView() {
   // intrappolato sotto quella stacking context, e la bottom nav (z-index:30,
   // fuori da .page-stage) ci finiva visivamente sopra tagliando la scheda.
   const selectedLoan = selectedLoanId ? loanBase().find(loan => loan.id === selectedLoanId) : null;
-  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
-    <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div>${xpStripView(u)}<button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-open-avatar aria-label="Profilo"><span class="avatar member-${u.id}">${initials(u.name)}</span></button></header>
+  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar>${profileAvatarMarkup(u, activeCosmetics())}<div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
+    <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div>${xpStripView(u)}<button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-open-avatar aria-label="Profilo">${profileAvatarMarkup(u, activeCosmetics())}</button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
       <section class="page-stage" aria-live="polite">${pageContent()}</section>
     </section>
@@ -233,16 +237,78 @@ function progressionDrawerView() {
   </aside></div>`;
 }
 
+function activeCosmetics() { return stats.cosmetics || { activeTitle:'', activeAvatar:'', unlocked:[] }; }
+// L'avatar equipaggiato sostituisce il cerchio con le iniziali solo dove
+// mostriamo l'identità del membro CORRENTE (pannello profilo, header) — le
+// liste che mostrano altri membri del team restano con le iniziali, non è
+// necessario propagare i cosmetici ovunque per questa prima versione.
+function profileAvatarMarkup(u, cosmetics, size = '') {
+  const equipped = findCosmetic(cosmetics.activeAvatar);
+  const cls = `avatar member-${u.id} ${size}`.trim();
+  if (equipped?.image) return `<span class="${cls} has-image"><img src="${esc(equipped.image)}" alt="${esc(equipped.label)}"></span>`;
+  return `<div class="${cls}">${initials(u.name)}</div>`;
+}
 function avatarPanelView(u) {
-  return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel" role="dialog" aria-modal="true" aria-label="Profilo">
+  const cosmetics = activeCosmetics();
+  const progression = stats.progression || { totalXp:0, level:1 };
+  const progress = progressForXp(progression.totalXp || 0);
+  const unlockedTitles = cosmeticsByType('title').filter(item => cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress));
+  const equippedTitle = findCosmetic(cosmetics.activeTitle);
+  const titleLabel = equippedTitle?.label || titleForLevel(progress.level);
+  return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel profile-panel" role="dialog" aria-modal="true" aria-label="Profilo">
     <button class="detail-close" data-close-avatar aria-label="Chiudi">×</button>
-    <div class="avatar member-${u.id} large">${initials(u.name)}</div><h2>${esc(u.name)}</h2><small>${esc(titleForLevel(progressForXp(stats.progression?.totalXp || 0).level))} · LV ${progressForXp(stats.progression?.totalXp || 0).level}</small>
+    <span class="eyebrow">Profilo</span>
+    <div class="profile-header">${profileAvatarMarkup(u, cosmetics, 'large')}<div class="profile-header-copy"><h2>${esc(u.name)}</h2><small>LV ${progress.level} · ${esc(titleLabel)}</small></div></div>
+    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
+    <div class="profile-selects">
+      <label>Titolo equipaggiato<select data-equip-title ${cosmeticActionPending ? 'disabled' : ''}>${unlockedTitles.map(item => `<option value="${esc(item.id)}" ${cosmetics.activeTitle === item.id ? 'selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>
+      <label>Frame<select disabled title="Presto disponibile"><option>Default</option><option>Bronze</option><option>Silver</option><option>Gold</option></select></label>
+    </div>
     <div class="avatar-panel-actions">
       <button type="button" class="btn secondary wide" data-avatar-goto="stats">${icon('chart')} Statistiche</button>
       <button type="button" class="btn secondary wide" data-avatar-goto="settings">${icon('settings')} Impostazioni</button>
-      <button type="button" class="btn secondary wide" disabled title="Prossimamente">${icon('star')} Personalizza</button>
+      <button type="button" class="btn wide" data-open-customize>${icon('star')} Personalizza</button>
     </div>
+  </aside></div>${profileCustomizeOpen ? customizePanelView(cosmetics, progress) : ''}`;
+}
+function customizePanelView(cosmetics, progress) {
+  const tab = profileCustomizeTab;
+  return `<div class="detail-backdrop" data-close-customize><aside class="card-detail customize-panel" role="dialog" aria-modal="true" aria-label="Personalizza profilo">
+    <button class="detail-close" data-close-customize aria-label="Chiudi">×</button>
+    <span class="eyebrow">Personalizza profilo</span><h2>Aspetto</h2>
+    <nav class="tabs" role="tablist"><button type="button" data-customize-tab="avatar" class="${tab === 'avatar' ? 'active' : ''}" role="tab">Avatar</button><button type="button" data-customize-tab="title" class="${tab === 'title' ? 'active' : ''}" role="tab">Titolo</button></nav>
+    ${tab === 'avatar' ? cosmeticPacks('avatar').map(pack => customizeAvatarPackView(pack, cosmetics, progress)).join('') : customizeTitleListView(cosmeticsByType('title'), cosmetics, progress)}
   </aside></div>`;
+}
+function customizeAvatarPackView(pack, cosmetics, progress) {
+  return `<div class="cosmetic-pack"><h3>${esc(pack.label)}</h3><div class="cosmetic-avatar-grid">${pack.items.map(item => avatarTileView(item, cosmetics, progress)).join('')}</div></div>`;
+}
+function avatarTileView(item, cosmetics, progress) {
+  const unlocked = cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress);
+  const equipped = cosmetics.activeAvatar === item.id;
+  return `<button type="button" class="cosmetic-avatar-tile ${equipped ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" ${unlocked ? `data-equip-avatar="${esc(item.id)}"` : 'disabled'} title="${unlocked ? esc(item.label) : `Sblocca a LV ${item.unlock.value}`}">
+    <span class="cosmetic-avatar-img"><img src="${esc(item.image)}" alt="${esc(item.label)}">${unlocked ? '' : icon('lock')}</span>
+    <small>${unlocked ? esc(item.label) : `LV ${item.unlock.value}`}</small>${equipped ? '<i class="cosmetic-equipped-badge">✓</i>' : ''}
+  </button>`;
+}
+function customizeTitleListView(titles, cosmetics, progress) {
+  return `<div class="cosmetic-title-list">${titles.map(item => {
+    const unlocked = cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress);
+    const equipped = cosmetics.activeTitle === item.id;
+    return `<button type="button" class="cosmetic-title-row ${equipped ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" ${unlocked ? `data-equip-title-row="${esc(item.id)}"` : 'disabled'}>
+      <span class="cosmetic-title-mark">${equipped ? '✓' : unlocked ? '' : icon('lock')}</span>
+      <span>${esc(item.label)}</span>${!unlocked ? `<small>LV ${item.unlock.value}</small>` : ''}
+    </button>`;
+  }).join('')}</div>`;
+}
+async function equipCosmeticAndRefresh(type, id) {
+  if (cosmeticActionPending) return;
+  cosmeticActionPending = type; render();
+  try {
+    await api.equipCosmetic(type, id);
+    stats.cosmetics = { ...activeCosmetics(), [type === 'avatar' ? 'activeAvatar' : 'activeTitle']: id };
+  } catch (error) { toast(error.message || 'Operazione non riuscita'); }
+  finally { cosmeticActionPending = ''; render(); }
 }
 
 function bindProgressionHeader(root) {
@@ -251,6 +317,12 @@ function bindProgressionHeader(root) {
   root.querySelector('[data-open-avatar]')?.addEventListener('click', () => { avatarPanelOpen = true; render(); });
   root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; avatarPanelOpen = false; render(); }));
   root.querySelectorAll('[data-avatar-goto]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = false; navigate(button.dataset.avatarGoto); }));
+  root.querySelector('[data-open-customize]')?.addEventListener('click', () => { profileCustomizeOpen = true; render(); });
+  root.querySelectorAll('[data-close-customize]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; profileCustomizeOpen = false; render(); }));
+  root.querySelectorAll('[data-customize-tab]').forEach(button => button.addEventListener('click', () => { profileCustomizeTab = button.dataset.customizeTab; render(); }));
+  root.querySelector('[data-equip-title]')?.addEventListener('change', event => void equipCosmeticAndRefresh('title', event.target.value));
+  root.querySelectorAll('[data-equip-avatar]').forEach(button => button.addEventListener('click', () => void equipCosmeticAndRefresh('avatar', button.dataset.equipAvatar)));
+  root.querySelectorAll('[data-equip-title-row]').forEach(button => button.addEventListener('click', () => void equipCosmeticAndRefresh('title', button.dataset.equipTitleRow)));
 }
 
 function navButton(id, iconName, label, notifications) {

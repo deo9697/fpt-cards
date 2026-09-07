@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v173';
+const CACHE = 'fpt-cards-v174';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -7,8 +7,8 @@ const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // ensureMediaCache() aggiunge solo i file non già presenti, quindi un
 // bump di CACHE non tocca più questi file.
 const MEDIA_CACHE = 'fpt-cards-media-v1';
-const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/pagination.js', './js/cards.js', './js/catalog-verification.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/decks.js', './js/deck-box.js', './js/stats.js', './js/progression.js', './js/market-watch.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr-engine-b.js', './js/fast-scan-storage.js', './js/fast-scan-sync.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
-const MEDIA_FILES = ['./assets/fpt-card-hero.png', './assets/market-watch-dan.jpg', './assets/notification-badge.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4'];
+const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/pagination.js', './js/cards.js', './js/catalog-verification.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/decks.js', './js/deck-box.js', './js/stats.js', './js/progression.js', './js/cosmetics.js', './js/market-watch.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr-engine-b.js', './js/fast-scan-storage.js', './js/fast-scan-sync.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
+const MEDIA_FILES = ['./assets/fpt-card-hero.png', './assets/market-watch-dan.jpg', './assets/notification-badge.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/avatars/avatar-default.png', './assets/avatars/avatar-blattaman-chill.png', './assets/avatars/avatar-blattaman-rage.png', './assets/avatars/avatar-blattaman-laugh.png', './assets/avatars/avatar-blattaman-gremlin.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4'];
 async function ensureMediaCache() {
   const cache = await caches.open(MEDIA_CACHE);
   const missing = [];
