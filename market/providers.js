@@ -1,5 +1,5 @@
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-export const CARDMARKET_RESOLVER_VERSION=8;
+export const CARDMARKET_RESOLVER_VERSION=9;
 export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -19,7 +19,14 @@ const SUPPORTED_RARITIES=new Map([
   ['duel terminal super parallel rare','Duel Terminal Super Parallel Rare'],['duel terminal ultra parallel rare','Duel Terminal Ultra Parallel Rare'],
   ['millennium rare','Millennium Rare'],['millennium super rare','Millennium Super Rare'],['millennium ultra rare','Millennium Ultra Rare'],
   ['millennium secret rare','Millennium Secret Rare'],['millennium gold rare','Millennium Gold Rare'],
-  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"]
+  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"],
+  // "New"/"Reprint" sono designazioni reali di YGOPRODeck per certe copie di
+  // Structure Deck (non un placeholder vuoto) — js/cards.js's normalizeCatalogRarity()
+  // le tratta già come alias di Common per lo stesso motivo ("must not vanish
+  // entirely, or the printing never matches"). Questa mappa non le conosceva,
+  // quindi ogni printing con card_printings.rarity='New'/'Reprint' veniva
+  // scartata come UNSUPPORTED prima ancora di cercarla su Cardmarket.
+  ['new','Common'],['reprint','Common']
 ]);
 
 export class PriceProvider {

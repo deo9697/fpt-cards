@@ -8,7 +8,7 @@
 // Se modifichi market/providers.js, riporta manualmente le stesse modifiche qui sotto.
 
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-const CARDMARKET_RESOLVER_VERSION=8;
+const CARDMARKET_RESOLVER_VERSION=9;
 const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -28,7 +28,14 @@ const SUPPORTED_RARITIES=new Map([
   ['duel terminal super parallel rare','Duel Terminal Super Parallel Rare'],['duel terminal ultra parallel rare','Duel Terminal Ultra Parallel Rare'],
   ['millennium rare','Millennium Rare'],['millennium super rare','Millennium Super Rare'],['millennium ultra rare','Millennium Ultra Rare'],
   ['millennium secret rare','Millennium Secret Rare'],['millennium gold rare','Millennium Gold Rare'],
-  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"]
+  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"],
+  // "New"/"Reprint" sono designazioni reali di YGOPRODeck per certe copie di
+  // Structure Deck (non un placeholder vuoto) — js/cards.js's normalizeCatalogRarity()
+  // le tratta già come alias di Common per lo stesso motivo ("must not vanish
+  // entirely, or the printing never matches"). Questa mappa non le conosceva,
+  // quindi ogni printing con card_printings.rarity='New'/'Reprint' veniva
+  // scartata come UNSUPPORTED prima ancora di cercarla su Cardmarket.
+  ['new','Common'],['reprint','Common']
 ]);
 
 class PriceProvider {
@@ -284,7 +291,13 @@ Deno.serve(async request=>{
   const providers=[
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
-  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(500,Number(payload?.resolverBatchSize)||100)):0;
+  // 500 non era un limite reale: resolveCardmarketPrinting() è O(1) per target dopo
+  // il caching di norm()/internalPrintingsByCatalogId (2026-09-06, ~28ms per 500
+  // target su un catalogo/anagrafica realistici), e il costo dominante di un run è
+  // il download una tantum del feed Cardmarket, non il numero di target risolti
+  // contro di esso (stessa logica di e64e306, che alzò 10->500). 1500 resta ampio
+  // margine sotto il budget CPU della edge function.
+  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(1500,Number(payload?.resolverBatchSize)||100)):0;
   if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
   const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
@@ -293,7 +306,7 @@ Deno.serve(async request=>{
     return json(await dryTargetCardmarket(cardmarket,dryTargetPrintingIds));
   }
   const results=[];
-  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:500,skipPrices:true}));}
+  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:1500,skipPrices:true}));}
   for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true,pricesOnly,targetPrintingIds:canaryPrintingIds}));
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
@@ -423,10 +436,18 @@ function cardmarketResolutionBody(target:any,resolution:any){
 async function listCardPrintings(){return restPages('card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&order=id.asc',{key:(row:any)=>row.id});}
 async function withCanonicalCardNames(printings:any[],targets:any[]){
   const ids=[...new Set((targets||[]).map(row=>String(row.catalog_card_id||row.catalogCardId||'').trim()).filter(id=>/^\d{5,10}$/.test(id)))];if(!ids.length)return printings;
-  const response=await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${encodeURIComponent(ids.join(','))}`,{signal:AbortSignal.timeout(20000)});
-  if(!response.ok)throw new Error(`YGOPRODeck canonical names: ${response.status}`);
-  const payload=await response.json(),names=new Map<string,string>();
-  for(const card of payload?.data||[]){const name=String(card?.name||'').trim();if(!name)continue;names.set(String(card.id||''),name);for(const image of card.card_images||[])names.set(String(image.id||''),name);}
+  // Un solo URL con TUTTI gli id (una richiesta per l'intero batch resolver
+  // notturno) rischiava di superare gli ~8KB di lunghezza URL tipici di molti
+  // server/proxy una volta alzato il batch oltre poche centinaia di target —
+  // a parità di risultato, spezzare in blocchi piccoli elimina il rischio.
+  const names=new Map<string,string>();
+  for(let index=0;index<ids.length;index+=300){
+    const chunk=ids.slice(index,index+300);
+    const response=await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${encodeURIComponent(chunk.join(','))}`,{signal:AbortSignal.timeout(20000)});
+    if(!response.ok)throw new Error(`YGOPRODeck canonical names: ${response.status}`);
+    const payload=await response.json();
+    for(const card of payload?.data||[]){const name=String(card?.name||'').trim();if(!name)continue;names.set(String(card.id||''),name);for(const image of card.card_images||[])names.set(String(image.id||''),name);}
+  }
   const aliases=[];for(const row of printings){const name=names.get(String(row.catalog_card_id||''));if(name&&name.trim().toLowerCase()!==String(row.card_name||'').trim().toLowerCase())aliases.push({...row,id:`${row.id}:canonical-name`,card_name:name});}
   return aliases.length?[...printings,...aliases]:printings;
 }
