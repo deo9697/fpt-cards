@@ -34,7 +34,7 @@ export class DeckController {
     // esplicitamente (X o indietro) — selezionare una carta da aggiungere
     // NON la chiude più, così se ne possono aggiungere più di seguito
     // senza ridigitare la query ogni volta.
-    window.addEventListener('popstate', event => { if (!event.state?.deckSearch && this.searchOpen) { this.closeSearch(); this.onRender?.(); } });
+    if (typeof window !== 'undefined') window.addEventListener('popstate', event => { if (!event.state?.deckSearch && this.searchOpen) { this.closeSearch(); this.onRender?.(); } });
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }

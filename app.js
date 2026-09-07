@@ -13,8 +13,10 @@ import { FastScanController } from './js/fast-scan.js';
 import { DeckController, deckUsageIndex } from './js/decks.js';
 import { MarketWatchController } from './js/market-watch.js';
 import { CollectionShareController } from './js/collection-share.js';
+import { StatsController } from './js/stats.js';
+import { progressForXp, titleForLevel } from './js/progression.js';
 
-const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests']);
+const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 let guestShare;
 let page = routeFromHash();
@@ -74,6 +76,9 @@ const fastScan = new FastScanController({
 });
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
+const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onToast:message=>toast(message)});
+let progressionDrawerOpen = false;
+let avatarPanelOpen = false;
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
 function showFab() { return page !== 'new' && page !== 'market' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
@@ -132,7 +137,7 @@ function renderRoute() {
   if (showFab()) shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
-    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests'].includes(page)));
+    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats'].includes(page)));
   });
   // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
   // ricostruire la pagina e le sue immagini.
@@ -183,7 +188,7 @@ function appView() {
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
-  const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
+  const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['stats','trophy','Statistiche'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
   const mobileNav = [['home','home','Home'],['market','chart','Market Watch'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
   // Va renderizzato qui (fuori da .page-stage), non dentro loansView(): .page-stage
   // ha view-transition-name, che in Chrome le dà una propria stacking context.
@@ -191,8 +196,8 @@ function appView() {
   // intrappolato sotto quella stacking context, e la bottom nav (z-index:30,
   // fuori da .page-stage) ci finiva visivamente sopra tagliando la scheda.
   const selectedLoan = selectedLoanId ? loanBase().find(loan => loan.id === selectedLoanId) : null;
-  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
-    <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div><label class="global-search">${icon('search')}<input id="global-search" type="search" placeholder="Cerca carte o prestiti…" aria-label="Ricerca globale"></label><button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-page="settings"><span class="avatar member-${u.id}">${initials(u.name)}</span></button></header>
+  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar><div class="avatar member-${u.id}">${initials(u.name)}</div><div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
+    <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div>${xpStripView(u)}<button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-open-avatar aria-label="Profilo"><span class="avatar member-${u.id}">${initials(u.name)}</span></button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
       <section class="page-stage" aria-live="polite">${pageContent()}</section>
     </section>
@@ -204,11 +209,52 @@ function appView() {
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
+    ${progressionDrawerOpen ? progressionDrawerView() : ''}
+    ${avatarPanelOpen ? avatarPanelView(u) : ''}
   </main>`;
 }
 
+function xpStripView(u) {
+  const progress = progressForXp(stats.progression?.totalXp || 0);
+  return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV ${progress.level}</span><span class="xp-bar"><i style="--progress:${progress.progress}"></i></span><span class="xp-strip-detail">${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</span></span><span class="xp-strip-identity">${esc(u.name)} · ${esc(titleForLevel(progress.level))}</span></button>`;
+}
+
+function progressionDrawerView() {
+  const progression = stats.progression || { totalXp:0, level:1, xpToday:0, dailyCap:100 };
+  const progress = progressForXp(progression.totalXp), title = titleForLevel(progress.level);
+  const nextTitle = titleForLevel(Math.min(50, progress.level + 1));
+  return `<div class="detail-backdrop" data-close-progression><aside class="card-detail progression-drawer" role="dialog" aria-modal="true" aria-label="Progressione">
+    <button class="detail-close" data-close-progression aria-label="Chiudi">×</button>
+    <span class="eyebrow">Progression</span><h2>LV ${progress.level}</h2>
+    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP · ${Math.max(0, (progress.nextLevelXp || 0) - progress.currentLevelXp)} XP al prossimo livello</small></div>
+    <section class="progression-section"><span class="eyebrow">Oggi</span><p>XP match <b>${progression.xpToday} / ${progression.dailyCap}</b></p></section>
+    <section class="progression-section"><span class="eyebrow">Prossimo reward</span><p>LV ${Math.min(50, progress.level + 1)} · ${icon('star')} ${esc(nextTitle)}</p></section>
+    <p class="progression-title">Titolo attuale: <b>${esc(title)}</b></p>
+  </aside></div>`;
+}
+
+function avatarPanelView(u) {
+  return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel" role="dialog" aria-modal="true" aria-label="Profilo">
+    <button class="detail-close" data-close-avatar aria-label="Chiudi">×</button>
+    <div class="avatar member-${u.id} large">${initials(u.name)}</div><h2>${esc(u.name)}</h2><small>${esc(titleForLevel(progressForXp(stats.progression?.totalXp || 0).level))} · LV ${progressForXp(stats.progression?.totalXp || 0).level}</small>
+    <div class="avatar-panel-actions">
+      <button type="button" class="btn secondary wide" data-avatar-goto="stats">${icon('chart')} Statistiche</button>
+      <button type="button" class="btn secondary wide" data-avatar-goto="settings">${icon('settings')} Impostazioni</button>
+      <button type="button" class="btn secondary wide" disabled title="Prossimamente">${icon('star')} Personalizza</button>
+    </div>
+  </aside></div>`;
+}
+
+function bindProgressionHeader(root) {
+  root.querySelector('[data-open-progression]')?.addEventListener('click', () => { progressionDrawerOpen = true; render(); });
+  root.querySelectorAll('[data-close-progression]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; progressionDrawerOpen = false; render(); }));
+  root.querySelector('[data-open-avatar]')?.addEventListener('click', () => { avatarPanelOpen = true; render(); });
+  root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; avatarPanelOpen = false; render(); }));
+  root.querySelectorAll('[data-avatar-goto]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = false; navigate(button.dataset.avatarGoto); }));
+}
+
 function navButton(id, iconName, label, notifications) {
-  const active = page === id || (id === 'more' && ['team','settings','requests'].includes(page));
+  const active = page === id || (id === 'more' && ['team','settings','requests','stats'].includes(page));
   return `<button data-page="${id}" class="${active ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`;
 }
 
@@ -222,6 +268,7 @@ function pageContent() {
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch.view();
   if (page === 'decks') return decks.view();
+  if (page === 'stats') return stats.view();
   if (page === 'requests') return requestsView();
   if (page === 'settings') return settingsView();
   if (page === 'more') return moreView();
@@ -281,7 +328,7 @@ function settingsView() {
 
 function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
-  const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
+  const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
@@ -548,11 +595,6 @@ function bind() {
   });
   document.querySelectorAll('button[data-page]').forEach(b => b.addEventListener('click', () => { selectedCardKey = ''; navigate(b.dataset.page); }));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
-  document.querySelector('#global-search')?.addEventListener('keydown', event => {
-    if (event.key !== 'Enter') return;
-    collectionFilters.query = event.currentTarget.value;
-    navigate('collection');
-  });
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
   document.querySelectorAll('[data-collection-share]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per condividere la raccolta'); void openCollectionShareModal(); }));
@@ -635,6 +677,8 @@ function bind() {
   if (page === 'decks') decks.bind(document);
   if (page === 'market') marketWatch.bind(document);
   if (page === 'fastscan') fastScan.bind(document);
+  if (page === 'stats') stats.bind(document);
+  bindProgressionHeader(document);
 }
 
 function installCollectionControls() {
@@ -970,7 +1014,8 @@ async function loadPrimaryData() {
     loadCollection(),
     loadDecks(),
     marketWatch.load(),
-    loadCollectionShareRequests()
+    loadCollectionShareRequests(),
+    stats.load()
   ]);
   if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';

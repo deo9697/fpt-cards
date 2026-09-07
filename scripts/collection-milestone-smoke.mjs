@@ -73,7 +73,7 @@ const mine = [{
   quantityOwned:12, quantityLoaned:2, quantityReserved:3, quantityAvailable:7, legacyAmbiguous:false
 }];
 const team = [{ ...mine[0], id:'team-1', ownerSlug:'marco', ownerName:'Marco', quantityOwned:undefined }];
-const filters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid' };
+const filters = { scope:'mine', query:'', owner:'all', status:'all', layout:'list' };
 const personalHtml = collectionView({ mine, team }, filters, 'yugioh', true);
 assert.match(personalHtml, /Possedute[\s\S]*12/);
 assert.match(personalHtml, /Disponibili[\s\S]*7/);

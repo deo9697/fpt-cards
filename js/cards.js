@@ -198,7 +198,12 @@ export function localizeSetCode(setCode, targetLanguageCode = 'IT') {
 
 export function setCodeMatchesLanguage(setCode, language) {
   const expected = SET_LANGUAGE_CODES.get(String(language || '').trim());
-  const marker = normalizeSetCode(setCode).match(/^[A-Z0-9]+-([A-Z]{2})[A-Z]{0,2}\d{1,4}[A-Z]?$/)?.[1];
+  // Resta rigoroso (nessuna lettera di categoria tra lingua e numero): questo
+  // gate blocca il salvataggio in editor, quindi un falso positivo (formati
+  // storici tipo L5DD-ENC27) è peggio di un falso negativo qui. La lettera di
+  // categoria serve solo al fallback di lookup Fast Scan (localizeSetCode/
+  // catalogSetCodeCandidates), non a questo controllo.
+  const marker = normalizeSetCode(setCode).match(/^[A-Z0-9]+-([A-Z]{2})\d{3,4}[A-Z]?$/)?.[1];
   return !expected || !marker || marker === expected;
 }
 

@@ -34,7 +34,10 @@ const fakeSupabaseSource = `(()=>{
   window.__authTest.getCollection=()=>collectionItems;
   const client={
     async rpc(name,args={}){
-      if(['list_team_loans','list_my_collection','list_team_collection','list_my_decks','list_my_decks_with_boxes','list_market_watch'].includes(name)&&window.__authTest.syncDelay){window.__authTest.syncInFlight+=1;window.__authTest.syncMaxInFlight=Math.max(window.__authTest.syncMaxInFlight,window.__authTest.syncInFlight);await new Promise(resolve=>setTimeout(resolve,window.__authTest.syncDelay));window.__authTest.syncInFlight-=1;}
+      if(['list_team_loans','list_my_collection','list_team_collection','list_my_decks','list_my_decks_with_boxes','list_market_watch','get_my_progression','get_stats'].includes(name)&&window.__authTest.syncDelay){window.__authTest.syncInFlight+=1;window.__authTest.syncMaxInFlight=Math.max(window.__authTest.syncMaxInFlight,window.__authTest.syncInFlight);await new Promise(resolve=>setTimeout(resolve,window.__authTest.syncDelay));window.__authTest.syncInFlight-=1;}
+      if(name==='get_my_progression') return {data:{totalXp:0,level:1,xpToday:0,dailyCap:100},error:null};
+      if(name==='get_stats') return {data:[],error:null};
+      if(name==='get_team_stats') return {data:[],error:null};
       if(name==='list_login_members') return {data:members,error:null};
       if(name==='login_member'){
         window.__authTest.lastLoginSlug=args.p_slug||'';
@@ -210,7 +213,7 @@ async function run() {
   await evaluate(`window.__authTest.syncDelay=120;window.__authTest.syncMaxInFlight=0`);
   await submitPin('1234');
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Login con PIN corretto non completato');
-  await waitFor(`window.__authTest.syncMaxInFlight>=4`,'Prestiti, raccolta e mazzi non vengono caricati in parallelo');
+  await waitFor(`window.__authTest.syncMaxInFlight>=6`,'Prestiti, raccolta, mazzi e statistiche non vengono caricati in parallelo');
   await waitFor(`window.__authTest.syncInFlight===0`,'Sincronizzazione iniziale non completata');
   await evaluate(`window.__authTest.syncDelay=0`);
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
@@ -226,18 +229,25 @@ async function run() {
   assert(routeDuration<100,`Cambio sezione troppo lento nel fixture: ${routeDuration.toFixed(1)} ms`);
   console.log(`PASS login parallelo + cambio sezione senza rebuild shell (${routeDuration.toFixed(1)} ms)`);
   await evaluate(`document.querySelector('[data-deck-new]').click()`);
-  assert(await evaluate(`document.querySelectorAll('.deck-zone').length===3&&!document.querySelector('[data-deck-section]')`),'Main/Extra/Side sono ancora divisi in schede');
+  assert(await evaluate(`document.querySelectorAll('[data-deck-section]').length===3&&document.querySelectorAll('.deck-zone').length===0`),'Le tab Main/Extra/Side dell’editor mazzo mobile sono sparite');
   await evaluate(`(()=>{const input=document.querySelector('[data-deck-search]');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('[data-deck-result]')].some(button=>button.textContent.includes('Dark Magician'))`,'Ricerca carta Main nel mazzo fallita');
   await evaluate(`[...document.querySelectorAll('[data-deck-result]')].find(button=>button.textContent.includes('Dark Magician')).click()`);
+  assert(await evaluate(`[...document.querySelectorAll('[data-deck-card-select-section="main"]')].some(tile=>tile.getAttribute('aria-label').includes('Dark Magician'))`),'Dark Magician non classificata nel Main tab');
   await evaluate(`(()=>{const input=document.querySelector('[data-deck-search]');input.value='Stardust Dragon';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('[data-deck-result]')].some(button=>button.textContent.includes('Stardust Dragon'))`,'Ricerca carta Extra nel mazzo fallita');
   await evaluate(`[...document.querySelectorAll('[data-deck-result]')].find(button=>button.textContent.includes('Stardust Dragon')).click()`);
-  assert(await evaluate(`document.querySelector('.deck-zone.main').textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra').textContent.includes('Stardust Dragon')`),'Classificazione automatica Main/Extra errata');
-  assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Bollino Limitata TCG Advanced assente');
+  await evaluate(`document.querySelector('[data-deck-section="extra"]').click()`);
+  await waitFor(`[...document.querySelectorAll('[data-deck-card-select-section="extra"]')].some(tile=>tile.getAttribute('aria-label').includes('Stardust Dragon'))`,'Classificazione automatica Main/Extra errata: Stardust Dragon non finisce in Extra');
+  assert(await evaluate(`!document.querySelector('[data-deck-card-select-section="main"]')`),'Il tab Extra mostra ancora carte del Main: le sezioni non sono filtrate');
+  assert(await evaluate(`document.querySelector('.deck-ban-badge.limited')?.textContent==='1'`),'Bollino Limitata TCG Advanced assente');
+  await evaluate(`document.querySelector('[data-deck-section="main"]').click()`);
+  assert(await evaluate(`[...document.querySelectorAll('[data-deck-card-select-section="main"]')].some(tile=>tile.getAttribute('aria-label').includes('Dark Magician'))`),'Dark Magician sparita dal Main tornando indietro');
   await evaluate(`document.querySelector('[data-deck-gallery]').click()`);
   assert(await evaluate(`(()=>{const visual=document.querySelector('.deck-box-visual:not(.uses-template)'),image=visual?.querySelector('.deck-box-signature-art'),overlay=visual?.querySelector('i');if(!visual||!image||!overlay)return false;const imageBox=image.getBoundingClientRect(),visualBox=visual.getBoundingClientRect();return Math.abs(imageBox.width-visualBox.width)<5&&Math.abs(imageBox.height-visualBox.height)<5&&getComputedStyle(overlay).inset==='0px'})()`),'Artwork signature non aderisce alla faccia della Deck Box');
   await evaluate(`[...document.querySelectorAll('.deck-box-card')].find(card=>card.textContent.includes('Nuovo mazzo')).click()`);
+  await evaluate(`document.querySelector('[data-deck-more]').click()`);
+  await waitFor(`Boolean(document.querySelector('[data-deck-cover-open]'))`,'Menu overflow "⋯" non apre le azioni sul mazzo');
   await evaluate(`document.querySelector('[data-deck-cover-open]').click()`);
   await waitFor(`document.querySelectorAll('[data-deck-box-template]').length===4`,'Selettore modelli Deck Box non aperto');
   assert(await evaluate(`[...document.querySelectorAll('.deck-template-options img')].filter(image=>image.src.includes('/assets/deck-boxes/')).length===3`),'Le tre immagini Deck Box non sono incorporate nel selettore');
