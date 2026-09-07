@@ -11,16 +11,11 @@
 // domani isCosmeticUnlocked() imparerà a leggere anche quei tipi.
 
 export const COSMETICS = [
-  // Avatar: uno sempre sbloccato, poi il primo vero reward cosmetico a LV5 —
-  // un pacchetto di 4, non uno solo, per dare la sensazione di aver
-  // "sbloccato la personalizzazione" e non ricevuto un singolo oggetto.
-  // Immagini placeholder (assets/avatars/*) — da sostituire con l'artwork
-  // reale del personaggio "Blattaman" quando pronto.
-  { id:'avatar_default', type:'avatar', label:'Predefinito', image:'assets/avatars/avatar-default.png', unlock:{ type:'level', value:1 } },
-  { id:'avatar_blattaman_chill', type:'avatar', label:'Blattaman Chill', image:'assets/avatars/avatar-blattaman-chill.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
-  { id:'avatar_blattaman_rage', type:'avatar', label:'Blattaman Rage', image:'assets/avatars/avatar-blattaman-rage.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
-  { id:'avatar_blattaman_laugh', type:'avatar', label:'Blattaman Laugh', image:'assets/avatars/avatar-blattaman-laugh.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
-  { id:'avatar_blattaman_gremlin', type:'avatar', label:'Blattaman Gremlin', image:'assets/avatars/avatar-blattaman-gremlin.png', unlock:{ type:'level', value:5 }, pack:'Starter Avatar Pack' },
+  // Avatar: per ora solo il mascotte "Tonno" (artwork reale, non più
+  // placeholder), sempre sbloccato da LV1 — lo Starter Avatar Pack
+  // Blattaman è stato ritirato in attesa di artwork vero, si riaggiunge
+  // qui come nuove voci quando pronto.
+  { id:'avatar_tonno', type:'avatar', label:'Tonno', image:'assets/avatars/avatar-tonno.png', unlock:{ type:'level', value:1 } },
 
   // Titoli: gli stessi 5 già calcolati automaticamente da titleForLevel() in
   // progression.js, portati nel catalogo così passano dallo stesso sistema
