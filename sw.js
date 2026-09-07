@@ -8,7 +8,7 @@ const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // bump di CACHE non tocca più questi file.
 const MEDIA_CACHE = 'fpt-cards-media-v1';
 const FILES = ['./', './index.html', './styles.css', './app.js', './js/core.js', './js/api.js', './js/pagination.js', './js/cards.js', './js/catalog-verification.js', './js/icons.js', './js/dashboard.js', './js/collection.js', './js/decks.js', './js/deck-box.js', './js/stats.js', './js/progression.js', './js/market-watch.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-camera.js', './js/fast-scan-ocr-engine-b.js', './js/fast-scan-storage.js', './js/fast-scan-sync.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './config.js', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
-const MEDIA_FILES = ['./assets/fpt-card-hero.png', './assets/market-watch-dan.jpg', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4'];
+const MEDIA_FILES = ['./assets/fpt-card-hero.png', './assets/market-watch-dan.jpg', './assets/notification-badge.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4'];
 async function ensureMediaCache() {
   const cache = await caches.open(MEDIA_CACHE);
   const missing = [];
@@ -73,8 +73,13 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('push', event => {
   let data = { title:'F.P.T Cards', body:'Hai una nuova richiesta da gestire' };
   try { if (event.data) data = { ...data, ...event.data.json() }; } catch {}
+  // badge è diverso da icon apposta: Android lo mostra sempre come sagoma
+  // monocromatica (solo il canale alpha, colore ignorato) nella status bar
+  // e nella notifica compatta — l'icona F.P.T piena di dettagli e testo
+  // piccolo diventava una macchia illeggibile una volta appiattita così.
+  // notification-badge.png è una sagoma semplice pensata apposta per questo.
   event.waitUntil(self.registration.showNotification(data.title, {
-    body:data.body, icon:'icon-192.png', badge:'icon-192.png', tag:data.tag || 'fpt-push', renotify:true,
-    data:{ url:data.url || './' }
+    body:data.body, icon:'icon-192.png', badge:'assets/notification-badge.png', tag:data.tag || 'fpt-push', renotify:true,
+    vibrate:[200,80,200], data:{ url:data.url || './' }
   }));
 });
