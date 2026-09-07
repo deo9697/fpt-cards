@@ -97,16 +97,22 @@ export class FastScanController {
   lookupMemory(code){const key=String(code||'').toUpperCase();if(this.resolutionCache.has(key))return {matches:this.resolutionCache.get(key),source:'session-cache'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
   cacheResolution(code,matches){const clean=dedupe(matches||[]);if(clean.length)this.resolutionCache.set(String(code).toUpperCase(),clean);return clean;}
   async lookupDetailed(code,{allowRpc=true,allowExternal=true}={}){
-    const key=String(code||'').toUpperCase(),memory=this.lookupMemory(key);if(memory.matches.length)return memory;
+    const key=String(code||'').toUpperCase(),memory=this.lookupMemory(key);
+    // Solo il session-cache (un RPC/lookup esterno GIÀ fatto in questa
+    // sessione) è genuinamente completo e può evitare la query di rete —
+    // vedi il commento gemello in resolveFast(). Il collection-cache
+    // (cosa possediamo già) resta comunque disponibile come fallback più
+    // sotto se si è offline o se RPC/esterno non trovano nulla.
+    if(memory.source==='session-cache')return memory;
     // A full (RPC+external) miss is remembered briefly so re-scanning the same
     // still-uncatalogued code doesn't redo the whole slow lookup cascade.
     const fullAttempt=allowRpc&&allowExternal,missedAt=fullAttempt?this.missCache.get(key):0;
-    if(missedAt&&Date.now()-missedAt<MISS_CACHE_TTL)return {matches:[],source:'recent-miss'};
-    if(this.isOnline?.()===false)return {matches:[],source:'offline'};
+    if(missedAt&&Date.now()-missedAt<MISS_CACHE_TTL)return memory.matches.length?memory:{matches:[],source:'recent-miss'};
+    if(this.isOnline?.()===false)return memory.matches.length?memory:{matches:[],source:'offline'};
     if(allowRpc&&this.api?.lookupPrintings){try{const rows=await this.api.lookupPrintings(key,this.buffer.settings.game);const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch{}}
     if(allowExternal&&this.externalLookup){try{const matches=this.cacheResolution(key,await this.externalLookup(key,this.buffer.settings.game));if(matches.length)return {matches,source:'external'};}catch{}}
     if(fullAttempt)this.missCache.set(key,Date.now());
-    return {matches:[],source:'not-found'};
+    return memory.matches.length?memory:{matches:[],source:'not-found'};
   }
   async lookup(code,options){return (await this.lookupDetailed(code,options)).matches;}
   showDetection(code,detail,tone='ok'){const node=document.querySelector('[data-scan-detection]');if(node){const mark=tone==='error'?'✕':tone==='warn'?'!':'✓';node.innerHTML=`<strong>${mark} ${esc(code)}</strong><span>${esc(detail)}</span>`;node.classList.remove('ok','warn','error');node.classList.add('show',tone);}clearTimeout(this.feedbackTimer);this.feedbackTimer=setTimeout(()=>{node?.classList.remove('show','ok','warn','error');this.status='Pronto allo scatto';this.refreshHud();},1500);}
@@ -215,7 +221,16 @@ export class FastScanController {
   async processManual(raw){const normalized=normalizeSetCode(raw);if(!normalized.valid){this.onToast?.('Formato printing code non valido');return;}const result=await this.resolve(raw,100,{manual:true,consensus:2});await this.commitResolution(result,raw,true);}
   async resolveFast(raw,ocrConfidence,{consensus=0,manual=false}={}){
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};const exact=candidates[0],hit=this.lookupMemory(exact.code);
-    if(hit.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
+    // Un hit "collection-cache" nasce da cosa il team possiede GIÀ, non dal
+    // catalogo completo: se un set code ha più rarità (es. una Common e una
+    // Ultra Rare con lo stesso codice) e ne possediamo solo una, qui sembra
+    // un match unico ma non lo è davvero — trattarlo come high_confidence
+    // committerebbe subito la rarità sbagliata quando si scansiona l'altra.
+    // Solo il session-cache (un RPC già fatto in questa sessione, quindi
+    // genuinamente completo) può essere trattato come definitivo qui; il
+    // collection-cache passa invece dal percorso verificato via RPC in
+    // resolve()/lookupDetailed(), che lo tiene comunque come fallback se offline.
+    if(hit.matches.length&&hit.source==='session-cache'){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
     const corrected=candidates.slice(1).map(candidate=>({candidate,...this.lookupMemory(candidate.code)})).filter(item=>item.matches.length);
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
