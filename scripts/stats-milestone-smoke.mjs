@@ -21,7 +21,10 @@ for (const required of [
 ]) assert(sql.includes(required), `Migration statistiche/progression incompleta: ${required}`);
 assert(sql.includes('to anon, authenticated'), 'grant RPC statistiche non segue la regola anon+authenticated di questo progetto');
 assert(!/grant execute[^;]*to authenticated;/.test(sql), 'una grant authenticated-only romperebbe queste RPC (schema custom p_token, stesso client anon-key sempre)');
-console.log('PASS migrazione SQL: tabelle, unique anti-duplicato, validazione mazzo/gioco, cap giornaliero, reversal delete_match, grant anon+authenticated');
+const progressionBody = sql.slice(sql.indexOf('create or replace function public.get_my_progression'), sql.indexOf('create or replace function public.get_stats'));
+assert(!/declare[^;]*\blevel\s+integer\b/.test(progressionBody), 'get_my_progression dichiara di nuovo una variabile locale "level": collide col nome della colonna member_progression.level e Postgres la rifiuta con "column reference \'level\' is ambiguous" (bug reale già capitato una volta, non re-introdurlo)');
+assert(progressionBody.includes('member_level'), 'get_my_progression deve usare un nome di variabile diverso dalla colonna (member_level), non "level"');
+console.log('PASS migrazione SQL: tabelle, unique anti-duplicato, validazione mazzo/gioco, cap giornaliero, reversal delete_match, grant anon+authenticated, nessuna variabile "level" ambigua');
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 const { StatsController } = await import('../js/stats.js');

@@ -80,7 +80,7 @@ const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRou
 let progressionDrawerOpen = false;
 let avatarPanelOpen = false;
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
-function showFab() { return page !== 'new' && page !== 'market' && !(page === 'decks' && decks.screen !== 'gallery'); }
+function showFab() { return page !== 'new' && page !== 'market' && page !== 'stats' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
     const image = event.target;
