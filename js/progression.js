@@ -8,7 +8,7 @@ export const LEVEL_THRESHOLDS = [0,75,200,375,600,875,1200,1575,2000,2475,3000,3
 export const MAX_LEVEL = LEVEL_THRESHOLDS.length;
 
 const TITLE_BUCKETS = [
-  [1, 'Novizio'], [10, 'Duellante'], [20, 'Stratega'], [30, 'Veterano'], [40, 'Campione'], [50, 'Leggenda']
+  [1, 'Tonno'], [10, 'Totonno'], [20, 'Totorchio'], [30, 'Totorchiomon'], [40, 'Metal War Totorchiomon']
 ];
 
 export function levelFromXp(totalXp) {

@@ -26,11 +26,17 @@ assert.equal(capProgress.level, 50);
 assert.equal(capProgress.progress, 100, 'al livello massimo la barra è sempre piena');
 assert.equal(capProgress.nextLevelXp, 0);
 
-assert.equal(titleForLevel(1), 'Novizio');
-assert.equal(titleForLevel(9), 'Novizio', 'il titolo cambia solo al bucket successivo');
-assert.equal(titleForLevel(10), 'Duellante');
-assert.equal(titleForLevel(50), 'Leggenda');
-assert.equal(titleForLevel(999), 'Leggenda', 'un livello oltre il cap non deve rompere il lookup titolo');
+assert.equal(titleForLevel(1), 'Tonno');
+assert.equal(titleForLevel(9), 'Tonno', 'il titolo cambia solo al bucket successivo');
+assert.equal(titleForLevel(10), 'Totonno');
+assert.equal(titleForLevel(19), 'Totonno');
+assert.equal(titleForLevel(20), 'Totorchio');
+assert.equal(titleForLevel(29), 'Totorchio');
+assert.equal(titleForLevel(30), 'Totorchiomon');
+assert.equal(titleForLevel(39), 'Totorchiomon');
+assert.equal(titleForLevel(40), 'Metal War Totorchiomon');
+assert.equal(titleForLevel(50), 'Metal War Totorchiomon');
+assert.equal(titleForLevel(999), 'Metal War Totorchiomon', 'un livello oltre il cap non deve rompere il lookup titolo');
 
 assert.equal(xpAmountForResult('win'), 15);
 assert.equal(xpAmountForResult('draw'), 12);
