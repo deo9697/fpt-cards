@@ -175,8 +175,8 @@ export class StatsController {
     const t = this.totals, winRate = t.matches ? Math.round((t.wins / t.matches) * 1000) / 10 : 0;
     const streak = this.scope === 'mine' ? this.streak : null;
     const streakLabel = streak?.count > 1 ? `Striscia: ${streak.count} ${STREAK_PLURAL[streak.result] || streak.result}` : '';
-    return `<section class="stats-hero">
-      <div class="stats-ring" style="--pct:${winRate};--ring-color:${ringColor(winRate)}"><div class="stats-ring-inner"><strong>${winRate}%</strong><small>win rate</small></div></div>
+    return `<section class="stats-hero foil-frame">
+      <div class="stats-ring" style="--pct:${winRate};--ring-color:${ringColor(winRate)}"><div class="stats-ring-inner"><strong class="foil-text">${winRate}%</strong><small>win rate</small></div></div>
       <div class="stats-hero-side">
         <div class="stats-hero-match"><strong>${t.matches}</strong><small>match</small></div>
         <div class="stats-wld"><span class="win">${t.wins}V</span><span class="loss">${t.losses}S</span><span class="draw">${t.draws}P</span></div>
@@ -186,7 +186,7 @@ export class StatsController {
   }
   deckListView() {
     if (!this.visibleRows.length) return `<div class="empty-state">${icon('chart')}<h2>Nessun match registrato</h2><p>Registra il primo match per iniziare a costruire le statistiche.</p></div>`;
-    return `<div class="stats-deck-list">${this.visibleRows.map(row => `<button type="button" class="stats-deck-row" data-stats-deck-row="${esc(row.deckId)}">
+    return `<div class="stats-deck-list">${this.visibleRows.map(row => `<button type="button" class="stats-deck-row foil-frame" data-stats-deck-row="${esc(row.deckId)}">
       <div class="stats-ring small" style="--pct:${row.winRate};--ring-color:${ringColor(row.winRate)}"><div class="stats-ring-inner"><b>${row.winRate}%</b></div></div>
       ${row.memberName ? `<i class="mini-avatar member-${esc(row.memberSlug)}">${initials(row.memberName)}</i>` : ''}
       <span class="stats-deck-info"><strong>${esc(row.deckName)}</strong>${row.memberName ? `<small>${esc(row.memberName)}</small>` : ''}
@@ -211,7 +211,7 @@ export class StatsController {
       const draws = found.draws ? `<small>${found.draws}P</small>` : '';
       return `<td class="${found.wins > found.losses ? 'h2h-ahead' : found.wins < found.losses ? 'h2h-behind' : 'h2h-even'}"><b class="win">${found.wins}</b>-<b class="loss">${found.losses}</b>${draws}</td>`;
     };
-    return `${periodChips}<div class="h2h-scroll"><table class="h2h-table">
+    return `${periodChips}<div class="h2h-scroll foil-frame"><table class="h2h-table">
       <thead><tr><th class="h2h-corner"></th>${members.map(m => `<th><i class="mini-avatar member-${esc(m.slug)}">${initials(m.name)}</i></th>`).join('')}</tr></thead>
       <tbody>${members.map(rowMember => `<tr>
         <th class="h2h-row-head"><i class="mini-avatar member-${esc(rowMember.slug)}">${initials(rowMember.name)}</i><span><strong>${esc(rowMember.name)}</strong><small>${esc(titleForHeadToHead(totalsBySlug.get(rowMember.slug).wins))}</small></span></th>
@@ -225,7 +225,7 @@ export class StatsController {
     const opponentDecks = form.opponentMemberSlug ? this.opponentDecksForMember(form.opponentMemberSlug) : [];
     const opponentName = this.teammates.find(m => m.id === form.opponentMemberSlug)?.name || 'il compagno';
     const showNewDeckField = this.opponentMode === 'team' && form.opponentMemberSlug && form.opponentDeckId === NEW_DECK_VALUE;
-    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail" role="dialog" aria-modal="true" aria-label="Registra match">
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail foil-frame stats-modal-glow" role="dialog" aria-modal="true" aria-label="Registra match">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
       <span class="eyebrow">Registra match</span><h2>Nuovo risultato</h2>
       <label>Mazzo<select data-match-deck>${this.decks.map(deck => `<option value="${esc(deck.id)}" ${form.deckId === deck.id ? 'selected' : ''}>${esc(deck.name)}</option>`).join('') || '<option value="">Nessun mazzo disponibile</option>'}</select></label>
@@ -246,13 +246,13 @@ export class StatsController {
   feedbackView() {
     const result = this.lastResult, progress = progressForXp(result.totalXp), title = titleForLevel(result.level);
     const capped = result.xpAwarded < xpAmountForResult(result.result);
-    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail match-feedback" role="dialog" aria-modal="true" aria-label="Match registrato">
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail match-feedback foil-frame stats-modal-glow" role="dialog" aria-modal="true" aria-label="Match registrato">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
       <span class="eyebrow">✓ Match registrato</span><h2 class="match-feedback-result ${result.result}">${RESULT_LABEL[result.result]}</h2>
-      <p class="match-feedback-xp">+${result.xpAwarded} XP</p>
+      <p class="match-feedback-xp foil-text">+${result.xpAwarded} XP</p>
       ${capped ? `<p class="match-feedback-cap">${icon('info')} Limite giornaliero raggiunto</p>` : ''}
       <div class="xp-bar-block"><small>LV ${result.level}</small><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
-      ${result.levelUp ? `<div class="level-up-banner">${icon('star')} LEVEL UP!<b>LV ${result.level}</b><small>${esc(title)}</small></div>` : ''}
+      ${result.levelUp ? `<div class="level-up-banner foil-frame">${icon('star')} LEVEL UP!<b>LV ${result.level}</b><small>${esc(title)}</small></div>` : ''}
       <button class="btn wide" data-match-close>Chiudi</button>
     </aside></div>`;
   }
