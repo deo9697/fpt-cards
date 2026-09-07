@@ -6,6 +6,7 @@ import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deck
 const SECTIONS = ['main', 'extra', 'side'];
 const LABELS = { main: 'Main Deck', extra: 'Extra Deck', side: 'Side Deck' };
 const DRAFTS_KEY = 'fpt-cards-deck-drafts-v1';
+const DECK_100_CELEBRATED_KEY = 'fpt-cards-deck-100-celebrated-v1';
 const CARD_TYPE_CACHE_KEY = 'fpt-cards-type-index-v1';
 const TYPE_FILTERS = [
   { value: 'all', label: 'Tutte' },
@@ -65,7 +66,20 @@ export class DeckController {
         : `<section class="surface deck-empty">${icon('team')}<h2>Nessun mazzo condiviso</h2><p>I mazzi salvati dagli altri membri del team appariranno qui.</p></section>`;
     return `<header class="deck-hero deck-gallery-hero"><div><span class="eyebrow">Mazzi</span><h1>Mazzi del team</h1><p>Scegli un membro per sfogliare i suoi mazzi, in sola lettura.</p></div></header>${tabs}${this.teamError ? `<div class="connection-banner error">${esc(this.teamError)}</div>` : ''}${body}`;
   }
-  galleryCard(deck, selected = false) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }); return renderDeckBoxCard(deck, { availability: report.percent, selected }); }
+  galleryCard(deck, selected = false) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }); return renderDeckBoxCard(deck, { availability: report.percent, selected, celebrate: this.checkDeck100Celebration(deck.id, report.percent) }); }
+  // Il video/audio del deck box al 100% deve partire una volta sola, esattamente
+  // quando il mazzo raggiunge il completamento — non ogni volta che lo si
+  // riguarda. Un set persistito in localStorage ricorda quali mazzi hanno già
+  // festeggiato: la prima volta che un mazzo tocca il 100% viene marcato subito
+  // (prima ancora che l'utente lo veda), così anche un secondo render nella
+  // stessa sessione non lo fa ripartire. Se scende sotto il 100% viene tolto
+  // dal set, così un futuro nuovo 100% festeggia di nuovo.
+  checkDeck100Celebration(deckId, percent) {
+    const celebrated = readCelebratedDecks();
+    if (percent !== 100) { if (celebrated.has(deckId)) { celebrated.delete(deckId); writeCelebratedDecks(celebrated); } return false; }
+    if (celebrated.has(deckId)) return false;
+    celebrated.add(deckId); writeCelebratedDecks(celebrated); return true;
+  }
   galleryPreview(deck) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0); return `<aside class="deck-gallery-preview surface" aria-label="Anteprima ${esc(deck.name)}"><span class="eyebrow">Mazzo selezionato</span>${renderDeckBoxVisual(deck)}<h2>${esc(deck.name)}</h2><p>${deck.dirty ? 'Bozza salvata sul dispositivo' : `Formato: ${esc(deck.format || 'TCG Avanzato')}`}</p><div class="deck-preview-counts"><span><small>Totale</small><b>${total}</b></span><span><small>Main</small><b>${sectionTotal(deck, 'main')}</b></span><span><small>Extra</small><b>${sectionTotal(deck, 'extra')}</b></span><span><small>Side</small><b>${sectionTotal(deck, 'side')}</b></span></div><div class="deck-preview-ready"><span><small>Disponibilità personale</small><strong>${report.percent}%</strong></span><i style="--ready:${report.percent}"></i></div><button class="btn wide" data-deck-open="${esc(deck.id)}">Apri mazzo ${icon('arrow')}</button></aside>`; }
   teamDetailView(deck) {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { ownerSlug:deck.ownerSlug, loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
@@ -201,6 +215,13 @@ export class DeckController {
   coverPickerView(deck) { const cards = uniqueDeckCards(deck.cards), template = normalizeDeckBoxTemplate(deck.deckBoxTemplate); return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-cover-close><aside class="card-detail deck-cover-picker" role="dialog" aria-modal="true" aria-labelledby="deck-cover-title"><button class="detail-close" data-deck-cover-close aria-label="Chiudi">×</button><span class="eyebrow">Deck Box</span><h2 id="deck-cover-title">Personalizza la Deck Box</h2><p>Scegli uno dei tre modelli F.P.T oppure mantieni la versione dinamica con la carta signature.</p><h3>Modello Deck Box</h3><div class="deck-template-options">${Object.entries(DECK_BOX_TEMPLATES).map(([value, option]) => `<button data-deck-box-template="${value}" class="${template === value ? 'active' : ''}">${option.image ? `<img src="${esc(option.image)}" alt="${esc(option.label)}" loading="lazy">` : `<span>${icon('deck')}</span>`}<strong>${esc(option.label)}</strong>${template === value ? '<b>Selezionato</b>' : ''}</button>`).join('')}</div><div class="deck-signature-heading"><h3>Carta signature</h3><p>Usata dal modello dinamico. Deve essere già presente nel mazzo.</p></div>${cards.length ? `<div class="deck-cover-options">${cards.map(card => `<button data-deck-cover-card="${esc(card.catalogCardId)}" class="${String(deck.signatureCardId || '') === String(card.catalogCardId) ? 'active' : ''}">${card.imageUrl ? `<img src="${esc(card.imageUrl)}" alt="${esc(card.cardName)}" loading="lazy">` : icon('card')}<span><strong>${esc(card.cardName)}</strong><small>${LABELS[card.section] || card.section}</small></span>${String(deck.signatureCardId || '') === String(card.catalogCardId) ? '<b>Signature</b>' : icon('arrow')}</button>`).join('')}</div>` : '<div class="deck-signature-empty">Aggiungi almeno una carta al mazzo per scegliere la signature.</div>'}<button class="btn secondary wide deck-cover-back" data-deck-cover-close>Torna al mazzo</button></aside></div>`; }
   printingPickerView() { const picker = this.printingPicker; return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-printing-close><aside class="card-detail deck-printing-picker" role="dialog" aria-modal="true"><button class="detail-close" data-deck-printing-close aria-label="Chiudi">×</button><span class="eyebrow">Market Watch</span><h2>Seleziona la printing</h2><p>${esc(picker.cardName)} · nessuna scelta viene effettuata automaticamente.</p>${picker.loading ? '<div class="deck-printing-loading"><span class="loading-spinner"></span> Caricamento printing…</div>' : picker.error ? `<div class="connection-banner error">${esc(picker.error)}</div>` : picker.options.length ? `<div class="deck-printing-options">${picker.options.map(option => `<button data-deck-printing-option="${esc(option.printingId)}">${option.imageUrl ? `<img src="${esc(option.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(option.setCode || 'Set non indicato')}</strong><small>${esc(option.setName || 'Espansione non indicata')} · ${esc(option.rarity || 'Rarità non indicata')}</small></span>${icon('arrow')}</button>`).join('')}</div>` : '<div class="empty-state compact"><h3>Nessuna printing disponibile</h3><p>Aggiungi prima una copia precisa alla Raccolta.</p></div>'}</aside></div>`; }
   bind(root = document) {
+    // L'attributo HTML autoplay funziona solo per video muti: per avere
+    // l'audio il play() va chiamato da JS. Prova con audio, e solo se il
+    // browser lo blocca (nessuna interazione recente) riprova muto così
+    // almeno il video parte — non lasciarlo semplicemente fermo.
+    root.querySelectorAll('[data-deck-celebrate]').forEach(video => {
+      video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+    });
     root.querySelectorAll('[data-deck-new]').forEach(button => button.addEventListener('click', () => this.create()));
     root.querySelector('[data-deck-gallery]')?.addEventListener('click', () => this.showGallery());
     root.querySelectorAll('[data-deck-scope]').forEach(button => button.addEventListener('click', () => { this.scope = button.dataset.deckScope; if (this.scope === 'team' && !this.teamDecksAll.length && !this.teamLoadInFlight) void this.loadTeam().then(() => this.onRender()); this.onRender(); }));
@@ -385,6 +406,8 @@ function sectionTotal(deck, section) { return deck.cards.filter(card => card.sec
 function coarseCardType(rawType) { const type = String(rawType || '').toLowerCase(); if (!type) return ''; if (type.includes('spell')) return 'spell'; if (type.includes('trap')) return 'trap'; return 'monster'; }
 function readTypeCache() { try { const value = JSON.parse(localStorage.getItem(CARD_TYPE_CACHE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
 function writeTypeCache(map) { try { localStorage.setItem(CARD_TYPE_CACHE_KEY, JSON.stringify(map)); } catch {} }
+function readCelebratedDecks() { try { const value = JSON.parse(localStorage.getItem(DECK_100_CELEBRATED_KEY) || '[]'); return new Set(Array.isArray(value) ? value : []); } catch { return new Set(); } }
+function writeCelebratedDecks(set) { try { localStorage.setItem(DECK_100_CELEBRATED_KEY, JSON.stringify([...set])); } catch {} }
 function restrictionBadge(status) { const badges = { limited: ['1', 'Limitata a 1 copia'], 'semi-limited': ['2', 'Semi-limitata a 2 copie'], forbidden: ['⊘', 'Proibita'] }, badge = badges[status]; return badge ? `<i class="deck-ban-badge ${status}" title="${badge[1]} nel formato TCG Advanced" aria-label="${badge[1]} nel formato TCG Advanced">${badge[0]}</i>` : ''; }
 function ownershipLabel(info) {
   const parts = [];

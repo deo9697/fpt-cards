@@ -44,12 +44,18 @@ export function deckBoxModel(deck,{availability=null,marketValue=null,marketIndi
 
 export function renderDeckBoxCard(deck,options={}){
   const mode=options.mode==='market'?'market':options.mode==='team'?'team':'gallery',model=deckBoxModel(deck,options),action=mode==='market'?'data-market-deck':mode==='team'?'data-deck-open-team':'data-deck-open';
-  // Easter egg: un mazzo al 100% di disponibilità personale fa ruggire lo
-  // scheletro dentro il riquadro dell'artwork — mai fuori, il video è
-  // assoluto dentro .deck-box-visual (che clippa già con overflow:hidden)
-  // così resta contenuto nella cornice inclinata del box, non a schermo intero.
-  const isPerfect=mode!=='market'&&model.availability===100;
-  return `<button class="deck-box-card dynamic-deck-box ${mode==='market'?'market-deck-box':''} ${options.selected?'selected':''} ${options.active?'active':''}" ${themeAttributes(model)} ${action}="${esc(model.deckId)}" aria-label="${mode==='market'?'Apri il valore di':mode==='team'?'Sfoglia il mazzo di':'Apri il mazzo'} ${esc(model.deckName)}"><span class="deck-box-visual ${model.template!=='procedural'?'uses-template':''}">${renderArtwork(model)}${isPerfect?'<video class="deck-box-100-video" src="./assets/ester-eggs/skelet_roar.mp4" autoplay muted playsinline preload="none" aria-hidden="true"></video>':''}<i></i><b>F.P.T</b></span><span class="deck-box-copy"><strong>${esc(model.deckName)}</strong>${mode==='team'?`<small class="deck-owner-badge">${esc(options.ownerName||'')}</small>`:''}<small><b>${model.mainCount}</b> Main <i>•</i> <b>${model.extraCount}</b> Extra <i>•</i> <b>${model.sideCount}</b> Side</small>${mode==='market'?marketMeta(model):availabilityMeta(model,mode==='team'?'Disponibilità':'Disponibilità personale')}</span></button>`;
+  // Easter egg: la PRIMA volta che un mazzo tocca il 100% di disponibilità
+  // (celebrate=true, deciso dal chiamante — non semplicemente "è al 100%",
+  // altrimenti riparte a ogni render) lo scheletro ruggisce dentro il
+  // riquadro dell'artwork — mai fuori, il video è assoluto dentro
+  // .deck-box-visual (che clippa già con overflow:hidden) così resta
+  // contenuto nella cornice inclinata del box. Niente autoplay/muted in
+  // HTML: l'audio va fatto partire da JS (vedi [data-deck-celebrate] in
+  // DeckController.bind(), js/decks.js) perché l'attributo autoplay del
+  // browser consente solo video muti — un video con autoplay E audio
+  // viene silenziosamente bloccato senza nessun errore da intercettare.
+  const celebrate=mode!=='market'&&options.celebrate;
+  return `<button class="deck-box-card dynamic-deck-box ${mode==='market'?'market-deck-box':''} ${options.selected?'selected':''} ${options.active?'active':''}" ${themeAttributes(model)} ${action}="${esc(model.deckId)}" aria-label="${mode==='market'?'Apri il valore di':mode==='team'?'Sfoglia il mazzo di':'Apri il mazzo'} ${esc(model.deckName)}"><span class="deck-box-visual ${model.template!=='procedural'?'uses-template':''}">${renderArtwork(model)}${celebrate?'<video class="deck-box-100-video" data-deck-celebrate src="./assets/ester-eggs/skelet_roar.mp4" playsinline preload="auto" aria-hidden="true"></video>':''}<i></i><b>F.P.T</b></span><span class="deck-box-copy"><strong>${esc(model.deckName)}</strong>${mode==='team'?`<small class="deck-owner-badge">${esc(options.ownerName||'')}</small>`:''}<small><b>${model.mainCount}</b> Main <i>•</i> <b>${model.extraCount}</b> Extra <i>•</i> <b>${model.sideCount}</b> Side</small>${mode==='market'?marketMeta(model):availabilityMeta(model,mode==='team'?'Disponibilità':'Disponibilità personale')}</span></button>`;
 }
 
 export function renderDeckBoxVisual(deck,{className=''}={}){const model=deckBoxModel(deck);return `<div class="deck-preview-box dynamic-deck-box-visual ${model.template!=='procedural'?'uses-template':''} ${esc(className)}" ${themeAttributes(model)}>${renderArtwork(model)}<i></i><b>F.P.T</b></div>`;}
