@@ -981,6 +981,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .deck-box-visual::before { content:'';position:absolute;z-index:-1;right:-18px;top:7px;width:22px;height:calc(100% - 14px);border:1px solid hsl(var(--deck-hue) 60% 55%/.35);border-left:0;border-radius:0 5px 5px 0;background:linear-gradient(90deg,#121722,#070910);transform:skewY(-20deg); }
 .deck-box-visual::after { content:'';position:absolute;left:-24%;right:-30%;bottom:-19px;height:24px;background:radial-gradient(ellipse,hsl(var(--deck-hue) 100% 65%/.72),transparent 68%);filter:blur(3px); }
 .deck-box-visual img { width:100%;height:100%;border-radius:6px;object-fit:cover;filter:saturate(.9) contrast(1.06) brightness(.8); }
+.deck-box-100-video { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:6px;pointer-events:none; }
 .deck-box-visual img.deck-box-template-art,.deck-preview-box img.deck-box-template-art { object-position:center;filter:saturate(1.04) contrast(1.03) brightness(.88); }
 .dynamic-deck-box .deck-box-visual:not(.uses-template) { overflow:hidden; }
 .dynamic-deck-box .deck-box-visual:not(.uses-template)>i { inset:0;border:1px solid color-mix(in srgb,var(--deck-accent),transparent 38%);border-radius:6px;background:linear-gradient(180deg,#0000 62%,#03040a99),var(--deck-pattern);box-shadow:inset 0 0 10px #0007; }

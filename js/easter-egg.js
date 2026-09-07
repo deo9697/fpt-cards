@@ -3,7 +3,7 @@ export function triggerRickrollVideo() {
   const overlay = document.createElement('div');
   overlay.id = 'rickroll-video';
   overlay.className = 'rickroll-video';
-  overlay.innerHTML = `<video src="./assets/videoplayback.mp4" autoplay playsinline preload="auto"></video><div class="rickroll-video-label"><strong>Autoprestito rilevato</strong><small>GET RIKROLLED</small></div><button type="button" aria-label="Chiudi">×</button>`;
+  overlay.innerHTML = `<video src="./assets/ester-eggs/videoplayback.mp4" autoplay playsinline preload="auto"></video><div class="rickroll-video-label"><strong>Autoprestito rilevato</strong><small>GET RIKROLLED</small></div><button type="button" aria-label="Chiudi">×</button>`;
   document.body.append(overlay);
   const video = overlay.querySelector('video');
   const close = overlay.querySelector('button');
