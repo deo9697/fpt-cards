@@ -292,12 +292,15 @@ function avatarTileView(item, cosmetics, progress) {
   </button>`;
 }
 function customizeTitleListView(titles, cosmetics, progress) {
-  return `<div class="cosmetic-title-list">${titles.map(item => {
-    const unlocked = cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress);
+  // A differenza degli avatar, i titoli non mostrano quelli ancora da
+  // sbloccare: niente lucchetti/anteprime, restano un piccolo mistero
+  // finché non si raggiunge il livello giusto.
+  const unlockedTitles = titles.filter(item => cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress));
+  return `<div class="cosmetic-title-list">${unlockedTitles.map(item => {
     const equipped = cosmetics.activeTitle === item.id;
-    return `<button type="button" class="cosmetic-title-row ${equipped ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" ${unlocked ? `data-equip-title-row="${esc(item.id)}"` : 'disabled'}>
-      <span class="cosmetic-title-mark">${equipped ? '✓' : unlocked ? '' : icon('lock')}</span>
-      <span>${esc(item.label)}</span>${!unlocked ? `<small>LV ${item.unlock.value}</small>` : ''}
+    return `<button type="button" class="cosmetic-title-row ${equipped ? 'equipped' : ''}" data-equip-title-row="${esc(item.id)}">
+      <span class="cosmetic-title-mark">${equipped ? '✓' : ''}</span>
+      <span>${esc(item.label)}</span>
     </button>`;
   }).join('')}</div>`;
 }

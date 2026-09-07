@@ -527,7 +527,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .xp-strip-detail { flex: none; color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
 .xp-strip-identity { overflow: hidden; color: var(--muted); font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
 .xp-bar { position: relative; flex: 1; min-width: 60px; height: 8px; overflow: hidden; border-radius: 999px; background: #232733; }
-.xp-bar > i { position: absolute; inset: 0; width: calc(var(--progress, 0) * 1%); border-radius: inherit; background: linear-gradient(90deg, #7c3fd6, #c7a1ff); }
+.xp-bar > i { position: absolute; inset: 0; width: calc(var(--progress, 0) * 1%); border-radius: inherit; background: linear-gradient(180deg, #a3e635 0%, #65a30d 60%, #4d7c0f 100%); overflow: hidden; transition: width .4s ease; }
+.xp-bar > i::after { content: ''; position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,.95) 1px, transparent 1.5px); background-size: 13px 13px; opacity: .5; mix-blend-mode: screen; animation: xp-sparkle 2.6s linear infinite; }
+@keyframes xp-sparkle { from { background-position: 0 0; } to { background-position: -130px 0; } }
 .xp-bar.large { height: 12px; }
 .top-icon { position: relative; }
 .top-icon i { top: -5px; right: -5px; }
@@ -1881,10 +1883,7 @@ button.market-row:hover { background:#15121d; }
 .cosmetic-title-list { display: grid; gap: 8px; }
 .cosmetic-title-row { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; color: var(--text); text-align: left; font-size: .82rem; }
 .cosmetic-title-row.equipped { border-color: var(--accent); }
-.cosmetic-title-row.locked { opacity: .5; }
-.cosmetic-title-row.locked .icon { width: 15px; height: 15px; }
 .cosmetic-title-mark { display: grid; place-items: center; width: 18px; flex: none; color: var(--accent); font-weight: 800; }
-.cosmetic-title-row small { margin-left: auto; color: var(--muted); font-size: .64rem; }
 .match-result-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
 .match-result-btn { padding: 12px 8px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; color: var(--text); font-weight: 700; font-size: .78rem; }
 .match-result-btn.win.active { border-color: #82e95b88; background: #1a2a14; color: #9cf07a; }
