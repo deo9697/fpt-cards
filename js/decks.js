@@ -26,10 +26,15 @@ const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limita
 export class DeckController {
   constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged } = {}) {
     Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged });
-    this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
+    this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchQuery = ''; this.searchOpen = false; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
     this.scope = 'mine'; this.teamDecksAll = []; this.teamDetailId = ''; this.teamLoadInFlight = null; this.teamError = ''; this.teamLoaded = false; this.teamMemberFilter = '';
     this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.cardSort = 'type'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
     this.cardTypes = readTypeCache(); this.typesLoading = false;
+    // La ricerca carte del deck editor resta aperta finché non la chiudi
+    // esplicitamente (X o indietro) — selezionare una carta da aggiungere
+    // NON la chiude più, così se ne possono aggiungere più di seguito
+    // senza ridigitare la query ogni volta.
+    window.addEventListener('popstate', event => { if (!event.state?.deckSearch && this.searchOpen) { this.closeSearch(); this.onRender?.(); } });
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }
@@ -115,7 +120,7 @@ export class DeckController {
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     return `<div class="deck-mobile">
       ${this.editorHeader(deck, total, report)}
-      <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…"></label><div data-deck-search-results class="deck-search-results"></div></div>
+      <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label><div data-deck-search-results class="deck-search-results"></div></div>
       <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck, report)}
@@ -236,6 +241,7 @@ export class DeckController {
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
     root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
+    root.querySelector('[data-deck-search-close]')?.addEventListener('click', () => { if (history.state?.deckSearch) history.back(); else { this.closeSearch(); this.onRender(); } });
     root.querySelectorAll('[data-deck-printing]').forEach(button => button.addEventListener('click', () => void this.openPrintingPicker(button.dataset.deckPrinting, button.dataset.deckPrintingSection)));
     root.querySelectorAll('[data-deck-printing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.printingPicker = null; this.onRender(); }));
     root.querySelectorAll('[data-deck-printing-option]').forEach(button => button.addEventListener('click', () => void this.choosePrinting(button.dataset.deckPrintingOption)));
@@ -307,8 +313,50 @@ export class DeckController {
       this.onRender();
     }
   }
-  search(query) { clearTimeout(this.searchTimer); const box = document.querySelector('[data-deck-search-results]'); if (!box) return; if (query.trim().length < 3) { box.innerHTML = ''; return; } box.innerHTML = '<span>Ricerca…</span>'; this.searchTimer = setTimeout(async () => { const results = await this.searchCards(query, this.state.game); this.searchResults = results; const current = document.querySelector('[data-deck-search-results]'); if (!current) return; current.innerHTML = results.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>'; current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(this.searchResults[Number(button.dataset.deckResult)]))); }, 260); }
-  add(card, section = this.targetSection, quantity = 1) { const deck = this.active(); if (!deck || !card) return; const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id), existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination); if (existing) { existing.quantity = Math.min(99, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.searchResults = []; this.markDirty(deck); this.onRender(); }
+  search(query) {
+    this.searchQuery = query;
+    if (query.trim().length >= 3 && !this.searchOpen) {
+      this.searchOpen = true;
+      history.pushState({ deckSearch:true }, '', location.href);
+      // Niente full render qui (romperebbe il focus mentre si digita): la X
+      // va mostrata a mano sull'elemento già in pagina.
+      document.querySelector('[data-deck-search-close]')?.classList.remove('hidden');
+    }
+    clearTimeout(this.searchTimer);
+    const box = document.querySelector('[data-deck-search-results]');
+    if (!box) return;
+    if (query.trim().length < 3) { box.innerHTML = ''; this.searchResults = []; return; }
+    box.innerHTML = '<span>Ricerca…</span>';
+    this.searchTimer = setTimeout(async () => {
+      this.searchResults = await this.searchCards(query, this.state.game);
+      this.renderSearchResultsList();
+    }, 260);
+  }
+  renderSearchResultsList() {
+    const current = document.querySelector('[data-deck-search-results]');
+    if (!current) return;
+    current.innerHTML = this.searchResults.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>';
+    current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(this.searchResults[Number(button.dataset.deckResult)])));
+  }
+  closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchResults = []; clearTimeout(this.searchTimer); }
+  add(card, section = this.targetSection, quantity = 1) {
+    const deck = this.active(); if (!deck || !card) return;
+    const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id), existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination);
+    if (existing) { existing.quantity = Math.min(99, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; }
+    else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity });
+    deck.cover = deck.cover || card.fullImage || card.image || '';
+    this.rememberCardType(id, card.type);
+    this.markDirty(deck);
+    this.onRender();
+    // La ricerca resta aperta: dopo il re-render pieno (che rimette l'input
+    // e il box risultati vuoti) ripristina query, focus e la lista appena
+    // aggiunta, così si può continuare ad aggiungere senza ridigitare nulla.
+    if (this.searchOpen) {
+      const input = document.querySelector('[data-deck-search]');
+      if (input) { input.focus(); const pos = input.value.length; input.setSelectionRange(pos, pos); }
+      this.renderSearchResultsList();
+    }
+  }
   rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
   quantity(id, section, delta) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section); if (!item) return; item.quantity += delta; if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
   chooseCover(catalogCardId) { const deck = this.active(); if (!deck?.cards.some(card => String(card.catalogCardId) === String(catalogCardId))) return this.onToast('La cover deve appartenere al mazzo'); deck.signatureCardId = String(catalogCardId); this.coverPickerOpen = false; this.markDirty(deck); this.onToast('Carta signature aggiornata'); this.onRender(); }
