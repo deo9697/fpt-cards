@@ -163,7 +163,8 @@ export const api = {
   async progression() { ensure(); return unwrap(await client.rpc('get_my_progression', { p_token:token() })); },
   async stats(game, { deckId, period } = {}) { ensure(); return unwrap(await client.rpc('get_stats', { p_token:token(), p_game:game, p_deck_id:deckId || null, p_period:period || 'all' })); },
   async teamStats(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_team_stats', { p_token:token(), p_game:game, p_period:period || 'all' })); },
-  async registerMatch(payload) { ensure(); return unwrap(await client.rpc('register_match', { p_token:token(), p_game:payload.game, p_deck_id:payload.deckId, p_result:payload.result, p_opponent_label:payload.opponentLabel || '', p_opponent_deck:payload.opponentDeck || '', p_notes:payload.notes || '' })); },
+  async registerMatch(payload) { ensure(); return unwrap(await client.rpc('register_match', { p_token:token(), p_game:payload.game, p_deck_id:payload.deckId, p_result:payload.result, p_opponent_label:payload.opponentLabel || '', p_opponent_deck:payload.opponentDeck || '', p_notes:payload.notes || '', p_opponent_member_slug:payload.opponentMemberSlug || null, p_opponent_deck_id:payload.opponentDeckId || null })); },
   async deleteMatch(id) { ensure(); return unwrap(await client.rpc('delete_match', { p_token:token(), p_id:id })); },
-  async matchStreak(game) { ensure(); return unwrap(await client.rpc('get_match_streak', { p_token:token(), p_game:game })); }
+  async matchStreak(game) { ensure(); return unwrap(await client.rpc('get_match_streak', { p_token:token(), p_game:game })); },
+  async headToHead(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_head_to_head', { p_token:token(), p_game:game, p_period:period || 'all' })); }
 };

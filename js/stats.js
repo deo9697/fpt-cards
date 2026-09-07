@@ -1,22 +1,26 @@
-import { esc, initials } from './core.js';
+import { esc, initials, MEMBERS } from './core.js';
 import { icon } from './icons.js';
-import { progressForXp, titleForLevel, xpAmountForResult } from './progression.js';
+import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
 function ringColor(winRate) { return winRate >= 70 ? '#9cf07a' : winRate >= 45 ? '#f2c974' : '#ff8fa0'; }
 const PERIODS = [{ value:'all', label:'Sempre' }, { value:'30d', label:'30 giorni' }, { value:'7d', label:'7 giorni' }];
+const SCOPES = ['mine', 'team', 'board'];
 
 export class StatsController {
   constructor({ api, getState, onRender, onToast } = {}) {
     Object.assign(this, { api, getState, onRender, onToast });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
     this.progression = null; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
-    this.matchModalOpen = false; this.matchForm = emptyForm(); this.busy = false; this.lastResult = null;
+    this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
     this.loadInFlight = null;
+    this.teamDecksAll = []; this.teamDecksLoaded = false; this.teamDecksLoadInFlight = null;
+    this.boardRows = []; this.boardError = ''; this.boardLoadInFlight = null;
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }
+  get teammates() { return MEMBERS.filter(m => m.id !== this.state.currentUser); }
   get teamDeckOptions() {
     return [...new Map(this.teamRows.map(row => [row.deckId, row.deckName])).entries()].map(([id, name]) => ({ id, name }));
   }
@@ -32,6 +36,9 @@ export class StatsController {
     return this.visibleRows.reduce((sum, row) => ({
       matches: sum.matches + row.matches, wins: sum.wins + row.wins, losses: sum.losses + row.losses, draws: sum.draws + row.draws
     }), { matches:0, wins:0, losses:0, draws:0 });
+  }
+  opponentDecksForMember(slug) {
+    return this.teamDecksAll.filter(deck => deck.owner_slug === slug && deck.game === this.state.game).map(deck => ({ id:deck.id, name:deck.name }));
   }
   async load() {
     if (this.loadInFlight) return this.loadInFlight;
@@ -49,28 +56,74 @@ export class StatsController {
     if (this.scope === 'mine') {
       const deckId = this.deckFilter !== 'all' ? this.deckFilter : null;
       this.myRows = normalizeRows(await this.api.stats(this.state.game, { deckId, period }));
-    } else {
+    } else if (this.scope === 'team') {
       this.teamRows = normalizeTeamRows(await this.api.teamStats(this.state.game, { period }));
     }
   }
-  setScope(value) { if (!['mine','team'].includes(value) || value === this.scope) return; this.scope = value; this.deckFilter = 'all'; this.memberFilter = 'all'; this.onRender(); void this.loadStats().then(() => this.onRender()); }
+  async loadBoard() {
+    if (this.boardLoadInFlight) return this.boardLoadInFlight;
+    const request = (async () => {
+      try { this.boardRows = normalizeH2HRows(await this.api.headToHead(this.state.game, { period:this.periodFilter })); this.boardError = ''; }
+      catch (error) { this.boardError = error.message || 'Tabellone non disponibile'; }
+    })();
+    this.boardLoadInFlight = request;
+    try { return await request; } finally { if (this.boardLoadInFlight === request) this.boardLoadInFlight = null; }
+  }
+  async loadTeamDecks() {
+    if (this.teamDecksLoaded) return;
+    if (this.teamDecksLoadInFlight) return this.teamDecksLoadInFlight;
+    const request = (async () => { try { this.teamDecksAll = await this.api.teamDecks() || []; } catch { this.teamDecksAll = []; } this.teamDecksLoaded = true; })();
+    this.teamDecksLoadInFlight = request;
+    try { return await request; } finally { if (this.teamDecksLoadInFlight === request) this.teamDecksLoadInFlight = null; }
+  }
+  setScope(value) {
+    if (!SCOPES.includes(value) || value === this.scope) return;
+    this.scope = value; this.deckFilter = 'all'; this.memberFilter = 'all'; this.onRender();
+    if (value === 'board') void this.loadBoard().then(() => this.onRender());
+    else void this.loadStats().then(() => this.onRender());
+  }
   setMemberFilter(value) { this.memberFilter = value; this.onRender(); }
   setDeckFilter(value) { this.deckFilter = value; this.onRender(); if (this.scope === 'mine') void this.loadStats().then(() => this.onRender()); }
-  setPeriodFilter(value) { if (!PERIODS.some(p => p.value === value) || value === this.periodFilter) return; this.periodFilter = value; this.onRender(); void this.loadStats().then(() => this.onRender()); }
-  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.lastResult = null; this.matchModalOpen = true; this.onRender(); }
+  setPeriodFilter(value) {
+    if (!PERIODS.some(p => p.value === value) || value === this.periodFilter) return;
+    this.periodFilter = value; this.onRender();
+    if (this.scope === 'board') void this.loadBoard().then(() => this.onRender());
+    else void this.loadStats().then(() => this.onRender());
+  }
+  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.onRender(); }
   closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.onRender(); }
   setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onRender(); }
   setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.onRender(); }
   setMatchField(field, value) { this.matchForm[field] = value; }
+  setOpponentMode(mode) {
+    if (!['external','team'].includes(mode) || mode === this.opponentMode) return;
+    this.opponentMode = mode; this.matchForm.opponentMemberSlug = ''; this.matchForm.opponentDeckId = '';
+    if (mode === 'team') void this.loadTeamDecks().then(() => this.onRender());
+    this.onRender();
+  }
+  setOpponentMember(slug) {
+    this.matchForm.opponentMemberSlug = slug;
+    this.matchForm.opponentDeckId = this.opponentDecksForMember(slug)[0]?.id || '';
+    this.onRender();
+  }
+  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; this.onRender(); }
   async registerMatch() {
-    if (this.busy || !this.matchForm.deckId || !this.matchForm.result) return;
+    const form = this.matchForm;
+    const teamValid = this.opponentMode !== 'team' || (form.opponentMemberSlug && form.opponentDeckId);
+    if (this.busy || !form.deckId || !form.result || !teamValid) return;
     this.busy = true; this.onRender();
     try {
-      const response = await this.api.registerMatch({ game:this.state.game, deckId:this.matchForm.deckId, result:this.matchForm.result, opponentLabel:this.matchForm.opponentLabel, opponentDeck:this.matchForm.opponentDeck, notes:this.matchForm.notes });
+      const response = await this.api.registerMatch({
+        game:this.state.game, deckId:form.deckId, result:form.result,
+        opponentLabel:form.opponentLabel, opponentDeck:this.opponentMode === 'external' ? form.opponentDeck : '', notes:form.notes,
+        opponentMemberSlug:this.opponentMode === 'team' ? form.opponentMemberSlug : null,
+        opponentDeckId:this.opponentMode === 'team' ? form.opponentDeckId : null
+      });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
-      this.lastResult = { result:this.matchForm.result, ...response };
+      this.lastResult = { result:form.result, ...response };
       const [, streak] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game)]);
       this.streak = streak;
+      if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
     finally { this.busy = false; this.onRender(); }
   }
@@ -79,9 +132,8 @@ export class StatsController {
       ${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}
       <header class="page-header split"><div><span class="eyebrow">Statistiche</span><h1>${this.state.game === 'onepiece' ? 'One Piece Card Game' : 'Yu-Gi-Oh!'}</h1></div><button class="btn" data-stats-new-match>${icon('plus')} Registra match</button></header>
       ${this.heroView()}
-      <div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button></div>
-      ${this.filtersView()}
-      ${this.deckListView()}
+      <div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button><button type="button" data-stats-scope="board" class="${this.scope === 'board' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'board'}">${icon('trophy')} Tabellone</button></div>
+      ${this.scope === 'board' ? this.boardView() : `${this.filtersView()}${this.deckListView()}`}
       ${this.matchModalOpen ? this.matchModalView() : ''}
     </section>`;
   }
@@ -118,23 +170,55 @@ export class StatsController {
       ${icon('arrow')}
     </button>`).join('')}</div>`;
   }
+  boardView() {
+    const periodChips = `<div class="stats-filters"><div class="filter-chips" role="group" aria-label="Periodo">${PERIODS.map(p => `<button type="button" class="chip ${this.periodFilter === p.value ? 'active' : ''}" data-stats-period="${p.value}">${p.label}</button>`).join('')}</div></div>`;
+    if (this.boardError) return `${periodChips}<div class="connection-banner error">${esc(this.boardError)}</div>`;
+    if (!this.boardRows.length) return `${periodChips}<div class="empty-state">${icon('trophy')}<h2>Nessuna sfida interna al team</h2><p>Registra un match scegliendo "Compagno di squadra" come avversario per iniziare a popolare il tabellone.</p></div>`;
+    const members = [...new Map(this.boardRows.flatMap(r => [[r.memberSlug, r.memberName], [r.opponentSlug, r.opponentName]])).entries()]
+      .map(([slug, name]) => ({ slug, name }));
+    const totalsBySlug = new Map(members.map(m => [m.slug, { wins:0, losses:0, draws:0 }]));
+    this.boardRows.forEach(row => { const t = totalsBySlug.get(row.memberSlug); if (t) { t.wins += row.wins; t.losses += row.losses; t.draws += row.draws; } });
+    members.sort((a, b) => (totalsBySlug.get(b.slug).wins - totalsBySlug.get(b.slug).losses) - (totalsBySlug.get(a.slug).wins - totalsBySlug.get(a.slug).losses));
+    const cell = (rowSlug, colSlug) => {
+      const found = this.boardRows.find(r => r.memberSlug === rowSlug && r.opponentSlug === colSlug);
+      if (!found) return '<td class="h2h-empty">–</td>';
+      const draws = found.draws ? `<small>${found.draws}P</small>` : '';
+      return `<td class="${found.wins > found.losses ? 'h2h-ahead' : found.wins < found.losses ? 'h2h-behind' : 'h2h-even'}"><b class="win">${found.wins}</b>-<b class="loss">${found.losses}</b>${draws}</td>`;
+    };
+    return `${periodChips}<div class="h2h-scroll"><table class="h2h-table">
+      <thead><tr><th class="h2h-corner"></th>${members.map(m => `<th><i class="mini-avatar member-${esc(m.slug)}">${initials(m.name)}</i></th>`).join('')}</tr></thead>
+      <tbody>${members.map(rowMember => `<tr>
+        <th class="h2h-row-head"><i class="mini-avatar member-${esc(rowMember.slug)}">${initials(rowMember.name)}</i><span><strong>${esc(rowMember.name)}</strong><small>${esc(titleForHeadToHead(totalsBySlug.get(rowMember.slug).wins))}</small></span></th>
+        ${members.map(colMember => colMember.slug === rowMember.slug ? '<td class="h2h-self">—</td>' : cell(rowMember.slug, colMember.slug)).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  }
   matchModalView() {
     if (this.lastResult) return this.feedbackView();
     const form = this.matchForm;
-    return `<div class="detail-backdrop" data-match-close><aside class="card-detail" role="dialog" aria-modal="true" aria-label="Registra match">
+    const opponentDecks = form.opponentMemberSlug ? this.opponentDecksForMember(form.opponentMemberSlug) : [];
+    const teamValid = this.opponentMode !== 'team' || (form.opponentMemberSlug && form.opponentDeckId);
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail" role="dialog" aria-modal="true" aria-label="Registra match">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
       <span class="eyebrow">Registra match</span><h2>Nuovo risultato</h2>
       <label>Mazzo<select data-match-deck>${this.decks.map(deck => `<option value="${esc(deck.id)}" ${form.deckId === deck.id ? 'selected' : ''}>${esc(deck.name)}</option>`).join('') || '<option value="">Nessun mazzo disponibile</option>'}</select></label>
       <div class="match-result-group" role="group" aria-label="Risultato">${Object.entries(RESULT_LABEL).map(([value, label]) => `<button type="button" class="match-result-btn ${value} ${form.result === value ? 'active' : ''}" data-match-result="${value}">${label}</button>`).join('')}</div>
-      <label>Avversario / Deck<input data-match-field="opponentDeck" maxlength="120" value="${esc(form.opponentDeck)}" placeholder="Es. Labrynth"></label>
+      <div class="opponent-mode-group" role="group" aria-label="Tipo avversario">
+        <button type="button" class="chip ${this.opponentMode === 'external' ? 'active' : ''}" data-opponent-mode="external">Avversario esterno</button>
+        <button type="button" class="chip ${this.opponentMode === 'team' ? 'active' : ''}" data-opponent-mode="team">${icon('team')} Compagno di squadra</button>
+      </div>
+      ${this.opponentMode === 'team' ? `
+      <label>Compagno<select data-match-opponent-member><option value="">Scegli un compagno</option>${this.teammates.map(m => `<option value="${esc(m.id)}" ${form.opponentMemberSlug === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+      ${form.opponentMemberSlug ? `<label>Mazzo del compagno<select data-match-opponent-deck>${opponentDecks.length ? opponentDecks.map(d => `<option value="${esc(d.id)}" ${form.opponentDeckId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('') : '<option value="">Nessun mazzo per questo gioco</option>'}</select></label>` : ''}
+      ` : `<label>Avversario / Deck<input data-match-field="opponentDeck" maxlength="120" value="${esc(form.opponentDeck)}" placeholder="Es. Labrynth"></label>`}
       <label>Note<textarea data-match-field="notes" maxlength="500" placeholder="Facoltative">${esc(form.notes)}</textarea></label>
-      <button class="btn wide" data-match-submit ${this.busy || !form.deckId || !form.result ? 'disabled' : ''}>${this.busy ? 'Registro…' : 'Registra'}</button>
+      <button class="btn wide" data-match-submit ${this.busy || !form.deckId || !form.result || !teamValid ? 'disabled' : ''}>${this.busy ? 'Registro…' : 'Registra'}</button>
     </aside></div>`;
   }
   feedbackView() {
     const result = this.lastResult, progress = progressForXp(result.totalXp), title = titleForLevel(result.level);
     const capped = result.xpAwarded < xpAmountForResult(result.result);
-    return `<div class="detail-backdrop" data-match-close><aside class="card-detail match-feedback" role="dialog" aria-modal="true" aria-label="Match registrato">
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail match-feedback" role="dialog" aria-modal="true" aria-label="Match registrato">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
       <span class="eyebrow">✓ Match registrato</span><h2 class="match-feedback-result ${result.result}">${RESULT_LABEL[result.result]}</h2>
       <p class="match-feedback-xp">+${result.xpAwarded} XP</p>
@@ -154,16 +238,22 @@ export class StatsController {
     root.querySelectorAll('[data-match-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDialog(); }));
     root.querySelector('[data-match-deck]')?.addEventListener('change', event => this.setMatchDeck(event.currentTarget.value));
     root.querySelectorAll('[data-match-result]').forEach(button => button.addEventListener('click', () => this.setMatchResult(button.dataset.matchResult)));
+    root.querySelectorAll('[data-opponent-mode]').forEach(button => button.addEventListener('click', () => this.setOpponentMode(button.dataset.opponentMode)));
+    root.querySelector('[data-match-opponent-member]')?.addEventListener('change', event => this.setOpponentMember(event.currentTarget.value));
+    root.querySelector('[data-match-opponent-deck]')?.addEventListener('change', event => this.setOpponentDeck(event.currentTarget.value));
     root.querySelectorAll('[data-match-field]').forEach(field => field.addEventListener('input', event => this.setMatchField(event.currentTarget.dataset.matchField, event.currentTarget.value)));
     root.querySelector('[data-match-submit]')?.addEventListener('click', () => void this.registerMatch());
   }
 }
 
-function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'' }; }
+function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'', opponentMemberSlug:'', opponentDeckId:'' }; }
 
 function normalizeRows(rows) {
   return (rows || []).map(row => ({ deckId:row.deck_id, deckName:row.deck_name, matches:row.matches, wins:row.wins, losses:row.losses, draws:row.draws, winRate:Number(row.win_rate) }));
 }
 function normalizeTeamRows(rows) {
   return (rows || []).map(row => ({ memberSlug:row.member_slug, memberName:row.member_name, deckId:row.deck_id, deckName:row.deck_name, matches:row.matches, wins:row.wins, losses:row.losses, draws:row.draws, winRate:Number(row.win_rate) }));
+}
+function normalizeH2HRows(rows) {
+  return (rows || []).map(row => ({ memberSlug:row.member_slug, memberName:row.member_name, opponentSlug:row.opponent_slug, opponentName:row.opponent_name, wins:row.wins, losses:row.losses, draws:row.draws, matches:row.matches }));
 }

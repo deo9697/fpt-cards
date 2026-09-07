@@ -45,3 +45,18 @@ export function titleForLevel(level) {
 export function xpAmountForResult(result) {
   return 10 + (result === 'win' ? 5 : result === 'draw' ? 2 : 0);
 }
+
+// Titoli del tabellone: legati alle vittorie totali nei match interni al
+// team (testa a testa contro compagni), separati dalla scala di livello
+// sopra — un giocatore può essere "Tonno" di livello ma "Leggenda del
+// Tabellone" per quanto riguarda le rivalità interne.
+const H2H_TITLE_BUCKETS = [
+  [0, 'Recluta del Tavolo'], [5, 'Sfidante'], [15, 'Duellante Navigato'], [30, 'Nemesi di Lega'], [60, 'Leggenda del Tabellone']
+];
+
+export function titleForHeadToHead(wins) {
+  const w = Math.max(0, Number(wins) || 0);
+  let title = H2H_TITLE_BUCKETS[0][1];
+  for (const [threshold, name] of H2H_TITLE_BUCKETS) { if (w >= threshold) title = name; }
+  return title;
+}

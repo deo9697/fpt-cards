@@ -1405,6 +1405,8 @@ img.card-image-unavailable { opacity: 0; }
   .scan-save-bar .btn { width: 100%; min-height: 46px; }
   .detail-backdrop { align-items: end; padding: 0; }
   .card-detail { width: 100%; max-height: 92vh; max-height: 92dvh; max-height: 92svh; padding: 20px 16px; border-radius: 18px 18px 0 0; -webkit-overflow-scrolling: touch; }
+  .stats-page .tabs { gap: 10px; overflow-x: auto; scrollbar-width: none; }
+  .stats-page .tabs button { flex: none; }
   .deck-dialog-backdrop { align-items: center; padding: 14px; }
   .deck-dialog-backdrop .card-detail { width: 100%; max-height: 88vh; max-height: 88dvh; max-height: 88svh; border-radius: 18px; overflow-y: auto; }
   .detail-layout { grid-template-columns: 1fr; }
@@ -1897,3 +1899,25 @@ button.market-row:hover { background:#15121d; }
 .stats-deck-matches { flex: none; color: var(--muted); font-size: .64rem; }
 .stats-deck-row > .icon { flex: none; width: 14px; color: var(--muted); }
 .stats-deck-row .mini-avatar { flex: none; }
+
+.opponent-mode-group { display: flex; gap: 8px; margin: 4px 0 14px; }
+.opponent-mode-group .chip { display: flex; align-items: center; gap: 6px; }
+.opponent-mode-group .chip .icon { width: 13px; height: 13px; }
+
+.h2h-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 16px; margin: 6px 0; }
+.h2h-table { border-collapse: separate; border-spacing: 0; width: 100%; }
+.h2h-table th, .h2h-table td { padding: 8px; text-align: center; white-space: nowrap; }
+.h2h-table thead th { position: sticky; top: 0; background: #10131b; z-index: 1; }
+.h2h-corner { position: sticky; left: 0; z-index: 3; background: #10131b; }
+.h2h-row-head { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #10131b; text-align: left; }
+.h2h-row-head strong { display: block; font-size: .78rem; }
+.h2h-row-head small { display: block; color: var(--muted); font-size: .6rem; }
+.h2h-row-head .mini-avatar, .h2h-table thead .mini-avatar { width: 28px; height: 28px; border-radius: 50%; font-size: .6rem; }
+.h2h-table td { font-size: .78rem; font-weight: 700; border-left: 1px solid var(--line); }
+.h2h-table td b.win { color: #9cf07a; }
+.h2h-table td b.loss { color: #ff8fa0; }
+.h2h-table td small { display: block; margin-top: 1px; color: var(--muted); font-size: .58rem; font-weight: 400; }
+.h2h-table td.h2h-ahead { background: #9cf07a12; }
+.h2h-table td.h2h-behind { background: #ff8fa012; }
+.h2h-table td.h2h-self { color: var(--muted); background: #ffffff05; }
+.h2h-table td.h2h-empty { color: var(--muted); font-weight: 400; }
