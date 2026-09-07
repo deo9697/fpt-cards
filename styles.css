@@ -837,14 +837,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .scan-stats b { display: block; color: var(--text); font-size: 1rem; }
 #scan-manual-form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
 .scan-review-list { display: grid; gap: 8px; }
-.scan-review-row { display: grid; grid-template-columns: minmax(0,1fr) 100px auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #0b0d13; }
+.scan-review-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #0b0d13; }
 .scan-review-row > div:first-child { display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: center; gap: 9px; min-width: 0; }
 .scan-review-row img { width: 44px; height: 62px; border-radius: 5px; object-fit: contain; }
 .scan-review-row strong, .scan-review-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scan-review-row small { color: var(--muted); font-size: .6rem; }
-.scan-review-row label { margin: 0; font-size: .58rem; }
 .scan-review-row input { padding: 8px; }
 .scan-review-row.warning { grid-template-columns: minmax(190px,1fr) minmax(250px,1.3fr) auto; border-color: #d99b3540; }
+.scan-review-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.scan-qty-stepper { display: flex; align-items: center; gap: 6px; }
+.scan-qty-stepper button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: #171b25; color: var(--text); font-weight: 800; font-size: 1rem; line-height: 1; }
+.scan-qty-stepper button:disabled { opacity: .35; }
+.scan-qty-stepper b { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.scan-first-edition-toggle { padding: 0 10px; height: 30px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: .64rem; font-weight: 700; white-space: nowrap; }
+.scan-first-edition-toggle.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent), transparent 82%); color: var(--accent); }
 .review-choices, .review-correction { display: flex; flex-wrap: wrap; gap: 6px; }
 .review-correction input { flex: 1; min-width: 150px; }
 .scan-save-bar { position: sticky; z-index: 8; bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid #6f497f; border-radius: 13px; background: #13101beF; box-shadow: 0 12px 40px #000a; backdrop-filter: blur(14px); }
@@ -1386,7 +1392,6 @@ img.card-image-unavailable { opacity: 0; }
   .scanner-header .btn { min-height: 42px; padding-inline: 10px; }
   .scan-review-row, .scan-review-row.warning { grid-template-columns: minmax(0,1fr) auto; }
   .scan-review-row > div:first-child, .review-choices, .review-correction { grid-column: 1 / -1; }
-  .scan-review-row label { width: 92px; }
   .scan-review-row .btn { min-height: 42px; }
   .scan-save-bar { bottom: calc(70px + env(safe-area-inset-bottom)); align-items: stretch; flex-direction: column; }
   .scan-save-bar .btn { width: 100%; min-height: 46px; }
