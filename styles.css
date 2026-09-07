@@ -1866,18 +1866,34 @@ button.market-row:hover { background:#15121d; }
 .stats-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
 .stats-filters label { display: grid; gap: 4px; color: var(--muted); font-size: .68rem; }
 .stats-filters select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #0d0f18; color: var(--text); }
-.stats-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
-.stats-total { display: flex; align-items: baseline; gap: 6px; font-size: 1.8rem; }
-.stats-total small { color: var(--muted); font-size: .68rem; letter-spacing: .05em; }
 .stats-wld { display: flex; gap: 12px; font-size: .82rem; font-weight: 700; }
+.stats-wld.small { gap: 8px; font-size: .68rem; }
 .stats-wld .win { color: #9cf07a; }
 .stats-wld .loss { color: #ff8fa0; }
 .stats-wld .draw { color: #f2c974; }
-.stats-winrate { display: grid; text-align: right; }
-.stats-winrate small { color: var(--muted); font-size: .62rem; letter-spacing: .05em; }
-.stats-winrate b { font-size: 1.5rem; }
+
+.stats-hero { display: flex; align-items: center; gap: 20px; margin: 6px 0; padding: 18px; border: 1px solid #3a2a5a; border-radius: 20px; background: radial-gradient(120% 140% at 20% -10%, #1e1430, #10131b 60%); position: relative; overflow: hidden; }
+.stats-hero::before { content: ''; position: absolute; top: -40px; right: -30px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #9b5cff22, transparent 70%); }
+.stats-ring { position: relative; width: 104px; height: 104px; flex: none; border-radius: 50%; background: conic-gradient(var(--ring-color, #9cf07a) calc(var(--pct) * 1%), #292f3d 0); display: grid; place-items: center; z-index: 1; }
+.stats-ring.small { width: 46px; height: 46px; }
+.stats-ring-inner { width: 78%; height: 78%; border-radius: 50%; background: #10131b; display: grid; place-items: center; text-align: center; }
+.stats-ring-inner strong { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.stats-ring-inner small { display: block; margin-top: 2px; color: var(--muted); font-size: .58rem; letter-spacing: .05em; text-transform: uppercase; }
+.stats-ring-inner b { font-size: .6rem; font-weight: 800; }
+.stats-hero-side { flex: 1; display: flex; flex-direction: column; gap: 9px; z-index: 1; min-width: 0; }
+.stats-hero-match strong { display: block; font-size: 1.7rem; font-weight: 800; line-height: 1; }
+.stats-hero-match small { color: var(--muted); font-size: .62rem; letter-spacing: .06em; text-transform: uppercase; }
+.stats-streak { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; width: fit-content; font-size: .64rem; font-weight: 800; }
+.stats-streak .icon { width: 13px; height: 13px; }
+.stats-streak.win { border: 1px solid #9cf07a44; background: #9cf07a1a; color: #9cf07a; }
+.stats-streak.loss { border: 1px solid #ff8fa044; background: #ff8fa01a; color: #ff8fa0; }
+.stats-streak.draw { border: 1px solid #f2c97444; background: #f2c9741a; color: #f2c974; }
+
 .stats-deck-list { display: grid; gap: 10px; }
-.stats-deck-row { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; }
-.stats-deck-row .mini-avatar { grid-row: 1 / 3; }
-.stats-deck-row small { display: block; color: var(--muted); font-size: .66rem; }
-.stats-deck-winrate { font-size: 1.05rem; }
+.stats-deck-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #10131b; color: var(--text); text-align: left; font-family: inherit; }
+.stats-deck-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.stats-deck-info strong { font-size: .92rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-deck-info small { color: var(--muted); font-size: .64rem; }
+.stats-deck-matches { flex: none; color: var(--muted); font-size: .64rem; }
+.stats-deck-row > .icon { flex: none; width: 14px; color: var(--muted); }
+.stats-deck-row .mini-avatar { flex: none; }

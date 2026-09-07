@@ -81,7 +81,8 @@ const fakeSupabaseSource = `(()=>{
     list_collection_share_requests:()=>[],
     get_my_progression:()=>({totalXp:2640,level:12,xpToday:30,dailyCap:100}),
     get_stats:()=>[{deck_id:'44444444-4444-4444-8444-444444444444',deck_name:'Mazzo di prova',matches:5,wins:3,losses:2,draws:0,win_rate:60}],
-    get_team_stats:()=>[]
+    get_team_stats:()=>[],
+    get_match_streak:()=>({result:'win',count:3})
   };
   const client={
     async rpc(name,args={}){

@@ -51,6 +51,12 @@ const fakeSupabaseSource = `(()=>{
       if(name==='get_my_progression') return {data:{totalXp,level,xpToday,dailyCap:100},error:null};
       if(name==='get_stats') return {data:matches.filter(m=>!args.p_deck_id||m.deck_id===args.p_deck_id).length?[{deck_id:decks[0].id,deck_name:decks[0].name,matches:matches.length,wins:matches.filter(m=>m.result==='win').length,losses:matches.filter(m=>m.result==='loss').length,draws:matches.filter(m=>m.result==='draw').length,win_rate:matches.length?Math.round(matches.filter(m=>m.result==='win').length/matches.length*1000)/10:0}]:[],error:null};
       if(name==='get_team_stats') return {data:[],error:null};
+      if(name==='get_match_streak'){
+        if(!matches.length) return {data:{result:null,count:0},error:null};
+        const top=matches[matches.length-1].result; let count=0;
+        for(let i=matches.length-1;i>=0&&matches[i].result===top;i-=1)count+=1;
+        return {data:{result:top,count},error:null};
+      }
       if(name==='register_match'){
         window.__statsTest.registerCalls+=1;
         const base=10+(args.p_result==='win'?5:args.p_result==='draw'?2:0);
@@ -169,6 +175,10 @@ async function run() {
   await waitFor(`!document.querySelector('.match-feedback')`, 'Il feedback match non si chiude');
   await waitFor(`document.querySelector('.stats-deck-row')?.textContent.includes('1 match')`, 'La lista statistiche non riflette il match appena registrato');
   console.log('PASS lista statistiche aggiornata dopo il match (nessuna richiesta manuale di refresh)');
+
+  assert(await evaluate(`document.querySelector('.stats-ring')?.style.getPropertyValue('--pct') === '100'`), "L'anello win-rate della hero non riflette il 100% dopo l'unica vittoria registrata");
+  assert(await evaluate(`Boolean(document.querySelector('.stats-hero'))`), 'La hero Statistiche (anello + riepilogo) non è presente nel tab Io');
+  console.log('PASS hero Statistiche: anello win-rate aggiornato dopo il match');
 
   await waitFor(`document.querySelector('.xp-strip-level')?.textContent.includes('LV 1')`, 'La barra XP in header non riflette il livello corrente dopo il match');
   assert(await evaluate(`document.querySelector('.xp-strip-identity')?.textContent.includes('Daniele')`), 'Header: nome del membro non mostrato accanto alla barra XP');

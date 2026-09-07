@@ -3,13 +3,15 @@ import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult } from './progression.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
+const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
+function ringColor(winRate) { return winRate >= 70 ? '#9cf07a' : winRate >= 45 ? '#f2c974' : '#ff8fa0'; }
 const PERIODS = [{ value:'all', label:'Sempre' }, { value:'30d', label:'30 giorni' }, { value:'7d', label:'7 giorni' }];
 
 export class StatsController {
   constructor({ api, getState, onRender, onToast } = {}) {
     Object.assign(this, { api, getState, onRender, onToast });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
-    this.progression = null; this.myRows = []; this.teamRows = []; this.error = '';
+    this.progression = null; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.busy = false; this.lastResult = null;
     this.loadInFlight = null;
   }
@@ -35,8 +37,8 @@ export class StatsController {
     if (this.loadInFlight) return this.loadInFlight;
     const request = (async () => {
       try {
-        const [progression] = await Promise.all([this.api.progression(), this.loadStats()]);
-        this.progression = progression; this.error = '';
+        const [progression, streak] = await Promise.all([this.api.progression(), this.api.matchStreak(this.state.game), this.loadStats()]);
+        this.progression = progression; this.streak = streak; this.error = '';
       } catch (error) { this.error = error.message || 'Statistiche non disponibili'; }
     })();
     this.loadInFlight = request;
@@ -67,7 +69,8 @@ export class StatsController {
       const response = await this.api.registerMatch({ game:this.state.game, deckId:this.matchForm.deckId, result:this.matchForm.result, opponentLabel:this.matchForm.opponentLabel, opponentDeck:this.matchForm.opponentDeck, notes:this.matchForm.notes });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
       this.lastResult = { result:this.matchForm.result, ...response };
-      await this.loadStats();
+      const [, streak] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game)]);
+      this.streak = streak;
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
     finally { this.busy = false; this.onRender(); }
   }
@@ -75,9 +78,9 @@ export class StatsController {
     return `<section class="page-stack stats-page">
       ${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}
       <header class="page-header split"><div><span class="eyebrow">Statistiche</span><h1>${this.state.game === 'onepiece' ? 'One Piece Card Game' : 'Yu-Gi-Oh!'}</h1></div><button class="btn" data-stats-new-match>${icon('plus')} Registra match</button></header>
+      ${this.heroView()}
       <div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button></div>
       ${this.filtersView()}
-      ${this.summaryView()}
       ${this.deckListView()}
       ${this.matchModalOpen ? this.matchModalView() : ''}
     </section>`;
@@ -90,13 +93,30 @@ export class StatsController {
       <div class="filter-chips" role="group" aria-label="Periodo">${PERIODS.map(p => `<button type="button" class="chip ${this.periodFilter === p.value ? 'active' : ''}" data-stats-period="${p.value}">${p.label}</button>`).join('')}</div>
     </div>`;
   }
-  summaryView() {
+  heroView() {
     const t = this.totals, winRate = t.matches ? Math.round((t.wins / t.matches) * 1000) / 10 : 0;
-    return `<section class="surface stats-summary"><strong class="stats-total">${t.matches} <small>MATCH</small></strong><div class="stats-wld"><span class="win">${t.wins} V</span><span class="loss">${t.losses} S</span><span class="draw">${t.draws} P</span></div><div class="stats-winrate"><small>WIN RATE</small><b>${winRate}%</b></div></section>`;
+    const streak = this.scope === 'mine' ? this.streak : null;
+    const streakLabel = streak?.count > 1 ? `Striscia: ${streak.count} ${STREAK_PLURAL[streak.result] || streak.result}` : '';
+    return `<section class="stats-hero">
+      <div class="stats-ring" style="--pct:${winRate};--ring-color:${ringColor(winRate)}"><div class="stats-ring-inner"><strong>${winRate}%</strong><small>win rate</small></div></div>
+      <div class="stats-hero-side">
+        <div class="stats-hero-match"><strong>${t.matches}</strong><small>match</small></div>
+        <div class="stats-wld"><span class="win">${t.wins}V</span><span class="loss">${t.losses}S</span><span class="draw">${t.draws}P</span></div>
+        ${streakLabel ? `<div class="stats-streak ${streak.result}">${icon('flash')} ${esc(streakLabel)}</div>` : ''}
+      </div>
+    </section>`;
   }
   deckListView() {
     if (!this.visibleRows.length) return `<div class="empty-state">${icon('chart')}<h2>Nessun match registrato</h2><p>Registra il primo match per iniziare a costruire le statistiche.</p></div>`;
-    return `<div class="stats-deck-list">${this.visibleRows.map(row => `<div class="surface stats-deck-row">${row.memberName ? `<i class="mini-avatar member-${esc(row.memberSlug)}">${initials(row.memberName)}</i>` : ''}<strong>${esc(row.deckName)}</strong>${row.memberName ? `<small>${esc(row.memberName)}</small>` : ''}<span class="stats-wld"><b class="win">${row.wins} W</b> · <b class="loss">${row.losses} L</b>${row.draws ? ` · <b class="draw">${row.draws} D</b>` : ''}</span><b class="stats-deck-winrate">${row.winRate}% WR</b><small>${row.matches} match</small></div>`).join('')}</div>`;
+    return `<div class="stats-deck-list">${this.visibleRows.map(row => `<button type="button" class="stats-deck-row" data-stats-deck-row="${esc(row.deckId)}">
+      <div class="stats-ring small" style="--pct:${row.winRate};--ring-color:${ringColor(row.winRate)}"><div class="stats-ring-inner"><b>${row.winRate}%</b></div></div>
+      ${row.memberName ? `<i class="mini-avatar member-${esc(row.memberSlug)}">${initials(row.memberName)}</i>` : ''}
+      <span class="stats-deck-info"><strong>${esc(row.deckName)}</strong>${row.memberName ? `<small>${esc(row.memberName)}</small>` : ''}
+        <span class="stats-wld small"><b class="win">${row.wins} V</b>${row.losses ? ` · <b class="loss">${row.losses} S</b>` : ''}${row.draws ? ` · <b class="draw">${row.draws} P</b>` : ''}</span>
+      </span>
+      <small class="stats-deck-matches">${row.matches} match</small>
+      ${icon('arrow')}
+    </button>`).join('')}</div>`;
   }
   matchModalView() {
     if (this.lastResult) return this.feedbackView();
@@ -130,6 +150,7 @@ export class StatsController {
     root.querySelector('[data-stats-member]')?.addEventListener('change', event => this.setMemberFilter(event.currentTarget.value));
     root.querySelector('[data-stats-deck]')?.addEventListener('change', event => this.setDeckFilter(event.currentTarget.value));
     root.querySelectorAll('[data-stats-period]').forEach(button => button.addEventListener('click', () => this.setPeriodFilter(button.dataset.statsPeriod)));
+    root.querySelectorAll('[data-stats-deck-row]').forEach(button => button.addEventListener('click', () => this.setDeckFilter(this.deckFilter === button.dataset.statsDeckRow ? 'all' : button.dataset.statsDeckRow)));
     root.querySelectorAll('[data-match-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDialog(); }));
     root.querySelector('[data-match-deck]')?.addEventListener('change', event => this.setMatchDeck(event.currentTarget.value));
     root.querySelectorAll('[data-match-result]').forEach(button => button.addEventListener('click', () => this.setMatchResult(button.dataset.matchResult)));

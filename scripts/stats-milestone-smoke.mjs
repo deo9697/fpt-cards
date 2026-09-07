@@ -26,6 +26,14 @@ assert(!/declare[^;]*\blevel\s+integer\b/.test(progressionBody), 'get_my_progres
 assert(progressionBody.includes('member_level'), 'get_my_progression deve usare un nome di variabile diverso dalla colonna (member_level), non "level"');
 console.log('PASS migrazione SQL: tabelle, unique anti-duplicato, validazione mazzo/gioco, cap giornaliero, reversal delete_match, grant anon+authenticated, nessuna variabile "level" ambigua');
 
+const streakSql = fs.readFileSync(new URL('../supabase-milestone-6-add-streak.sql', import.meta.url), 'utf8');
+for (const required of [
+  'create or replace function public.get_match_streak',
+  'to anon, authenticated'
+]) assert(streakSql.includes(required), `Migration streak incompleta: ${required}`);
+assert(!/grant execute[^;]*to authenticated;/.test(streakSql), 'una grant authenticated-only romperebbe get_match_streak (schema custom p_token, stesso client anon-key sempre)');
+console.log('PASS migrazione SQL streak: get_match_streak presente, grant anon+authenticated');
+
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 const { StatsController } = await import('../js/stats.js');
 
@@ -51,7 +59,8 @@ function makeApi(overrides = {}) {
         { member_slug:'marco', member_name:'Marco', deck_id:'deck-labrynth', deck_name:'Labrynth', matches:9, wins:4, losses:5, draws:0, win_rate:44.4 }
       ];
     },
-    registerMatch: async payload => { overrides.lastRegister = payload; return { match:{ id:'match-1' }, xpAwarded:15, totalXp:2655, level:12, levelUp:false }; }
+    registerMatch: async payload => { overrides.lastRegister = payload; return { match:{ id:'match-1' }, xpAwarded:15, totalXp:2655, level:12, levelUp:false }; },
+    matchStreak: async () => ({ result:'win', count:4 })
   };
 }
 
@@ -65,6 +74,11 @@ assert.equal(stats.totals.matches, 35, 'i totali Io devono sommare tutti i mazzi
 assert.equal(stats.decks.length, 2, 'il modal di registrazione deve vedere solo i mazzi del gioco corrente (yugioh), non One Piece');
 assert(!stats.decks.some(deck => deck.id === 'deck-op-luffy'), 'un mazzo di un altro gioco non deve comparire nel selettore match');
 console.log('PASS StatsController.load: progression + stats "Io", totali corretti, mazzi filtrati per gioco corrente');
+
+const heroHtml = stats.view();
+assert(heroHtml.includes('Striscia: 4 vittorie'), 'la striscia di vittorie correnti non compare nella hero del tab Io');
+assert(heroHtml.includes('--pct:71.4'), 'il win rate complessivo nella hero non combacia con i totali (25 vittorie su 35 match = 71.4%)');
+console.log('PASS heroView(): anello win-rate e striscia mostrati per lo scope Io');
 
 stats.setDeckFilter('deck-ryzeal');
 await new Promise(resolve => setTimeout(resolve, 0));
