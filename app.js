@@ -258,7 +258,7 @@ function avatarPanelView(u) {
   return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel profile-panel" role="dialog" aria-modal="true" aria-label="Profilo">
     <button class="detail-close" data-close-avatar aria-label="Chiudi">×</button>
     <span class="eyebrow">Profilo</span>
-    <div class="profile-header">${profileAvatarMarkup(u, cosmetics, 'large')}<div class="profile-header-copy"><h2>${esc(u.name)}</h2><small>LV ${progress.level} · ${esc(titleLabel)}</small></div></div>
+    <button type="button" class="profile-header" data-open-customize>${profileAvatarMarkup(u, cosmetics, 'large')}<div class="profile-header-copy"><h2>${esc(u.name)}</h2><small>LV ${progress.level} · ${esc(titleLabel)}</small></div><b class="profile-header-chevron">›</b></button>
     <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
     <div class="profile-selects">
       <label>Titolo equipaggiato<select data-equip-title ${cosmeticActionPending ? 'disabled' : ''}>${unlockedTitles.map(item => `<option value="${esc(item.id)}" ${cosmetics.activeTitle === item.id ? 'selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>
@@ -314,10 +314,10 @@ async function equipCosmeticAndRefresh(type, id) {
 function bindProgressionHeader(root) {
   root.querySelector('[data-open-progression]')?.addEventListener('click', () => { progressionDrawerOpen = true; render(); });
   root.querySelectorAll('[data-close-progression]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; progressionDrawerOpen = false; render(); }));
-  root.querySelector('[data-open-avatar]')?.addEventListener('click', () => { avatarPanelOpen = true; render(); });
+  root.querySelectorAll('[data-open-avatar]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = true; render(); }));
   root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; avatarPanelOpen = false; render(); }));
   root.querySelectorAll('[data-avatar-goto]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = false; navigate(button.dataset.avatarGoto); }));
-  root.querySelector('[data-open-customize]')?.addEventListener('click', () => { profileCustomizeOpen = true; render(); });
+  root.querySelectorAll('[data-open-customize]').forEach(button => button.addEventListener('click', () => { profileCustomizeOpen = true; render(); }));
   root.querySelectorAll('[data-close-customize]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; profileCustomizeOpen = false; render(); }));
   root.querySelectorAll('[data-customize-tab]').forEach(button => button.addEventListener('click', () => { profileCustomizeTab = button.dataset.customizeTab; render(); }));
   root.querySelector('[data-equip-title]')?.addEventListener('change', event => void equipCosmeticAndRefresh('title', event.target.value));
