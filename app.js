@@ -16,6 +16,7 @@ import { CollectionShareController } from './js/collection-share.js';
 import { StatsController } from './js/stats.js';
 import { progressForXp, titleForLevel } from './js/progression.js';
 import { cosmeticsByType, cosmeticPacks, findCosmetic, isCosmeticUnlocked } from './js/cosmetics.js';
+import { DAILY_MISSIONS_META } from './js/missions.js';
 
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
@@ -226,15 +227,30 @@ function xpStripView(u) {
 function progressionDrawerView() {
   const progression = stats.progression || { totalXp:0, level:1, xpToday:0, dailyCap:100 };
   const progress = progressForXp(progression.totalXp), title = titleForLevel(progress.level);
-  const nextTitle = titleForLevel(Math.min(50, progress.level + 1));
   return `<div class="detail-backdrop" data-close-progression><aside class="card-detail progression-drawer" role="dialog" aria-modal="true" aria-label="Progressione">
     <button class="detail-close" data-close-progression aria-label="Chiudi">×</button>
     <span class="eyebrow">Progression</span><h2>LV ${progress.level}</h2>
     <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP · ${Math.max(0, (progress.nextLevelXp || 0) - progress.currentLevelXp)} XP al prossimo livello</small></div>
-    <section class="progression-section"><span class="eyebrow">Oggi</span><p>XP match <b>${progression.xpToday} / ${progression.dailyCap}</b></p></section>
-    <section class="progression-section"><span class="eyebrow">Prossimo reward</span><p>LV ${Math.min(50, progress.level + 1)} · ${icon('star')} ${esc(nextTitle)}</p></section>
+    ${dailyMissionsView(stats.missions || [])}
     <p class="progression-title">Titolo attuale: <b>${esc(title)}</b></p>
   </aside></div>`;
+}
+function dailyMissionsView(missions) {
+  if (!missions.length) return '';
+  return `<section class="progression-section daily-missions"><span class="eyebrow">Missioni di oggi</span>
+    <div class="mission-list">${missions.map(missionRowView).join('')}</div>
+  </section>`;
+}
+function missionRowView(mission) {
+  const meta = DAILY_MISSIONS_META[mission.id] || { icon:'star', label:mission.id, description:'' };
+  const pct = Math.round(Math.min(100, (mission.progress / mission.target) * 100));
+  return `<div class="mission-row ${mission.completed ? 'completed' : ''}">
+    <span class="mission-icon">${mission.completed ? '✓' : icon(meta.icon)}</span>
+    <div class="mission-copy"><strong>${esc(meta.label)}</strong><small>${esc(meta.description)}</small>
+      <div class="mission-bar"><i style="--progress:${pct}"></i></div>
+    </div>
+    <span class="mission-count">${mission.progress}/${mission.target}</span>
+  </div>`;
 }
 
 function activeCosmetics() { return stats.cosmetics || { activeTitle:'', activeAvatar:'', unlocked:[] }; }
@@ -281,14 +297,17 @@ function customizePanelView(cosmetics, progress) {
   </aside></div>`;
 }
 function customizeAvatarPackView(pack, cosmetics, progress) {
-  return `<div class="cosmetic-pack"><h3>${esc(pack.label)}</h3><div class="cosmetic-avatar-grid">${pack.items.map(item => avatarTileView(item, cosmetics, progress)).join('')}</div></div>`;
+  // Come i titoli: niente anteprime bloccate, un pack sbloccato solo in
+  // parte mostra soltanto le facce già ottenute (mistero sul resto).
+  const unlockedItems = pack.items.filter(item => cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress));
+  if (!unlockedItems.length) return '';
+  return `<div class="cosmetic-pack"><h3>${esc(pack.label)}</h3><div class="cosmetic-avatar-grid">${unlockedItems.map(item => avatarTileView(item, cosmetics)).join('')}</div></div>`;
 }
-function avatarTileView(item, cosmetics, progress) {
-  const unlocked = cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress);
+function avatarTileView(item, cosmetics) {
   const equipped = cosmetics.activeAvatar === item.id;
-  return `<button type="button" class="cosmetic-avatar-tile ${equipped ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" ${unlocked ? `data-equip-avatar="${esc(item.id)}"` : 'disabled'} title="${unlocked ? esc(item.label) : `Sblocca a LV ${item.unlock.value}`}">
-    <span class="cosmetic-avatar-img"><img src="${esc(item.image)}" alt="${esc(item.label)}">${unlocked ? '' : icon('lock')}</span>
-    <small>${unlocked ? esc(item.label) : `LV ${item.unlock.value}`}</small>${equipped ? '<i class="cosmetic-equipped-badge">✓</i>' : ''}
+  return `<button type="button" class="cosmetic-avatar-tile ${equipped ? 'equipped' : ''}" data-equip-avatar="${esc(item.id)}" title="${esc(item.label)}">
+    <span class="cosmetic-avatar-img"><img src="${esc(item.image)}" alt="${esc(item.label)}"></span>
+    <small>${esc(item.label)}</small>${equipped ? '<i class="cosmetic-equipped-badge">✓</i>' : ''}
   </button>`;
 }
 function customizeTitleListView(titles, cosmetics, progress) {
