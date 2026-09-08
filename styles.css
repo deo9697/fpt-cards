@@ -539,8 +539,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .xp-bar.large { height: 12px; }
 .top-icon { position: relative; }
 .top-icon i { top: -5px; right: -5px; }
-.mobile-profile { display: none; padding: 2px; }
-.mobile-profile .avatar { width: 36px; height: 36px; font-size: .7rem; }
+.mobile-profile { display: none; padding: 0; }
+/* Solo qui l'avatar riempie tutto il pulsante invece di restare un cerchio
+   più piccolo dentro il quadrato — .avatar resta un cerchio ovunque altrove
+   (sidebar, pannello profilo), non tocchiamo la classe condivisa. */
+.mobile-profile .avatar { width: 100%; height: 100%; border-radius: inherit; font-size: .7rem; }
 .page-stage { width: min(1420px, 100%); min-height: 60vh; margin: 0 auto; }
 .page-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .page-stack > * { min-width: 0; }
