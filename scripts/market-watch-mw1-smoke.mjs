@@ -123,9 +123,11 @@ assert(!providerSource.includes("confidence:rarityMatches.length ? .98 : .88"),'
 for(const required of ['pricesOnly','payload?.scheduled===true','loadPrices','outside_03_europe_rome','x-market-sync-secret','resolution=ignore-duplicates','source_updated_at:value.sourceUpdatedAt','isAuthorizedCardmarketMapping','dryTargetPrintingIds','canaryPrintingIds','canary_requires_full_mode','pricesForTarget'])assert(edgeSource.includes(required),`Contratto Edge v10/MW1 assente: ${required}`);
 assert(edgeSource.includes("candidates:candidateDetails}),candidates:providerRarityKnown};"),'Edge function non allineata al fix candidati su rarità non corrispondente');
 assert(edgeSource.includes("function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;"),'Edge function non allineata al re-resolve incrementale delle mapping aggregate legacy');
-for(const required of ['pendingResolverLimit:1500','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
-const manualCapMatch=edgeSource.match(/Math\.min\((\d+),Number\(payload\?\.resolverBatchSize\)\|\|(\d+)\)/);
-assert(manualCapMatch&&Number(manualCapMatch[1])>=500,'Il tetto manuale del resolver batch on-demand è ancora troppo basso per smaltire un arretrato reale (un utente attivo può aggiungere più di 10-20 carte nuove al giorno, restando bloccato in coda per giorni)');
+for(const required of ['pendingResolverLimit:RESOLVER_SAFETY_CEILING','cardmarketMappingNeedsResolver','CARDMARKET_RESOLVER_VERSION','resolver_current'])assert(edgeSource.includes(required),`Resolver incrementale schedulato incompleto: ${required}`);
+const manualCapMatch=edgeSource.match(/Math\.min\((\w+),Number\(payload\?\.resolverBatchSize\)\|\|(\d+)\)/);
+assert(manualCapMatch&&(manualCapMatch[1]==='RESOLVER_SAFETY_CEILING'||Number(manualCapMatch[1])>=500),'Il tetto manuale del resolver batch on-demand è ancora troppo basso per smaltire un arretrato reale (un utente attivo può aggiungere più di 10-20 carte nuove al giorno, restando bloccato in coda per giorni)');
+const safetyCeilingMatch=edgeSource.match(/const RESOLVER_SAFETY_CEILING=(\d+);/);
+assert(safetyCeilingMatch&&Number(safetyCeilingMatch[1])>=10000,'RESOLVER_SAFETY_CEILING troppo basso: deve restare un vero paracadute, non un tetto giornaliero da ritoccare a mano');
 assert(edgeSource.includes('queryPagination:true'),'La paginazione RPC Edge deve usare limit/offset espliciti');
 assert(edgeSource.includes('limit=${pageSize}&offset=${from}'),'Offset RPC PostgREST non applicato');
 for(const required of ["rpcPages('market_sync_targets'","restPages('card_printings?",'Range:`${from}-${to}`',"'Range-Unit':'items'",'from<=maxRows','from===maxRows&&page.length','seen.has(normalized)'])assert(edgeSource.includes(required),`Paginazione Edge incompleta: ${required}`);

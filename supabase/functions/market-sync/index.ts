@@ -275,6 +275,18 @@ class ProviderHttpError extends Error {provider:string;status:number;constructor
 const supabaseUrl=Deno.env.get('SUPABASE_URL')||'';
 const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
 const syncSecret=Deno.env.get('MARKET_SYNC_SECRET')||'';
+// Non un tetto "giornaliero ragionevole" da ritoccare a mano ogni volta che
+// la raccolta cresce — resolveCardmarketPrinting() è O(1) per target dopo il
+// caching di norm()/internalPrintingsByCatalogId (2026-09-06, ~28ms/500
+// target = ~0.056ms/target), e il costo dominante di un run resta il
+// download una tantum del feed Cardmarket, identico a 1500 o 40000 target
+// risolti contro di esso. Questo numero esiste solo come paracadute contro
+// un backlog davvero patologico (es. un futuro bump di CARDMARKET_RESOLVER_
+// VERSION che rimette in coda l'intero catalogo mapping in un colpo solo):
+// finché il conteggio reale di pending resta sotto questa soglia, ogni notte
+// smaltisce TUTTO l'arretrato, senza bisogno di alzare questo valore man
+// mano che raccolta/team crescono.
+const RESOLVER_SAFETY_CEILING=50000;
 
 Deno.serve(async request=>{
   if(request.method!=='POST')return json({error:'method_not_allowed'},405);
@@ -291,13 +303,7 @@ Deno.serve(async request=>{
   const providers=[
     new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''})
   ];
-  // 500 non era un limite reale: resolveCardmarketPrinting() è O(1) per target dopo
-  // il caching di norm()/internalPrintingsByCatalogId (2026-09-06, ~28ms per 500
-  // target su un catalogo/anagrafica realistici), e il costo dominante di un run è
-  // il download una tantum del feed Cardmarket, non il numero di target risolti
-  // contro di esso (stessa logica di e64e306, che alzò 10->500). 1500 resta ampio
-  // margine sotto il budget CPU della edge function.
-  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(1500,Number(payload?.resolverBatchSize)||100)):0;
+  const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(RESOLVER_SAFETY_CEILING,Number(payload?.resolverBatchSize)||100)):0;
   if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
   // Coda di refresh prioritario (ogni ~15 min, job separato da quello
   // notturno): scarica il price guide feed UNA volta per ciclo e aggiorna
@@ -313,7 +319,7 @@ Deno.serve(async request=>{
     return json(await dryTargetCardmarket(cardmarket,dryTargetPrintingIds));
   }
   const results=[];
-  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:1500,skipPrices:true}));}
+  if(scheduled){const cardmarket=providers.find(provider=>provider.name==='cardmarket');results.push(await syncProvider(cardmarket,{pendingResolverLimit:RESOLVER_SAFETY_CEILING,skipPrices:true}));}
   for(const provider of providers)results.push(await syncProvider(provider,{recoverStale:payload?.recoverStale===true,pricesOnly,targetPrintingIds:canaryPrintingIds}));
   return json({ok:results.some(row=>['succeeded','partial'].includes(row.status)),mode:canaryPrintingIds.length?'canary':scheduled?'scheduled':pricesOnly?'prices_only':'full',results});
 });
