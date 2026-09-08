@@ -26,7 +26,7 @@ export const COSMETICS = [
   // finché chi chiama non passa context.rivalWins, cosa che oggi fa solo
   // stats.js in claimNewCosmetics() — il selettore "Personalizza" in app.js
   // non passa context, quindi li mostra sempre bloccati senza spoilerarli).
-  { id:'avatar_nellento', type:'avatar', label:'Nellento', image:'assets/avatars/nellentone.jpeg', unlock:{ type:'achievement', opponentSlug:'antonello-napolitano', value:5 } },
+  { id:'avatar_nellento', type:'avatar', label:'Nellento', image:'assets/avatars/nellentone.jpeg', unlock:{ type:'achievement', opponentSlug:'cristian-spadafora', value:5 } },
   { id:'avatar_christofer', type:'avatar', label:'Christofer', image:'assets/avatars/cristofer.jpeg', unlock:{ type:'achievement', opponentSlug:'cristofer', value:5 } },
   { id:'avatar_capeleira', type:'avatar', label:'Capeleira', image:'assets/avatars/capeleira.jpeg', unlock:{ type:'achievement', opponentSlug:'daniele', value:5 } },
 
@@ -38,7 +38,13 @@ export const COSMETICS = [
   { id:'title_totonno', type:'title', label:'Totonno', unlock:{ type:'level', value:10 } },
   { id:'title_totorchio', type:'title', label:'Totorchio', unlock:{ type:'level', value:20 } },
   { id:'title_totorchiomon', type:'title', label:'Totorchiomon', unlock:{ type:'level', value:30 } },
-  { id:'title_metal_war_totorchiomon', type:'title', label:'Metal War Totorchiomon', unlock:{ type:'level', value:40 } }
+  { id:'title_metal_war_totorchiomon', type:'title', label:'Metal War Totorchiomon', unlock:{ type:'level', value:40 } },
+
+  // Titoli "rivalità": stessa condizione del rispettivo avatar sopra (stesso
+  // opponentSlug/value), così sbloccano insieme in un colpo solo.
+  { id:'title_nellento', type:'title', label:'Nello, Ryu-ge Lento', unlock:{ type:'achievement', opponentSlug:'cristian-spadafora', value:5 } },
+  { id:'title_christofer', type:'title', label:"L'Altezzoso", unlock:{ type:'achievement', opponentSlug:'cristofer', value:5 } },
+  { id:'title_capeleira', type:'title', label:"Capeleira, Malebranche dell'Abisso Bruciante", unlock:{ type:'achievement', opponentSlug:'daniele', value:5 } }
 ];
 
 export function isCosmeticUnlocked(cosmetic, progression, context = {}) {
