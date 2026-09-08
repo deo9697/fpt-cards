@@ -7,12 +7,42 @@ const TABS=['owned','deck','manual'];
 const LABELS={owned:'Raccolta',deck:'Mazzi',manual:'Watchlist'};
 const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{days:365,label:'1a'}];
 const FRESH_MS=48*60*60*1000;
+const ROW_BATCH_SIZE=60;
 
 export class MarketWatchController {
   constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
-  async load(){if(this.loadInFlight)return this.loadInFlight;this.loading=true;const request=(async()=>{try{const game=this.getGame(),moversRequest=this.api.marketDashboardMovers?this.api.marketDashboardMovers(game).catch(()=>[]):Promise.resolve([]),anomaliesRequest=this.api.marketPriceAnomalies?this.api.marketPriceAnomalies().catch(()=>[]):Promise.resolve([]),[payload,movers,anomalies]=await Promise.all([this.api.marketWatch(game),moversRequest,anomaliesRequest]),next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}this.data=next;this.anomalies=anomalies||[];this.error='';void this.loadFeaturedHistories();}catch(error){this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}finally{this.loading=false;}return this.data;})();this.loadInFlight=request;try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}}
+  async load(){
+    const game=this.getGame();
+    if(this.loadInFlight&&this.loadGame===game)return this.loadInFlight;
+    const generation=this.loadGeneration=(this.loadGeneration||0)+1;
+    const current=()=>this.loadGeneration===generation&&this.getGame()===game;
+    this.loadGame=game;this.loading=true;
+    let extrasReady=false,movers=[],anomalies=[];
+    // Accessory panels must not hold up the main card list.
+    void Promise.all([
+      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>[]),
+      Promise.resolve().then(()=>this.api.marketPriceAnomalies?.()||[]).catch(()=>[])
+    ]).then(([nextMovers,nextAnomalies])=>{
+      movers=nextMovers;anomalies=nextAnomalies;extrasReady=true;
+      if(!current()||this.loading)return;
+      this.data.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
+      this.onRender?.();void this.loadFeaturedHistories();
+    });
+    const request=(async()=>{
+      try{
+        const payload=await this.api.marketWatch(game);if(!current())return this.data;
+        const next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);
+        if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}
+        this.data=next;this.anomalies=anomalies||[];this.error='';
+      }catch(error){if(current())this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
+      finally{if(current()){this.loading=false;this.onRender?.();if(extrasReady)void this.loadFeaturedHistories();}}
+      return this.data;
+    })();
+    this.loadInFlight=request;
+    try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}
+  }
   dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
   // Cards where the resolver deliberately refused to guess a price:
   // - provider_rarity_mismatch: Cardmarket has a real match but under a
@@ -101,7 +131,12 @@ export class MarketWatchController {
   }
   confirmRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):'<div class="market-tab-empty">Nessuna carta da confermare al momento.</div>'}</div>`;}
   anomalyRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(anomalyQueueRow).join(''):'<div class="market-tab-empty">Nessun prezzo insolito da confermare.</div>'}</div>`;}
-  rows(items,unresolved){return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${items.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>`;}
+  rows(items,unresolved){
+    const key=JSON.stringify([this.getGame?.(),this.tab,this.sort,this.query]);
+    if(this.visibleRowsKey!==key){this.visibleRowsKey=key;this.visibleRows=ROW_BATCH_SIZE;}
+    const visible=items.slice(0,this.visibleRows);
+    return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${visible.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>${visible.length<items.length?`<button type="button" class="btn secondary" data-market-show-more>Mostra altre ${Math.min(ROW_BATCH_SIZE,items.length-visible.length)} carte (${visible.length}/${items.length})</button>`:''}`;
+  }
   marketDecks(){return buildMarketDecks(this.getDecks?.()||this.data.decks||[],this.data.items,this.data.deckUnresolved);}
   deckRows(decks){return decks.length?`<div class="market-deck-grid">${decks.map(deck=>renderDeckBoxCard(deck,{mode:'market',marketValue:deck.marketValue,marketIndicative:deck.marketIndicative,marketCoverage:`${deck.valuedCopies}/${deck.totalCopies} copie`,delta24:deck.delta24,delta7:deck.delta7,topMover:deck.topMover})).join('')}</div>`:'<div class="market-tab-empty">Nessun mazzo disponibile nel Market Watch.</div>';}
   deckDetailView(decks){const deck=decks.find(row=>String(row.id)===String(this.selectedDeck));if(!deck)return'';return `<div class="detail-backdrop" data-market-deck-close><aside class="card-detail market-deck-detail" role="dialog" aria-modal="true"><button class="detail-close" aria-label="Chiudi">×</button><span class="eyebrow">${deck.marketIndicative?'Valore indicativo':'Valore mazzo'}</span><div class="market-deck-detail-head">${renderDeckBoxVisual(deck)}<div><h2>${esc(deck.name)}</h2><p>${deck.marketValue==null?'Valore non disponibile':money(deck.marketValue)}</p><small>${deck.valuedCopies}/${deck.totalCopies} copie valorizzate${deck.indicativeValuedCopies?` · ${deck.indicativeValuedCopies} con stima indicativa`:''}${deck.unresolvedCount?` · ${deck.unresolvedCount} printing da definire`:''}</small></div></div><div class="market-deck-kpis"><span><small>24 ore</small><strong class="${tone(deck.delta24)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta24)}</strong></span><span><small>7 giorni</small><strong class="${tone(deck.delta7)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta7)}</strong></span><span><small>Top mover</small><strong>${deck.marketIndicative?'Escluso':deck.topMover?`${esc(deck.topMover.cardName)} ${changePercent(deck.topMover.percent)}`:'Non disponibile'}</strong></span></div><p class="data-note">${deck.marketIndicative?'Stima basata anche su prezzi Cardmarket aggregati o su una printing posseduta scelta tramite identità catalogo. Trend e mover restano esclusi.':'Il valore deriva da printing con prezzo specifico. Le fonti restano visibili nei dettagli delle singole printing.'}</p></aside></div>`;}
@@ -153,6 +188,7 @@ export class MarketWatchController {
   // e refreshBoard() (root=solo .market-board-content): tutto ciò che vive
   // nella lista va ri-agganciato ogni volta che il suo HTML viene ricostruito.
   bindBoardContent(root=document){
+    root.querySelector('[data-market-show-more]')?.addEventListener('click',()=>{this.visibleRows+=ROW_BATCH_SIZE;this.refreshBoard();});
     root.querySelectorAll('[data-market-card]').forEach(button=>button.addEventListener('click',()=>void this.openDetail(button.dataset.marketCard)));
     root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));
     root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));

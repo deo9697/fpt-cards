@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+globalThis.window ??= {addEventListener(){}};
+globalThis.localStorage ??= {getItem(){return null;},setItem(){}};
+const {MarketWatchController}=await import('../js/market-watch.js');
+const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const main=deferred(),movers=deferred(),anomalies=deferred();
+let calls=0,renders=0;
+const controller=new MarketWatchController({getGame:()=> 'yugioh',onRender:()=>renders++,api:{
+  marketWatch:()=>{calls++;return main.promise;},marketDashboardMovers:()=>movers.promise,marketPriceAnomalies:()=>anomalies.promise
+}});
+const first=controller.load(),second=controller.load();
+main.resolve({items:[{printing_id:'one',card_name:'Ready'}]});
+await flush();
+assert.equal(controller.loading,false,'optional requests must not delay the list');
+assert.equal(controller.data.items[0].cardName,'Ready');
+assert(renders>0,'main data must render independently of application startup');
+await Promise.all([first,second]);assert.equal(calls,1);
+anomalies.reject(new Error('optional unavailable'));movers.resolve([]);await flush();
+assert.equal(controller.error,'');assert.deepEqual(controller.anomalies,[]);
+
+let game='yugioh';const old=deferred(),next=deferred();
+const switching=new MarketWatchController({getGame:()=>game,api:{marketWatch:g=>g==='yugioh'?old.promise:next.promise}});
+const stale=switching.load();game='onepiece';const latest=switching.load();
+next.resolve({items:[{printing_id:'new',card_name:'One Piece'}]});await latest;
+old.resolve({items:[{printing_id:'old',card_name:'Yu-Gi-Oh'}]});await stale;
+assert.equal(switching.data.items[0].printingId,'new','stale game responses must not replace current data');
+assert.equal(switching.loading,false);
+console.log('PASS immediate main-list rendering, shared requests, optional failure and game-switch race');
+const {mapPayload}=await import('../js/market-watch.js');
+const items=mapPayload({items:Array.from({length:2132},(_,i)=>({printing_id:`card-${i}`,card_name:`Card ${i}`,sources:['owned']}))}).items;
+let html=controller.rows(items,[]);
+assert.equal((html.match(/data-market-card=/g)||[]).length,60);
+assert(html.includes('60/2132'));
+let more;
+controller.observeRows=()=>{};
+controller.refreshBoard=()=>{html=controller.rows(items,[]);};
+controller.bindBoardContent({querySelector:()=>({addEventListener:(_,callback)=>{more=callback;}}),querySelectorAll:()=>[]});
+more();assert.equal((html.match(/data-market-card=/g)||[]).length,120);
+controller.query='Card 2131';html=controller.rows([items.at(-1)],[]);
+assert(html.includes('data-market-card="card-2131"'));
+assert(!html.includes('data-market-show-more'));
+assert.equal(controller.visibleRows,60);
+assert.equal(items.length,2132);
+console.log('PASS bounded initial rows, show-more action and search beyond the first batch');

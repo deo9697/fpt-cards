@@ -8,7 +8,7 @@
 // Se modifichi market/providers.js, riporta manualmente le stesse modifiche qui sotto.
 
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-const CARDMARKET_RESOLVER_VERSION=9;
+const CARDMARKET_RESOLVER_VERSION=11;
 const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -151,8 +151,8 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
   if(local.expansion)expansions.add(local.expansion);
   if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
   const hint=options.expansionHints?.get?.(setSeriesKey(printing.setCode||printing.set_code))||null;
-  const products=dedupeProducts((candidates||[]).filter((row:any)=>acceptedNames.has(row._normName??norm(row.cardName||row.name))&&(
-    [...expansions].some(expansion=>sameCardmarketExpansion(expansion as string,row.setName||row.expansion))||(hint&&String(row.providerExpansionId||row.provider_expansion_id||'')===hint.providerExpansionId)
+  const products=dedupeProducts(cardmarketCandidatesByName(candidates||[],acceptedNames).filter((row:any)=>acceptedNames.has(row._normName??norm(row.cardName||row.name))&&(
+    [...expansions].some(expansion=>[row.setName||row.expansion,...(row.expansionNames||[])].some((label:any)=>sameCardmarketExpansion(expansion as string,label)))||(hint&&String(row.providerExpansionId||row.provider_expansion_id||'')===hint.providerExpansionId)
   )));
   if(!products.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_product_not_found',{acceptedNames:[...acceptedNames].sort(),acceptedExpansions:[...expansions].sort(),expansionHint:hint});
   const internalRarities=[...new Set(family.map((row:any)=>normalizeMarketRarity(row.rarity)).filter(Boolean))].sort();
@@ -178,7 +178,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
 }
 function normalizeMarketRarity(value:any):string|null{const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 function isAuthorizedCardmarketMapping(mapping:any):boolean{if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
-function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
+function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return ['unresolved','ambiguous'].includes(mapping?.resolution_status)||String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 function buildCardmarketExpansionHints(printings:any[]=[],products:any[]=[]):Map<string,any>{
   const groups=new Map<string,Set<string>>(),productsByName=new Map<string,any[]>();
@@ -197,13 +197,43 @@ function buildCardmarketExpansionHints(printings:any[]=[],products:any[]=[]):Map
 
 function normalizePrinting(row:any){return {game:norm(row.game),catalogId:norm(row.catalogCardId||row.catalog_card_id),setCode:normCode(row.setCode||row.set_code),
   expansion:norm(row.setName||row.set_name||row.expansion),rarity:norm(row.rarity),language:norm(row.language),edition:norm(row.edition),foil:bool(row.foil)};}
+// Index a catalog once per feed, avoiding a full scan for every printing.
+const cardmarketNameIndexes=new WeakMap<any[],Map<string,any[]>>();
+function cardmarketCandidatesByName(rows:any[],names:Set<string>):any[]{
+  let index=cardmarketNameIndexes.get(rows);
+  if(!index){index=new Map();for(const row of rows){const key=row._normName??norm(row.cardName||row.name);if(!index.has(key))index.set(key,[]);index.get(key).push(row);}cardmarketNameIndexes.set(rows,index);}
+  return [...names].flatMap(name=>index.get(name)||[]);
+}
 function productId(row:any):string{return String(read(row,['providerProductId','provider_product_id','idProduct','Product ID','product_id','id'])||'');}
 function mappingProductIds(mapping:any):string[]{const many=mapping?.provider_metadata?.candidateProductIds||mapping?.candidateProductIds||[];return [...new Set([mapping?.providerProductId||mapping?.provider_product_id||'',...(Array.isArray(many)?many:[])].map(String).filter(Boolean))];}
 function evidenceBase(printing:any,rarity:any){return {internalPrintingId:printing.printingId||printing.printing_id||printing.id||null,catalogCardId:String(printing.catalogCardId||printing.catalog_card_id||''),internalSetCode:printing.setCode||printing.set_code||'',internalSetName:printing.setName||printing.set_name||'',internalRarity:rarity,internalLanguage:printing.language||'',internalEdition:printing.edition||''};}
 function setFamilyKey(value:any):string{const code=String(value||'').trim().toUpperCase(),match=code.match(/^([A-Z0-9]+)-[A-Z]{1,3}([0-9]+)$/);return match?`${match[1]}:${match[2]}`:normCode(code);}
 function setSeriesKey(value:any):string{return String(value||'').trim().toUpperCase().split('-',1)[0].replace(/[^A-Z0-9]/g,'');}
 function sameCardmarketExpansion(left:any,right:any):boolean{const a=norm(left),b=norm(right);return a===b||Boolean(a&&b&&cardmarketExpansionKey(a)===cardmarketExpansionKey(b));}
-function cardmarketExpansionKey(value:any):string{return norm(value).replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function cardmarketExpansionKey(value:any):string{
+  let key=norm(value);
+  const aliases:Record<string,string>={
+    "starter deck: yu-gi-oh! 5d's":"5d's starter deck 2008",
+    "starter deck: yu-gi-oh! 5d's 2009":"5d's starter deck 2009",
+    'starter deck 2006':'gx starter deck 2006',
+    'servitore del faraone':"pharaoh's servant (sdf)",
+    'mazzo introduttivo yugi':'starter deck: yugi (miy)',
+    'mazzo introduttivo kaiba':'starter deck: kaiba (mik)',
+    'mazzo introduttivo yugi evoluzione':'starter deck: yugi evolution',
+    'gold series 2009':'gold series 2',
+    'zexal collection tin':'2013 zexal collection',
+    'super starter power-up pack':'super starter power-up',
+    "legendary collection 4: joey's world mega pack":'legendary collection 4: mega pack',
+    "warriors' strike structure deck":"structure deck: warrior's strike"
+  };
+  key=(aliases[key]||key).replace(/\s*\(tcg\)$/,'').replace(/^dark revelation volume /,'dark revelation ');
+  // Cardmarket groups both waves under the same annual collector tin set.
+  const tin=key.match(/^(?:(20\d{2}) collectible tins(?: wave \d+)?|collectible tins (20\d{2})(?: wave \d+)?|collector['’]s tins (20\d{2})(?::.*)?)$/);
+  if(tin)return 'collector tins '+(tin[1]||tin[2]||tin[3]);
+  key=key.replace(/^(hidden arsenal \d+):.*$/,'$1')
+    .replace(/^(duelist pack: yusei)( \d+)?$/,'$1 fudo$2');
+  return key.replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
 // resolveCardmarketPrinting() used to scan the FULL internalPrintings array
 // (the app's own card_printings table, easily thousands of rows) TWICE per
 // target being resolved — once here, once more inline for acceptedNames —
@@ -228,9 +258,9 @@ function internalPrintingsByCatalogId(rows:any[]){
 function internalFamily(printing:any,rows:any[]):any[]{const catalog=norm(printing.catalogCardId||printing.catalog_card_id),family=setFamilyKey(printing.setCode||printing.set_code),sameCatalog=internalPrintingsByCatalogId(rows).get(catalog)||[],result=sameCatalog.filter((row:any)=>setFamilyKey(row.setCode||row.set_code)===family);return result.length?result:[printing];}
 function dedupeProducts(rows:any[]):any[]{const byId=new Map<string,any>();for(const row of rows||[]){const id=productId(row);if(id&&!byId.has(id))byId.set(id,row);}return [...byId.values()].sort((a,b)=>productId(a).localeCompare(productId(b),'en',{numeric:true}));}
 function cardmarketNonSinglesUrl(value:string):string{try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
-function addExpansionName(values:Map<string,string>,row:any){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
-function cleanExpansionName(value:any):string{return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
-function normalizeCardmarketProduct(row:any,expansions:Map<string,string>){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`,
+function addExpansionName(values:Map<string,string[]>,row:any){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const names=values.get(id)||[];if(!names.includes(name))names.push(name);names.sort((a,b)=>a.length-b.length||a.localeCompare(b));values.set(id,names);}
+function cleanExpansionName(value:any):string{return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Box Set|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
+function normalizeCardmarketProduct(row:any,expansions:Map<string,string[]>){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)?.[0]||'',expansion:expansions.get(expansionId)?.[0]||'',expansionNames:expansions.get(expansionId)||[],providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`,
   // norm() does Unicode NFD normalization + several regex passes — cheap once,
   // but resolveCardmarketPrinting() used to call it fresh on every catalog row
   // for EVERY target being resolved (T targets x N catalog rows), which is
@@ -241,7 +271,7 @@ function normalizeCardmarketProduct(row:any,expansions:Map<string,string>){const
 function parseProductName(value:any){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/\bfoil\b/i.test(rarity)?true:null};}
 function numberFrom(row:any,keys:string[]):number|null{const raw=read(row,keys);if(raw==null||raw==='')return null;const value=Number(String(raw).replace(',','.'));return Number.isFinite(value)&&value>=0?value:null;}
 function read(row:any,keys:string[]):any{for(const key of keys)if(row?.[key]!=null&&row[key]!=='')return row[key];return null;}
-function norm(value:any):string{return decodeEntities(value).normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[‐‑‒–—]/g,'-').trim().toLowerCase().replace(/\s+/g,' ');}
+function norm(value:any):string{return decodeEntities(value).replace(/^el shaddoll meshahrail$/i,'El Shaddoll Meshachrer').replace(/^reeshaddoll wendikurhu$/i,'Reeshaddoll Wendikuruhu').replace(/^black jack the shadow-armored knight$/i,'Shadowreaver Knight 21').replace(/^early palm gets the win$/i,'First Striker Advantage').replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,'').replace(/maliss <([pq])>/gi,'maliss $1').replace(/falchion\s*(?:beta|β)/gi,'falchion beta').replace(/^(H\.E\.R\.O\. Flash!) \(BLZD\)$/i,'$1').replace(/\\+(?=["'])/g,'').replace(/[“”]/g,'"').replace(/"+/g,'"').replace(/[★☆]/g,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[‐‑‒–—]/g,'-').trim().toLowerCase().replace(/\s+/g,' ');}
 function decodeEntities(value:any):string{return String(value??'').replace(/&(apos|#39|#x27);/gi,"'").replace(/&(quot|#34|#x22);/gi,'"').replace(/&amp;/gi,'&').replace(/&nbsp;/gi,' ').replace(/&#(x?[0-9a-f]+);/gi,(_,raw)=>{const radix=raw[0].toLowerCase()==='x'?16:10,code=Number.parseInt(raw.replace(/^x/i,''),radix);return Number.isFinite(code)&&code>0&&code<=0x10ffff?String.fromCodePoint(code):_;});}
 function normCode(value:any):string{return norm(value).replace(/[^a-z0-9]/g,'');}
 function bool(value:any):boolean|null{if(value==null||value==='')return null;if(typeof value==='boolean')return value;return ['1','true','yes','foil'].includes(norm(value));}
@@ -312,6 +342,12 @@ Deno.serve(async request=>{
   // 'manual' con provider_product_id noto, non serve ririsolvere/scaricare
   // il catalogo prodotti. Vedi supabase-market-watch-priority-refresh.sql.
   if(payload?.priorityQueue===true){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{priorityOnly:true,pricesOnly:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'priority_queue',results:[result]});}
+  if(payload?.refreshQueue===true){
+    const cardmarket=providers.find(provider=>provider.name==='cardmarket');
+    // One provider cycle per invocation keeps feed parsing within the CPU budget.
+    const result=await syncProvider(cardmarket,{newPrintingsOnly:true});
+    return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'refresh_queue',results:[result]});
+  }
   const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
   if(dryTargetPrintingIds.length){
@@ -345,7 +381,7 @@ function withDeadline<T>(promise:Promise<T>,ms:number,label:string):Promise<T>{
   return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
 }
 
-async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false,priorityOnly=false}={}){
+async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false,priorityOnly=false,newPrintingsOnly=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   if(recoverStale)await releaseProviderSync(provider.name);
@@ -355,8 +391,9 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
   try{
     const targetResult=await rpcPages('market_sync_targets',{p_provider:provider.name},{order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
     const allTargets=targetResult.rows;targetPages=targetResult.requests;
-    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
-    if((pendingResolverLimit||priorityOnly)&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:priorityOnly?'no_pending_refresh_requests':'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
+    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):newPrintingsOnly?allTargets.filter((target:any)=>!target.mapping_id||target.refresh_requested_at).slice(0,100):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
+    if(newPrintingsOnly&&targets.length&&targets.every((target:any)=>isAuthorizedCardmarketMapping(target)))pricesOnly=true;
+    if((pendingResolverLimit||priorityOnly||newPrintingsOnly)&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:priorityOnly?'no_pending_refresh_requests':'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
     let resolvedTargets=[...unique.values()];
@@ -398,8 +435,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     // per un motivo reale, non per errori sistemici a monte che avrebbero
     // già lanciato prima di qui) — si toglie dalla coda a prescindere
     // dall'esito per non ritentarlo ogni ~15 min all'infinito.
-    if(priorityOnly&&resolvedTargets.length){
-      const ids=resolvedTargets.map((target:any)=>target.mapping_id).filter(Boolean);
+    if((priorityOnly||newPrintingsOnly)&&resolvedTargets.length){
+      const ids=resolvedTargets.filter((target:any)=>priorityOnly||target.refresh_requested_at).map((target:any)=>target.mapping_id).filter(Boolean);
       if(ids.length)await rest(`market_provider_printings?id=in.(${ids.map(encodeURIComponent).join(',')})`,'PATCH',{refresh_requested_at:null},{'Prefer':'return=minimal'});
     }
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});

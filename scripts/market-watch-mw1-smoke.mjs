@@ -97,7 +97,7 @@ const localizedAlias=printing({catalogCardId:'77',cardName:'Giudizio Solenne',se
 const canonicalAlias=printing({catalogCardId:'77',cardName:'Solemn Judgment',setCode:'RA02-EN075',setName:'25th Anniversary Rarity Collection II',rarity:'Ultra Rare'});
 assert.equal(resolveCardmarketPrinting(localizedAlias,[product(926,'Solemn Judgment','25th Anniversary Rarity Collection II')],{internalPrintings:[localizedAlias,canonicalAlias]}).status,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE,'alias nome con catalog_card_id identico non risolto');
 
-assert.equal(CARDMARKET_RESOLVER_VERSION,9);
+assert.equal(CARDMARKET_RESOLVER_VERSION,11);
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{resolverVersion:2}}));
 assert(cardmarketMappingNeedsResolver({resolution_status:'unresolved',provider_metadata:{}}));
 assert(!cardmarketMappingNeedsResolver({resolution_status:'resolved',provider_metadata:{resolverVersion:CARDMARKET_RESOLVER_VERSION}}));

@@ -1,5 +1,5 @@
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
-export const CARDMARKET_RESOLVER_VERSION=9;
+export const CARDMARKET_RESOLVER_VERSION=11;
 export const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
 const SUPPORTED_RARITIES=new Map([
   ['common','Common'],['rare','Rare'],['super rare','Super Rare'],['ultra rare','Ultra Rare'],['secret rare','Secret Rare'],
@@ -131,8 +131,8 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
   if(local.expansion)expansions.add(local.expansion);
   if(!name||!expansions.size)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'name_or_expansion_missing');
   const hint=options.expansionHints?.get?.(setSeriesKey(printing.setCode||printing.set_code))||null;
-  const products=dedupeProducts((candidates||[]).filter(row=>acceptedNames.has(row._normName??norm(row.cardName||row.name))&&(
-    [...expansions].some(expansion=>sameCardmarketExpansion(expansion,row.setName||row.expansion))||(hint&&String(row.providerExpansionId||row.provider_expansion_id||'')===hint.providerExpansionId)
+  const products=dedupeProducts(cardmarketCandidatesByName(candidates||[],acceptedNames).filter(row=>acceptedNames.has(row._normName??norm(row.cardName||row.name))&&(
+    [...expansions].some(expansion=>[row.setName||row.expansion,...(row.expansionNames||[])].some(label=>sameCardmarketExpansion(expansion,label)))||(hint&&String(row.providerExpansionId||row.provider_expansion_id||'')===hint.providerExpansionId)
   )));
   if(!products.length)return fail(CARDMARKET_RESOLUTION_STATES.UNRESOLVED,'provider_product_not_found',{acceptedNames:[...acceptedNames].sort(),acceptedExpansions:[...expansions].sort(),expansionHint:hint});
   const internalRarities=[...new Set(family.map(row=>normalizeMarketRarity(row.rarity)).filter(Boolean))].sort();
@@ -159,7 +159,7 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
 export function normalizeMarketRarity(value){const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
-export function cardmarketMappingNeedsResolver(mapping){if(mapping?.resolution_status==='manual')return false;return String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
+export function cardmarketMappingNeedsResolver(mapping){if(mapping?.resolution_status==='manual')return false;return ['unresolved','ambiguous'].includes(mapping?.resolution_status)||String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 export function buildCardmarketExpansionHints(printings=[],products=[]){
   const groups=new Map(),productsByName=new Map();
@@ -178,13 +178,43 @@ export function buildCardmarketExpansionHints(printings=[],products=[]){
 
 function normalizePrinting(row){return {game:norm(row.game),catalogId:norm(row.catalogCardId||row.catalog_card_id),setCode:normCode(row.setCode||row.set_code),
   expansion:norm(row.setName||row.set_name||row.expansion),rarity:norm(row.rarity),language:norm(row.language),edition:norm(row.edition),foil:bool(row.foil)};}
+// Index a catalog once per feed, avoiding a full scan for every printing.
+const cardmarketNameIndexes=new WeakMap();
+function cardmarketCandidatesByName(rows,names){
+  let index=cardmarketNameIndexes.get(rows);
+  if(!index){index=new Map();for(const row of rows){const key=row._normName??norm(row.cardName||row.name);if(!index.has(key))index.set(key,[]);index.get(key).push(row);}cardmarketNameIndexes.set(rows,index);}
+  return [...names].flatMap(name=>index.get(name)||[]);
+}
 function productId(row){return String(read(row,['providerProductId','provider_product_id','idProduct','Product ID','product_id','id'])||'');}
 function mappingProductIds(mapping){const many=mapping?.provider_metadata?.candidateProductIds||mapping?.candidateProductIds||[];return [...new Set([mapping?.providerProductId||mapping?.provider_product_id||'',...(Array.isArray(many)?many:[])].map(String).filter(Boolean))];}
 function evidenceBase(printing,rarity){return {internalPrintingId:printing.printingId||printing.printing_id||printing.id||null,catalogCardId:String(printing.catalogCardId||printing.catalog_card_id||''),internalSetCode:printing.setCode||printing.set_code||'',internalSetName:printing.setName||printing.set_name||'',internalRarity:rarity,internalLanguage:printing.language||'',internalEdition:printing.edition||''};}
 function setFamilyKey(value){const code=String(value||'').trim().toUpperCase(),match=code.match(/^([A-Z0-9]+)-[A-Z]{1,3}([0-9]+)$/);return match?`${match[1]}:${match[2]}`:normCode(code);}
 function setSeriesKey(value){return String(value||'').trim().toUpperCase().split('-',1)[0].replace(/[^A-Z0-9]/g,'');}
 function sameCardmarketExpansion(left,right){const a=norm(left),b=norm(right);return a===b||Boolean(a&&b&&cardmarketExpansionKey(a)===cardmarketExpansionKey(b));}
-function cardmarketExpansionKey(value){return norm(value).replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function cardmarketExpansionKey(value){
+  let key=norm(value);
+  const aliases={
+    "starter deck: yu-gi-oh! 5d's":"5d's starter deck 2008",
+    "starter deck: yu-gi-oh! 5d's 2009":"5d's starter deck 2009",
+    'starter deck 2006':'gx starter deck 2006',
+    'servitore del faraone':"pharaoh's servant (sdf)",
+    'mazzo introduttivo yugi':'starter deck: yugi (miy)',
+    'mazzo introduttivo kaiba':'starter deck: kaiba (mik)',
+    'mazzo introduttivo yugi evoluzione':'starter deck: yugi evolution',
+    'gold series 2009':'gold series 2',
+    'zexal collection tin':'2013 zexal collection',
+    'super starter power-up pack':'super starter power-up',
+    "legendary collection 4: joey's world mega pack":'legendary collection 4: mega pack',
+    "warriors' strike structure deck":"structure deck: warrior's strike"
+  };
+  key=(aliases[key]||key).replace(/\s*\(tcg\)$/,'').replace(/^dark revelation volume /,'dark revelation ');
+  // Cardmarket groups both waves under the same annual collector tin set.
+  const tin=key.match(/^(?:(20\d{2}) collectible tins(?: wave \d+)?|collectible tins (20\d{2})(?: wave \d+)?|collector['’]s tins (20\d{2})(?::.*)?)$/);
+  if(tin)return 'collector tins '+(tin[1]||tin[2]||tin[3]);
+  key=key.replace(/^(hidden arsenal \d+):.*$/,'$1')
+    .replace(/^(duelist pack: yusei)( \d+)?$/,'$1 fudo$2');
+  return key.replace(/\b([a-z0-9]+)['’]s\b/g,'$1').replace(/\b(?:structure|starter) deck\b/g,' ').replace(/\bmega[- ]tins?\b/g,'mega tin').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
 // resolveCardmarketPrinting() used to scan the FULL internalPrintings array
 // (the app's own card_printings table, easily thousands of rows) TWICE per
 // target being resolved — once here, once more inline for acceptedNames —
@@ -210,10 +240,10 @@ function internalFamily(printing,rows){const catalog=norm(printing.catalogCardId
 function dedupeProducts(rows){const byId=new Map();for(const row of rows||[]){const id=productId(row);if(id&&!byId.has(id))byId.set(id,row);}return [...byId.values()].sort((a,b)=>productId(a).localeCompare(productId(b),'en',{numeric:true}));}
 export function parseCardmarketPayload(text,key){const value=String(text||'').trim();if(!value)return {rows:[],createdAt:''};if(value[0]==='{'||value[0]==='['){const parsed=JSON.parse(value),rows=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.[key])?parsed[key]:[]);return {rows,createdAt:parsed?.createdAt||''};}return {rows:parseDelimited(value),createdAt:''};}
 export function cardmarketNonSinglesUrl(value){try{const url=new URL(value);if(!/products_singles_\d+\.json$/i.test(url.pathname))return'';url.pathname=url.pathname.replace(/products_singles_(\d+)\.json$/i,'products_nonsingles_$1.json');return url.toString();}catch{return'';}}
-function buildExpansionNames(rows){const values=new Map();for(const row of rows||[]){const id=String(row.idExpansion||row.expansion_id||'');if(!id)continue;const name=cleanExpansionName(row.name||'');if(!name)continue;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}return values;}
-function addExpansionName(values,row){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const current=values.get(id);if(!current||name.length<current.length)values.set(id,name);}
-function cleanExpansionName(value){return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
-function normalizeCardmarketProduct(row,expansions){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)||'',expansion:expansions.get(expansionId)||'',providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`,
+function buildExpansionNames(rows){const values=new Map();for(const row of rows||[])addExpansionName(values,row);return values;}
+function addExpansionName(values,row){const id=String(row.idExpansion||row.expansion_id||'');if(!id)return;const name=cleanExpansionName(row.name||'');if(!name)return;const names=values.get(id)||[];if(!names.includes(name))names.push(name);names.sort((a,b)=>a.length-b.length||a.localeCompare(b));values.set(id,names);}
+function cleanExpansionName(value){return String(value).replace(/\s+(?:Booster(?: Box| Case)?|Box Set|Display|Case|Pack|Deck|Tin|Box)(?:\s*\([^)]*\))?$/i,'').trim();}
+function normalizeCardmarketProduct(row,expansions){const rawName=String(row.name||''),parsed=parseProductName(rawName),id=productId(row),expansionId=String(row.idExpansion||'');return {...row,id,providerProductId:id,provider_product_id:id,game:'yugioh',rawName,cardName:parsed.cardName,name:parsed.cardName,rarity:parsed.rarity,setName:expansions.get(expansionId)?.[0]||'',expansion:expansions.get(expansionId)?.[0]||'',expansionNames:expansions.get(expansionId)||[],providerExpansionId:expansionId,provider_expansion_id:expansionId,foil:parsed.foil,productUrl:`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(id)}`,
   // norm() does Unicode NFD normalization + several regex passes — cheap once,
   // but resolveCardmarketPrinting() used to call it fresh on every catalog row
   // for EVERY target being resolved (T targets x N catalog rows), which is
@@ -224,7 +254,7 @@ function normalizeCardmarketProduct(row,expansions){const rawName=String(row.nam
 function parseProductName(value){const raw=String(value).trim(),match=raw.match(/^(.*?)\s*\(V\.\d+\s*-\s*([^()]+)\)\s*$/i),cardName=(match?.[1]||raw).trim(),rarity=(match?.[2]||'').trim();return {cardName,rarity,foil:/\bfoil\b/i.test(rarity)?true:null};}
 function numberFrom(row,keys){const raw=read(row,keys);if(raw==null||raw==='')return null;const value=Number(String(raw).replace(',','.'));return Number.isFinite(value)&&value>=0?value:null;}
 function read(row,keys){for(const key of keys)if(row?.[key]!=null&&row[key]!=='')return row[key];return null;}
-function norm(value){return decodeEntities(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[‐‑‒–—]/g,'-').trim().toLowerCase().replace(/\s+/g,' ');}
+function norm(value){return decodeEntities(value).replace(/^el shaddoll meshahrail$/i,'El Shaddoll Meshachrer').replace(/^reeshaddoll wendikurhu$/i,'Reeshaddoll Wendikuruhu').replace(/^black jack the shadow-armored knight$/i,'Shadowreaver Knight 21').replace(/^early palm gets the win$/i,'First Striker Advantage').replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,'').replace(/maliss <([pq])>/gi,'maliss $1').replace(/falchion\s*(?:beta|β)/gi,'falchion beta').replace(/^(H\.E\.R\.O\. Flash!) \(BLZD\)$/i,'$1').replace(/\\+(?=["'])/g,'').replace(/[“”]/g,'"').replace(/"+/g,'"').replace(/[★☆]/g,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[‐‑‒–—]/g,'-').trim().toLowerCase().replace(/\s+/g,' ');}
 function decodeEntities(value){return String(value??'').replace(/&(apos|#39|#x27);/gi,"'").replace(/&(quot|#34|#x22);/gi,'"').replace(/&amp;/gi,'&').replace(/&nbsp;/gi,' ').replace(/&#(x?[0-9a-f]+);/gi,(_,raw)=>{const radix=raw[0].toLowerCase()==='x'?16:10,code=Number.parseInt(raw.replace(/^x/i,''),radix);return Number.isFinite(code)&&code>0&&code<=0x10ffff?String.fromCodePoint(code):_;});}
 function normCode(value){return norm(value).replace(/[^a-z0-9]/g,'');}
 function bool(value){if(value==null||value==='')return null;if(typeof value==='boolean')return value;return ['1','true','yes','foil'].includes(norm(value));}
