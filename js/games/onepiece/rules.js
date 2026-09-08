@@ -21,7 +21,16 @@ export function validateOnePieceDeck(deck) {
   if (leaderCount !== LEADER_COUNT) errors.push(`Serve esattamente ${LEADER_COUNT} Leader (attuali: ${leaderCount})`);
   if (mainCount !== MAIN_DECK_SIZE) errors.push(`Il Main Deck deve contenere ${MAIN_DECK_SIZE} carte (attuali: ${mainCount})`);
   if (donCount !== DON_DECK_SIZE) errors.push(`Servono ${DON_DECK_SIZE} carte DON!! (attuali: ${donCount})`);
-  for (const card of mainCards) if (card.quantity > MAIN_CARD_COPY_LIMIT) errors.push(`${card.cardName}: massimo ${MAIN_CARD_COPY_LIMIT} copie (attuali: ${card.quantity})`);
+  // Il limite è per carta logica (catalogCardId), non per riga: 2x regular +
+  // 2x parallel dello stesso catalogCardId sono 4 copie della stessa carta
+  // ai fini di questo controllo, non 2+2 carte "diverse" (Fase 4.1).
+  const mainByCard = new Map();
+  for (const card of mainCards) {
+    const entry = mainByCard.get(card.catalogCardId) || { cardName: card.cardName, quantity: 0 };
+    entry.quantity += Number(card.quantity || 0);
+    mainByCard.set(card.catalogCardId, entry);
+  }
+  for (const entry of mainByCard.values()) if (entry.quantity > MAIN_CARD_COPY_LIMIT) errors.push(`${entry.cardName}: massimo ${MAIN_CARD_COPY_LIMIT} copie (attuali: ${entry.quantity})`);
   const leaderColors = leaderCards[0]?.colors;
   if (Array.isArray(leaderColors) && leaderColors.length) {
     for (const card of mainCards) {

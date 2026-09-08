@@ -91,7 +91,7 @@ export class DeckController {
   galleryPreview(deck) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0); return `<aside class="deck-gallery-preview surface" aria-label="Anteprima ${esc(deck.name)}"><span class="eyebrow">Mazzo selezionato</span>${renderDeckBoxVisual(deck)}<h2>${esc(deck.name)}</h2><p>${deck.dirty ? 'Bozza salvata sul dispositivo' : `Formato: ${esc(deck.format || 'TCG Avanzato')}`}</p><div class="deck-preview-counts"><span><small>Totale</small><b>${total}</b></span>${sectionsFor(deck).map(section => `<span><small>${esc(labelsFor(deck)[section].replace(' Deck', ''))}</small><b>${sectionTotal(deck, section)}</b></span>`).join('')}</div><div class="deck-preview-ready"><span><small>Disponibilità personale</small><strong>${report.percent}%</strong></span><i style="--ready:${report.percent}"></i></div><button class="btn wide" data-deck-open="${esc(deck.id)}">Apri mazzo ${icon('arrow')}</button></aside>`; }
   teamDetailView(deck) {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { ownerSlug:deck.ownerSlug, loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
-    const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section) : null;
+    const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section && (item.printingId || null) === (this.selectedCard.printingId || null)) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
@@ -136,7 +136,7 @@ export class DeckController {
   emptyView() { return `<section class="surface deck-empty">${icon('deck')}<h2>Il tuo primo mazzo parte da qui</h2><p>Aggiungi le carte dal catalogo oppure importa un file .ydk o una lista testuale.</p><button class="btn" data-deck-new>${icon('plus')} Crea mazzo</button></section>`; }
   editor(deck) {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
-    const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section) : null;
+    const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section && (item.printingId || null) === (this.selectedCard.printingId || null)) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     return `<div class="deck-mobile">
       ${this.editorHeader(deck, total, report)}
@@ -190,9 +190,12 @@ export class DeckController {
     }
   }
   cardTile(item, report) {
-    const selected = this.selectedCard && this.selectedCard.catalogCardId === item.catalogCardId && this.selectedCard.section === item.section;
+    const selected = this.selectedCard && this.selectedCard.catalogCardId === item.catalogCardId && this.selectedCard.section === item.section && (this.selectedCard.printingId || null) === (item.printingId || null);
     const info = report?.perCard.get(deckCardIdentityKey(item));
-    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
+    // Più printing della stessa carta logica (regular/parallel, Fase 4.1)
+    // diventano più tile distinte in griglia: data-deck-card-select-printing
+    // è ciò che le distingue quando si seleziona/modifica/rimuove.
+    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
   }
   cardSheet(item, report, deck, { readonly = false } = {}) {
     const otherSections = sectionsFor(deck).filter(section => section !== item.section);
@@ -272,7 +275,7 @@ export class DeckController {
     root.querySelectorAll('[data-deck-section]').forEach(button => button.addEventListener('click', () => this.setSection(button.dataset.deckSection)));
     root.querySelectorAll('[data-deck-type-filter]').forEach(button => button.addEventListener('click', () => this.setTypeFilter(button.dataset.deckTypeFilter)));
     root.querySelector('[data-deck-sort-cycle]')?.addEventListener('click', () => this.cycleSort());
-    root.querySelectorAll('[data-deck-card-select]').forEach(button => button.addEventListener('click', () => this.selectCard(button.dataset.deckCardSelect, button.dataset.deckCardSelectSection)));
+    root.querySelectorAll('[data-deck-card-select]').forEach(button => button.addEventListener('click', () => this.selectCard(button.dataset.deckCardSelect, button.dataset.deckCardSelectSection, button.dataset.deckCardSelectPrinting || null)));
     root.querySelector('[data-deck-sheet-close]')?.addEventListener('click', () => this.closeSheet());
     root.querySelectorAll('[data-deck-sheet-qty]').forEach(button => button.addEventListener('click', () => this.sheetQuantity(button.dataset.deckSheetQty === 'plus' ? 1 : -1)));
     root.querySelectorAll('[data-deck-sheet-move]').forEach(button => button.addEventListener('click', () => this.moveSelectedCard(button.dataset.deckSheetMove)));
@@ -292,26 +295,27 @@ export class DeckController {
   resetEditorView() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = sectionsFor(deck)[0] || 'main'; this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; }
   setSection(section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sectionsFor(deck).includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
   setTypeFilter(value) { if (!TYPE_FILTERS.some(f => f.value === value)) return; this.cardTypeFilter = value; this.onRender(); }
-  selectCard(catalogCardId, section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!deck?.cards.some(item => item.catalogCardId === catalogCardId && item.section === section)) return; this.selectedCard = { catalogCardId, section }; this.missingPanelOpen = false; this.onRender(); }
+  selectCard(catalogCardId, section, printingId = null) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!deck?.cards.some(item => item.catalogCardId === catalogCardId && item.section === section && (item.printingId || null) === (printingId || null))) return; this.selectedCard = { catalogCardId, section, printingId: printingId || null }; this.missingPanelOpen = false; this.onRender(); }
   closeSheet() { this.selectedCard = null; this.onRender(); }
-  sheetQuantity(delta) { const sel = this.selectedCard; if (!sel) return; this.quantity(sel.catalogCardId, sel.section, delta); if (!this.active()?.cards.some(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section)) this.selectedCard = null; this.onRender(); }
+  sheetQuantity(delta) { const sel = this.selectedCard; if (!sel) return; this.quantity(sel.catalogCardId, sel.section, delta, sel.printingId); if (!this.active()?.cards.some(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section && (card.printingId || null) === (sel.printingId || null))) this.selectedCard = null; this.onRender(); }
   moveSelectedCard(toSection) {
     const deck = this.active(), sel = this.selectedCard;
     if (!deck || !sel || !sectionsFor(deck).includes(toSection) || toSection === sel.section) return;
-    const item = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section);
+    const item = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section && (card.printingId || null) === (sel.printingId || null));
     if (!item) return;
     if (deck.game === 'onepiece' && toSection === 'leader') deck.cards = deck.cards.filter(card => card === item || card.section !== 'leader');
-    const cap = copyCap(deck, toSection), destination = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === toSection);
-    if (destination) { destination.quantity = Math.min(cap, destination.quantity + item.quantity); deck.cards = deck.cards.filter(card => card !== item); }
-    else { item.section = toSection; item.quantity = Math.min(cap, item.quantity); }
-    this.selectedCard = { catalogCardId: sel.catalogCardId, section: toSection };
+    const destination = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === toSection && (card.printingId || null) === (sel.printingId || null));
+    const budget = copyBudget(deck, toSection, sel.catalogCardId, destination);
+    if (destination) { destination.quantity = Math.min(budget, destination.quantity + item.quantity); deck.cards = deck.cards.filter(card => card !== item); }
+    else { item.section = toSection; item.quantity = Math.min(budget, item.quantity); }
+    this.selectedCard = { catalogCardId: sel.catalogCardId, section: toSection, printingId: sel.printingId };
     this.activeSection = toSection;
     this.markDirty(deck); this.onRender();
   }
   removeSelectedCard() {
     const deck = this.active(), sel = this.selectedCard;
     if (!deck || !sel) return;
-    deck.cards = deck.cards.filter(card => !(card.catalogCardId === sel.catalogCardId && card.section === sel.section));
+    deck.cards = deck.cards.filter(card => !(card.catalogCardId === sel.catalogCardId && card.section === sel.section && (card.printingId || null) === (sel.printingId || null)));
     if (String(deck.signatureCardId || '') === String(sel.catalogCardId) && !deck.cards.some(card => String(card.catalogCardId) === String(sel.catalogCardId))) deck.signatureCardId = null;
     this.selectedCard = null;
     this.markDirty(deck); this.onRender();
@@ -379,10 +383,15 @@ export class DeckController {
     const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
     // One Piece: il Leader è uno slot unico (sostituisce, non si accumula).
     if (deck.game === 'onepiece' && destination === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader');
-    const cap = copyCap(deck, destination), colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined;
-    const existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination);
-    if (existing) { existing.quantity = Math.min(cap, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; }
-    else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(cap, quantity), ...(colors ? { colors } : {}) });
+    const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined;
+    // La ricerca/aggiunta rapida non chiede quale printing fisica scegliere:
+    // finisce sempre nella riga "non risolta" (printingId assente) per
+    // questa carta logica — altre printing specifiche (Fase 4.1) restano
+    // righe separate e non vengono toccate qui.
+    const existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination && !item.printingId);
+    const budget = copyBudget(deck, destination, id, existing);
+    if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; }
+    else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
     this.rememberCardType(id, card.type);
     this.markDirty(deck);
@@ -397,7 +406,7 @@ export class DeckController {
     }
   }
   rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
-  quantity(id, section, delta) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section); if (!item) return; item.quantity = Math.min(copyCap(deck, section), item.quantity + delta); if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
+  quantity(id, section, delta, printingId = null) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section && (card.printingId || null) === (printingId || null)); if (!item) return; item.quantity = Math.min(copyBudget(deck, section, id, item), item.quantity + delta); if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
   chooseCover(catalogCardId) { const deck = this.active(); if (!deck?.cards.some(card => String(card.catalogCardId) === String(catalogCardId))) return this.onToast('La cover deve appartenere al mazzo'); deck.signatureCardId = String(catalogCardId); this.coverPickerOpen = false; this.markDirty(deck); this.onToast('Carta signature aggiornata'); this.onRender(); }
   chooseDeckBoxTemplate(value) { const deck = this.active(), template = normalizeDeckBoxTemplate(value), preset = DECK_BOX_TEMPLATES[template]; if (!deck) return; deck.deckBoxTemplate = template; if (preset.theme) deck.deckTheme = preset.theme; this.coverPickerOpen = false; this.markDirty(deck); this.onToast(`Deck Box: ${preset.label}`); this.onRender(); }
   async openPrintingPicker(catalogCardId, section) { const deck = this.active(), card = deck?.cards.find(item => item.catalogCardId === catalogCardId && item.section === section); if (!deck?.persisted) return this.onToast('Salva il mazzo prima di selezionare la printing'); this.printingPicker = { catalogCardId, section, cardName: card?.cardName || 'Carta', loading: true, error: '', options: [] }; this.onRender(); try { const rows = await this.api.deckPrintingOptions(deck.id, catalogCardId); if (!this.printingPicker) return; this.printingPicker.options = (rows || []).map(row => ({ printingId: row.printing_id || row.printingId, setCode: row.set_code || row.setCode || '', setName: row.set_name || row.setName || '', rarity: row.rarity || '', imageUrl: row.image_url || row.imageUrl || '' })); } catch (error) { if (this.printingPicker) this.printingPicker.error = error.message || 'Printing non disponibili'; } finally { if (this.printingPicker) this.printingPicker.loading = false; this.onRender(); } }
@@ -405,7 +414,7 @@ export class DeckController {
   async save() { const deck = this.active(); if (!deck || !deck.name.trim() || !this.isOnline()) return this.onToast('Nome del mazzo o connessione non disponibili'); for (const card of deck.cards) card.catalogCardId = canonicalCatalogCardId(card.catalogCardId, deck.game) || card.catalogCardId; const oldId = deck.id; this.busy = true; this.onRender(); try { const result = await this.api.saveDeck(deck), id = String(result?.id || result || oldId); this.clearDraft(oldId); if (result?.deckBoxPersisted === false) { deck.id = id; deck.persisted = true; deck.dirty = true; this.persistDrafts(); await this.load(); this.onToast('Mazzo salvato · Deck Box locale fino alla migration'); } else { await this.load(); this.onToast('Mazzo salvato'); } this.activeId = id; this.previewId = id; } catch (error) { this.error = error.message || 'Salvataggio non riuscito'; } finally { this.busy = false; this.onRender(); } }
   async remove() { const deck = this.active(); if (!deck?.persisted || !confirm(`Eliminare “${deck.name}”?`)) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
-  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const cap = copyCap(deck, section), colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section); if (existing) { existing.quantity = Math.min(cap, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(cap, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
+  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
   markDirty(deck) { deck.dirty = true; deck.ownerSlug = this.state.currentUser; this.persistDrafts(); }
   persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); }
   clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); }
@@ -495,6 +504,16 @@ function sectionTotal(deck, section) { return deck.cards.filter(card => card.sec
 function copyCap(deck, section) {
   if (deck?.game === 'onepiece') { if (section === 'leader') return 1; if (section === 'main') return 4; }
   return 99;
+}
+// Quanto puoi ancora aggiungere a `excludeItem` (riga esistente, o null per
+// una riga nuova) prima di superare copyCap: il tetto è per carta logica
+// (catalogCardId), non per singola riga printing — 2x regular + 2x parallel
+// dello stesso catalogCardId contano 4, non 2+2 "carte diverse" (Fase 4.1).
+function copyBudget(deck, section, catalogCardId, excludeItem) {
+  const usedElsewhere = deck.cards
+    .filter(card => card.section === section && card.catalogCardId === catalogCardId && card !== excludeItem)
+    .reduce((sum, card) => sum + Number(card.quantity || 0), 0);
+  return Math.max(0, copyCap(deck, section) - usedElsewhere);
 }
 function coarseCardType(rawType) { const type = String(rawType || '').toLowerCase(); if (!type) return ''; if (type.includes('spell')) return 'spell'; if (type.includes('trap')) return 'trap'; return 'monster'; }
 function readTypeCache() { try { const value = JSON.parse(localStorage.getItem(CARD_TYPE_CACHE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
