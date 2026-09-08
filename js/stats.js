@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
 import { renderDeckBoxVisual } from './deck-box.js';
+import { triggerLossStreakZoomVideo } from './easter-egg.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
@@ -103,6 +104,21 @@ export class StatsController {
   // per riflettere subito il cambiamento in UI senza un load() completo.
   async refreshMissions() {
     try { this.missions = await this.api.dailyMissions(); } catch {}
+  }
+  // Easter egg: chiamato da app.js SOLO quando si entra nella pagina
+  // Statistiche (non ad ogni re-render interno), così parte "appena si
+  // accede alla page" e non ad ogni cambio filtro/tab. this.streak arriva
+  // già caricato da load() nella maggior parte dei casi (scope di default è
+  // 'mine', quindi i dati ci sono già dal boot dell'app). Il flag si
+  // riarma da solo appena la striscia smette di essere una sconfitta,
+  // quindi la battuta si ripete alla prossima serie negativa senza
+  // infastidire ad ogni singola visita mentre la striscia attuale continua.
+  checkLossStreakEasterEgg() {
+    if (this.streak?.result !== 'loss') { this._lossStreakEggShown = false; return; }
+    if ((this.streak.count || 0) < 3 || this._lossStreakEggShown) return;
+    this._lossStreakEggShown = true;
+    if (this.scope !== 'mine') { this.scope = 'mine'; this.onRender(); }
+    requestAnimationFrame(() => triggerLossStreakZoomVideo(document.querySelector('[data-stats-streak-badge]')));
   }
   async loadStats() {
     if (this.scope === 'mine') {
@@ -242,7 +258,7 @@ export class StatsController {
   }
   mineOverviewView() {
     const t = this.totals, winRate = t.matches ? Math.round((t.wins / t.matches) * 1000) / 10 : 0;
-    const streak = this.streak, streakLabel = streak?.count > 1 ? `Striscia: ${streak.count} ${STREAK_PLURAL[streak.result] || streak.result}` : '';
+    const streak = this.streak;
     const playerName = MEMBERS.find(m => m.id === this.state.currentUser)?.name || 'Tu';
     const progress = progressForXp(this.progression?.totalXp || 0), level = this.progression?.level || 1;
     const equippedAvatar = findCosmetic(this.cosmetics?.activeAvatar);
@@ -260,10 +276,9 @@ export class StatsController {
       <div class="stats-tile"><b>${t.matches}</b><small>Match totali</small></div>
       <div class="stats-tile win"><b>${t.wins}</b><small>Vittorie</small></div>
       <div class="stats-tile loss"><b>${t.losses}</b><small>Sconfitte</small></div>
-      <div class="stats-tile draw"><b>${t.draws}</b><small>Pareggi</small></div>
+      <div class="stats-tile ${streak?.result === 'win' ? 'win' : streak?.result === 'loss' ? 'loss' : ''}" data-stats-streak-badge><b>${streak?.count || 0}</b><small>Streak</small></div>
       <div class="stats-tile accent"><b>${winRate}%</b><small>Win Rate</small></div>
     </div>
-    ${streakLabel ? `<div class="stats-streak ${streak.result}">${icon('flash')} ${esc(streakLabel)}</div>` : ''}
     ${this.chartCardView()}
     ${this.deckPerformanceView()}
     ${this.recentMatchesView()}`;

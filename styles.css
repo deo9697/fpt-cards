@@ -282,6 +282,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .rickroll-video > button { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px; width: 42px; height: 42px; visibility: hidden; border: 1px solid #ffffff33; border-radius: 14px; background: #080b19cc; color: white; opacity: 0; font-size: 1.5rem; transition: opacity .2s; }
 .rickroll-video > button.ready { visibility: visible; opacity: 1; }
 @keyframes rick-video-in { from { opacity: 0; transform: scale(1.03); } }
+/* Easter egg 3+ sconfitte di fila: zoom lento della pagina verso il badge
+   Streak prima che parta il video (js/easter-egg.js triggerLossStreakZoomVideo).
+   overflow:hidden sul body evita la scrollbar mentre .page-stage scala oltre
+   il viewport durante la transizione. */
+body.loss-streak-zoom-active { overflow: hidden; }
+.page-stage.loss-streak-zoom { transition: transform 1.6s cubic-bezier(.45, 0, .2, 1); transform: scale(2.6); will-change: transform; }
 @media (max-width: 430px) { .stats { gap: 6px; } .stat { padding-inline: 4px; } .filter-grid { grid-template-columns: 1fr 1fr; gap: 7px; } .filter-grid select { padding-inline: 8px; font-size: .84rem; } .loan-row { grid-template-columns: 48px minmax(0, 1fr); } .loan-row > .badge { grid-column: 2; justify-self: start; } }
 @media (max-width: 560px) { .team-member-row { grid-template-columns: 42px 1fr; } .member-admin-actions { grid-column: 1 / -1; } .member-admin-actions .btn { flex: 1; } }
 
