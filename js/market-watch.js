@@ -9,10 +9,10 @@ const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{d
 const FRESH_MS=48*60*60*1000;
 
 export class MarketWatchController {
-  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;
+  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
-  async load(){if(this.loadInFlight)return this.loadInFlight;this.loading=true;const request=(async()=>{try{const game=this.getGame(),moversRequest=this.api.marketDashboardMovers?this.api.marketDashboardMovers(game).catch(()=>[]):Promise.resolve([]),[payload,movers]=await Promise.all([this.api.marketWatch(game),moversRequest]),next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}this.data=next;this.error='';void this.loadFeaturedHistories();}catch(error){this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}finally{this.loading=false;}return this.data;})();this.loadInFlight=request;try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}}
+  async load(){if(this.loadInFlight)return this.loadInFlight;this.loading=true;const request=(async()=>{try{const game=this.getGame(),moversRequest=this.api.marketDashboardMovers?this.api.marketDashboardMovers(game).catch(()=>[]):Promise.resolve([]),anomaliesRequest=this.api.marketPriceAnomalies?this.api.marketPriceAnomalies().catch(()=>[]):Promise.resolve([]),[payload,movers,anomalies]=await Promise.all([this.api.marketWatch(game),moversRequest,anomaliesRequest]),next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}this.data=next;this.anomalies=anomalies||[];this.error='';void this.loadFeaturedHistories();}catch(error){this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}finally{this.loading=false;}return this.data;})();this.loadInFlight=request;try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}}
   dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
   // Cards where the resolver deliberately refused to guess a price:
   // - provider_rarity_mismatch: Cardmarket has a real match but under a
@@ -36,8 +36,17 @@ export class MarketWatchController {
   // a time. Rarity-mismatch items are deliberately excluded: those carry real
   // alternative candidates that need a human to actually choose between them.
   aggregatePendingQueue(){return this.data.items.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
+  // Snapshot che si sono spostati oltre soglia rispetto al precedente noto
+  // (trg_flag_price_anomaly, supabase-market-watch-price-anomaly-detection.sql)
+  // — già esclusi dalle view attive/derivate lato DB, qui solo per la coda
+  // di conferma manuale.
+  anomalyQueue(){return this.anomalies||[];}
+  async confirmAnomaly(snapshotId){
+    try{await this.api.confirmMarketPriceAnomaly(snapshotId);this.anomalies=(this.anomalies||[]).filter(row=>String(row.id)!==String(snapshotId));this.onToast?.('Prezzo confermato');this.refreshBoardSection();}
+    catch(error){this.onToast?.(error?.message||'Conferma non riuscita');}
+  }
   async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
-  view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue();
+  view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
         <div class="market-hero-art" aria-hidden="true"></div>
         <h1 class="market-hero-eyebrow">Market Watch</h1>
@@ -56,18 +65,34 @@ export class MarketWatchController {
         <span class="market-hero-sync"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
-      <section class="surface market-board"><div class="market-board-tools">
-        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this.data,tab,marketDecks.length)}</span></button>`).join('')}${confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${confirmQueue.length}</span></button>`:''}</nav>
+      <section class="surface market-board"><div data-market-board-section>${this.renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue})}</div>
+      </section>${this.selected?this.detailView():''}${this.selectedDeck?this.deckDetailView(marketDecks):''}</section>`;}
+  // Cambiare tab/ordinamento non cambia i dati (this.data resta lo stesso),
+  // solo cosa/come viene mostrato: non serve ricalcolare portfolioSummary()
+  // né ridisegnare l'hero, e soprattutto non serve un innerHTML replace di
+  // TUTTA la pagina (che ricrea ogni immagine della lista, causando reflow
+  // e ricaricamento immagini visibile su mobile). refreshBoardSection()
+  // ricostruisce solo questo blocco (tab/ordina/ricerca + lista).
+  renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue}){
+    return `<div class="market-board-tools">
+        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this.data,tab,marketDecks.length)}</span></button>`).join('')}${confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${confirmQueue.length}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
         <div class="market-board-controls">
-          ${this.tab!=='deck'&&this.tab!=='confirm'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
+          ${this.tab!=='deck'&&this.tab!=='confirm'&&this.tab!=='anomaly'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
           <label class="market-sort"><span class="sr-only">Ordina</span><select data-market-sort aria-label="Ordina"><option value="value" ${this.sort==='value'?'selected':''}>Valore</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo</option><option value="change" ${this.sort==='change'?'selected':''}>Var. 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label>
         </div>
         ${aggregatePending.length?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:`Conferma ${aggregatePending.length} prezzi aggregate`}</button>`:''}
       </div>
-        <div class="market-board-content" data-market-board-content>${this.boardContent({items,marketDecks,hasSnapshots,confirmQueue})}</div>
-      </section>${this.selected?this.detailView():''}${this.selectedDeck?this.deckDetailView(marketDecks):''}</section>`;}
-  boardContent({items,marketDecks,hasSnapshots,confirmQueue}){
+        <div class="market-board-content" data-market-board-content>${this.boardContent({items,marketDecks,hasSnapshots,confirmQueue,anomalyQueue})}</div>`;
+  }
+  refreshBoardSection(){
+    const section=document.querySelector('[data-market-board-section]');if(!section)return;
+    const items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
+    section.innerHTML=this.renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue});
+    this.bindBoardSection(section);
+  }
+  boardContent({items,marketDecks,hasSnapshots,confirmQueue,anomalyQueue}){
     if(this.tab==='confirm')return this.confirmRows(confirmQueue);
+    if(this.tab==='anomaly')return this.anomalyRows(anomalyQueue||this.anomalyQueue());
     if(this.tab==='deck')return this.deckRows(marketDecks);
     if(!this.data.items.length)return emptyNoCards();
     if(!hasSnapshots)return `${emptyPreparing()}${this.rows(items,[])}`;
@@ -75,6 +100,7 @@ export class MarketWatchController {
     return this.rows(items,[]);
   }
   confirmRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):'<div class="market-tab-empty">Nessuna carta da confermare al momento.</div>'}</div>`;}
+  anomalyRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(anomalyQueueRow).join(''):'<div class="market-tab-empty">Nessun prezzo insolito da confermare.</div>'}</div>`;}
   rows(items,unresolved){return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${items.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>`;}
   marketDecks(){return buildMarketDecks(this.getDecks?.()||this.data.decks||[],this.data.items,this.data.deckUnresolved);}
   deckRows(decks){return decks.length?`<div class="market-deck-grid">${decks.map(deck=>renderDeckBoxCard(deck,{mode:'market',marketValue:deck.marketValue,marketIndicative:deck.marketIndicative,marketCoverage:`${deck.valuedCopies}/${deck.totalCopies} copie`,delta24:deck.delta24,delta7:deck.delta7,topMover:deck.topMover})).join('')}</div>`:'<div class="market-tab-empty">Nessun mazzo disponibile nel Market Watch.</div>';}
@@ -108,22 +134,30 @@ export class MarketWatchController {
       <p class="mapping-state">Mapping Cardmarket: ${esc(mappingStatusLabel(item))}</p>
     </aside></div>`;
   }
-  bind(root=document){root.querySelector('[data-market-retry]')?.addEventListener('click',()=>void this.load().then(()=>this.onRender()));root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{this.tab=button.dataset.marketTab;this.query='';this.selected='';this.selectedDeck='';this.onRender();}));root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;this.onRender();});
-    // Digitare non deve ridisegnare l'intera pagina (riparte l'illustrazione,
-    // perde il focus): solo il contenuto della lista si aggiorna, con debounce.
+  bind(root=document){root.querySelector('[data-market-retry]')?.addEventListener('click',()=>void this.load().then(()=>this.onRender()));
+    root.querySelectorAll('[data-market-deck-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDeckDetail)history.back();else{this.selectedDeck='';this.onRender();}}));root.querySelectorAll('[data-market-detail-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDetail)history.back();else{this.selected='';this.onRender();}}));root.querySelectorAll('[data-market-unwatch]').forEach(button=>button.addEventListener('click',()=>void this.unwatch(button.dataset.marketUnwatch)));root.querySelectorAll('[data-market-watch-toggle]').forEach(button=>button.addEventListener('click',()=>void (button.dataset.marketWatchState==='remove'?this.unwatch(button.dataset.marketWatchToggle):this.watch(button.dataset.marketWatchToggle))));root.querySelectorAll('[data-market-share]').forEach(button=>button.addEventListener('click',()=>void this.share(button.dataset.marketShare)));root.querySelectorAll('[data-market-range]').forEach(button=>button.addEventListener('click',()=>this.setHistoryRange(Number(button.dataset.marketRange))));
+    this.bindBoardSection(root);
+  }
+  // Cambiare tab/ordinamento è puro stato UI (this.data non cambia): niente
+  // onRender() completo, solo questo blocco si ricostruisce e riaggancia.
+  bindBoardSection(root){
+    root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{this.tab=button.dataset.marketTab;this.query='';this.selected='';this.selectedDeck='';this.refreshBoardSection();}));
+    root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;this.refreshBoardSection();});
+    // Digitare non deve ridisegnare l'intera sezione (perde il focus): solo
+    // il contenuto della lista si aggiorna, con debounce.
     root.querySelector('[data-market-query]')?.addEventListener('input',event=>{this.query=event.target.value;clearTimeout(this.searchTimer);this.searchTimer=setTimeout(()=>this.refreshBoard(),200);});
-    root.querySelectorAll('[data-market-deck-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDeckDetail)history.back();else{this.selectedDeck='';this.onRender();}}));root.querySelectorAll('[data-market-detail-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDetail)history.back();else{this.selected='';this.onRender();}}));root.querySelectorAll('[data-market-unwatch]').forEach(button=>button.addEventListener('click',()=>void this.unwatch(button.dataset.marketUnwatch)));root.querySelectorAll('[data-market-watch-toggle]').forEach(button=>button.addEventListener('click',()=>void (button.dataset.marketWatchState==='remove'?this.unwatch(button.dataset.marketWatchToggle):this.watch(button.dataset.marketWatchToggle))));root.querySelectorAll('[data-market-share]').forEach(button=>button.addEventListener('click',()=>void this.share(button.dataset.marketShare)));root.querySelector('[data-market-confirm-all-aggregate]')?.addEventListener('click',()=>void this.confirmAllAggregate());root.querySelectorAll('[data-market-range]').forEach(button=>button.addEventListener('click',()=>this.setHistoryRange(Number(button.dataset.marketRange))));
+    root.querySelector('[data-market-confirm-all-aggregate]')?.addEventListener('click',()=>void this.confirmAllAggregate());
     this.bindBoardContent(root);
   }
-  // Condiviso tra il bind iniziale (root=document, copre anche la modale
-  // dettaglio) e refreshBoard() (root=solo .market-board-content): tutto ciò
-  // che vive nella lista/board va ri-agganciato ogni volta che il suo HTML
-  // viene ricostruito, senza toccare il resto della pagina.
+  // Condiviso tra bindBoardSection() (root=tutta la sezione tab/ordina/lista)
+  // e refreshBoard() (root=solo .market-board-content): tutto ciò che vive
+  // nella lista va ri-agganciato ogni volta che il suo HTML viene ricostruito.
   bindBoardContent(root=document){
     root.querySelectorAll('[data-market-card]').forEach(button=>button.addEventListener('click',()=>void this.openDetail(button.dataset.marketCard)));
     root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));
     root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));
     root.querySelectorAll('[data-market-confirm-mapping]').forEach(button=>button.addEventListener('click',()=>void this.confirmMapping(button.dataset.marketConfirmMapping,button.dataset.marketConfirmProduct,{productName:button.dataset.marketConfirmName||'',expansion:button.dataset.marketConfirmExpansion||'',rarity:button.dataset.marketConfirmRarity||''})));
+    root.querySelectorAll('[data-market-confirm-anomaly]').forEach(button=>button.addEventListener('click',()=>void this.confirmAnomaly(button.dataset.marketConfirmAnomaly)));
     this.observeRows(root);
   }
   refreshBoard(){
@@ -265,6 +299,15 @@ function needsMappingReview(item){return item.mappingStatus!=='manual'&&(item.ma
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
     <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="" loading="lazy">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
     ${mappingIssueNotice(item)}
+  </div>`;}
+// Snapshot bloccati da trg_flag_price_anomaly (scostamento >5x o <0.1x dal
+// precedente): salvati per audit ma esclusi dalle view attive finché un
+// membro non conferma che il nuovo prezzo è genuino, non un mapping andato
+// storto.
+function anomalyQueueRow(row){return `<div class="market-confirm-queue-row">
+    <div class="market-confirm-queue-card"><span class="market-art-empty">${icon('card')}</span><span><strong>${esc(row.cardName)}</strong><small>${esc(row.setCode||'Set non indicato')} · ${esc(row.rarity||'Rarità non indicata')}</small></span></div>
+    <p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Prezzo insolito</strong><br>Nuovo valore ${money(row.newPrice)} (${row.ratio>=1?`${row.ratio.toFixed(1)}×`:`${(1/row.ratio).toFixed(1)}× più basso`} rispetto al precedente).</span></p>
+    <button type="button" class="btn secondary small" data-market-confirm-anomaly="${esc(row.id)}">Conferma comunque</button>
   </div>`;}
 function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},internal=(evidence.internalRarities||[]).join(', ')||'—',provider=(evidence.providerRarities||[]).join(', ')||'un\'altra rarità';return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Rarità non corrispondente su Cardmarket</strong><br>La tua printing è ${esc(internal)}, ma su Cardmarket per questo set risulta solo ${esc(provider)}. Conferma a mano il prodotto giusto per usarne il prezzo reale.</span></p>${mappingConfirmBlock(item)}`;}
 // I due casi AMBIGUOUS non hanno un messaggio dedicato lato client da prima

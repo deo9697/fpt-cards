@@ -299,6 +299,13 @@ Deno.serve(async request=>{
   // margine sotto il budget CPU della edge function.
   const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(1500,Number(payload?.resolverBatchSize)||100)):0;
   if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
+  // Coda di refresh prioritario (ogni ~15 min, job separato da quello
+  // notturno): scarica il price guide feed UNA volta per ciclo e aggiorna
+  // solo le mappature manuali confermate di recente (refresh_requested_at
+  // valorizzato da set_market_mapping_manual). Sempre pricesOnly: sono già
+  // 'manual' con provider_product_id noto, non serve ririsolvere/scaricare
+  // il catalogo prodotti. Vedi supabase-market-watch-priority-refresh.sql.
+  if(payload?.priorityQueue===true){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{priorityOnly:true,pricesOnly:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'priority_queue',results:[result]});}
   const scheduled=payload?.scheduled===true,pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
   if(dryTargetPrintingIds.length){
@@ -332,7 +339,7 @@ function withDeadline<T>(promise:Promise<T>,ms:number,label:string):Promise<T>{
   return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
 }
 
-async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false}={}){
+async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false,priorityOnly=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   if(recoverStale)await releaseProviderSync(provider.name);
@@ -342,8 +349,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
   try{
     const targetResult=await rpcPages('market_sync_targets',{p_provider:provider.name},{order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
     const allTargets=targetResult.rows;targetPages=targetResult.requests;
-    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
-    if(pendingResolverLimit&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
+    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
+    if((pendingResolverLimit||priorityOnly)&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:priorityOnly?'no_pending_refresh_requests':'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
     const unique=new Map<string,any>();
     for(const target of targets){const key=`${target.printing_id}:${target.variant_key||'default'}`;if(!unique.has(key))unique.set(key,target);}
     let resolvedTargets=[...unique.values()];
@@ -381,6 +388,14 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
       }catch(error:any){failures++;await recordMappingError(target.mapping_id,error);}
     }
     for(let index=0;index<pendingSnapshots.length;index+=250)await rest('market_price_snapshots?on_conflict=provider,observation_key,price_type','POST',pendingSnapshots.slice(index,index+250),{'Prefer':'resolution=ignore-duplicates,return=minimal'});
+    // Un target di priorityOnly è stato "servito" (prezzo trovato o fallito
+    // per un motivo reale, non per errori sistemici a monte che avrebbero
+    // già lanciato prima di qui) — si toglie dalla coda a prescindere
+    // dall'esito per non ritentarlo ogni ~15 min all'infinito.
+    if(priorityOnly&&resolvedTargets.length){
+      const ids=resolvedTargets.map((target:any)=>target.mapping_id).filter(Boolean);
+      if(ids.length)await rest(`market_provider_printings?id=in.(${ids.map(encodeURIComponent).join(',')})`,'PATCH',{refresh_requested_at:null},{'Prefer':'return=minimal'});
+    }
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
     await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots}});

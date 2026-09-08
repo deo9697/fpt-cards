@@ -23,7 +23,16 @@ export class CollectionShareController {
   search(value) {
     this.query = value;
     clearTimeout(this._searchTimer);
-    this._searchTimer = setTimeout(() => this.onRender?.(), 180);
+    this._searchTimer = setTimeout(() => this.refreshGrid(), 180);
+  }
+  // Digitare non deve ridisegnare l'intera pagina (perde focus/cursore
+  // sull'input, ricarica le immagini): solo il contenuto della griglia
+  // filtrata si aggiorna, stesso pattern di market-watch.js/decks.js.
+  refreshGrid() {
+    const content = document.querySelector('[data-share-grid-content]');
+    if (!content) return;
+    content.innerHTML = this.gridContent();
+    this.bindGridContent(content);
   }
   toggle(printingId) {
     if (this.selected.has(printingId)) this.selected.delete(printingId);
@@ -64,14 +73,20 @@ export class CollectionShareController {
     if (this.error) return `<div class="share-guest-shell"><div class="share-guest-message">${icon('bell')}<h2>Link non disponibile</h2><p>${esc(this.error)}</p></div></div>`;
     if (this.submitted) return `<div class="share-guest-shell"><div class="share-guest-message">${icon('card')}<h2>Richiesta inviata!</h2><p>${esc(this.data.ownerName)} riceverà una notifica con le carte che ti interessano.</p></div></div>`;
     const allItems = this.data.items;
-    const items = this.filteredItems();
     return `<div class="share-guest-shell">
       <header class="share-guest-header"><span class="eyebrow">Raccolta condivisa</span><h1>${esc(this.data.ownerName)}</h1><p>Tocca le carte che ti interessano, poi manda la richiesta.</p></header>
       ${allItems.length ? `<div class="share-guest-search"><span class="icon-wrap">${icon('search')}</span><input type="search" placeholder="Cerca carta o set…" data-share-query value="${esc(this.query)}"></div>` : ''}
-      ${allItems.length ? (items.length ? `<div class="share-guest-grid">${items.map(item => this.itemTile(item)).join('')}</div>` : `<div class="share-guest-message compact">${icon('search')}<p>Nessuna carta corrisponde a "${esc(this.query)}"</p></div>`) : `<div class="share-guest-message">${icon('card')}<h2>Raccolta vuota</h2><p>Non ci sono ancora carte da mostrare qui.</p></div>`}
+      <div data-share-grid-content>${this.gridContent()}</div>
       ${this.selected.size ? this.cartBar() : ''}
       ${this.reviewing ? this.reviewView() : ''}
     </div>`;
+  }
+  gridContent() {
+    const allItems = this.data.items;
+    if (!allItems.length) return `<div class="share-guest-message">${icon('card')}<h2>Raccolta vuota</h2><p>Non ci sono ancora carte da mostrare qui.</p></div>`;
+    const items = this.filteredItems();
+    if (!items.length) return `<div class="share-guest-message compact">${icon('search')}<p>Nessuna carta corrisponde a "${esc(this.query)}"</p></div>`;
+    return `<div class="share-guest-grid">${items.map(item => this.itemTile(item)).join('')}</div>`;
   }
   itemTile(item) {
     const quantity = this.selected.get(item.printingId) || 0;
@@ -110,8 +125,14 @@ export class CollectionShareController {
       <button type="button" class="share-review-remove" data-share-remove="${esc(item.printingId)}" aria-label="Rimuovi">${icon('trash')}</button>
     </div>`;
   }
-  bind(root = document) {
+  // Condiviso tra il bind iniziale (root=document) e refreshGrid()
+  // (root=solo [data-share-grid-content]): va ri-agganciato ogni volta che
+  // quel solo pezzo di HTML viene ricostruito.
+  bindGridContent(root) {
     root.querySelectorAll('[data-share-toggle]').forEach(button => button.addEventListener('click', () => this.toggle(button.dataset.shareToggle)));
+  }
+  bind(root = document) {
+    this.bindGridContent(root);
     root.querySelector('[data-share-query]')?.addEventListener('input', event => this.search(event.target.value));
     root.querySelector('[data-share-review-open]')?.addEventListener('click', () => this.openReview());
     root.querySelectorAll('[data-share-review-close]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; this.closeReview(); }));

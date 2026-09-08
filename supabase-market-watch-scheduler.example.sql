@@ -22,3 +22,23 @@
 --     body := '{"scheduled":true}'::jsonb
 --   ); $$
 -- );
+
+-- Coda di refresh prioritario (supabase-market-watch-priority-refresh.sql):
+-- ogni ~15 minuti, indipendente dal gate delle 03:00 — scarica il price
+-- guide feed una volta per ciclo e aggiorna solo le mappature manuali
+-- confermate di recente (refresh_requested_at valorizzato). Nessun gate
+-- orario: se non c'è nulla in coda, l'Edge Function ritorna 'skipped'
+-- praticamente a costo zero.
+-- select cron.schedule(
+--   'fpt-market-watch-priority-refresh',
+--   '*/15 * * * *',
+--   $$ select net.http_post(
+--     url := '[SUPABASE_URL]/functions/v1/market-sync',
+--     headers := jsonb_build_object(
+--       'Authorization','Bearer [SUPABASE_ANON_OR_FUNCTION_TOKEN]',
+--       'Content-Type','application/json',
+--       'x-market-sync-secret','[MARKET_SYNC_SECRET]'
+--     ),
+--     body := '{"priorityQueue":true}'::jsonb
+--   ); $$
+-- );

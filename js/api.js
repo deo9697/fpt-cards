@@ -52,6 +52,12 @@ export const api = {
   async setMarketWatchItem(printingId, enabled) {
     ensure(); return unwrap(await client.rpc('set_market_watch_item', { p_token:token(),p_printing_id:printingId,p_enabled:Boolean(enabled) }));
   },
+  async marketPriceAnomalies() {
+    ensure(); return unwrap(await client.rpc('list_market_price_anomalies', { p_token:token() }));
+  },
+  async confirmMarketPriceAnomaly(snapshotId) {
+    ensure(); return unwrap(await client.rpc('confirm_market_price_anomaly', { p_token:token(),p_snapshot_id:snapshotId }));
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },
@@ -170,5 +176,6 @@ export const api = {
   async equipCosmetic(type, cosmeticId) { ensure(); return unwrap(await client.rpc('equip_cosmetic', { p_token:token(), p_type:type, p_cosmetic_id:cosmeticId })); },
   async dailyMissions() { ensure(); return unwrap(await client.rpc('get_my_daily_missions', { p_token:token() })); },
   async matchStreak(game) { ensure(); return unwrap(await client.rpc('get_match_streak', { p_token:token(), p_game:game })); },
+  async matchTimeline(game) { ensure(); return unwrap(await client.rpc('get_match_timeline', { p_token:token(), p_game:game })); },
   async headToHead(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_head_to_head', { p_token:token(), p_game:game, p_period:period || 'all' })); }
 };
