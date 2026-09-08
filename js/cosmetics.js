@@ -15,7 +15,7 @@ export const COSMETICS = [
   // placeholder), sempre sbloccato da LV1 — lo Starter Avatar Pack
   // Blattaman è stato ritirato in attesa di artwork vero, si riaggiunge
   // qui come nuove voci quando pronto.
-  { id:'avatar_tonno', type:'avatar', label:'Tonno', image:'assets/avatars/avatar-tonno.png', unlock:{ type:'level', value:1 } },
+  { id:'avatar_tonno', type:'avatar', label:'Tonno', image:'assets/avatars/avatar-tonno.jpg', unlock:{ type:'level', value:1 } },
 
   // Titoli: gli stessi 5 già calcolati automaticamente da titleForLevel() in
   // progression.js, portati nel catalogo così passano dallo stesso sistema

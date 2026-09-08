@@ -1970,7 +1970,104 @@ button.market-row:hover { background:#15121d; }
 }
 .stats-hero.foil-frame { --foil-fill: radial-gradient(120% 140% at 20% -10%, #1e1430, #10131b 60%); }
 .stats-modal-glow { position: relative; }
-.stats-modal-glow::before { content: ''; position: absolute; top: -20px; right: -20px; width: 160px; height: 160px; border-radius: 50%; background: radial-gradient(circle, rgba(var(--accent-rgb), .22), transparent 70%); pointer-events: none; z-index: 0; }
+/* top/right a 0 (non negativi): un offset negativo qui sporgerebbe fuori dal
+   bordo di .card-detail e — anche se quasi invisibile per via della sfumatura
+   trasparente — contribuirebbe comunque allo scrollWidth reale della card
+   (che ha overflow:auto), creando una scrollbar orizzontale spuria anche
+   quando il contenuto interno ci sta perfettamente. */
+.stats-modal-glow::before { content: ''; position: absolute; top: 0; right: 0; width: 160px; height: 160px; border-radius: 50%; background: radial-gradient(circle, rgba(var(--accent-rgb), .22), transparent 70%); pointer-events: none; z-index: 0; }
+
+/* Panoramica "Io": player card, tile riepilogo, grafico andamento, mazzi, ultimi match. */
+.stats-player-card { border-radius: 20px; padding: 16px; margin: 4px 0 12px; }
+.stats-player-row { display: flex; align-items: center; gap: 14px; }
+.stats-player-row .avatar.large { margin: 0; flex: none; width: 58px; height: 58px; }
+.mini-avatar.lg { width: 58px; height: 58px; border-radius: 50%; font-size: 1rem; flex: none; }
+.stats-player-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.stats-player-copy strong { display: flex; align-items: center; gap: 6px; font-size: 1.05rem; font-weight: 800; }
+.stats-online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(72, 217, 139, .18); }
+.stats-player-copy small { color: var(--muted); font-size: .68rem; }
+.stats-player-level { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 96px; }
+.stats-player-level b { font-size: .82rem; font-weight: 800; color: var(--accent); }
+.stats-player-level .xp-bar { width: 96px; }
+.stats-player-level small { color: var(--muted); font-size: .58rem; }
+
+.stats-tile-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 4px; }
+.stats-tile { display: grid; justify-items: center; gap: 3px; padding: 10px 2px; border: 1px solid var(--line); border-radius: 12px; background: #10131b; text-align: center; }
+.stats-tile b { font-size: 1.05rem; font-weight: 800; line-height: 1; }
+.stats-tile small { color: var(--muted); font-size: .54rem; letter-spacing: .02em; text-transform: uppercase; }
+.stats-tile.win b { color: #9cf07a; }
+.stats-tile.loss b { color: #ff8fa0; }
+.stats-tile.draw b { color: #f2c974; }
+.stats-tile.accent b { color: var(--accent); }
+
+.stats-chart-card { border-radius: 18px; padding: 16px; margin: 12px 0 0; }
+.stats-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.stats-chart-head h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: .92rem; }
+.stats-chart-head h2 .icon { width: 15px; height: 15px; color: var(--accent); }
+.stats-chart-head small { color: var(--muted); font-size: .66rem; }
+.stats-chart-head select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #0d0f18; color: var(--text); font-size: .68rem; }
+.stats-chart-wrap { position: relative; }
+.stats-chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.stats-chart-grid { stroke: var(--line); stroke-width: .5; }
+.stats-chart-axis { fill: var(--muted); font-size: 7px; }
+.stats-chart-area { fill: url(#statsChartFill); }
+.stats-chart-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stats-chart-dot { fill: var(--accent); }
+.stats-chart-dot.current { fill: #fff; stroke: var(--accent); stroke-width: 2.5; }
+.stats-chart-hit { fill: transparent; }
+.stats-chart-callout { position: absolute; transform: translateY(-135%); background: #10131b; border: 1px solid var(--line-strong); border-radius: 9px; padding: 5px 9px; white-space: nowrap; pointer-events: none; box-shadow: 0 10px 24px #000b; }
+.stats-chart-callout small { display: block; color: var(--muted); font-size: .56rem; }
+.stats-chart-callout b { font-size: .68rem; color: var(--accent); font-weight: 800; }
+.stats-chart-empty { margin: 20px 0; color: var(--muted); font-size: .78rem; text-align: center; }
+.stats-compare-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.stats-compare-row > div { display: grid; justify-items: center; gap: 3px; padding: 9px 4px; border: 1px solid var(--line); border-radius: 10px; }
+.stats-compare-row small { color: var(--muted); font-size: .6rem; text-transform: uppercase; letter-spacing: .03em; }
+.stats-compare-row b { font-size: .92rem; font-weight: 800; }
+
+.stats-section { border-radius: 18px; padding: 16px; margin: 12px 0 0; }
+.stats-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.stats-section-head h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: .92rem; }
+.stats-section-head h2 .icon { width: 15px; height: 15px; color: var(--accent); }
+.stats-section-head button { display: flex; align-items: center; gap: 4px; background: none; border: 0; color: var(--accent); font-size: .7rem; font-weight: 700; }
+.stats-section-head button .icon { width: 12px; height: 12px; }
+
+.stats-deck-bars { display: grid; gap: 12px; }
+.stats-deck-bar-row { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: var(--text); text-align: left; font-family: inherit; padding: 0; }
+.stats-deck-bar-thumb { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 10px; background: #171b25; color: var(--accent); }
+.stats-deck-bar-thumb .icon { width: 17px; height: 17px; }
+/* Vera Deck Box (js/deck-box.js renderDeckBoxVisual) al posto del fallback: */
+/* stessa funzione riusata da Market Watch, qui solo ridimensionata e senza */
+/* l'inclinazione 3D/glow pensati per una card grande. */
+.stats-deck-bar-thumb.deck-preview-box { width: 38px; height: 38px; margin: 0; border-radius: 10px; transform: none; box-shadow: none; }
+.stats-deck-bar-thumb.deck-preview-box::after { display: none; }
+.stats-deck-bar-thumb.deck-preview-box > b { display: none; }
+.stats-deck-bar-thumb.deck-preview-box img { border-radius: 9px; }
+.stats-deck-bar-copy { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.stats-deck-bar-copy strong { font-size: .84rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-deck-bar-copy small { color: var(--muted); font-size: .62rem; }
+.stats-deck-bar-track { position: relative; height: 6px; border-radius: 999px; background: #232733; overflow: hidden; }
+.stats-deck-bar-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-dark), var(--accent)); }
+.stats-deck-bar-figures { flex: none; text-align: right; display: grid; gap: 2px; }
+.stats-deck-bar-figures b { font-size: .9rem; font-weight: 800; }
+.stats-deck-bar-figures small { color: var(--muted); font-size: .6rem; white-space: nowrap; }
+
+.stats-recent-list { display: grid; gap: 10px; }
+.stats-recent-row { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.stats-recent-row:last-child { padding-bottom: 0; border-bottom: 0; }
+.stats-recent-date { color: var(--muted); font-size: .62rem; line-height: 1.25; }
+.stats-recent-matchup { min-width: 0; font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-recent-matchup i { color: var(--muted); font-style: normal; font-size: .68rem; margin: 0 2px; }
+.stats-recent-matchup small { display: block; color: var(--muted); font-size: .6rem; }
+.badge-result { display: inline-flex; align-items: center; justify-content: center; padding: 4px 9px; border-radius: 7px; font-size: .62rem; font-weight: 800; text-transform: uppercase; }
+.badge-result.win { background: #9cf07a1e; color: #9cf07a; }
+.badge-result.loss { background: #ff8fa01e; color: #ff8fa0; }
+.badge-result.draw { background: #f2c9741e; color: #f2c974; }
+.badge-scope { display: none; }
+@media (min-width: 480px) {
+  .badge-scope { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); font-size: .58rem; font-weight: 700; }
+  .badge-scope.team { border-color: rgba(var(--accent-rgb), .4); color: var(--accent); }
+  .stats-recent-row { grid-template-columns: 46px 1fr auto auto; }
+}
 
 .opponent-mode-group { display: flex; gap: 8px; margin: 4px 0 14px; }
 .opponent-mode-group .chip { display: flex; align-items: center; gap: 6px; }

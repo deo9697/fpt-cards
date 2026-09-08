@@ -173,12 +173,12 @@ async function run() {
 
   await click('[data-match-close]');
   await waitFor(`!document.querySelector('.match-feedback')`, 'Il feedback match non si chiude');
-  await waitFor(`document.querySelector('.stats-deck-row')?.textContent.includes('1 match')`, 'La lista statistiche non riflette il match appena registrato');
+  await waitFor(`document.querySelector('.stats-deck-bar-row')?.textContent.includes('1 match')`, 'La lista statistiche non riflette il match appena registrato');
   console.log('PASS lista statistiche aggiornata dopo il match (nessuna richiesta manuale di refresh)');
 
-  assert(await evaluate(`document.querySelector('.stats-ring')?.style.getPropertyValue('--pct') === '100'`), "L'anello win-rate della hero non riflette il 100% dopo l'unica vittoria registrata");
-  assert(await evaluate(`Boolean(document.querySelector('.stats-hero'))`), 'La hero Statistiche (anello + riepilogo) non è presente nel tab Io');
-  console.log('PASS hero Statistiche: anello win-rate aggiornato dopo il match');
+  assert(await evaluate(`document.querySelector('.stats-tile.accent b')?.textContent.trim() === '100%'`), "La tile win-rate della panoramica Io non riflette il 100% dopo l'unica vittoria registrata");
+  assert(await evaluate(`Boolean(document.querySelector('.stats-player-card'))`), 'La player card della panoramica Io non è presente');
+  console.log('PASS panoramica Io: tile win-rate aggiornata dopo il match');
 
   await waitFor(`document.querySelector('.xp-strip-level')?.textContent.includes('LV 1')`, 'La barra XP in header non riflette il livello corrente dopo il match');
   assert(await evaluate(`document.querySelector('.xp-strip-identity')?.textContent.includes('Daniele')`), 'Header: nome del membro non mostrato accanto alla barra XP');

@@ -76,9 +76,9 @@ const fastScan = new FastScanController({
   isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
-const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>render(true),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
+const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
-const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onToast:message=>toast(message)});
+const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
 let progressionDrawerOpen = false;
 let avatarPanelOpen = false;
 let profileCustomizeOpen = false;
@@ -216,6 +216,7 @@ function appView() {
     ${collectionShareModal ? collectionShareModalView() : ''}
     ${progressionDrawerOpen ? progressionDrawerView() : ''}
     ${avatarPanelOpen ? avatarPanelView(u) : ''}
+    ${page === 'stats' && stats.matchModalOpen ? stats.matchModalView() : ''}
   </main>`;
 }
 
@@ -660,7 +661,7 @@ function teamView() {
   const notificationState = !supported ? 'Non supportate' : configured ? 'Push attive anche ad app chiusa' : 'Da configurare su questo dispositivo';
   const admin = state.role === 'admin';
   const manager = admin ? `<section class="card member-manager"><div class="dashboard-title"><div><span class="eyebrow">Amministrazione</span><h3>Gestione membri</h3></div></div><form id="member-form"><input id="new-member-name" maxlength="100" placeholder="Nome e cognome" required><button class="btn small" type="submit">Aggiungi</button></form></section>` : '';
-  const rows = MEMBERS.map(m => `<div class="card team-member-row"><div class="avatar member-${m.id}">${initials(m.name)}</div><div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`).join('');
+  const rows = MEMBERS.map(m => `<div class="card team-member-row">${profileAvatarMarkup(m, { activeAvatar:memberAvatars.get(m.id) || '' })}<div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`).join('');
   return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${manager}<div class="team-list">${rows}</div>`;
 }
 
@@ -1109,7 +1110,12 @@ async function loadPrimaryData() {
     loadDecks(),
     marketWatch.load(),
     loadCollectionShareRequests(),
-    stats.load()
+    // stats.load() (progression/avatar/statistiche) è quasi sempre il più
+    // veloce dei sei, ma restava invisibile fino al completamento anche del
+    // più lento (Raccolta/Market Watch) perché nessuno ridisegnava finché
+    // TUTTO Promise.allSettled non si risolveva. Ridisegna appena i SUOI
+    // dati sono pronti, senza aspettare gli altri.
+    stats.load().then(() => render())
   ]);
   if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';
@@ -1389,10 +1395,12 @@ async function submitCollectionLoanRequest(event) {
   } catch (error) { toast(error.message || 'Richiesta non riuscita'); if (submit?.isConnected) submit.disabled = false; }
 }
 
+let memberAvatars = new Map();
 async function loadMembers() {
-  const items = await api.members();
+  const [items, avatars] = await Promise.all([api.members(), api.memberAvatars().catch(() => [])]);
   state.members = items;
   setMembers(items);
+  memberAvatars = new Map(avatars.map(row => [row.member_slug, row.active_avatar || '']));
 }
 
 async function addMember(event) {
@@ -1881,7 +1889,7 @@ async function start() {
     return;
   }
   render();
-  try { await loadMembers(); } catch {}
+  try { await loadMembers(); render(); } catch {}
   if (state.currentUser) {
     try {
       const syncError = await loadPrimaryData();

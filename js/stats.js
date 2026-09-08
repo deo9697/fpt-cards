@@ -1,7 +1,8 @@
-import { esc, initials, MEMBERS } from './core.js';
+import { esc, initials, formatDate, MEMBERS } from './core.js';
 import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
-import { newlyUnlockedCosmetics } from './cosmetics.js';
+import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
+import { renderDeckBoxVisual } from './deck-box.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
@@ -11,14 +12,16 @@ const SCOPES = ['mine', 'team', 'board'];
 const NEW_DECK_VALUE = '__new__';
 
 export class StatsController {
-  constructor({ api, getState, onRender, onToast } = {}) {
-    Object.assign(this, { api, getState, onRender, onToast });
+  constructor({ api, getState, onRender, onModalRender, onToast } = {}) {
+    Object.assign(this, { api, getState, onRender, onModalRender: onModalRender || onRender, onToast });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
     this.progression = null; this.cosmetics = null; this.missions = []; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
     this.loadInFlight = null;
     this.teamDecksAll = []; this.teamDecksLoaded = false; this.teamDecksLoadInFlight = null;
     this.boardRows = []; this.boardError = ''; this.boardLoadInFlight = null;
+    this.timeline = []; this.timelineError = ''; this.chartPeriod = 30;
+    this.mineDecksExpanded = false; this.mineMatchesExpanded = false;
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }
@@ -42,14 +45,43 @@ export class StatsController {
   opponentDecksForMember(slug) {
     return this.teamDecksAll.filter(deck => deck.owner_slug === slug && deck.game === this.state.game).map(deck => ({ id:deck.id, name:deck.name }));
   }
+  get timelineRolling() {
+    let wins = 0;
+    return this.timeline.map((match, index) => {
+      if (match.result === 'win') wins += 1;
+      return { index: index + 1, playedAt: match.playedAt, winRate: Math.round((wins / (index + 1)) * 1000) / 10 };
+    });
+  }
+  get periodComparison() {
+    const winRateOf = rows => rows.length ? Math.round((rows.filter(m => m.result === 'win').length / rows.length) * 1000) / 10 : 0;
+    return { last10: winRateOf(this.timeline.slice(-10)), last30: winRateOf(this.timeline.slice(-30)), overall: winRateOf(this.timeline) };
+  }
+  get recentMatches() { return [...this.timeline].reverse(); }
   async load() {
     if (this.loadInFlight) return this.loadInFlight;
     const request = (async () => {
-      try {
-        const [progression, cosmetics, missions, streak] = await Promise.all([this.api.progression(), this.api.myCosmetics(), this.api.dailyMissions(), this.api.matchStreak(this.state.game), this.loadStats()]);
-        this.progression = progression; this.cosmetics = cosmetics; this.missions = missions; this.streak = streak; this.error = '';
-        await this.claimNewCosmetics();
-      } catch (error) { this.error = error.message || 'Statistiche non disponibili'; }
+      // Tutte le chiamate IN PARALLELO in un solo Promise.allSettled — core
+      // (progression/streak/loadStats) e opzionali (cosmetics/missions/
+      // timeline) sono separati solo per decidere se mostrare il banner
+      // d'errore quando uno degli opzionali fallisce (RPC non ancora
+      // deployata, errore transitorio), MAI per l'ordine delle richieste:
+      // due Promise.allSettled sequenziali qui raddoppiavano il tempo di
+      // caricamento reale della pagina (e dell'avatar, caricato dai
+      // cosmetics) senza alcun bisogno, visto che nessuna di queste chiamate
+      // dipende dal risultato di un'altra.
+      const [progressionResult, streakResult, statsResult, cosmeticsResult, missionsResult, timelineResult] = await Promise.allSettled([
+        this.api.progression(), this.api.matchStreak(this.state.game), this.loadStats(),
+        this.api.myCosmetics(), this.api.dailyMissions(), this.api.matchTimeline(this.state.game)
+      ]);
+      if (progressionResult.status === 'fulfilled') this.progression = progressionResult.value;
+      if (streakResult.status === 'fulfilled') this.streak = streakResult.value;
+      const coreFailure = [progressionResult, streakResult, statsResult].find(result => result.status === 'rejected');
+      this.error = coreFailure ? (coreFailure.reason?.message || 'Statistiche non disponibili') : '';
+      if (cosmeticsResult.status === 'fulfilled') this.cosmetics = cosmeticsResult.value;
+      if (missionsResult.status === 'fulfilled') this.missions = missionsResult.value;
+      if (timelineResult.status === 'fulfilled') { this.timeline = normalizeTimeline(timelineResult.value); this.timelineError = ''; }
+      else this.timelineError = timelineResult.reason?.message || 'Andamento non disponibile';
+      await this.claimNewCosmetics();
     })();
     this.loadInFlight = request;
     try { return await request; } finally { if (this.loadInFlight === request) this.loadInFlight = null; }
@@ -73,12 +105,12 @@ export class StatsController {
     try { this.missions = await this.api.dailyMissions(); } catch {}
   }
   async loadStats() {
-    const period = this.periodFilter;
     if (this.scope === 'mine') {
-      const deckId = this.deckFilter !== 'all' ? this.deckFilter : null;
-      this.myRows = normalizeRows(await this.api.stats(this.state.game, { deckId, period }));
+      // La panoramica "Io" mostra sempre lo storico completo (niente filtri
+      // mazzo/periodo lì, vedi mock approvato) — i filtri restano solo per Team.
+      this.myRows = normalizeRows(await this.api.stats(this.state.game, { deckId:null, period:'all' }));
     } else if (this.scope === 'team') {
-      this.teamRows = normalizeTeamRows(await this.api.teamStats(this.state.game, { period }));
+      this.teamRows = normalizeTeamRows(await this.api.teamStats(this.state.game, { period:this.periodFilter }));
     }
   }
   async loadBoard() {
@@ -104,32 +136,41 @@ export class StatsController {
     else void this.loadStats().then(() => this.onRender());
   }
   setMemberFilter(value) { this.memberFilter = value; this.onRender(); }
-  setDeckFilter(value) { this.deckFilter = value; this.onRender(); if (this.scope === 'mine') void this.loadStats().then(() => this.onRender()); }
+  // Filtro mazzo/periodo: solo Team li usa (filtro client-side su teamRows già
+  // caricate). "Io" non ha più filtri — mostra sempre lo storico completo.
+  setDeckFilter(value) { this.deckFilter = value; this.onRender(); }
   setPeriodFilter(value) {
     if (!PERIODS.some(p => p.value === value) || value === this.periodFilter) return;
     this.periodFilter = value; this.onRender();
     if (this.scope === 'board') void this.loadBoard().then(() => this.onRender());
-    else void this.loadStats().then(() => this.onRender());
+    else if (this.scope === 'team') void this.loadStats().then(() => this.onRender());
   }
-  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.onRender(); }
-  closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.onRender(); }
-  setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onRender(); }
-  setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.onRender(); }
+  setChartPeriod(value) {
+    const normalized = value === 'all' ? 'all' : Number(value);
+    if (![10, 30, 'all'].includes(normalized)) return;
+    this.chartPeriod = normalized; this.onRender();
+  }
+  toggleMineDecks() { this.mineDecksExpanded = !this.mineDecksExpanded; this.onRender(); }
+  toggleMineMatches() { this.mineMatchesExpanded = !this.mineMatchesExpanded; this.onRender(); }
+  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.onModalRender(); }
+  closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.onModalRender(); }
+  setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onModalRender(); }
+  setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.onModalRender(); }
   setMatchField(field, value) { this.matchForm[field] = value; }
   setOpponentMode(mode) {
     if (!['external','team'].includes(mode) || mode === this.opponentMode) return;
     this.opponentMode = mode; this.matchForm.opponentMemberSlug = ''; this.matchForm.opponentDeckId = '';
-    if (mode === 'team') void this.loadTeamDecks().then(() => this.onRender());
-    this.onRender();
+    if (mode === 'team') void this.loadTeamDecks().then(() => this.onModalRender());
+    this.onModalRender();
   }
   setOpponentMember(slug) {
     this.matchForm.opponentMemberSlug = slug;
     const decks = this.opponentDecksForMember(slug);
     this.matchForm.opponentDeckId = decks[0]?.id || (slug ? NEW_DECK_VALUE : '');
     this.matchForm.opponentDeckName = '';
-    this.onRender();
+    this.onModalRender();
   }
-  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; if (deckId !== NEW_DECK_VALUE) this.matchForm.opponentDeckName = ''; this.onRender(); }
+  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; if (deckId !== NEW_DECK_VALUE) this.matchForm.opponentDeckName = ''; this.onModalRender(); }
   get teamOpponentValid() {
     if (this.opponentMode !== 'team') return true;
     if (!this.matchForm.opponentMemberSlug) return false;
@@ -140,7 +181,7 @@ export class StatsController {
     const form = this.matchForm;
     if (this.busy || !form.deckId || !form.result || !this.teamOpponentValid) return;
     const isNewOpponentDeck = this.opponentMode === 'team' && form.opponentDeckId === NEW_DECK_VALUE;
-    this.busy = true; this.onRender();
+    this.busy = true; this.onModalRender();
     try {
       const response = await this.api.registerMatch({
         game:this.state.game, deckId:form.deckId, result:form.result,
@@ -153,28 +194,36 @@ export class StatsController {
       this.lastResult = { result:form.result, ...response };
       void this.claimNewCosmetics();
       void this.refreshMissions();
-      const [, streak] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game)]);
+      const [, streak, timelineRows] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game), this.api.matchTimeline(this.state.game).catch(() => null)]);
       this.streak = streak;
+      if (timelineRows) { this.timeline = normalizeTimeline(timelineRows); this.timelineError = ''; }
       if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab
       if (isNewOpponentDeck) { this.teamDecksLoaded = false; this.teamDecksAll = []; } // il mazzo appena creato per il compagno deve comparire nel prossimo dialog
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
-    finally { this.busy = false; this.onRender(); }
+    finally { this.busy = false; this.onModalRender(); }
   }
+  // Il modal "Registra match" NON viene emesso qui dentro: .page-stage ha
+  // view-transition-name, che in Chrome intrappola i figli position:fixed nel
+  // proprio containing block invece della viewport (stesso motivo per cui gli
+  // altri modal top-level dell'app — prestito, drawer progressione, pannello
+  // avatar — sono renderizzati fuori da .page-stage in appView()). Lo rende
+  // app.js leggendo stats.matchModalOpen/stats.matchModalView(); per questo
+  // le azioni del modal chiamano onModalRender (render(true) completo) invece
+  // di onRender (renderRoute, che tocca solo .page-stage e non
+  // aggiornerebbe mai un modal fuori da lì).
   view() {
     return `<section class="page-stack stats-page">
       ${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}
       <header class="page-header split"><div><span class="eyebrow">Statistiche</span><h1>${this.state.game === 'onepiece' ? 'One Piece Card Game' : 'Yu-Gi-Oh!'}</h1></div><button class="btn" data-stats-new-match>${icon('plus')} Registra match</button></header>
-      ${this.heroView()}
       <div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button><button type="button" data-stats-scope="board" class="${this.scope === 'board' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'board'}">${icon('trophy')} Tabellone</button></div>
-      ${this.scope === 'board' ? this.boardView() : `${this.filtersView()}${this.deckListView()}`}
-      ${this.matchModalOpen ? this.matchModalView() : ''}
+      ${this.scope === 'mine' ? this.mineOverviewView() : this.scope === 'board' ? this.boardView() : `${this.heroView()}${this.filtersView()}${this.deckListView()}`}
     </section>`;
   }
+  // Solo Team la usa ormai: "Io" non ha più filtri, mostra sempre lo storico completo.
   filtersView() {
-    const deckOptions = this.scope === 'mine' ? this.decks.map(deck => ({ id:deck.id, name:deck.name })) : this.teamDeckOptions;
     return `<div class="stats-filters">
-      ${this.scope === 'team' ? `<label>Filtra membro<select data-stats-member><option value="all">Tutti</option>${this.teamMemberOptions.map(opt => `<option value="${esc(opt.slug)}" ${this.memberFilter === opt.slug ? 'selected' : ''}>${esc(opt.name)}</option>`).join('')}</select></label>` : ''}
-      <label>Filtra mazzo<select data-stats-deck><option value="all">Tutti</option>${deckOptions.map(opt => `<option value="${esc(opt.id)}" ${this.deckFilter === opt.id ? 'selected' : ''}>${esc(opt.name)}</option>`).join('')}</select></label>
+      <label>Filtra membro<select data-stats-member><option value="all">Tutti</option>${this.teamMemberOptions.map(opt => `<option value="${esc(opt.slug)}" ${this.memberFilter === opt.slug ? 'selected' : ''}>${esc(opt.name)}</option>`).join('')}</select></label>
+      <label>Filtra mazzo<select data-stats-deck><option value="all">Tutti</option>${this.teamDeckOptions.map(opt => `<option value="${esc(opt.id)}" ${this.deckFilter === opt.id ? 'selected' : ''}>${esc(opt.name)}</option>`).join('')}</select></label>
       <div class="filter-chips" role="group" aria-label="Periodo">${PERIODS.map(p => `<button type="button" class="chip ${this.periodFilter === p.value ? 'active' : ''}" data-stats-period="${p.value}">${p.label}</button>`).join('')}</div>
     </div>`;
   }
@@ -189,6 +238,84 @@ export class StatsController {
         <div class="stats-wld"><span class="win">${t.wins}V</span><span class="loss">${t.losses}S</span><span class="draw">${t.draws}P</span></div>
         ${streakLabel ? `<div class="stats-streak ${streak.result}">${icon('flash')} ${esc(streakLabel)}</div>` : ''}
       </div>
+    </section>`;
+  }
+  mineOverviewView() {
+    const t = this.totals, winRate = t.matches ? Math.round((t.wins / t.matches) * 1000) / 10 : 0;
+    const streak = this.streak, streakLabel = streak?.count > 1 ? `Striscia: ${streak.count} ${STREAK_PLURAL[streak.result] || streak.result}` : '';
+    const playerName = MEMBERS.find(m => m.id === this.state.currentUser)?.name || 'Tu';
+    const progress = progressForXp(this.progression?.totalXp || 0), level = this.progression?.level || 1;
+    const equippedAvatar = findCosmetic(this.cosmetics?.activeAvatar);
+    const avatarMarkup = equippedAvatar?.image
+      ? `<span class="avatar large has-image"><img src="${esc(equippedAvatar.image)}" alt="${esc(equippedAvatar.label)}"></span>`
+      : `<i class="mini-avatar lg member-${esc(this.state.currentUser)}">${initials(playerName)}</i>`;
+    return `<section class="stats-player-card foil-frame">
+      <div class="stats-player-row">
+        ${avatarMarkup}
+        <div class="stats-player-copy"><strong>${esc(playerName)}<i class="stats-online-dot" aria-hidden="true"></i></strong><small>${esc(titleForLevel(level))}</small></div>
+        <div class="stats-player-level"><b>LV ${level}</b><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
+      </div>
+    </section>
+    <div class="stats-tile-row">
+      <div class="stats-tile"><b>${t.matches}</b><small>Match totali</small></div>
+      <div class="stats-tile win"><b>${t.wins}</b><small>Vittorie</small></div>
+      <div class="stats-tile loss"><b>${t.losses}</b><small>Sconfitte</small></div>
+      <div class="stats-tile draw"><b>${t.draws}</b><small>Pareggi</small></div>
+      <div class="stats-tile accent"><b>${winRate}%</b><small>Win Rate</small></div>
+    </div>
+    ${streakLabel ? `<div class="stats-streak ${streak.result}">${icon('flash')} ${esc(streakLabel)}</div>` : ''}
+    ${this.chartCardView()}
+    ${this.deckPerformanceView()}
+    ${this.recentMatchesView()}`;
+  }
+  chartCardView() {
+    const points = this.chartPeriod === 'all' ? this.timelineRolling : this.timelineRolling.slice(-this.chartPeriod);
+    const cmp = this.periodComparison;
+    return `<section class="stats-chart-card foil-frame">
+      <div class="stats-chart-head">
+        <div><h2>${icon('chart')} Andamento giocatore</h2><small>Win rate progressivo nel tempo</small></div>
+        <select data-chart-period>${[10, 30, 'all'].map(value => `<option value="${value}" ${this.chartPeriod === value ? 'selected' : ''}>${value === 'all' ? 'Tutti i match' : `Ultimi ${value} match`}</option>`).join('')}</select>
+      </div>
+      ${this.timelineError ? `<p class="stats-chart-empty">${esc(this.timelineError)}</p>`
+        : points.length < 2 ? `<p class="stats-chart-empty">Registra almeno 2 match per vedere l'andamento.</p>`
+        : lineChartSvg(points)}
+      <div class="stats-compare-row">
+        <div><small>Ultimi 10</small><b>${cmp.last10}%</b></div>
+        <div><small>Ultimi 30</small><b>${cmp.last30}%</b></div>
+        <div><small>Sempre</small><b>${cmp.overall}%</b></div>
+      </div>
+    </section>`;
+  }
+  deckBoxThumb(deckId) {
+    const deck = (this.state.decks || []).find(item => String(item.id) === String(deckId));
+    return deck ? renderDeckBoxVisual(deck, { className:'stats-deck-bar-thumb' }) : `<span class="stats-deck-bar-thumb">${icon('deck')}</span>`;
+  }
+  deckPerformanceView() {
+    const rows = this.myRows;
+    const visible = this.mineDecksExpanded ? rows : rows.slice(0, 4);
+    return `<section class="stats-section foil-frame">
+      <div class="stats-section-head"><h2>${icon('deck')} Performance mazzi</h2>${rows.length > 4 ? `<button type="button" data-mine-decks-toggle>${this.mineDecksExpanded ? 'Mostra meno' : 'Vedi tutti'} ${icon('arrow')}</button>` : ''}</div>
+      ${rows.length ? `<div class="stats-deck-bars">${visible.map(row => `<button type="button" class="stats-deck-bar-row" data-stats-deck-row="${esc(row.deckId)}">
+        ${this.deckBoxThumb(row.deckId)}
+        <span class="stats-deck-bar-copy">
+          <strong>${esc(row.deckName)}</strong><small>${row.matches} match</small>
+          <span class="stats-deck-bar-track"><i style="width:${row.winRate}%"></i></span>
+        </span>
+        <span class="stats-deck-bar-figures"><b>${row.winRate}%</b><small>${row.wins}V - ${row.losses}S - ${row.draws}P</small></span>
+      </button>`).join('')}</div>` : `<p class="stats-chart-empty">Nessun mazzo con match registrati.</p>`}
+    </section>`;
+  }
+  recentMatchesView() {
+    const matches = this.recentMatches;
+    const visible = matches.slice(0, this.mineMatchesExpanded ? 20 : 4);
+    return `<section class="stats-section foil-frame">
+      <div class="stats-section-head"><h2>${icon('flash')} Ultimi match</h2>${matches.length > 4 ? `<button type="button" data-mine-matches-toggle>${this.mineMatchesExpanded ? 'Mostra meno' : 'Vedi tutti'} ${icon('arrow')}</button>` : ''}</div>
+      ${visible.length ? `<div class="stats-recent-list">${visible.map(match => `<div class="stats-recent-row">
+        <small class="stats-recent-date">${esc(formatDate(match.playedAt))}</small>
+        <span class="stats-recent-matchup"><strong>${esc(match.deckName)}</strong> <i>vs</i> <strong>${esc(match.opponentDeck || match.opponentLabel || 'Avversario esterno')}</strong>${match.opponentLabel && match.opponentDeck ? `<small>(${esc(match.opponentLabel)})</small>` : ''}</span>
+        <span class="badge-result ${match.result}">${RESULT_LABEL[match.result]}</span>
+        <span class="badge-scope ${match.isTeamMatch ? 'team' : 'external'}">${match.isTeamMatch ? 'Team' : 'Esterno'}</span>
+      </div>`).join('')}</div>` : `<p class="stats-chart-empty">Nessun match registrato.</p>`}
     </section>`;
   }
   deckListView() {
@@ -270,6 +397,9 @@ export class StatsController {
     root.querySelector('[data-stats-deck]')?.addEventListener('change', event => this.setDeckFilter(event.currentTarget.value));
     root.querySelectorAll('[data-stats-period]').forEach(button => button.addEventListener('click', () => this.setPeriodFilter(button.dataset.statsPeriod)));
     root.querySelectorAll('[data-stats-deck-row]').forEach(button => button.addEventListener('click', () => this.setDeckFilter(this.deckFilter === button.dataset.statsDeckRow ? 'all' : button.dataset.statsDeckRow)));
+    root.querySelector('[data-chart-period]')?.addEventListener('change', event => this.setChartPeriod(event.currentTarget.value));
+    root.querySelector('[data-mine-decks-toggle]')?.addEventListener('click', () => this.toggleMineDecks());
+    root.querySelector('[data-mine-matches-toggle]')?.addEventListener('click', () => this.toggleMineMatches());
     root.querySelectorAll('[data-match-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDialog(); }));
     root.querySelector('[data-match-deck]')?.addEventListener('change', event => this.setMatchDeck(event.currentTarget.value));
     root.querySelectorAll('[data-match-result]').forEach(button => button.addEventListener('click', () => this.setMatchResult(button.dataset.matchResult)));
@@ -296,4 +426,38 @@ function normalizeTeamRows(rows) {
 }
 function normalizeH2HRows(rows) {
   return (rows || []).map(row => ({ memberSlug:row.member_slug, memberName:row.member_name, opponentSlug:row.opponent_slug, opponentName:row.opponent_name, wins:row.wins, losses:row.losses, draws:row.draws, matches:row.matches }));
+}
+function normalizeTimeline(rows) {
+  return (rows || []).map(row => ({ playedAt:row.played_at, result:row.result, deckName:row.deck_name, opponentLabel:row.opponent_label || '', opponentDeck:row.opponent_deck || '', isTeamMatch:Boolean(row.is_team_match) }));
+}
+
+// Grafico "Andamento giocatore": una sola serie (win rate cumulativo), quindi
+// niente palette categorica da validare — un solo hue (--accent, già quello
+// del brand). Marcatori diradati + un target d'hover più largo di ognuno con
+// <title> nativo (tooltip a basso costo, nessun JS di interazione da cablare)
+// più una callout statica sull'ultimo punto, come nel mock approvato.
+function lineChartSvg(points) {
+  const width = 300, height = 132, padL = 26, padR = 8, padT = 10, padB = 18;
+  const innerW = width - padL - padR, innerH = height - padT - padB, n = points.length;
+  const x = index => padL + (n === 1 ? innerW : (index / (n - 1)) * innerW);
+  const y = value => padT + innerH - (value / 100) * innerH;
+  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)},${y(point.winRate).toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${x(n - 1).toFixed(1)},${(padT + innerH).toFixed(1)} L${x(0).toFixed(1)},${(padT + innerH).toFixed(1)} Z`;
+  const gridLines = [0, 25, 50, 75, 100].map(value => `<line x1="${padL}" x2="${width - padR}" y1="${y(value).toFixed(1)}" y2="${y(value).toFixed(1)}" class="stats-chart-grid"/><text x="1" y="${(y(value) + 3).toFixed(1)}" class="stats-chart-axis">${value}%</text>`).join('');
+  const markerStep = Math.max(1, Math.round(n / 6));
+  const markers = points.map((point, index) => (index % markerStep === 0 || index === n - 1) ? `<circle cx="${x(index).toFixed(1)}" cy="${y(point.winRate).toFixed(1)}" r="2.6" class="stats-chart-dot"/>` : '').join('');
+  const hits = points.map((point, index) => `<circle cx="${x(index).toFixed(1)}" cy="${y(point.winRate).toFixed(1)}" r="9" class="stats-chart-hit"><title>Match ${point.index} · Win rate ${point.winRate}%</title></circle>`).join('');
+  const last = points[n - 1], calloutX = x(n - 1), calloutY = y(last.winRate);
+  return `<div class="stats-chart-wrap">
+    <svg viewBox="0 0 ${width} ${height}" class="stats-chart-svg" role="img" aria-label="Andamento win rate: ${points.map(p => `match ${p.index} ${p.winRate}%`).join(', ')}">
+      <defs><linearGradient id="statsChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity=".35"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+      ${gridLines}
+      <path d="${areaPath}" class="stats-chart-area"/>
+      <path d="${linePath}" class="stats-chart-line"/>
+      ${markers}
+      <circle cx="${calloutX.toFixed(1)}" cy="${calloutY.toFixed(1)}" r="4" class="stats-chart-dot current"/>
+      ${hits}
+    </svg>
+    <div class="stats-chart-callout" style="right:${(100 - (calloutX / width) * 100).toFixed(1)}%;top:${((calloutY / height) * 100).toFixed(1)}%"><small>Match ${last.index}</small><b>Win Rate: ${last.winRate}%</b></div>
+  </div>`;
 }
