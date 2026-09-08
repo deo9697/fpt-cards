@@ -73,9 +73,18 @@ function facetFiltersView(game, source, filters) {
 }
 function facetSelect(def, source, filters) {
   if (!def.ready) return `<select disabled title="Disponibile dopo l'import del catalogo"><option>${esc(def.label)} · in arrivo</option></select>`;
-  const values = [...new Set(source.map(item => String(def.getValue(item) ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const values = [...new Set(source.flatMap(item => facetValues(def, item)))].sort((a, b) => a.localeCompare(b, 'it'));
   const selected = filters.facets?.[def.key] || 'all';
   return `<select data-collection-facet="${def.key}" aria-label="${esc(def.label)}"><option value="all" ${selected === 'all' ? 'selected' : ''}>${esc(def.label)}: tutti</option>${values.map(value => `<option value="${esc(value)}" ${selected === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select>`;
+}
+// `def.multi` = getValue restituisce un array (es. i colori di un Leader
+// bicolore) invece di un valore singolo: normalizza sempre a un array di
+// stringhe, così il resto del motore filtri non deve sapere la differenza —
+// un facet non-multi con un solo valore è semplicemente un array a 1 elemento.
+function facetValues(def, item) {
+  const raw = def.getValue(item);
+  const list = def.multi ? (Array.isArray(raw) ? raw : []) : [raw];
+  return list.map(value => String(value ?? '').trim()).filter(Boolean);
 }
 
 export function collectionResultsView(collection, filters, game, connected, visibleCount = COLLECTION_PAGE_SIZE, deckIndex = null) {
@@ -145,7 +154,7 @@ export function collectionEditorView(editor, game, connected) {
   const card = editor.card;
   const selected = card || (item ? {
     id:item.catalogCardId, name:item.cardName, image:item.imageUrl,
-    printings:[{ setCode:item.setCode, setName:item.setName, rarity:item.rarity }]
+    printings:[{ printingId:item.printingId || null, variantId:item.variantId || '', setCode:item.setCode, setName:item.setName, rarity:item.rarity }]
   } : null);
   const printings = collectionPrintingOptions(selected);
   const selectedPrinting = Object.hasOwn(editor, 'printing')
@@ -162,9 +171,9 @@ export function collectionEditorView(editor, game, connected) {
     <form id="collection-form">
       <label for="collection-card-search">Carta dal catalogo</label><div class="catalog-search"><input id="collection-card-search" autocomplete="off" value="${selected ? esc(selected.name) : ''}" placeholder="Cerca almeno 3 caratteri…" ${item ? 'disabled' : 'required'}><div id="collection-card-suggestions" class="suggestions"></div></div>
       ${selected ? `<div class="selected-catalog-card">${selected.image ? `<img src="${esc(selected.image)}" alt="">` : icon('card')}<span><strong>${esc(selected.name)}</strong><small>ID ${esc(selected.id)}</small></span></div>
-      <div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
+      ${game === 'onepiece' ? onePiecePrintingPickerView(printings, selectedPrinting) : `<div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
       ${rarities.length > 1 && !selectedPrinting ? `<div class="data-note warning">${icon('bell')} Questo set contiene più rarità: seleziona esplicitamente quella posseduta.</div>` : ''}
-      <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
+      <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>`}` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
       <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field edition-flag"><input id="collection-first-edition" type="checkbox" data-edition-touched="false" data-edition-original="${esc(edition)}" ${firstEdition ? 'checked' : ''}><span><strong>Prima Edizione</strong><small data-edition-status>${editionStatus === 'first' ? 'Prima Edizione' : editionStatus === 'unlimited' ? 'Non Prima Edizione / Unlimited' : 'Non specificata'}</small></span></label></div>
       <p class="quantity-help">La disponibilità fisica viene calcolata automaticamente sottraendo copie prestate e prenotate.</p>
       <div id="collection-save-status" class="collection-save-status" role="status" aria-live="polite" hidden></div>
@@ -203,27 +212,61 @@ export function persistedCollectionItemMatches(item, expected = {}) {
     && (!expected.printingId || item.printingId === expected.printingId);
 }
 
+// One Piece non usa la cascata Set -> Rarità di Yu-Gi-Oh (sotto): regular e
+// parallel condividono spesso set_code e rarity, quindi l'unica scelta che
+// ha senso è direttamente tra le printing fisiche (Fase 4C). L'etichetta
+// mostra il variant_id grezzo invece di una categoria indovinata tipo
+// "Regular"/"Parallel"/"Alt Art": non c'è ancora una tassonomia confermata
+// dei suffissi OPTCG, e un'etichetta sbagliata sarebbe peggio di una meno
+// elegante ma sempre corretta.
+function onePiecePrintingPickerView(printings, selectedPrinting) {
+  if (!printings.length) return `<div class="catalog-required">${icon('search')} Nessuna printing trovata per questa carta.</div>`;
+  return `<div class="collection-printing-options" role="group" aria-label="Printing">${printings.map(printing => {
+    const active = Boolean(selectedPrinting && samePrinting(printing, selectedPrinting));
+    const label = printing.variantId || printing.setCode || 'Base';
+    return `<button type="button" data-collection-printing-option="${esc(printing.printingId || '')}" class="${active ? 'active' : ''}">${printing.image ? `<img src="${esc(printing.image)}" alt="" loading="lazy">` : icon('card')}<span><strong>${esc(label)}</strong><small>${esc([printing.setCode, printing.rarity].filter(Boolean).join(' · ') || 'Rarità non indicata')}</small></span>${active ? icon('arrow') : ''}</button>`;
+  }).join('')}</div>`;
+}
+
+// printingId (una vera UUID risolta dal catalogo, Fase 4) è la chiave di
+// dedup preferita quando disponibile: due printing possono benissimo
+// condividere set_code e rarity (es. regular e parallel One Piece dello
+// stesso set) ed essere comunque righe distinte — deduplicare solo su
+// set_code+rarity le fonderebbe per errore. Per Yu-Gi-Oh (ricerca
+// ygoprodeck, nessun printingId noto) resta il vecchio comportamento.
 export function collectionPrintingOptions(card) {
   const rows = card?.printings?.length ? card.printings : [{ setCode:'', setName:'', rarity:'' }];
   return [...new Map(rows.map(printing => {
     const normalized = {
+      printingId:printing.printingId || null,
+      variantId:String(printing.variantId || '').trim(),
       setCode:String(printing.setCode || '').trim().toUpperCase(),
       setName:String(printing.setName || '').trim(),
-      rarity:String(printing.rarity || '').trim()
+      rarity:String(printing.rarity || '').trim(),
+      image:String(printing.image || printing.imageUrl || '').trim()
     };
-    return [`${normalizeSetCode(normalized.setCode)}\u0000${normalized.rarity.toLocaleLowerCase('it')}`, normalized];
+    const key = normalized.printingId
+      ? `id:${normalized.printingId}`
+      : `${normalizeSetCode(normalized.setCode)} ${normalized.rarity.toLocaleLowerCase('it')} ${normalized.variantId}`;
+    return [key, normalized];
   })).values()];
 }
 
-export function selectCollectionEditorPrinting(card, setCode, rarity = '') {
-  const options = collectionPrintingOptions(card).filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(setCode));
-  const exact = options.find(printing => normalizeRarity(printing.rarity) === normalizeRarity(rarity));
-  return exact || (options.length === 1 ? options[0] : null);
+export function selectCollectionEditorPrinting(card, setCode, rarity = '', printingId = '') {
+  const options = collectionPrintingOptions(card);
+  if (printingId) {
+    const exact = options.find(printing => String(printing.printingId || '') === String(printingId));
+    if (exact) return exact;
+  }
+  const bySet = options.filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(setCode));
+  const exact = bySet.find(printing => normalizeRarity(printing.rarity) === normalizeRarity(rarity));
+  return exact || (bySet.length === 1 ? bySet[0] : null);
 }
 
 function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
 function normalizeRarity(value) { return String(value || '').trim().toLocaleLowerCase('it'); }
 function samePrinting(left, right) {
+  if (left?.printingId && right?.printingId) return String(left.printingId) === String(right.printingId);
   return Boolean(left && right)
     && normalizeSetCode(left.setCode) === normalizeSetCode(right.setCode)
     && normalizeRarity(left.rarity) === normalizeRarity(right.rarity);
@@ -256,7 +299,7 @@ function matches(item, filters, facetDefs = []) {
     || (filters.status === 'unavailable' && item.quantityAvailable === 0);
   const facetsOk = facetDefs.every(def => {
     const selected = filters.facets?.[def.key];
-    return !selected || selected === 'all' || String(def.getValue(item) ?? '').trim() === selected;
+    return !selected || selected === 'all' || facetValues(def, item).includes(selected);
   });
   return queryOk && ownerOk && statusOk && facetsOk;
 }

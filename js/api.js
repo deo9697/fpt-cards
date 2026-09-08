@@ -78,8 +78,12 @@ export const api = {
       p_set_code:item.setCode || '', p_set_name:item.setName || '', p_rarity:item.rarity || '',
       p_language:item.language, p_condition:item.condition, p_edition:item.edition || '',
       p_image_url:item.imageUrl || '', p_quantity_owned:item.quantityOwned,
-      p_quantity_mode:item.id ? 'set' : 'increment'
+      p_quantity_mode:item.id ? 'set' : 'increment',
+      p_printing_id:item.printingId || null
     }));
+  },
+  async onePieceCatalogSearch(query, limit = 60) {
+    ensure(); return unwrap(await client.rpc('search_onepiece_catalog', { p_token:token(),p_query:query,p_limit:limit }));
   },
   async catalogVerificationQueue(version,{signal}={}) {
     ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {

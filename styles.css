@@ -784,6 +784,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .printing-preview b { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
 .catalog-required { display: flex; align-items: center; gap: 9px; min-height: 84px; margin-top: 9px; padding: 12px; border: 1px dashed #4a4052; border-radius: 9px; color: var(--muted); font-size: .68rem; }
 .catalog-required .icon { color: var(--accent); }
+.collection-printing-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 38vh; overflow: auto; margin-top: 10px; }
+.collection-printing-options button { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 7px; border: 1px solid #3c3045; border-radius: 9px; background: #0b0e16; color: inherit; text-align: left; }
+.collection-printing-options button:hover, .collection-printing-options button.active { border-color: #9854b6; background: #16101d; }
+.collection-printing-options img, .collection-printing-options button > .icon:first-child { width: 44px; height: 62px; object-fit: contain; border-radius: 4px; }
+.collection-printing-options strong, .collection-printing-options small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collection-printing-options small { margin-top: 2px; color: var(--muted); font-size: .58rem; }
+@media (max-width: 480px) { .collection-printing-options { grid-template-columns: 1fr; } }
 .inventory-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 10px; }
 .inventory-form-grid label { margin-top: 11px; }
 .inventory-form-grid .wide-field { grid-column: 1 / -1; }

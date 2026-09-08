@@ -740,6 +740,14 @@ function bind() {
     ) || null;
     render();
   });
+  document.querySelectorAll('[data-collection-printing-option]').forEach(button => button.addEventListener('click', () => {
+    if (!collectionEditor?.card) return;
+    const option = collectionPrintingOptions(collectionEditor.card).find(printing => String(printing.printingId || '') === button.dataset.collectionPrintingOption);
+    if (!option) return;
+    collectionEditor.printing = option;
+    collectionEditor.setCode = option.setCode;
+    render();
+  }));
   document.querySelector('#collection-first-edition')?.addEventListener('change', event => {
     event.currentTarget.dataset.editionTouched = 'true';
     const status = document.querySelector('[data-edition-status]');
@@ -1074,7 +1082,16 @@ function mapCollectionItem(item) {
     quantityReserved:Number(item.quantity_reserved || 0),
     quantityAvailable:Number(item.quantity_physically_available ?? item.quantity_available ?? 0),
     legacyAmbiguous:Boolean(item.legacy_ambiguous), createdAt:item.created_at,
-    updatedAt:item.updated_at
+    updatedAt:item.updated_at, variantId:item.variant_id || '',
+    // game_metadata è '{}' per ogni riga Yu-Gi-Oh (default colonna): questi
+    // campi restano semplicemente vuoti/null per loro, non serve un ramo
+    // per gioco qui — i filtri Collection One Piece (js/games/onepiece/
+    // collection.js) sono gli unici a leggerli davvero.
+    colors:Array.isArray(item.game_metadata?.colors) ? item.game_metadata.colors : [],
+    cardType:item.game_metadata?.cardType || '',
+    cost:item.game_metadata?.cost ?? null,
+    power:item.game_metadata?.power ?? null,
+    counter:item.game_metadata?.counter ?? null
   };
 }
 
@@ -1226,7 +1243,11 @@ async function openCollectionEditor(id) {
   const item = state.collection.mine.find(entry => entry.id === id);
   if (!item) return;
   const normalizedCurrentRarity = normalizeCatalogRarity(item.rarity);
-  const currentPrinting = { setCode:item.setCode, setName:item.setName, rarity:normalizedCurrentRarity || item.rarity };
+  // printingId/variantId già noti dall'item salvato: la printing corrente
+  // resta identificabile con certezza anche se il refetch del catalogo sotto
+  // fallisce o non trova più un match esatto per nome (Fase 4 — One Piece
+  // salva sempre tramite printing_id, mai per nome/set/rarità).
+  const currentPrinting = { printingId:item.printingId || null, variantId:item.variantId || '', setCode:item.setCode, setName:item.setName, rarity:normalizedCurrentRarity || item.rarity };
   const initialCard = { id:item.catalogCardId, name:item.cardName, image:item.imageUrl, fullImage:item.imageUrl, printings:[currentPrinting] };
   collectionEditor = { item, card:initialCard, printing:currentPrinting, setCode:item.setCode };
   selectedCollectionItem = '';
@@ -1234,9 +1255,12 @@ async function openCollectionEditor(id) {
   const expectedId = item.id;
   const catalog = await findCard(item.cardName, item.game);
   if (!catalog || collectionEditor?.item?.id !== expectedId) return;
-  if (!catalog.printings.some(printing => sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,currentPrinting.rarity))) catalog.printings.unshift(currentPrinting);
+  const alreadyListed = catalog.printings.some(printing => (currentPrinting.printingId && printing.printingId)
+    ? String(printing.printingId) === String(currentPrinting.printingId)
+    : (sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,currentPrinting.rarity)));
+  if (!alreadyListed) catalog.printings.unshift(currentPrinting);
   collectionEditor.card = collectionCardWithLocalizedPrintings(catalog, item.language || 'Italiano');
-  collectionEditor.printing = selectCollectionEditorPrinting(collectionEditor.card, item.setCode, normalizedCurrentRarity);
+  collectionEditor.printing = selectCollectionEditorPrinting(collectionEditor.card, item.setCode, normalizedCurrentRarity, item.printingId);
   collectionEditor.setCode = collectionEditor.printing?.setCode || item.setCode;
   render();
 }
@@ -1308,7 +1332,13 @@ async function saveCollectionItem(event) {
     }
     if (reconciliation.status === 'warning') catalogWarning = reconciliation.issues.join('. ');
     let savedResult;
-    if (item && (printingChanged || editionChanged)) {
+    // La correzione printing "legacy" ricostruisce la riga per nome/set/
+    // rarità: va bene per Yu-Gi-Oh (dove il catalog-verification esiste
+    // apposta), ma per One Piece rischierebbe di fondere regular e parallel
+    // che condividono set_code/rarity. One Piece passa sempre da
+    // saveCollection con il printingId già risolto, anche per un cambio
+    // printing su un item esistente.
+    if (item && (printingChanged || editionChanged) && state.game === 'yugioh') {
       savedResult = await api.correctCollectionPrinting({
         collectionItemId:item.id, catalogCardId:card.id, cardName:card.name,
         setCode:printing.setCode || '', setName:printing.setName || '', rarity:printing.rarity || '',
@@ -1319,7 +1349,8 @@ async function saveCollectionItem(event) {
         id:item?.id || null, game:state.game, catalogCardId:card.id,
         cardName:card.name, setCode:printing.setCode || '', setName:printing.setName || '',
         rarity:printing.rarity || '', language, condition, edition,
-        imageUrl:card.fullImage || card.image || '', quantityOwned
+        imageUrl:card.fullImage || card.image || '', quantityOwned,
+        printingId:printing.printingId || null
       });
     }
     const savedRow = Array.isArray(savedResult) ? savedResult[0] : savedResult;
