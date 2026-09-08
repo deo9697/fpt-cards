@@ -104,7 +104,7 @@ export class MarketWatchController {
   rows(items,unresolved){return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${items.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>`;}
   marketDecks(){return buildMarketDecks(this.getDecks?.()||this.data.decks||[],this.data.items,this.data.deckUnresolved);}
   deckRows(decks){return decks.length?`<div class="market-deck-grid">${decks.map(deck=>renderDeckBoxCard(deck,{mode:'market',marketValue:deck.marketValue,marketIndicative:deck.marketIndicative,marketCoverage:`${deck.valuedCopies}/${deck.totalCopies} copie`,delta24:deck.delta24,delta7:deck.delta7,topMover:deck.topMover})).join('')}</div>`:'<div class="market-tab-empty">Nessun mazzo disponibile nel Market Watch.</div>';}
-  deckDetailView(decks){const deck=decks.find(row=>String(row.id)===String(this.selectedDeck));if(!deck)return'';return `<div class="detail-backdrop" data-market-deck-close><aside class="card-detail market-deck-detail" role="dialog" aria-modal="true"><button class="detail-close" data-market-deck-close aria-label="Chiudi">×</button><span class="eyebrow">${deck.marketIndicative?'Valore indicativo':'Valore mazzo'}</span><div class="market-deck-detail-head">${renderDeckBoxVisual(deck)}<div><h2>${esc(deck.name)}</h2><p>${deck.marketValue==null?'Valore non disponibile':money(deck.marketValue)}</p><small>${deck.valuedCopies}/${deck.totalCopies} copie valorizzate${deck.indicativeValuedCopies?` · ${deck.indicativeValuedCopies} con stima indicativa`:''}${deck.unresolvedCount?` · ${deck.unresolvedCount} printing da definire`:''}</small></div></div><div class="market-deck-kpis"><span><small>24 ore</small><strong class="${tone(deck.delta24)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta24)}</strong></span><span><small>7 giorni</small><strong class="${tone(deck.delta7)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta7)}</strong></span><span><small>Top mover</small><strong>${deck.marketIndicative?'Escluso':deck.topMover?`${esc(deck.topMover.cardName)} ${changePercent(deck.topMover.percent)}`:'Non disponibile'}</strong></span></div><p class="data-note">${deck.marketIndicative?'Stima basata anche su prezzi Cardmarket aggregati o su una printing posseduta scelta tramite identità catalogo. Trend e mover restano esclusi.':'Il valore deriva da printing con prezzo specifico. Le fonti restano visibili nei dettagli delle singole printing.'}</p></aside></div>`;}
+  deckDetailView(decks){const deck=decks.find(row=>String(row.id)===String(this.selectedDeck));if(!deck)return'';return `<div class="detail-backdrop" data-market-deck-close><aside class="card-detail market-deck-detail" role="dialog" aria-modal="true"><button class="detail-close" aria-label="Chiudi">×</button><span class="eyebrow">${deck.marketIndicative?'Valore indicativo':'Valore mazzo'}</span><div class="market-deck-detail-head">${renderDeckBoxVisual(deck)}<div><h2>${esc(deck.name)}</h2><p>${deck.marketValue==null?'Valore non disponibile':money(deck.marketValue)}</p><small>${deck.valuedCopies}/${deck.totalCopies} copie valorizzate${deck.indicativeValuedCopies?` · ${deck.indicativeValuedCopies} con stima indicativa`:''}${deck.unresolvedCount?` · ${deck.unresolvedCount} printing da definire`:''}</small></div></div><div class="market-deck-kpis"><span><small>24 ore</small><strong class="${tone(deck.delta24)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta24)}</strong></span><span><small>7 giorni</small><strong class="${tone(deck.delta7)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta7)}</strong></span><span><small>Top mover</small><strong>${deck.marketIndicative?'Escluso':deck.topMover?`${esc(deck.topMover.cardName)} ${changePercent(deck.topMover.percent)}`:'Non disponibile'}</strong></span></div><p class="data-note">${deck.marketIndicative?'Stima basata anche su prezzi Cardmarket aggregati o su una printing posseduta scelta tramite identità catalogo. Trend e mover restano esclusi.':'Il valore deriva da printing con prezzo specifico. Le fonti restano visibili nei dettagli delle singole printing.'}</p></aside></div>`;}
   detailView(){
     const item=this.data.items.find(row=>row.printingId===this.selected);if(!item)return'';
     const providers=Object.entries(item.providers||{}),history=this.history.get(item.printingId)||[],aggregate=isAggregatePrice(item);
@@ -115,7 +115,7 @@ export class MarketWatchController {
     const heroArt=preferredDeckArtwork(item);
     return `<div class="detail-backdrop" data-market-detail-close><aside class="card-detail market-detail" role="dialog" aria-modal="true">
       <div class="market-detail-hero"${heroArt?` style="--hero-image:url(&quot;${esc(heroArt)}&quot;)"`:''}>
-        <header class="market-detail-topbar"><button type="button" class="detail-close" data-market-detail-close aria-label="Chiudi">${icon('arrow')}</button><div class="market-detail-badges">${item.sources.map(source=>`<i class="market-row-badge ${source}">${esc(LABELS[source])}${source==='owned'?` · ${item.ownedQuantity} ${item.ownedQuantity===1?'copia':'copie'}`:''}</i>`).join('')}${aggregate?'<i class="market-row-badge aggregate">Aggregato</i>':''}</div></header>
+        <header class="market-detail-topbar"><button type="button" class="detail-close" aria-label="Chiudi">${icon('arrow')}</button><div class="market-detail-badges">${item.sources.map(source=>`<i class="market-row-badge ${source}">${esc(LABELS[source])}${source==='owned'?` · ${item.ownedQuantity} ${item.ownedQuantity===1?'copia':'copie'}`:''}</i>`).join('')}${aggregate?'<i class="market-row-badge aggregate">Aggregato</i>':''}</div></header>
         <div class="market-detail-hero-body">
           <span class="market-detail-hero-meta">${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</span>
           <h2>${esc(item.cardName)}</h2>
@@ -259,7 +259,7 @@ function marketRow(item,history,tab){
   const aggregate=isAggregatePrice(item),delta=!aggregate&&item.referencePrice!=null&&item.price24h!=null?item.referencePrice-item.price24h:null,percent=delta!=null&&item.price24h?delta/item.price24h*100:null;
   const owned=tab==='owned'&&item.ownedQuantity>0,position=owned&&item.referencePrice!=null?item.referencePrice*item.ownedQuantity:null;
   return `<button class="market-row" data-market-card="${esc(item.printingId)}">
-    ${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="" loading="lazy">`:`<span class="market-art-empty">${icon('card')}</span>`}
+    ${cardArt(item.imageUrl)}
     <span class="market-card-copy">
       <strong>${esc(item.cardName)}</strong>
       <small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small>
@@ -281,6 +281,15 @@ function rowSparkline(history,delta){
   const trend=tone(delta??(values.at(-1)-values[0]));
   return `<svg class="market-row-chart ${trend}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
 }
+// Un'immagine con URL non più valido (Cardmarket/YGOPRODeck che ruota gli
+// asset, hotlink bloccato, ecc.) mostrava l'icona "immagine rotta" nativa del
+// browser — facile da leggere come "errore di caricamento dati" quando invece
+// i dati ci sono, solo la foto specifica non carica. onerror sostituisce il
+// tag con lo stesso placeholder usato quando l'URL manca del tutto.
+function cardArt(imageUrl){
+  if(!imageUrl)return `<span class="market-art-empty">${icon('card')}</span>`;
+  return `<img src="${esc(imageUrl)}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(`<span class="market-art-empty">${icon('card')}</span>`)}">`;
+}
 export function isAggregatePrice(item){return item?.resolverStatus==='PROVIDER_AGGREGATE';}
 export function derivedPriceEligible(item){return item?.mappingStatus==='manual'||(item?.referencePrice!=null&&item?.resolverStatus!=='PROVIDER_AGGREGATE');}
 function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';
@@ -297,7 +306,7 @@ function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scop
 // è già 'manual' una volta confermata, quindi qui non ricompare più.
 function needsMappingReview(item){return item.mappingStatus!=='manual'&&(item.mappingReason==='provider_rarity_mismatch'||item.resolverStatus==='AMBIGUOUS');}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
-    <div class="market-confirm-queue-card">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="" loading="lazy">`:`<span class="market-art-empty">${icon('card')}</span>`}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
+    <div class="market-confirm-queue-card">${cardArt(item.imageUrl)}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
     ${mappingIssueNotice(item)}
   </div>`;}
 // Snapshot bloccati da trg_flag_price_anomaly (scostamento >5x o <0.1x dal
