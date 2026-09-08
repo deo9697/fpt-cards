@@ -43,3 +43,17 @@ assert(!html.includes('data-market-show-more'));
 assert.equal(controller.visibleRows,60);
 assert.equal(items.length,2132);
 console.log('PASS bounded initial rows, show-more action and search beyond the first batch');
+let retryCalls=0;
+const timeout=()=>Object.assign(new Error('canceling statement due to statement timeout'),{code:'57014'});
+const retry=new MarketWatchController({getGame:()=> 'yugioh',api:{marketWatch:async()=>{
+  if(++retryCalls===1)throw timeout();return {items:[{printing_id:'recovered'}]};
+}}});
+await retry.load();assert.equal(retryCalls,2);assert.equal(retry.error,'');
+assert.equal(retry.data.items[0].printingId,'recovered');
+retryCalls=0;retry.api.marketWatch=async()=>{retryCalls++;throw timeout();};
+await retry.load();assert.equal(retryCalls,2,'persistent timeouts must not retry indefinitely');
+assert.equal(retry.data.items[0].printingId,'recovered','keep the previous data when refresh fails');
+assert.match(retry.error,/Riprova tra poco/);assert(!retry.error.includes('statement timeout'));
+retryCalls=0;retry.api.marketWatch=async()=>{retryCalls++;throw new Error('Sessione scaduta');};
+await retry.load();assert.equal(retryCalls,1);assert.equal(retry.error,'Sessione scaduta');
+console.log('PASS transient timeout recovery, bounded retries, retained data and visible persistent errors');

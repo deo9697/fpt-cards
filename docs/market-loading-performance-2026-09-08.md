@@ -41,3 +41,25 @@
 - Nessuna misura end-to-end sul dispositivo dell'utente.
 
 Riferimento: [Supabase, analisi dei piani delle query](https://supabase.com/docs/guides/database/query-optimization).
+
+## Timeout residuo: seconda verifica
+
+Dopo il primo fix, riprodotto un tempo di 3.513,862 ms: il margine rispetto
+al limite di 3 secondi non era sufficiente sotto carico. La migrazione
+`20260908204855_market_watch_snapshot_reuse.sql` materializza una volta le
+regole di validità dei mapping e gli snapshot pertinenti, riutilizzandoli
+per prezzo corrente, minimo e storico. Conserva separatamente i criteri
+active/derived originali, compreso il comportamento dei mapping manuali.
+
+Prova iniziale: 1.366,316 ms. Verifica con `statement_timeout='3s'`:
+2.085,251 ms, completata. Confronto delle 2.132 stampe per printing_id:
+tutti i campi identici, così come i metadati esterni alla lista. Aggiunto
+printing_id come ultimo criterio di ordinamento per stabilizzare le parità
+di nome/prezzo. Non sono garanzie di latenza su ogni dispositivo o carico.
+
+Il client riprova una sola volta dopo 350 ms per un timeout SQL; gli altri
+errori non vengono ritentati. Un timeout persistente conserva i dati già
+caricati e mostra «Il caricamento dei prezzi sta impiegando troppo tempo.
+Riprova tra poco.» con il pulsante Riprova. Test automatici per recupero,
+limite dei tentativi, dati conservati ed errori di sessione superati.
+Cache PWA portata a 188.

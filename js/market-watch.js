@@ -8,6 +8,7 @@ const LABELS={owned:'Raccolta',deck:'Mazzi',manual:'Watchlist'};
 const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{days:365,label:'1a'}];
 const FRESH_MS=48*60*60*1000;
 const ROW_BATCH_SIZE=60;
+const isStatementTimeout=error=>error?.code==='57014'||/statement timeout/i.test(error?.message||'');
 
 export class MarketWatchController {
   constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
@@ -18,7 +19,7 @@ export class MarketWatchController {
     if(this.loadInFlight&&this.loadGame===game)return this.loadInFlight;
     const generation=this.loadGeneration=(this.loadGeneration||0)+1;
     const current=()=>this.loadGeneration===generation&&this.getGame()===game;
-    this.loadGame=game;this.loading=true;
+    this.loadGame=game;this.loading=true;this.error='';
     let extrasReady=false,movers=[],anomalies=[];
     // Accessory panels must not hold up the main card list.
     void Promise.all([
@@ -32,11 +33,20 @@ export class MarketWatchController {
     });
     const request=(async()=>{
       try{
-        const payload=await this.api.marketWatch(game);if(!current())return this.data;
+        let payload;
+        for(let attempt=0;attempt<2;attempt++){
+          try{payload=await this.api.marketWatch(game);break;}
+          catch(error){
+            if(attempt||!isStatementTimeout(error))throw error;
+            await new Promise(resolve=>setTimeout(resolve,350));
+            if(!current())return this.data;
+          }
+        }
+        if(!current())return this.data;
         const next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);
         if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}
         this.data=next;this.anomalies=anomalies||[];this.error='';
-      }catch(error){if(current())this.error=/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
+      }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
       finally{if(current()){this.loading=false;this.onRender?.();if(extrasReady)void this.loadFeaturedHistories();}}
       return this.data;
     })();
