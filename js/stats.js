@@ -16,7 +16,7 @@ export class StatsController {
   constructor({ api, getState, onRender, onModalRender, onToast } = {}) {
     Object.assign(this, { api, getState, onRender, onModalRender: onModalRender || onRender, onToast });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
-    this.progression = null; this.cosmetics = null; this.missions = []; this.streak = null; this.myRows = []; this.teamRows = []; this.error = '';
+    this.progression = null; this.cosmetics = null; this.missions = []; this.streak = null; this.myRows = []; this.teamRows = []; this.error = ''; this.rivalWins = {};
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
     this.loadInFlight = null;
     this.teamDecksAll = []; this.teamDecksLoaded = false; this.teamDecksLoadInFlight = null;
@@ -70,9 +70,10 @@ export class StatsController {
       // caricamento reale della pagina (e dell'avatar, caricato dai
       // cosmetics) senza alcun bisogno, visto che nessuna di queste chiamate
       // dipende dal risultato di un'altra.
-      const [progressionResult, streakResult, statsResult, cosmeticsResult, missionsResult, timelineResult] = await Promise.allSettled([
+      const [progressionResult, streakResult, statsResult, cosmeticsResult, missionsResult, timelineResult, rivalWinsResult] = await Promise.allSettled([
         this.api.progression(), this.api.matchStreak(this.state.game), this.loadStats(),
-        this.api.myCosmetics(), this.api.dailyMissions(), this.api.matchTimeline(this.state.game)
+        this.api.myCosmetics(), this.api.dailyMissions(), this.api.matchTimeline(this.state.game),
+        this.api.rivalWins()
       ]);
       if (progressionResult.status === 'fulfilled') this.progression = progressionResult.value;
       if (streakResult.status === 'fulfilled') this.streak = streakResult.value;
@@ -80,6 +81,7 @@ export class StatsController {
       this.error = coreFailure ? (coreFailure.reason?.message || 'Statistiche non disponibili') : '';
       if (cosmeticsResult.status === 'fulfilled') this.cosmetics = cosmeticsResult.value;
       if (missionsResult.status === 'fulfilled') this.missions = missionsResult.value;
+      if (rivalWinsResult.status === 'fulfilled') this.rivalWins = rivalWinsResult.value;
       if (timelineResult.status === 'fulfilled') { this.timeline = normalizeTimeline(timelineResult.value); this.timelineError = ''; }
       else this.timelineError = timelineResult.reason?.message || 'Andamento non disponibile';
       await this.claimNewCosmetics();
@@ -92,7 +94,7 @@ export class StatsController {
   // popup dedicato — l'utente lo trova già disponibile in Personalizza.
   async claimNewCosmetics() {
     if (!this.progression || !this.cosmetics) return;
-    const fresh = newlyUnlockedCosmetics(this.progression, this.cosmetics.unlocked);
+    const fresh = newlyUnlockedCosmetics(this.progression, this.cosmetics.unlocked, { rivalWins:this.rivalWins });
     if (!fresh.length) return;
     try {
       await Promise.all(fresh.map(item => this.api.claimCosmetic(item.id)));
@@ -208,6 +210,13 @@ export class StatsController {
       });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
       this.lastResult = { result:form.result, ...response };
+      // Solo una vittoria contro un compagno reale può far scattare un avatar
+      // "rivalità" (vedi js/cosmetics.js) — evita una RPC in più per ogni
+      // altro esito, ma aggiorna il conteggio subito quando può contare,
+      // invece di aspettare il prossimo load() della pagina.
+      if (form.result === 'win' && this.opponentMode === 'team' && form.opponentMemberSlug) {
+        try { this.rivalWins = await this.api.rivalWins(); } catch {}
+      }
       void this.claimNewCosmetics();
       void this.refreshMissions();
       const [, streak, timelineRows] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game), this.api.matchTimeline(this.state.game).catch(() => null)]);

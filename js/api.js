@@ -178,5 +178,6 @@ export const api = {
   async dailyMissions() { ensure(); return unwrap(await client.rpc('get_my_daily_missions', { p_token:token() })); },
   async matchStreak(game) { ensure(); return unwrap(await client.rpc('get_match_streak', { p_token:token(), p_game:game })); },
   async matchTimeline(game) { ensure(); return unwrap(await client.rpc('get_match_timeline', { p_token:token(), p_game:game })); },
-  async headToHead(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_head_to_head', { p_token:token(), p_game:game, p_period:period || 'all' })); }
+  async headToHead(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_head_to_head', { p_token:token(), p_game:game, p_period:period || 'all' })); },
+  async rivalWins() { ensure(); return unwrap(await client.rpc('get_rival_wins', { p_token:token() })); }
 };
