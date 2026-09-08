@@ -1,6 +1,8 @@
 import { esc } from './core.js';
 import { icon } from './icons.js';
 
+const GRID_TILE_CAP = 60;
+
 // Renders completely outside the normal authenticated app shell — whoever
 // opens the link has no account and no session token, so this never touches
 // state.currentUser or anything else app.js gates behind login.
@@ -66,7 +68,11 @@ export class CollectionShareController {
     const items = this.data?.items || [];
     const query = this.query.trim().toLowerCase();
     if (!query) return items;
-    return items.filter(item => item.cardName.toLowerCase().includes(query) || (item.setName || '').toLowerCase().includes(query));
+    // alternateNames arriva da get_collection_share: altri nomi noti per lo
+    // stesso catalog_card_id (es. "Sintonizzare" per una stampa posseduta
+    // come "Tuning") — non è una traduzione, solo nomi che il catalogo ha
+    // già registrato altrove per la stessa carta.
+    return items.filter(item => item.cardName.toLowerCase().includes(query) || (item.setName || '').toLowerCase().includes(query) || (item.alternateNames || []).some(name => name.toLowerCase().includes(query)));
   }
   view() {
     if (this.loading) return `<div class="share-guest-shell"><div class="share-guest-loading"><div class="loading-spinner"></div></div></div>`;
@@ -86,7 +92,15 @@ export class CollectionShareController {
     if (!allItems.length) return `<div class="share-guest-message">${icon('card')}<h2>Raccolta vuota</h2><p>Non ci sono ancora carte da mostrare qui.</p></div>`;
     const items = this.filteredItems();
     if (!items.length) return `<div class="share-guest-message compact">${icon('search')}<p>Nessuna carta corrisponde a "${esc(this.query)}"</p></div>`;
-    return `<div class="share-guest-grid">${items.map(item => this.itemTile(item)).join('')}</div>`;
+    // Ogni tile è una <img> reale: senza un tetto, una raccolta grande (anche
+    // migliaia di stampe) ricostruisce/ricarica centinaia di immagini ad ogni
+    // tasto premuto in refreshGrid(), percepito come "la pagina rallenta
+    // quando cerco". Un ospite sta cercando carte specifiche, non sfogliando
+    // tutto — mostrare i primi risultati e chiedere di affinare la ricerca
+    // è sufficiente e molto più leggero.
+    const shown = items.slice(0, GRID_TILE_CAP);
+    const truncatedNote = items.length > GRID_TILE_CAP ? `<div class="share-guest-message compact">${icon('info')}<p>Mostrati i primi ${GRID_TILE_CAP} di ${items.length} risultati — affina la ricerca per trovare la carta che cerchi.</p></div>` : '';
+    return `<div class="share-guest-grid">${shown.map(item => this.itemTile(item)).join('')}</div>${truncatedNote}`;
   }
   itemTile(item) {
     const quantity = this.selected.get(item.printingId) || 0;
