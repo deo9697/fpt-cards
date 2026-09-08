@@ -1,6 +1,7 @@
 import { esc } from './core.js';
 import { icon } from './icons.js';
 import { deckNamesForCollectionItem } from './decks.js';
+import { getGameAdapter } from './games/index.js';
 
 const STATUS_CHIPS = [
   { value:'all', label:'Tutte' },
@@ -19,6 +20,7 @@ export function collectionView(collection, filters, game, connected, error = '',
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const owners = [...new Map(team.map(item => [item.ownerSlug, item.ownerName])).entries()];
+  const scopeSource = filters.scope === 'mine' ? mine : groupTeamItems(team);
 
   return `<section class="page-stack collection-page">
     <header class="page-header split"><div><span class="eyebrow">Inventario persistente</span><h1>Raccolta</h1><p>Carte possedute e copie realmente disponibili per il team.</p></div><div class="actions collection-add-actions"><button class="btn secondary" data-collection-share ${connected ? '' : 'disabled title="Disponibile quando torni online"'}>${icon('share')} Condividi</button><button class="btn secondary" data-fast-scan>${icon('search')} Scansione rapida</button><button class="btn" data-collection-add ${connected ? '' : 'disabled title="Disponibile quando torni online"'}>${icon('plus')} Aggiungi carta</button></div></header>
@@ -32,6 +34,7 @@ export function collectionView(collection, filters, game, connected, error = '',
           <div class="filter-chips" role="group" aria-label="Disponibilità">${STATUS_CHIPS.map(chip => `<button type="button" class="chip ${filters.status === chip.value ? 'active' : ''}" data-collection-status-chip="${chip.value}">${chip.label}</button>`).join('')}</div>
           ${filters.scope === 'team' ? `<select id="collection-owner" aria-label="Proprietario"><option value="all">Tutti</option>${owners.map(([id,name]) => `<option value="${esc(id)}" ${filters.owner === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>` : ''}
         </div>
+        ${facetFiltersView(game, scopeSource, filters)}
         <div class="inventory-sort-row">
           <select id="collection-sort" aria-label="Ordina">${SORT_OPTIONS.map(option => `<option value="${option.value}" ${filters.sort === option.value ? 'selected' : ''}>Ordina: ${option.label}</option>`).join('')}</select>
           <div class="view-toggle" aria-label="Visualizzazione"><button type="button" data-collection-layout="grid" class="${filters.layout === 'grid' ? 'active' : ''}" aria-label="Griglia">▦</button><button type="button" data-collection-layout="list" class="${filters.layout === 'list' ? 'active' : ''}" aria-label="Lista">☷</button></div>
@@ -54,7 +57,25 @@ function computeCollectionItems(collection, filters, game) {
   const mine = (collection.mine || []).filter(item => item.game === game);
   const team = (collection.team || []).filter(item => item.game === game);
   const source = filters.scope === 'mine' ? mine : groupTeamItems(team);
-  return { source, all: sortItems(source.filter(item => matches(item, filters)), filters.sort) };
+  const facetDefs = getGameAdapter(game).collectionFilters || [];
+  return { source, all: sortItems(source.filter(item => matches(item, filters, facetDefs)), filters.sort) };
+}
+
+// Filtri dichiarati dall'adapter di gioco (Color/Set/Rarity/Cost/Power/... per
+// One Piece, nessuno per Yu-Gi-Oh oggi): collection.js resta generico, non
+// conosce i nomi dei campi. `ready:false` = il dato non è ancora persistito
+// sull'item di raccolta (serve il catalog sync, Fase 2-4) — il filtro esiste
+// già in UI ma resta disabilitato finché getValue non trova mai un valore.
+function facetFiltersView(game, source, filters) {
+  const defs = getGameAdapter(game).collectionFilters || [];
+  if (!defs.length) return '';
+  return `<div class="inventory-facet-row" role="group" aria-label="Filtri carta">${defs.map(def => facetSelect(def, source, filters)).join('')}</div>`;
+}
+function facetSelect(def, source, filters) {
+  if (!def.ready) return `<select disabled title="Disponibile dopo l'import del catalogo"><option>${esc(def.label)} · in arrivo</option></select>`;
+  const values = [...new Set(source.map(item => String(def.getValue(item) ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const selected = filters.facets?.[def.key] || 'all';
+  return `<select data-collection-facet="${def.key}" aria-label="${esc(def.label)}"><option value="all" ${selected === 'all' ? 'selected' : ''}>${esc(def.label)}: tutti</option>${values.map(value => `<option value="${esc(value)}" ${selected === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select>`;
 }
 
 export function collectionResultsView(collection, filters, game, connected, visibleCount = COLLECTION_PAGE_SIZE, deckIndex = null) {
@@ -223,7 +244,7 @@ function groupTeamItems(items) {
   return [...groups.values()];
 }
 
-function matches(item, filters) {
+function matches(item, filters, facetDefs = []) {
   const needle = filters.query.trim().toLowerCase();
   const text = [item.cardName,item.setCode,item.setName,item.rarity].join(' ').toLowerCase();
   const queryOk = !needle || text.includes(needle);
@@ -233,7 +254,11 @@ function matches(item, filters) {
     || (filters.status === 'available' && item.quantityAvailable > 0)
     || (filters.status === 'partial' && item.quantityAvailable > 0 && committed > 0)
     || (filters.status === 'unavailable' && item.quantityAvailable === 0);
-  return queryOk && ownerOk && statusOk;
+  const facetsOk = facetDefs.every(def => {
+    const selected = filters.facets?.[def.key];
+    return !selected || selected === 'all' || String(def.getValue(item) ?? '').trim() === selected;
+  });
+  return queryOk && ownerOk && statusOk && facetsOk;
 }
 
 function sortItems(items, sort) {

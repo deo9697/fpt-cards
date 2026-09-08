@@ -1,6 +1,7 @@
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { searchCards, findCard, findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
+import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
+import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
@@ -18,6 +19,12 @@ import { progressForXp, titleForLevel } from './js/progression.js';
 import { cosmeticsByType, cosmeticPacks, findCosmetic, isCosmeticUnlocked } from './js/cosmetics.js';
 import { DAILY_MISSIONS_META } from './js/missions.js';
 
+// Routing catalogo per gioco: da qui in poi lo YGO ygoprodeck e l'OPTCG
+// One Piece sono due adapter separati (js/games/), niente più `if (game ===
+// 'onepiece')` sparsi nel motore cards.js.
+function searchCards(query, game = 'yugioh') { return getGameAdapter(game).searchCards(query); }
+function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(name); }
+
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 let guestShare;
@@ -25,7 +32,7 @@ let page = routeFromHash();
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let selectedLoanId = '';
 let loanFiltersExpanded = false;
-let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc' };
+let collectionFilters = { scope:'mine', query:'', owner:'all', status:'all', layout:'grid', sort:'name-asc', facets:{} };
 let collectionVisibleCount = COLLECTION_PAGE_SIZE;
 let collectionSentinelObserver;
 let collectionShareModal = false;
@@ -799,9 +806,11 @@ function installCollectionControls() {
     }, 220);
   });
   root.addEventListener('change', event => {
+    const facetKey = event.target.dataset.collectionFacet;
     if (event.target.matches('#collection-owner')) collectionFilters.owner = event.target.value;
     else if (event.target.matches('#collection-status')) collectionFilters.status = event.target.value;
     else if (event.target.matches('#collection-sort')) collectionFilters.sort = event.target.value;
+    else if (facetKey) collectionFilters.facets[facetKey] = event.target.value;
     else return;
     collectionVisibleCount = COLLECTION_PAGE_SIZE;
     refreshCollectionResults();

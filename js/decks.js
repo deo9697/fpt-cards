@@ -2,9 +2,12 @@ import { esc, initials, member } from './core.js';
 import { icon } from './icons.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deckThemeOptions, normalizeDeckBoxTemplate, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
+import { getGameAdapter } from './games/index.js';
 
-const SECTIONS = ['main', 'extra', 'side'];
-const LABELS = { main: 'Main Deck', extra: 'Extra Deck', side: 'Side Deck' };
+// Sezioni/etichette dipendono dal gioco del mazzo (Main/Extra/Side per YGO,
+// Leader/Main/DON!! per One Piece) — mai un elenco fisso, sempre l'adapter.
+function sectionsFor(deck) { return getGameAdapter(deck?.game).sections; }
+function labelsFor(deck) { return getGameAdapter(deck?.game).labels; }
 const DRAFTS_KEY = 'fpt-cards-deck-drafts-v1';
 const DECK_100_CELEBRATED_KEY = 'fpt-cards-deck-100-celebrated-v1';
 const CARD_TYPE_CACHE_KEY = 'fpt-cards-type-index-v1';
@@ -85,17 +88,17 @@ export class DeckController {
     if (celebrated.has(deckId)) return false;
     celebrated.add(deckId); writeCelebratedDecks(celebrated); return true;
   }
-  galleryPreview(deck) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0); return `<aside class="deck-gallery-preview surface" aria-label="Anteprima ${esc(deck.name)}"><span class="eyebrow">Mazzo selezionato</span>${renderDeckBoxVisual(deck)}<h2>${esc(deck.name)}</h2><p>${deck.dirty ? 'Bozza salvata sul dispositivo' : `Formato: ${esc(deck.format || 'TCG Avanzato')}`}</p><div class="deck-preview-counts"><span><small>Totale</small><b>${total}</b></span><span><small>Main</small><b>${sectionTotal(deck, 'main')}</b></span><span><small>Extra</small><b>${sectionTotal(deck, 'extra')}</b></span><span><small>Side</small><b>${sectionTotal(deck, 'side')}</b></span></div><div class="deck-preview-ready"><span><small>Disponibilità personale</small><strong>${report.percent}%</strong></span><i style="--ready:${report.percent}"></i></div><button class="btn wide" data-deck-open="${esc(deck.id)}">Apri mazzo ${icon('arrow')}</button></aside>`; }
+  galleryPreview(deck) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0); return `<aside class="deck-gallery-preview surface" aria-label="Anteprima ${esc(deck.name)}"><span class="eyebrow">Mazzo selezionato</span>${renderDeckBoxVisual(deck)}<h2>${esc(deck.name)}</h2><p>${deck.dirty ? 'Bozza salvata sul dispositivo' : `Formato: ${esc(deck.format || 'TCG Avanzato')}`}</p><div class="deck-preview-counts"><span><small>Totale</small><b>${total}</b></span>${sectionsFor(deck).map(section => `<span><small>${esc(labelsFor(deck)[section].replace(' Deck', ''))}</small><b>${sectionTotal(deck, section)}</b></span>`).join('')}</div><div class="deck-preview-ready"><span><small>Disponibilità personale</small><strong>${report.percent}%</strong></span><i style="--ready:${report.percent}"></i></div><button class="btn wide" data-deck-open="${esc(deck.id)}">Apri mazzo ${icon('arrow')}</button></aside>`; }
   teamDetailView(deck) {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { ownerSlug:deck.ownerSlug, loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
     const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
-      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
+      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck, report)}
-      ${sheetCard ? this.cardSheet(sheetCard, report, { readonly:true }) : this.availabilityPeek(report)}
+      ${sheetCard ? this.cardSheet(sheetCard, report, deck, { readonly:true }) : this.availabilityPeek(report)}
       ${this.missingPanelOpen ? this.missingOverlay(report, { readonly:true, ownerName:deck.ownerName }) : ''}
     </div>`;
   }
@@ -104,13 +107,30 @@ export class DeckController {
       <button type="button" class="deck-mh-icon" data-deck-gallery aria-label="Torna alla scelta dei mazzi">${icon('arrow')}</button>
       <span class="deck-mh-title"><small>Mazzo di ${esc(deck.ownerName)} · sola lettura</small><strong class="deck-mh-title-static">${esc(deck.name)}</strong></span>
     </header>
-    <div class="deck-mh-stats">
-      <div class="c-total"><small>Totale</small><b>${total}</b></div>
+    <div class="deck-mh-stats">${this.sectionStats(deck)}
+      <div class="c-ready"><small>Pronto</small><b>${report.percent}%</b></div>
+    </div>${this.legalityBadge(deck)}`;
+  }
+  // Riusa le classi c-main/c-extra/c-side (e la loro griglia a 5 colonne) per
+  // qualunque gioco: cambiano solo etichetta e conteggio mostrato.
+  sectionStats(deck) {
+    if (deck.game !== 'onepiece') return `
+      <div class="c-total"><small>Totale</small><b>${sectionTotal(deck, 'main') + sectionTotal(deck, 'extra') + sectionTotal(deck, 'side')}</b></div>
       <div class="c-main"><small>Main</small><b>${sectionTotal(deck, 'main')}</b></div>
       <div class="c-extra"><small>Extra</small><b>${sectionTotal(deck, 'extra')}</b></div>
-      <div class="c-side"><small>Side</small><b>${sectionTotal(deck, 'side')}</b></div>
-      <div class="c-ready"><small>Pronto</small><b>${report.percent}%</b></div>
-    </div>`;
+      <div class="c-side"><small>Side</small><b>${sectionTotal(deck, 'side')}</b></div>`;
+    const { counts } = getGameAdapter('onepiece').validateDeck(deck);
+    return `
+      <div class="c-total"><small>Leader</small><b>${counts.leader.count}/${counts.leader.target}</b></div>
+      <div class="c-main"><small>Main</small><b>${counts.main.count}/${counts.main.target}</b></div>
+      <div class="c-extra"><small>DON!!</small><b>${counts.don.count}/${counts.don.target}</b></div>
+      <div class="c-side"><small>Totale</small><b>${counts.leader.count + counts.main.count + counts.don.count}</b></div>`;
+  }
+  legalityBadge(deck) {
+    if (deck.game !== 'onepiece') return '';
+    const { valid, errors } = getGameAdapter('onepiece').validateDeck(deck);
+    if (valid) return `<span class="badge ok deck-legality-badge">✓ Mazzo regolare</span>`;
+    return `<div class="data-note warning deck-legality-note"><div><strong>${errors.length} ${errors.length === 1 ? 'problema' : 'problemi'} da correggere</strong><ul>${errors.map(error => `<li>${esc(error)}</li>`).join('')}</ul></div></div>`;
   }
   detailView(deck) { return this.editor(deck); }
   emptyView() { return `<section class="surface deck-empty">${icon('deck')}<h2>Il tuo primo mazzo parte da qui</h2><p>Aggiungi le carte dal catalogo oppure importa un file .ydk o una lista testuale.</p><button class="btn" data-deck-new>${icon('plus')} Crea mazzo</button></section>`; }
@@ -120,11 +140,12 @@ export class DeckController {
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     return `<div class="deck-mobile">
       ${this.editorHeader(deck, total, report)}
+      ${deck.game === 'onepiece' ? `<div class="data-note">${icon('bell')}Il salvataggio cloud di Leader/DON!! richiede ancora la migration Supabase in preparazione — per ora resta solo su questo dispositivo.</div>` : ''}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label><div data-deck-search-results class="deck-search-results"></div></div>
-      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${SECTIONS.map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${LABELS[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
+      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
       ${this.sectionGrid(deck, report)}
-      ${sheetCard ? this.cardSheet(sheetCard, report) : this.availabilityPeek(report)}
+      ${sheetCard ? this.cardSheet(sheetCard, report, deck) : this.availabilityPeek(report)}
       ${this.moreMenuOpen ? this.moreMenu(deck) : ''}
       ${this.missingPanelOpen ? this.missingOverlay(report) : ''}
     </div>`;
@@ -136,13 +157,9 @@ export class DeckController {
       <button type="button" class="btn secondary small" data-deck-save ${this.busy ? 'disabled' : ''}>${this.busy ? 'Salvataggio…' : 'Salva'}</button>
       <button type="button" class="deck-mh-icon" data-deck-more aria-label="Altre azioni" aria-expanded="${this.moreMenuOpen}">${icon('more')}</button>
     </header>
-    <div class="deck-mh-stats">
-      <div class="c-total"><small>Totale</small><b>${total}</b></div>
-      <div class="c-main"><small>Main</small><b>${sectionTotal(deck, 'main')}</b></div>
-      <div class="c-extra"><small>Extra</small><b>${sectionTotal(deck, 'extra')}</b></div>
-      <div class="c-side"><small>Side</small><b>${sectionTotal(deck, 'side')}</b></div>
+    <div class="deck-mh-stats">${this.sectionStats(deck)}
       <div class="c-ready"><small>Pronto</small><b>${report.percent}%</b></div>
-    </div>`;
+    </div>${this.legalityBadge(deck)}`;
   }
   sectionGrid(deck, report) {
     const cards = this.sortCards(deck.cards.filter(item => item.section === this.activeSection && this.matchesTypeFilter(item)));
@@ -177,17 +194,17 @@ export class DeckController {
     const info = report?.perCard.get(deckCardIdentityKey(item));
     return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
   }
-  cardSheet(item, report, { readonly = false } = {}) {
-    const otherSections = SECTIONS.filter(section => section !== item.section);
+  cardSheet(item, report, deck, { readonly = false } = {}) {
+    const otherSections = sectionsFor(deck).filter(section => section !== item.section);
     const info = report?.perCard.get(deckCardIdentityKey(item));
     return `<div class="deck-sheet" role="dialog" aria-label="Dettaglio carta ${esc(item.cardName)}">
       <button type="button" class="deck-sheet-close" data-deck-sheet-close aria-label="Chiudi dettaglio">${icon('arrow')}</button>
       <div class="deck-sheet-body">
         <span class="deck-sheet-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="">` : icon('card')}</span>
-        <span class="deck-sheet-copy"><strong>${esc(item.cardName)}</strong><small>${LABELS[item.section]}${item.printingSetCode ? ` · ${esc(item.printingSetCode)}` : ''}</small>${item.banTcg ? `<i class="deck-sheet-badge ${item.banTcg}">${esc(BAN_LABELS[item.banTcg] || '')}</i>` : ''}${info?.borrowed > 0 ? `<i class="deck-sheet-badge loan">${icon('swap')} ${ownershipLabel(info)}</i>` : ''}</span>
+        <span class="deck-sheet-copy"><strong>${esc(item.cardName)}</strong><small>${labelsFor(deck)[item.section]}${item.printingSetCode ? ` · ${esc(item.printingSetCode)}` : ''}</small>${item.banTcg ? `<i class="deck-sheet-badge ${item.banTcg}">${esc(BAN_LABELS[item.banTcg] || '')}</i>` : ''}${info?.borrowed > 0 ? `<i class="deck-sheet-badge loan">${icon('swap')} ${ownershipLabel(info)}</i>` : ''}</span>
       </div>
       <div class="deck-sheet-stepper">${readonly ? '' : `<button type="button" data-deck-sheet-qty="minus" aria-label="Rimuovi una copia">−</button>`}<span>${item.quantity}</span>${readonly ? '' : `<button type="button" data-deck-sheet-qty="plus" aria-label="Aggiungi una copia">+</button>`}</div>
-      ${readonly ? '' : `<div class="deck-sheet-actions">${otherSections.map(section => `<button type="button" data-deck-sheet-move="${section}">${icon('swap')} In ${LABELS[section].replace(' Deck', '')}</button>`).join('')}<button type="button" class="danger" data-deck-sheet-remove>${icon('trash')} Rimuovi</button></div>`}
+      ${readonly ? '' : `<div class="deck-sheet-actions">${otherSections.map(section => `<button type="button" data-deck-sheet-move="${section}">${icon('swap')} In ${labelsFor(deck)[section].replace(' Deck', '')}</button>`).join('')}<button type="button" class="danger" data-deck-sheet-remove>${icon('trash')} Rimuovi</button></div>`}
       ${this.availabilityFoot(report)}
     </div>`;
   }
@@ -217,7 +234,7 @@ export class DeckController {
     </aside></div>`;
   }
   importView() { return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-import-close><aside class="card-detail deck-import" role="dialog" aria-modal="true"><button class="detail-close" data-deck-import-close aria-label="Chiudi">×</button><span class="eyebrow">Importazione</span><h2>Carica un mazzo</h2><p>Supporta file .ydk, passcode Yu-Gi-Oh! e liste del tipo “3 Nome carta”.</p><label>File YDK o testo<input type="file" data-deck-file accept=".ydk,.txt,text/plain"></label><label>Oppure incolla la lista<textarea data-deck-import-text rows="12" placeholder="#main&#10;46986414&#10;46986414&#10;#extra&#10;..."></textarea></label><button class="btn wide" data-deck-import-run ${this.busy ? 'disabled' : ''}>${this.busy ? 'Importazione…' : 'Importa nel mazzo'}</button></aside></div>`; }
-  coverPickerView(deck) { const cards = uniqueDeckCards(deck.cards), template = normalizeDeckBoxTemplate(deck.deckBoxTemplate); return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-cover-close><aside class="card-detail deck-cover-picker" role="dialog" aria-modal="true" aria-labelledby="deck-cover-title"><button class="detail-close" data-deck-cover-close aria-label="Chiudi">×</button><span class="eyebrow">Deck Box</span><h2 id="deck-cover-title">Personalizza la Deck Box</h2><p>Scegli uno dei tre modelli F.P.T oppure mantieni la versione dinamica con la carta signature.</p><h3>Modello Deck Box</h3><div class="deck-template-options">${Object.entries(DECK_BOX_TEMPLATES).map(([value, option]) => `<button data-deck-box-template="${value}" class="${template === value ? 'active' : ''}">${option.image ? `<img src="${esc(option.image)}" alt="${esc(option.label)}" loading="lazy">` : `<span>${icon('deck')}</span>`}<strong>${esc(option.label)}</strong>${template === value ? '<b>Selezionato</b>' : ''}</button>`).join('')}</div><div class="deck-signature-heading"><h3>Carta signature</h3><p>Usata dal modello dinamico. Deve essere già presente nel mazzo.</p></div>${cards.length ? `<div class="deck-cover-options">${cards.map(card => `<button data-deck-cover-card="${esc(card.catalogCardId)}" class="${String(deck.signatureCardId || '') === String(card.catalogCardId) ? 'active' : ''}">${card.imageUrl ? `<img src="${esc(card.imageUrl)}" alt="${esc(card.cardName)}" loading="lazy">` : icon('card')}<span><strong>${esc(card.cardName)}</strong><small>${LABELS[card.section] || card.section}</small></span>${String(deck.signatureCardId || '') === String(card.catalogCardId) ? '<b>Signature</b>' : icon('arrow')}</button>`).join('')}</div>` : '<div class="deck-signature-empty">Aggiungi almeno una carta al mazzo per scegliere la signature.</div>'}<button class="btn secondary wide deck-cover-back" data-deck-cover-close>Torna al mazzo</button></aside></div>`; }
+  coverPickerView(deck) { const cards = uniqueDeckCards(deck.cards), template = normalizeDeckBoxTemplate(deck.deckBoxTemplate); return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-cover-close><aside class="card-detail deck-cover-picker" role="dialog" aria-modal="true" aria-labelledby="deck-cover-title"><button class="detail-close" data-deck-cover-close aria-label="Chiudi">×</button><span class="eyebrow">Deck Box</span><h2 id="deck-cover-title">Personalizza la Deck Box</h2><p>Scegli uno dei tre modelli F.P.T oppure mantieni la versione dinamica con la carta signature.</p><h3>Modello Deck Box</h3><div class="deck-template-options">${Object.entries(DECK_BOX_TEMPLATES).map(([value, option]) => `<button data-deck-box-template="${value}" class="${template === value ? 'active' : ''}">${option.image ? `<img src="${esc(option.image)}" alt="${esc(option.label)}" loading="lazy">` : `<span>${icon('deck')}</span>`}<strong>${esc(option.label)}</strong>${template === value ? '<b>Selezionato</b>' : ''}</button>`).join('')}</div><div class="deck-signature-heading"><h3>Carta signature</h3><p>Usata dal modello dinamico. Deve essere già presente nel mazzo.</p></div>${cards.length ? `<div class="deck-cover-options">${cards.map(card => `<button data-deck-cover-card="${esc(card.catalogCardId)}" class="${String(deck.signatureCardId || '') === String(card.catalogCardId) ? 'active' : ''}">${card.imageUrl ? `<img src="${esc(card.imageUrl)}" alt="${esc(card.cardName)}" loading="lazy">` : icon('card')}<span><strong>${esc(card.cardName)}</strong><small>${labelsFor(deck)[card.section] || card.section}</small></span>${String(deck.signatureCardId || '') === String(card.catalogCardId) ? '<b>Signature</b>' : icon('arrow')}</button>`).join('')}</div>` : '<div class="deck-signature-empty">Aggiungi almeno una carta al mazzo per scegliere la signature.</div>'}<button class="btn secondary wide deck-cover-back" data-deck-cover-close>Torna al mazzo</button></aside></div>`; }
   printingPickerView() { const picker = this.printingPicker; return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-printing-close><aside class="card-detail deck-printing-picker" role="dialog" aria-modal="true"><button class="detail-close" data-deck-printing-close aria-label="Chiudi">×</button><span class="eyebrow">Market Watch</span><h2>Seleziona la printing</h2><p>${esc(picker.cardName)} · nessuna scelta viene effettuata automaticamente.</p>${picker.loading ? '<div class="deck-printing-loading"><span class="loading-spinner"></span> Caricamento printing…</div>' : picker.error ? `<div class="connection-banner error">${esc(picker.error)}</div>` : picker.options.length ? `<div class="deck-printing-options">${picker.options.map(option => `<button data-deck-printing-option="${esc(option.printingId)}">${option.imageUrl ? `<img src="${esc(option.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(option.setCode || 'Set non indicato')}</strong><small>${esc(option.setName || 'Espansione non indicata')} · ${esc(option.rarity || 'Rarità non indicata')}</small></span>${icon('arrow')}</button>`).join('')}</div>` : '<div class="empty-state compact"><h3>Nessuna printing disponibile</h3><p>Aggiungi prima una copia precisa alla Raccolta.</p></div>'}</aside></div>`; }
   bind(root = document) {
     // L'attributo HTML autoplay funziona solo per video muti: per avere
@@ -269,20 +286,24 @@ export class DeckController {
   openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); this.onRender(); }
   showGallery(render = true) { this.screen = 'gallery'; this.teamDetailId = ''; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; if (render) this.onRender(); }
   create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (render) this.onRender(); }
-  resetEditorView() { this.activeSection = 'main'; this.targetSection = 'main'; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; }
-  setSection(section) { if (!SECTIONS.includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
+  // Riparte sempre dalla prima sezione dell'adapter (Leader per One Piece,
+  // Main per Yu-Gi-Oh): un mazzo OP nuovo deve aprirsi sul Leader, non su un
+  // Main tab che a colori non filtrati non avrebbe senso senza di lui.
+  resetEditorView() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = sectionsFor(deck)[0] || 'main'; this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; }
+  setSection(section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sectionsFor(deck).includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
   setTypeFilter(value) { if (!TYPE_FILTERS.some(f => f.value === value)) return; this.cardTypeFilter = value; this.onRender(); }
   selectCard(catalogCardId, section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!deck?.cards.some(item => item.catalogCardId === catalogCardId && item.section === section)) return; this.selectedCard = { catalogCardId, section }; this.missingPanelOpen = false; this.onRender(); }
   closeSheet() { this.selectedCard = null; this.onRender(); }
   sheetQuantity(delta) { const sel = this.selectedCard; if (!sel) return; this.quantity(sel.catalogCardId, sel.section, delta); if (!this.active()?.cards.some(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section)) this.selectedCard = null; this.onRender(); }
   moveSelectedCard(toSection) {
     const deck = this.active(), sel = this.selectedCard;
-    if (!deck || !sel || !SECTIONS.includes(toSection) || toSection === sel.section) return;
+    if (!deck || !sel || !sectionsFor(deck).includes(toSection) || toSection === sel.section) return;
     const item = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === sel.section);
     if (!item) return;
-    const destination = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === toSection);
-    if (destination) { destination.quantity = Math.min(99, destination.quantity + item.quantity); deck.cards = deck.cards.filter(card => card !== item); }
-    else item.section = toSection;
+    if (deck.game === 'onepiece' && toSection === 'leader') deck.cards = deck.cards.filter(card => card === item || card.section !== 'leader');
+    const cap = copyCap(deck, toSection), destination = deck.cards.find(card => card.catalogCardId === sel.catalogCardId && card.section === toSection);
+    if (destination) { destination.quantity = Math.min(cap, destination.quantity + item.quantity); deck.cards = deck.cards.filter(card => card !== item); }
+    else { item.section = toSection; item.quantity = Math.min(cap, item.quantity); }
     this.selectedCard = { catalogCardId: sel.catalogCardId, section: toSection };
     this.activeSection = toSection;
     this.markDirty(deck); this.onRender();
@@ -328,9 +349,23 @@ export class DeckController {
     if (query.trim().length < 3) { box.innerHTML = ''; this.searchResults = []; return; }
     box.innerHTML = '<span>Ricerca…</span>';
     this.searchTimer = setTimeout(async () => {
-      this.searchResults = await this.searchCards(query, this.state.game);
+      const results = await this.searchCards(query, this.state.game);
+      this.searchResults = this.filterByLeaderColor(results);
       this.renderSearchResultsList();
     }, 260);
+  }
+  // Con un Leader già scelto, filtra automaticamente i risultati di ricerca
+  // del Main sulle carte del suo stesso colore — ma solo se il filtro lascia
+  // almeno un risultato: dati colore mancanti/parziali non devono far
+  // sparire tutta la ricerca.
+  filterByLeaderColor(results) {
+    const deck = this.active();
+    if (!deck || deck.game !== 'onepiece' || this.targetSection !== 'main') return results;
+    const leaderColors = deck.cards.find(item => item.section === 'leader')?.colors;
+    if (!Array.isArray(leaderColors) || !leaderColors.length) return results;
+    const matcher = getGameAdapter('onepiece').cardMatchesLeaderColor;
+    const filtered = results.filter(card => matcher(card, leaderColors));
+    return filtered.length ? filtered : results;
   }
   renderSearchResultsList() {
     const current = document.querySelector('[data-deck-search-results]');
@@ -341,9 +376,13 @@ export class DeckController {
   closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchResults = []; clearTimeout(this.searchTimer); }
   add(card, section = this.targetSection, quantity = 1) {
     const deck = this.active(); if (!deck || !card) return;
-    const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id), existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination);
-    if (existing) { existing.quantity = Math.min(99, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; }
-    else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity });
+    const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
+    // One Piece: il Leader è uno slot unico (sostituisce, non si accumula).
+    if (deck.game === 'onepiece' && destination === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader');
+    const cap = copyCap(deck, destination), colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined;
+    const existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination);
+    if (existing) { existing.quantity = Math.min(cap, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; }
+    else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(cap, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
     this.rememberCardType(id, card.type);
     this.markDirty(deck);
@@ -358,7 +397,7 @@ export class DeckController {
     }
   }
   rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
-  quantity(id, section, delta) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section); if (!item) return; item.quantity += delta; if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
+  quantity(id, section, delta) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section); if (!item) return; item.quantity = Math.min(copyCap(deck, section), item.quantity + delta); if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
   chooseCover(catalogCardId) { const deck = this.active(); if (!deck?.cards.some(card => String(card.catalogCardId) === String(catalogCardId))) return this.onToast('La cover deve appartenere al mazzo'); deck.signatureCardId = String(catalogCardId); this.coverPickerOpen = false; this.markDirty(deck); this.onToast('Carta signature aggiornata'); this.onRender(); }
   chooseDeckBoxTemplate(value) { const deck = this.active(), template = normalizeDeckBoxTemplate(value), preset = DECK_BOX_TEMPLATES[template]; if (!deck) return; deck.deckBoxTemplate = template; if (preset.theme) deck.deckTheme = preset.theme; this.coverPickerOpen = false; this.markDirty(deck); this.onToast(`Deck Box: ${preset.label}`); this.onRender(); }
   async openPrintingPicker(catalogCardId, section) { const deck = this.active(), card = deck?.cards.find(item => item.catalogCardId === catalogCardId && item.section === section); if (!deck?.persisted) return this.onToast('Salva il mazzo prima di selezionare la printing'); this.printingPicker = { catalogCardId, section, cardName: card?.cardName || 'Carta', loading: true, error: '', options: [] }; this.onRender(); try { const rows = await this.api.deckPrintingOptions(deck.id, catalogCardId); if (!this.printingPicker) return; this.printingPicker.options = (rows || []).map(row => ({ printingId: row.printing_id || row.printingId, setCode: row.set_code || row.setCode || '', setName: row.set_name || row.setName || '', rarity: row.rarity || '', imageUrl: row.image_url || row.imageUrl || '' })); } catch (error) { if (this.printingPicker) this.printingPicker.error = error.message || 'Printing non disponibili'; } finally { if (this.printingPicker) this.printingPicker.loading = false; this.onRender(); } }
@@ -366,7 +405,7 @@ export class DeckController {
   async save() { const deck = this.active(); if (!deck || !deck.name.trim() || !this.isOnline()) return this.onToast('Nome del mazzo o connessione non disponibili'); for (const card of deck.cards) card.catalogCardId = canonicalCatalogCardId(card.catalogCardId, deck.game) || card.catalogCardId; const oldId = deck.id; this.busy = true; this.onRender(); try { const result = await this.api.saveDeck(deck), id = String(result?.id || result || oldId); this.clearDraft(oldId); if (result?.deckBoxPersisted === false) { deck.id = id; deck.persisted = true; deck.dirty = true; this.persistDrafts(); await this.load(); this.onToast('Mazzo salvato · Deck Box locale fino alla migration'); } else { await this.load(); this.onToast('Mazzo salvato'); } this.activeId = id; this.previewId = id; } catch (error) { this.error = error.message || 'Salvataggio non riuscito'; } finally { this.busy = false; this.onRender(); } }
   async remove() { const deck = this.active(); if (!deck?.persisted || !confirm(`Eliminare “${deck.name}”?`)) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
-  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id), existing = deck.cards.find(item => item.catalogCardId === id && item.section === section); if (existing) { existing.quantity += quantity; existing.banTcg = card.banTcg || existing.banTcg || ''; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
+  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const cap = copyCap(deck, section), colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section); if (existing) { existing.quantity = Math.min(cap, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(cap, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
   markDirty(deck) { deck.dirty = true; deck.ownerSlug = this.state.currentUser; this.persistDrafts(); }
   persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); }
   clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); }
@@ -451,6 +490,12 @@ function uniqueDeckCards(cards = []) { const seen = new Set(); return cards.filt
 function readDrafts() { try { const value = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } }
 export function isExtraDeckCard(card) { return /fusion|synchro|xyz|link/i.test(String(card?.type || '')); }
 function sectionTotal(deck, section) { return deck.cards.filter(card => card.section === section).reduce((sum, card) => sum + card.quantity, 0); }
+// Limite copie per singolo catalogCardId in una sezione: 1 per il Leader
+// (slot unico), 4 per il Main One Piece, 99 (invariato) per tutto il resto.
+function copyCap(deck, section) {
+  if (deck?.game === 'onepiece') { if (section === 'leader') return 1; if (section === 'main') return 4; }
+  return 99;
+}
 function coarseCardType(rawType) { const type = String(rawType || '').toLowerCase(); if (!type) return ''; if (type.includes('spell')) return 'spell'; if (type.includes('trap')) return 'trap'; return 'monster'; }
 function readTypeCache() { try { const value = JSON.parse(localStorage.getItem(CARD_TYPE_CACHE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
 function writeTypeCache(map) { try { localStorage.setItem(CARD_TYPE_CACHE_KEY, JSON.stringify(map)); } catch {} }

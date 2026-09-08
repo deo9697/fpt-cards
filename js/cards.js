@@ -45,7 +45,6 @@ export function catalogImageNeedsRepair(catalogCardId, imageUrl, game = 'yugioh'
 }
 
 export async function searchCards(query, game = 'yugioh') {
-  if (game === 'onepiece') return searchOnePieceCards(query);
   const value = query.trim();
   if (value.length < 3) return [];
   const key = `yugioh:${normalizeName(value)}`;
@@ -83,7 +82,6 @@ export async function searchCards(query, game = 'yugioh') {
 }
 
 export async function findCard(name, game = 'yugioh') {
-  if (game === 'onepiece') return findOnePieceCard(name);
   const value = name.trim();
   if (!value) return null;
   const [italianExact, englishExact] = await Promise.all([
@@ -285,55 +283,6 @@ async function cardsById(id) {
   if (candidates.length) identityCache.set(value, candidates);
   else identityCache.delete(value);
   return candidates;
-}
-
-const ONE_PIECE_ENDPOINTS = [
-  'https://optcgapi.com/api/sets/filtered/',
-  'https://optcgapi.com/api/decks/filtered/',
-  'https://optcgapi.com/api/promos/filtered/'
-];
-
-async function searchOnePieceCards(query) {
-  const value = query.trim();
-  if (value.length < 3) return [];
-  const key = `onepiece:${value.toLowerCase()}`;
-  if (cache.has(key)) return cache.get(key);
-  const batches = await Promise.all(ONE_PIECE_ENDPOINTS.map(async endpoint => {
-    try {
-      const response = await fetch(`${endpoint}?card_name=${encodeURIComponent(value)}`);
-      return response.ok ? await response.json() : [];
-    } catch { return []; }
-  }));
-  const unique = new Map();
-  batches.flat().forEach(card => {
-    const mapped = mapOnePieceCard(card);
-    if (mapped.id && !unique.has(mapped.id)) unique.set(mapped.id, mapped);
-  });
-  const results = [...unique.values()].slice(0, 8);
-  cache.set(key, results);
-  return results;
-}
-
-async function findOnePieceCard(name) {
-  const matches = await searchOnePieceCards(name);
-  const normalized = name.trim().toLowerCase();
-  return matches.find(card => card.name.toLowerCase() === normalized) || null;
-}
-
-function mapOnePieceCard(card) {
-  const setCode = card.card_set_id || card.card_image_id || '';
-  return {
-    id: card.card_image_id || card.card_set_id || '',
-    name: card.card_name || '',
-    type: [card.card_set_id, card.card_type].filter(Boolean).join(' · '),
-    image: card.card_image || '',
-    fullImage: card.card_image || '',
-    printings: [{
-      setCode,
-      setName: card.card_set_name || card.set_name || '',
-      rarity: card.card_rarity || card.rarity || ''
-    }]
-  };
 }
 
 async function requestCards(parameters) {
