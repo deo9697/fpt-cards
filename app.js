@@ -28,6 +28,7 @@ function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 let guestShare;
+const displayedXpProgress = new Map();
 let page = routeFromHash();
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let selectedLoanId = '';
@@ -117,6 +118,21 @@ function setFastScanRoute(mode){
 }
 function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); if(page==='requests')void refreshCollectionShareRequests(); if(previous!=='stats'&&page==='stats')stats.checkLossStreakEasterEgg(); }
 
+function animateXpFill() {
+  const key = state.currentUser;
+  if (!key) return;
+  const fills = [...document.querySelectorAll('.xp-strip .xp-bar > i')];
+  if (!fills.length) return;
+  const target = Math.max(0, Math.min(100, Number(fills[0].style.getPropertyValue('--progress')) || 0));
+  const previous = displayedXpProgress.get(key);
+  displayedXpProgress.set(key, target);
+  if (previous == null || previous === target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const fill of fills) {
+    if (!fill.animate) continue;
+    const next = Math.max(0, Math.min(100, Number(fill.style.getPropertyValue('--progress')) || 0));
+    fill.animate([{width:previous+'%'},{width:next+'%'}], {duration:1100,easing:'cubic-bezier(.22,.68,.16,1)'});
+  }
+}
 function render(force = false) {
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
@@ -135,6 +151,7 @@ function render(force = false) {
   document.body.dataset.page = state.currentUser ? page : 'login';
   document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
   bind();
+  animateXpFill();
   if (!state.currentUser) void loadLoginFeaturedCards();
 }
 
@@ -157,6 +174,7 @@ function renderRoute() {
     if (node) node.replaceWith(node.cloneNode(true));
   }
   bind();
+  animateXpFill();
 }
 
 function loginView() {

@@ -28,7 +28,7 @@ if (!Array.isArray(state.collection.team)) state.collection.team = [];
 if (!Array.isArray(state.decks)) state.decks = [];
 if (Array.isArray(state.members) && state.members.length) setMembers(state.members);
 export const GAMES = {
-  yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', logo:'assets/game-logos/yugioh.png' },
+  yugioh: { id:'yugioh', name:'Yu-Gi-Oh!', short:'Yu-Gi-Oh!', logo:'assets/game-logos/yugioh-tcg.png' },
   onepiece: { id:'onepiece', name:'One Piece Card Game', short:'One Piece', logo:'assets/game-logos/onepiece.webp' }
 };
 export const FUTURE_GAMES = [

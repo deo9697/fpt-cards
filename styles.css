@@ -2321,3 +2321,58 @@ button.market-row:hover { background:#15121d; }
 @media(prefers-reduced-motion:reduce) {
   .deck-page.is-gallery .deck-box-card { transition:none; }
 }
+
+/* Full-width game standard; keep the official mark flat and readable. */
+.duel-welcome-logo { align-items:stretch;gap:14px;padding-inline:0; }
+.duel-welcome-logo .duel-game-logo {
+  position:relative;isolation:isolate;display:flex;width:100%;height:clamp(100px,12vw,154px);
+  padding:16px 28px;border-radius:5px 5px 18px 18px;overflow:hidden;
+  border-block:1px solid rgba(var(--accent-rgb),.45);
+  background:linear-gradient(90deg,#100d18,#302033 25%,#171421 50%,#302033 75%,#100d18);
+  box-shadow:0 12px 24px #0005,inset 0 2px 0 #ffffff14,inset 0 -3px 10px #0006;
+}
+.duel-welcome-logo .duel-game-logo::before {
+  content:'';position:absolute;z-index:-1;inset:-15% -8%;
+  background:linear-gradient(100deg,transparent 7%,#0008 20%,#ffffff13 30%,transparent 43%,#0006 59%,#ffffff12 72%,transparent 90%);
+  transform-origin:center;animation:game-standard-folds 9s ease-in-out infinite alternate;
+}
+.duel-welcome-logo .duel-game-logo::after {
+  content:'';position:absolute;inset:7px 0;border-block:1px solid #d8b57a38;pointer-events:none;
+}
+.duel-welcome-logo .duel-game-logo img { width:min(65%,300px);height:100%;max-width:300px;object-fit:contain;filter:drop-shadow(0 4px 6px #000b); }
+.duel-welcome-logo>p { text-align:center; }
+@keyframes game-standard-folds {
+  from { transform:translateX(-3%) skewY(-.7deg) scaleY(1.03);opacity:.7; }
+  to { transform:translateX(3%) skewY(.7deg) scaleY(.97);opacity:1; }
+}
+/* XP juice: a glossy body, slow internal currents, and a rounded meniscus. */
+.xp-bar { height:10px;background:#10190f;box-shadow:inset 0 1px 4px #000b,0 0 0 1px #a2dd4930; }
+.xp-bar.large { height:16px; }
+.xp-bar>i {
+  background:linear-gradient(180deg,#e1ff99 0%,#a8ec46 18%,#6ec321 48%,#3b8317 82%,#285b12);
+  box-shadow:inset -3px 0 5px #e5ffa377,inset 0 -2px 3px #163c0b66,0 0 10px #8ce13860;
+  transition:width 1.1s cubic-bezier(.22,.68,.16,1);
+}
+.xp-bar>i::before {
+  content:'';position:absolute;inset:-65% -40%;border-radius:42%;
+  background:radial-gradient(ellipse at 25% 45%,#e7ffbca6 0 8%,transparent 30%),radial-gradient(ellipse at 70% 60%,#c9ff7666 0 10%,transparent 34%);
+  animation:xp-juice-current 5.8s ease-in-out infinite alternate;
+}
+.xp-bar>i::after {
+  content:'';position:absolute;inset:1px 2px 40%;border-radius:999px;
+  background:linear-gradient(90deg,transparent,#f0ffdba8 30%,#f0ffdb38 70%,transparent);
+  background-size:100% 100%;opacity:.65;mix-blend-mode:screen;
+  animation:xp-juice-surface 4.2s ease-in-out infinite alternate;
+}
+@keyframes xp-juice-current {
+  from { transform:translateX(-9%) translateY(4%) rotate(-3deg); }
+  to { transform:translateX(9%) translateY(-4%) rotate(3deg); }
+}
+@keyframes xp-juice-surface {
+  from { transform:translateX(-5%) scaleY(.7);opacity:.4; }
+  to { transform:translateX(5%) scaleY(1.15);opacity:.85; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .duel-welcome-logo .duel-game-logo::before,.xp-bar>i::before,.xp-bar>i::after { animation:none; }
+  .xp-bar>i { transition:none; }
+}
