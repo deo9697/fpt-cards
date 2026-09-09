@@ -3,8 +3,49 @@ export const ONE_PIECE_LABELS = { leader: 'Leader', main: 'Main Deck', don: 'DON
 
 const LEADER_COUNT = 1;
 const MAIN_DECK_SIZE = 50;
-const DON_DECK_SIZE = 10;
+export const DON_DECK_SIZE = 10;
 const MAIN_CARD_COPY_LIMIT = 4;
+
+// Le 10 carte DON!! non si scelgono a mano come Leader/Main (P1.0): il Deck
+// Builder le aggiunge da solo cercando questo termine nel catalogo. Se il
+// catalogo non è ancora sincronizzato la ricerca torna vuota — nessun errore,
+// il riepilogo resta semplicemente a 0/10 finché il sync non gira.
+export const DON_SEARCH_QUERY = 'DON!!';
+export function isDonCard(card) {
+  const type = String(card?.type || '').toLowerCase();
+  if (type === 'don' || type.includes('don')) return true;
+  return /^don!!/i.test(String(card?.name || '').trim());
+}
+// Usato dall'import OPTCGSim (P1.1) per capire se una riga risolta va nella
+// sezione Leader o Main — OPTCGSim non marca la riga del Leader in alcun modo,
+// quindi la distinzione viene fatta guardando il tipo carta risolto dal
+// catalogo, non il testo importato.
+export function isLeaderCard(card) { return String(card?.type || '').toLowerCase().includes('leader'); }
+
+// Formato OPTCGSim: una carta logica per riga, es. "4xOP17-086" (tollera
+// "4x OP17-086", "4 OP17-086" o la riga nuda "OP17-086" per quantità 1).
+// Righe che non assomigliano a un codice carta vengono ignorate in silenzio
+// (spazi vuoti, intestazioni eventuali) — solo i codici RISOLTI ma non
+// trovati nel catalogo finiscono nell'elenco "non riconosciuti" mostrato
+// all'utente (decks.js).
+const OPTCG_LINE_RE = /^(\d{1,3})\s*[x×]?\s+([A-Za-z0-9]+-[A-Za-z0-9]+)$/i;
+const OPTCG_COMPACT_LINE_RE = /^(\d{1,3})\s*[x×]\s*([A-Za-z0-9]+-[A-Za-z0-9]+)$/i;
+const OPTCG_BARE_CODE_RE = /^([A-Za-z0-9]+-[A-Za-z0-9]+)$/i;
+export function parseOptcgList(text) {
+  const merged = new Map();
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const match = line.match(OPTCG_COMPACT_LINE_RE) || line.match(OPTCG_LINE_RE);
+    const bare = !match && line.match(OPTCG_BARE_CODE_RE);
+    if (!match && !bare) continue;
+    const code = (match ? match[2] : bare[1]).toUpperCase();
+    const quantity = match ? Math.max(1, Number(match[1])) : 1;
+    const existing = merged.get(code);
+    if (existing) existing.quantity += quantity; else merged.set(code, { code, quantity });
+  }
+  return [...merged.values()];
+}
 
 // Nessuna dipendenza dal DB: colori/costo/potere non sono ancora persistiti
 // (vedi STEP E), quindi il controllo colore Leader si applica solo se le
@@ -49,13 +90,3 @@ export function validateOnePieceDeck(deck) {
 }
 
 function sumQuantity(cards) { return cards.reduce((sum, card) => sum + Number(card.quantity || 0), 0); }
-
-// Usato sia dal validator sopra sia dal filtro automatico del Deck Builder
-// (decks.js) quando si cercano carte da aggiungere al Main con un Leader già
-// scelto. Nessun colore noto su uno dei due lati = non blocca nulla (dati
-// mancanti, non un vero conflitto).
-export function cardMatchesLeaderColor(card, leaderColors) {
-  if (!Array.isArray(leaderColors) || !leaderColors.length) return true;
-  if (!Array.isArray(card?.colors) || !card.colors.length) return true;
-  return card.colors.some(color => leaderColors.includes(color));
-}

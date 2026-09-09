@@ -30,8 +30,15 @@ export class DeckController {
   constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged } = {}) {
     Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged });
     this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchQuery = ''; this.searchOpen = false; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
+    // Import/export OPTCGSim (P1.1) sono un flusso a parte dal generico YDK,
+    // non lo riusano: formati e logiche di risoluzione troppo diversi.
+    this.optcgImportOpen = false; this.optcgImportBusy = false; this.optcgImportResult = null;
     this.scope = 'mine'; this.teamDecksAll = []; this.teamDetailId = ''; this.teamLoadInFlight = null; this.teamError = ''; this.teamLoaded = false; this.teamMemberFilter = '';
     this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.cardSort = 'type'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
+    // Filtri catalogo One Piece (P1.0.1): Espansione è sempre manuale, Colore
+    // parte "automatico" sui colori del Leader finché l'utente non tocca un
+    // chip (catalogColorsTouched) — a quel punto diventa un set esplicito.
+    this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false;
     this.cardTypes = readTypeCache(); this.typesLoading = false;
     // La ricerca carte del deck editor resta aperta finché non la chiudi
     // esplicitamente (X o indietro) — selezionare una carta da aggiungere
@@ -47,13 +54,14 @@ export class DeckController {
   async load() { if (this.loadInFlight) return this.loadInFlight; const request = (async () => { let remote = [], failure = null; try { remote = (await this.api.decks() || []).map(mapDeck); } catch (error) { failure = error; remote = this.state.decks || []; } const local = readDrafts().filter(deck => deck.ownerSlug === this.state.currentUser), merged = new Map(remote.map(deck => [deck.id, deck])); for (const draft of local) if (draft.dirty || !draft.persisted) merged.set(draft.id, draft); this.state.decks = [...merged.values()]; await this.refreshTcgBanlist(); if (!this.decks.some(deck => deck.id === this.activeId)) this.activeId = this.decks[0]?.id || ''; if (!this.decks.some(deck => deck.id === this.previewId)) this.previewId = this.activeId; if (failure) throw failure; return this.state.decks; })(); this.loadInFlight = request; try { return await request; } finally { if (this.loadInFlight === request) this.loadInFlight = null; } }
   async loadTeam() { if (this.teamLoadInFlight) return this.teamLoadInFlight; const request = (async () => { try { this.teamDecksAll = (await this.api.teamDecks() || []).map(mapTeamDeck); this.teamError = ''; } catch (error) { this.teamError = error.message || 'Mazzi del team non disponibili'; } finally { this.teamLoaded = true; } return this.teamDecksAll; })(); this.teamLoadInFlight = request; try { return await request; } finally { if (this.teamLoadInFlight === request) this.teamLoadInFlight = null; } }
   async refreshTcgBanlist() { if (!this.tcgBanlistStatuses || !(this.state.decks || []).some(deck => deck.game === 'yugioh')) return; const statuses = await this.tcgBanlistStatuses(); if (!statuses) return; for (const deck of this.state.decks || []) { if (deck.game !== 'yugioh') continue; for (const card of deck.cards || []) card.banTcg = statuses[String(card.catalogCardId)] || ''; } }
-  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}</section>`; }
+  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.optcgImportOpen ? this.optcgImportView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}</section>`; }
   galleryView() {
     const scope = this.scope, mineCount = this.decks.length, teamCount = this.teamDecks.length;
     const tabs = `<div class="tabs" role="tablist" aria-label="Ambito mazzi"><button type="button" data-deck-scope="mine" class="${scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${scope === 'mine'}">I miei mazzi <span>${mineCount}</span></button><button type="button" data-deck-scope="team" class="${scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${scope === 'team'}">Mazzi del team <span>${teamCount}</span></button></div>`;
     if (scope === 'team') return this.teamGalleryView(tabs);
     const decks = this.decks, preview = decks.find(deck => deck.id === this.previewId) || decks[0] || null;
-    return `<header class="deck-hero deck-gallery-hero"><div><span class="eyebrow">Mazzi</span><h1>Scegli il tuo mazzo</h1><p>La tua strategia, il tuo stile. Prepara il mazzo per la prossima sfida.</p></div><div class="deck-hero-actions"><button class="btn" data-deck-new>${icon('plus')} Nuovo mazzo</button><button class="btn secondary" data-deck-import-new>${icon('logout')} Importa lista / YDK</button></div></header>${tabs}${decks.length ? `<div class="deck-gallery-layout"><div class="deck-box-grid" aria-label="I tuoi mazzi">${decks.map(deck => this.galleryCard(deck, deck.id === preview?.id)).join('')}</div>${preview ? this.galleryPreview(preview) : ''}</div>` : this.emptyView()}`;
+    const isOnePiece = this.state.game === 'onepiece';
+    return `<header class="deck-hero deck-gallery-hero"><div><span class="eyebrow">Mazzi</span><h1>Scegli il tuo mazzo</h1><p>La tua strategia, il tuo stile. Prepara il mazzo per la prossima sfida.</p></div><div class="deck-hero-actions"><button class="btn" data-deck-new>${icon('plus')} Nuovo mazzo</button>${isOnePiece ? `<button class="btn secondary" data-deck-optcg-import-new>${icon('logout')} Importa da OPTCGSim</button>` : `<button class="btn secondary" data-deck-import-new>${icon('logout')} Importa lista / YDK</button>`}</div></header>${tabs}${decks.length ? `<div class="deck-gallery-layout"><div class="deck-box-grid" aria-label="I tuoi mazzi">${decks.map(deck => this.galleryCard(deck, deck.id === preview?.id)).join('')}</div>${preview ? this.galleryPreview(preview) : ''}</div>` : this.emptyView()}`;
   }
   teamGalleryView(tabs) {
     const allDecks = this.teamDecks;
@@ -93,10 +101,12 @@ export class DeckController {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { ownerSlug:deck.ownerSlug, loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
     const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section && (item.printingId || null) === (this.selectedCard.printingId || null)) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
+    const isOnePiece = deck.game === 'onepiece';
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
-      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
+      ${isOnePiece ? this.leaderHero(deck, { readonly:true }) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck, { readonly:true }) : this.availabilityPeek(report)}
       ${this.missingPanelOpen ? this.missingOverlay(report, { readonly:true, ownerName:deck.ownerName }) : ''}
@@ -121,9 +131,9 @@ export class DeckController {
       <div class="c-side"><small>Side</small><b>${sectionTotal(deck, 'side')}</b></div>`;
     const { counts } = getGameAdapter('onepiece').validateDeck(deck);
     return `
-      <div class="c-total"><small>Leader</small><b>${counts.leader.count}/${counts.leader.target}</b></div>
+      <div class="c-total"><small>Leader</small><b>${counts.leader.count}/${counts.leader.target}${counts.leader.count === counts.leader.target ? ' ✓' : ''}</b></div>
       <div class="c-main"><small>Main</small><b>${counts.main.count}/${counts.main.target}</b></div>
-      <div class="c-extra"><small>DON!!</small><b>${counts.don.count}/${counts.don.target}</b></div>
+      <div class="c-extra"><small>DON!!</small><b>${counts.don.count}/${counts.don.target}${counts.don.count === counts.don.target ? ' ✓' : ''}</b></div>
       <div class="c-side"><small>Totale</small><b>${counts.leader.count + counts.main.count + counts.don.count}</b></div>`;
   }
   legalityBadge(deck) {
@@ -138,16 +148,37 @@ export class DeckController {
     const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0);
     const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section && (item.printingId || null) === (this.selectedCard.printingId || null)) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
+    const isOnePiece = deck.game === 'onepiece';
     return `<div class="deck-mobile">
       ${this.editorHeader(deck, total, report)}
-      ${deck.game === 'onepiece' ? `<div class="data-note">${icon('bell')}Il salvataggio cloud di Leader/DON!! richiede ancora la migration Supabase in preparazione — per ora resta solo su questo dispositivo.</div>` : ''}
-      <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label><div data-deck-search-results class="deck-search-results"></div></div>
-      <div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>
+      <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label>${isOnePiece ? '<div data-deck-catalog-filters></div>' : ''}<div data-deck-search-results class="deck-search-results"></div></div>
+      ${isOnePiece ? this.leaderHero(deck) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck) : this.availabilityPeek(report)}
       ${this.moreMenuOpen ? this.moreMenu(deck) : ''}
       ${this.missingPanelOpen ? this.missingOverlay(report) : ''}
+    </div>`;
+  }
+  // Leader "hero" pinnata sopra la griglia Main (P1.0, opzione A scelta
+  // dall'utente dopo il mockup): niente più tab dedicato, il Leader resta
+  // sempre visibile. "Cambia" targetizza la ricerca generica sul Leader
+  // invece che sul Main; tappare la card apre il dettaglio (stepper/rimuovi)
+  // come una qualunque altra carta del mazzo.
+  leaderHero(deck, { readonly = false } = {}) {
+    const leader = deck.cards.find(item => item.section === 'leader');
+    if (!leader) return `<div class="leader-hero leader-hero-empty">
+      <span class="leader-hero-art">${icon('card')}</span>
+      <span class="leader-hero-copy"><small>Leader</small><strong>Nessuno scelto</strong></span>
+      ${readonly ? '' : `<button type="button" class="leader-change" data-deck-pick-leader>Scegli</button>`}
+    </div>`;
+    return `<div class="leader-hero">
+      <button type="button" class="leader-hero-main" data-deck-card-select="${esc(leader.catalogCardId)}" data-deck-card-select-section="leader" data-deck-card-select-printing="${esc(leader.printingId || '')}">
+        <span class="leader-hero-art">${leader.imageUrl ? `<img src="${esc(leader.imageUrl)}" alt="">` : icon('card')}</span>
+        <span class="leader-hero-copy"><small>Leader</small><strong>${esc(leader.cardName)}</strong>${(leader.colors || []).length ? `<span class="leader-hero-meta">${leader.colors.map(color => `<i class="leader-color-dot ${esc(String(color).toLowerCase())}" title="${esc(colorLabel(color))}"></i>`).join('')}</span>` : ''}</span>
+      </button>
+      ${readonly ? '' : `<button type="button" class="leader-change" data-deck-pick-leader>Cambia</button>`}
     </div>`;
   }
   editorHeader(deck, total, report) {
@@ -162,7 +193,10 @@ export class DeckController {
     </div>${this.legalityBadge(deck)}`;
   }
   sectionGrid(deck, report) {
-    const cards = this.sortCards(deck.cards.filter(item => item.section === this.activeSection && this.matchesTypeFilter(item)));
+    // One Piece non ha più un tab attivo da seguire (P1.0): la griglia mostra
+    // sempre il Main, Leader e DON!! vivono altrove (hero card / riepilogo).
+    const section = deck.game === 'onepiece' ? 'main' : this.activeSection;
+    const cards = this.sortCards(deck.cards.filter(item => item.section === section && this.matchesTypeFilter(item)));
     if (!cards.length) return `<div class="deck-section-empty">${icon('card')}<span>Nessuna carta${this.cardTypeFilter !== 'all' ? ' per questo filtro' : ' in questa sezione'}</span></div>`;
     return `<div class="deck-mobile-grid">${cards.map(item => this.cardTile(item, report)).join('')}</div>`;
   }
@@ -198,7 +232,9 @@ export class DeckController {
     return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
   }
   cardSheet(item, report, deck, { readonly = false } = {}) {
-    const otherSections = sectionsFor(deck).filter(section => section !== item.section);
+    // DON!! non è più raggiungibile dalla griglia (P1.0, gestito in automatico):
+    // non ha senso offrirlo come destinazione di uno spostamento manuale.
+    const otherSections = sectionsFor(deck).filter(section => section !== item.section && !(deck.game === 'onepiece' && section === 'don'));
     const info = report?.perCard.get(deckCardIdentityKey(item));
     return `<div class="deck-sheet" role="dialog" aria-label="Dettaglio carta ${esc(item.cardName)}">
       <button type="button" class="deck-sheet-close" data-deck-sheet-close aria-label="Chiudi dettaglio">${icon('arrow')}</button>
@@ -222,10 +258,14 @@ export class DeckController {
       <div class="deck-more-actions">
         <button type="button" class="btn secondary" data-deck-cover-open>${icon('deck')} Personalizza Deck Box</button>
         <button type="button" class="btn secondary" data-deck-new>${icon('plus')} Nuovo mazzo</button>
-        <button type="button" class="btn secondary" data-deck-import>${icon('logout')} Importa lista / YDK</button>
+        ${deck.game === 'onepiece' ? `<button type="button" class="btn secondary" data-deck-optcg-import>${icon('logout')} Importa da OPTCGSim</button><button type="button" class="btn secondary" data-deck-optcg-export>${icon('share')} Copia per OPTCGSim</button>` : `<button type="button" class="btn secondary" data-deck-import>${icon('logout')} Importa lista / YDK</button>`}
         <button type="button" class="btn secondary danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}>${icon('trash')} Elimina mazzo</button>
       </div>
     </aside></div>`;
+  }
+  optcgImportView() {
+    const result = this.optcgImportResult;
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-optcg-import-close><aside class="card-detail deck-import" role="dialog" aria-modal="true"><button class="detail-close" data-deck-optcg-import-close aria-label="Chiudi">×</button><span class="eyebrow">OPTCGSim</span><h2>Importa da OPTCGSim</h2><p>Incolla la decklist copiata da OPTCGSim (una riga per carta, es. <code>4xOP17-086</code>).</p><label>Decklist<textarea data-deck-optcg-import-text rows="12" placeholder="1xOP13-004&#10;4xOP17-086&#10;3xOP01-016"></textarea></label><button class="btn wide" data-deck-optcg-import-run ${this.optcgImportBusy ? 'disabled' : ''}>${this.optcgImportBusy ? 'Importazione…' : 'Importa nel mazzo'}</button>${result ? `<div class="collection-save-status optcg-import-result"><strong>${result.resolved}/${result.total} carte riconosciute</strong>${result.unresolved.length ? `<p>Codici non riconosciuti: ${result.unresolved.map(code => esc(code)).join(', ')}</p>` : ''}${result.errors.length ? `<p>${result.errors.length} ${result.errors.length === 1 ? 'problema' : 'problemi'} di validazione: ${result.errors.map(esc).join(' · ')}</p>` : '<p>✓ Mazzo regolare</p>'}</div>` : ''}</aside></div>`;
   }
   missingOverlay(report, { readonly = false, ownerName = '' } = {}) {
     return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-missing-close><aside class="card-detail deck-missing-panel" role="dialog" aria-modal="true" aria-label="Carte mancanti">
@@ -272,7 +312,13 @@ export class DeckController {
     root.querySelectorAll('[data-deck-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.importOpen = false; this.onRender(); }));
     root.querySelector('[data-deck-file]')?.addEventListener('change', async event => { const text = await event.target.files?.[0]?.text(); const field = root.querySelector('[data-deck-import-text]'); if (field && text != null) field.value = text; });
     root.querySelector('[data-deck-import-run]')?.addEventListener('click', () => void this.importText(root.querySelector('[data-deck-import-text]')?.value || ''));
+    root.querySelectorAll('[data-deck-optcg-import]').forEach(button => button.addEventListener('click', () => { if (!this.active()) this.create(false); this.optcgImportResult = null; this.optcgImportOpen = true; this.moreMenuOpen = false; this.onRender(); }));
+    root.querySelector('[data-deck-optcg-import-new]')?.addEventListener('click', () => { this.create(false); this.optcgImportResult = null; this.optcgImportOpen = true; this.onRender(); });
+    root.querySelectorAll('[data-deck-optcg-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.optcgImportOpen = false; this.optcgImportResult = null; this.onRender(); }));
+    root.querySelector('[data-deck-optcg-import-run]')?.addEventListener('click', () => void this.importOptcgList(root.querySelector('[data-deck-optcg-import-text]')?.value || ''));
+    root.querySelectorAll('[data-deck-optcg-export]').forEach(button => button.addEventListener('click', () => { this.moreMenuOpen = false; this.onRender(); void this.copyOptcgExport(); }));
     root.querySelectorAll('[data-deck-section]').forEach(button => button.addEventListener('click', () => this.setSection(button.dataset.deckSection)));
+    root.querySelector('[data-deck-pick-leader]')?.addEventListener('click', () => this.pickLeader());
     root.querySelectorAll('[data-deck-type-filter]').forEach(button => button.addEventListener('click', () => this.setTypeFilter(button.dataset.deckTypeFilter)));
     root.querySelector('[data-deck-sort-cycle]')?.addEventListener('click', () => this.cycleSort());
     root.querySelectorAll('[data-deck-card-select]').forEach(button => button.addEventListener('click', () => this.selectCard(button.dataset.deckCardSelect, button.dataset.deckCardSelectSection, button.dataset.deckCardSelectPrinting || null)));
@@ -288,12 +334,40 @@ export class DeckController {
   open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); this.onRender(); }
   openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); this.onRender(); }
   showGallery(render = true) { this.screen = 'gallery'; this.teamDetailId = ''; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; if (render) this.onRender(); }
-  create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (render) this.onRender(); }
-  // Riparte sempre dalla prima sezione dell'adapter (Leader per One Piece,
-  // Main per Yu-Gi-Oh): un mazzo OP nuovo deve aprirsi sul Leader, non su un
-  // Main tab che a colori non filtrati non avrebbe senso senza di lui.
-  resetEditorView() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = sectionsFor(deck)[0] || 'main'; this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; }
+  create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (deck.game === 'onepiece') void this.autofillDon(deck); if (render) this.onRender(); }
+  // Le 10 carte DON!! (P1.0) non passano più da un tab dedicato: ogni mazzo
+  // One Piece nuovo le riceve subito in automatico cercandole nel catalogo.
+  // Se il catalogo non è ancora sincronizzato la ricerca torna vuota — resta
+  // semplicemente 0/10 nel riepilogo finché il sync non gira, nessun errore
+  // mostrato all'utente.
+  async autofillDon(deck) {
+    const adapter = getGameAdapter(deck.game);
+    if (!adapter.donSearchQuery || !adapter.donDeckSize || deck.cards.some(card => card.section === 'don')) return;
+    try {
+      const results = await this.searchCards(adapter.donSearchQuery, deck.game);
+      const card = results.find(adapter.isDonCard) || results[0];
+      if (!card || !this.decks.some(d => d.id === deck.id)) return;
+      this.addSilent(card, 'don', adapter.donDeckSize);
+      this.persistDrafts();
+      this.onRender();
+    } catch {}
+  }
+  // Riparte sempre dalla prima sezione dell'adapter per Yu-Gi-Oh (Main). Per
+  // One Piece il Leader ha ora la sua card dedicata (P1.0) fuori dai tab, così
+  // la ricerca generica targetizza subito il Main invece del Leader.
+  resetEditorView() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = deck?.game === 'onepiece' ? 'main' : (sectionsFor(deck)[0] || 'main'); this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false; }
   setSection(section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sectionsFor(deck).includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
+  // Apre la ricerca generica targetizzata sul Leader (bottone "Scegli"/"Cambia"
+  // della hero, P1.0) — stessa apertura che fa `search()` digitando, così il
+  // tasto indietro/la X la chiudono allo stesso modo.
+  pickLeader() {
+    const deck = this.active(); if (!deck) return;
+    this.targetSection = 'leader';
+    if (!this.searchOpen) { this.searchOpen = true; history.pushState({ deckSearch:true }, '', location.href); }
+    this.onRender();
+    this.renderSearchResultsList();
+    setTimeout(() => document.querySelector('[data-deck-search]')?.focus(), 0);
+  }
   setTypeFilter(value) { if (!TYPE_FILTERS.some(f => f.value === value)) return; this.cardTypeFilter = value; this.onRender(); }
   selectCard(catalogCardId, section, printingId = null) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!deck?.cards.some(item => item.catalogCardId === catalogCardId && item.section === section && (item.printingId || null) === (printingId || null))) return; this.selectedCard = { catalogCardId, section, printingId: printingId || null }; this.missingPanelOpen = false; this.onRender(); }
   closeSheet() { this.selectedCard = null; this.onRender(); }
@@ -317,6 +391,10 @@ export class DeckController {
     if (!deck || !sel) return;
     deck.cards = deck.cards.filter(card => !(card.catalogCardId === sel.catalogCardId && card.section === sel.section && (card.printingId || null) === (sel.printingId || null)));
     if (String(deck.signatureCardId || '') === String(sel.catalogCardId) && !deck.cards.some(card => String(card.catalogCardId) === String(sel.catalogCardId))) deck.signatureCardId = null;
+    // Leader rimosso: il prefiltro Colore (P1.0.1) torna "automatico" così si
+    // riallinea subito al prossimo Leader scelto, invece di restare bloccato
+    // sui colori di quello appena tolto.
+    if (deck.game === 'onepiece' && sel.section === 'leader') { this.catalogColors = new Set(); this.catalogColorsTouched = false; }
     this.selectedCard = null;
     this.markDirty(deck); this.onRender();
   }
@@ -350,39 +428,73 @@ export class DeckController {
     clearTimeout(this.searchTimer);
     const box = document.querySelector('[data-deck-search-results]');
     if (!box) return;
-    if (query.trim().length < 3) { box.innerHTML = ''; this.searchResults = []; return; }
+    if (query.trim().length < 3) { box.innerHTML = ''; this.searchResults = []; document.querySelector('[data-deck-catalog-filters]')?.replaceChildren(); return; }
     box.innerHTML = '<span>Ricerca…</span>';
     this.searchTimer = setTimeout(async () => {
-      const results = await this.searchCards(query, this.state.game);
-      this.searchResults = this.filterByLeaderColor(results);
+      this.searchResults = await this.searchCards(query, this.state.game);
       this.renderSearchResultsList();
     }, 260);
   }
-  // Con un Leader già scelto, filtra automaticamente i risultati di ricerca
-  // del Main sulle carte del suo stesso colore — ma solo se il filtro lascia
-  // almeno un risultato: dati colore mancanti/parziali non devono far
-  // sparire tutta la ricerca.
-  filterByLeaderColor(results) {
+  // Filtri catalogo One Piece (P1.0.1): applicati lato client sui risultati
+  // già scaricati da questa ricerca, mai una nuova chiamata di rete. Il
+  // filtro Colore vale solo quando si cerca per il Main (targetSection) — non
+  // ha senso filtrare la scelta del Leader sui colori del Leader stesso.
+  activeCatalogColors(deck) {
+    if (this.targetSection !== 'main') return new Set();
+    if (this.catalogColorsTouched) return this.catalogColors;
+    const leaderColors = deck?.cards.find(item => item.section === 'leader')?.colors;
+    return new Set(Array.isArray(leaderColors) ? leaderColors : []);
+  }
+  filteredCatalogResults() {
     const deck = this.active();
-    if (!deck || deck.game !== 'onepiece' || this.targetSection !== 'main') return results;
-    const leaderColors = deck.cards.find(item => item.section === 'leader')?.colors;
-    if (!Array.isArray(leaderColors) || !leaderColors.length) return results;
-    const matcher = getGameAdapter('onepiece').cardMatchesLeaderColor;
-    const filtered = results.filter(card => matcher(card, leaderColors));
-    return filtered.length ? filtered : results;
+    if (!deck || deck.game !== 'onepiece') return this.searchResults;
+    let list = this.searchResults;
+    if (this.catalogExpansion !== 'all') list = list.filter(card => (card.setCode || '') === this.catalogExpansion);
+    const colors = this.activeCatalogColors(deck);
+    if (colors.size) list = list.filter(card => !Array.isArray(card.colors) || !card.colors.length || card.colors.some(color => colors.has(color)));
+    return list;
+  }
+  // Espansione + Colore vivono nella stessa zona imperativa dei risultati
+  // (data-deck-catalog-filters), mai nel template dichiarativo: un onRender()
+  // pieno qui romperebbe il focus dell'input mentre si digita, esattamente
+  // come per data-deck-search-results.
+  catalogFiltersView(deck) {
+    const codes = [...new Set(this.searchResults.map(card => card.setCode || '').filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+    const expansionRow = codes.length ? `<div class="deck-mh-filters" role="group" aria-label="Filtra per espansione"><div class="deck-mh-chip-scroll"><button type="button" class="chip ${this.catalogExpansion === 'all' ? 'active' : ''}" data-deck-catalog-expansion="all">Tutte</button>${codes.map(code => `<button type="button" class="chip ${this.catalogExpansion === code ? 'active' : ''}" data-deck-catalog-expansion="${esc(code)}">${esc(code)}</button>`).join('')}</div></div>` : '';
+    if (this.targetSection !== 'main') return expansionRow;
+    const active = this.activeCatalogColors(deck);
+    const colorRow = `<div class="deck-mh-filters" role="group" aria-label="Filtra per colore"><div class="deck-mh-chip-scroll">${ONE_PIECE_COLORS.map(color => `<button type="button" class="chip ${active.has(color) ? 'active' : ''}" data-deck-catalog-color="${esc(color)}"><i class="leader-color-dot ${esc(color.toLowerCase())}"></i>${esc(colorLabel(color))}</button>`).join('')}</div>${this.catalogColorsTouched && active.size ? `<button type="button" class="clear-filters" data-deck-catalog-color-reset>Mostra tutti</button>` : ''}</div>`;
+    const leader = deck.cards.find(item => item.section === 'leader');
+    const note = !this.catalogColorsTouched && active.size ? `<div class="data-note catalog-prefilter-note">${icon('info')}<span>Prefiltrato sui colori del Leader (${esc(leader?.cardName || '')}). <button type="button" class="clear-filters" data-deck-catalog-color-reset>Mostra tutti i colori</button></span></div>` : '';
+    return `${expansionRow}${colorRow}${note}`;
+  }
+  toggleCatalogColor(color) {
+    if (!this.catalogColorsTouched) { this.catalogColors = new Set(this.activeCatalogColors(this.active())); this.catalogColorsTouched = true; }
+    if (this.catalogColors.has(color)) this.catalogColors.delete(color); else this.catalogColors.add(color);
+  }
+  bindCatalogFilters(root) {
+    root.querySelectorAll('[data-deck-catalog-expansion]').forEach(button => button.addEventListener('click', () => { this.catalogExpansion = button.dataset.deckCatalogExpansion; this.renderSearchResultsList(); }));
+    root.querySelectorAll('[data-deck-catalog-color]').forEach(button => button.addEventListener('click', () => { this.toggleCatalogColor(button.dataset.deckCatalogColor); this.renderSearchResultsList(); }));
+    root.querySelector('[data-deck-catalog-color-reset]')?.addEventListener('click', () => { this.catalogColorsTouched = true; this.catalogColors = new Set(); this.renderSearchResultsList(); });
   }
   renderSearchResultsList() {
+    const deck = this.active();
+    const filtersBox = document.querySelector('[data-deck-catalog-filters]');
+    if (filtersBox && deck?.game === 'onepiece') { filtersBox.innerHTML = this.catalogFiltersView(deck); this.bindCatalogFilters(filtersBox); }
     const current = document.querySelector('[data-deck-search-results]');
     if (!current) return;
-    current.innerHTML = this.searchResults.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>';
-    current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(this.searchResults[Number(button.dataset.deckResult)])));
+    const list = this.filteredCatalogResults();
+    current.innerHTML = list.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>';
+    current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(list[Number(button.dataset.deckResult)])));
   }
-  closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchResults = []; clearTimeout(this.searchTimer); }
+  closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchResults = []; this.catalogExpansion = 'all'; this.catalogColorsTouched = false; this.catalogColors = new Set(); clearTimeout(this.searchTimer); }
   add(card, section = this.targetSection, quantity = 1) {
     const deck = this.active(); if (!deck || !card) return;
     const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
     // One Piece: il Leader è uno slot unico (sostituisce, non si accumula).
-    if (deck.game === 'onepiece' && destination === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader');
+    // Una volta scelto, la ricerca torna a targetizzare il Main di default
+    // (P1.0 — "Cambia" sulla hero è l'unico modo per riaprirla sul Leader).
+    if (deck.game === 'onepiece' && destination === 'leader') { deck.cards = deck.cards.filter(item => item.section !== 'leader'); this.targetSection = 'main'; this.catalogColors = new Set(); this.catalogColorsTouched = false; }
     const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined;
     // La ricerca/aggiunta rapida non chiede quale printing fisica scegliere:
     // finisce sempre nella riga "non risolta" (printingId assente) per
@@ -415,6 +527,65 @@ export class DeckController {
   async remove() { const deck = this.active(); if (!deck?.persisted || !confirm(`Eliminare “${deck.name}”?`)) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
+  // Import OPTCGSim (P1.1): formato "4xOP17-086", una carta logica per riga —
+  // niente printing fisica assunta (resta printingId null, la Fase 4.1 la
+  // aggancerà eventualmente dalla Raccolta). Leader/Main si distinguono dal
+  // `type` risolto dal catalogo, non da un marcatore nella lista: OPTCGSim
+  // non ne usa uno. Le righe DON!! (se presenti) sono ignorate: il DON!! è
+  // già auto-riempito alla creazione del mazzo (P1.0).
+  async importOptcgList(text) {
+    const deck = this.active();
+    if (!deck || deck.game !== 'onepiece') return;
+    const adapter = getGameAdapter('onepiece');
+    const parsed = adapter.parseOptcgList(text);
+    if (!parsed.length) return this.onToast('Incolla una decklist OPTCGSim valida');
+    this.optcgImportBusy = true; this.onRender();
+    const unresolved = [];
+    let resolved = 0;
+    try {
+      for (const { code, quantity } of parsed) {
+        const card = await adapter.findCardById(code);
+        if (!card) { unresolved.push(code); continue; }
+        if (adapter.isDonCard(card)) continue;
+        this.addSilent(card, adapter.isLeaderCard(card) ? 'leader' : 'main', quantity);
+        resolved++;
+      }
+      const { errors } = adapter.validateDeck(deck);
+      this.optcgImportResult = { total: parsed.length, resolved, unresolved, errors };
+    } finally {
+      this.optcgImportBusy = false;
+      this.onRender();
+    }
+  }
+  // Export FPT -> OPTCGSim (P1.1): aggrega tutte le printing (regular,
+  // parallel, ecc.) della stessa carta logica in una sola riga, perché
+  // OPTCGSim vuole l'identità della carta, non l'inventario fisico di FPT.
+  // Non blocca la copia se il mazzo non è regolare: avvisa e lascia scegliere.
+  async copyOptcgExport() {
+    const deck = this.active();
+    if (!deck || deck.game !== 'onepiece') return;
+    const adapter = getGameAdapter('onepiece');
+    const { valid, errors } = adapter.validateDeck(deck);
+    if (!valid && !confirm(`Mazzo non conforme:\n${errors.join('\n')}\n\nCopiare comunque?`)) return;
+    const leader = deck.cards.find(item => item.section === 'leader');
+    const mainByCard = new Map();
+    for (const card of deck.cards) {
+      if (card.section !== 'main') continue;
+      const entry = mainByCard.get(card.catalogCardId) || { catalogCardId: card.catalogCardId, quantity: 0 };
+      entry.quantity += Number(card.quantity || 0);
+      mainByCard.set(card.catalogCardId, entry);
+    }
+    const lines = [];
+    if (leader) lines.push(`1x${leader.catalogCardId}`);
+    for (const entry of mainByCard.values()) lines.push(`${entry.quantity}x${entry.catalogCardId}`);
+    if (!lines.length) return this.onToast('Il mazzo è vuoto, niente da copiare');
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      this.onToast('Lista copiata per OPTCGSim');
+    } catch {
+      this.onToast('Copia non riuscita: il browser ha negato l\'accesso agli appunti');
+    }
+  }
   markDirty(deck) { deck.dirty = true; deck.ownerSlug = this.state.currentUser; this.persistDrafts(); }
   persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); }
   clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); }
@@ -515,6 +686,9 @@ function copyBudget(deck, section, catalogCardId, excludeItem) {
     .reduce((sum, card) => sum + Number(card.quantity || 0), 0);
   return Math.max(0, copyCap(deck, section) - usedElsewhere);
 }
+const ONE_PIECE_COLOR_LABELS = { Red: 'Rosso', Blue: 'Blu', Green: 'Verde', Purple: 'Viola', Black: 'Nero', Yellow: 'Giallo' };
+const ONE_PIECE_COLORS = Object.keys(ONE_PIECE_COLOR_LABELS);
+function colorLabel(color) { return ONE_PIECE_COLOR_LABELS[color] || color; }
 function coarseCardType(rawType) { const type = String(rawType || '').toLowerCase(); if (!type) return ''; if (type.includes('spell')) return 'spell'; if (type.includes('trap')) return 'trap'; return 'monster'; }
 function readTypeCache() { try { const value = JSON.parse(localStorage.getItem(CARD_TYPE_CACHE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
 function writeTypeCache(map) { try { localStorage.setItem(CARD_TYPE_CACHE_KEY, JSON.stringify(map)); } catch {} }

@@ -171,7 +171,7 @@ export function collectionEditorView(editor, game, connected) {
     <form id="collection-form">
       <label for="collection-card-search">Carta dal catalogo</label><div class="catalog-search"><input id="collection-card-search" autocomplete="off" value="${selected ? esc(selected.name) : ''}" placeholder="Cerca almeno 3 caratteri…" ${item ? 'disabled' : 'required'}><div id="collection-card-suggestions" class="suggestions"></div></div>
       ${selected ? `<div class="selected-catalog-card">${selected.image ? `<img src="${esc(selected.image)}" alt="">` : icon('card')}<span><strong>${esc(selected.name)}</strong><small>ID ${esc(selected.id)}</small></span></div>
-      ${game === 'onepiece' ? onePiecePrintingPickerView(printings, selectedPrinting) : `<div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
+      ${game === 'onepiece' ? onePiecePrintingPickerView(printings, selectedPrinting, selected.id) : `<div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
       ${rarities.length > 1 && !selectedPrinting ? `<div class="data-note warning">${icon('bell')} Questo set contiene più rarità: seleziona esplicitamente quella posseduta.</div>` : ''}
       <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>`}` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
       <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field edition-flag"><input id="collection-first-edition" type="checkbox" data-edition-touched="false" data-edition-original="${esc(edition)}" ${firstEdition ? 'checked' : ''}><span><strong>Prima Edizione</strong><small data-edition-status>${editionStatus === 'first' ? 'Prima Edizione' : editionStatus === 'unlimited' ? 'Non Prima Edizione / Unlimited' : 'Non specificata'}</small></span></label></div>
@@ -219,13 +219,26 @@ export function persistedCollectionItemMatches(item, expected = {}) {
 // "Regular"/"Parallel"/"Alt Art": non c'è ancora una tassonomia confermata
 // dei suffissi OPTCG, e un'etichetta sbagliata sarebbe peggio di una meno
 // elegante ma sempre corretta.
-function onePiecePrintingPickerView(printings, selectedPrinting) {
+function onePiecePrintingPickerView(printings, selectedPrinting, baseCardId = '') {
   if (!printings.length) return `<div class="catalog-required">${icon('search')} Nessuna printing trovata per questa carta.</div>`;
   return `<div class="collection-printing-options" role="group" aria-label="Printing">${printings.map(printing => {
     const active = Boolean(selectedPrinting && samePrinting(printing, selectedPrinting));
-    const label = printing.variantId || printing.setCode || 'Base';
-    return `<button type="button" data-collection-printing-option="${esc(printing.printingId || '')}" class="${active ? 'active' : ''}">${printing.image ? `<img src="${esc(printing.image)}" alt="" loading="lazy">` : icon('card')}<span><strong>${esc(label)}</strong><small>${esc([printing.setCode, printing.rarity].filter(Boolean).join(' · ') || 'Rarità non indicata')}</small></span>${active ? icon('arrow') : ''}</button>`;
+    const { main, suffix } = onePiecePrintingLabel(printing, baseCardId);
+    return `<button type="button" data-collection-printing-option="${esc(printing.printingId || '')}" class="${active ? 'active' : ''}">${printing.image ? `<img src="${esc(printing.image)}" alt="" loading="lazy">` : icon('card')}<span><strong>${esc(main)}${suffix ? ` <i class="op-variant-tag">${esc(suffix)}</i>` : ''}</strong><small>${esc([printing.setCode, printing.rarity].filter(Boolean).join(' · ') || 'Rarità non indicata')}</small></span>${active ? icon('arrow') : ''}</button>`;
   }).join('')}</div>`;
+}
+
+// Divide il variant_id grezzo in "numero carta" (uguale per tutte le
+// printing) + suffisso che le differenzia (es. "_p1"), così il suffisso
+// risalta senza inventare una categoria indovinata (vedi nota sopra).
+function onePiecePrintingLabel(printing, baseCardId) {
+  const variantId = String(printing.variantId || '').trim();
+  if (!variantId || variantId === baseCardId) return { main: baseCardId || 'Base', suffix: '' };
+  if (baseCardId && variantId.startsWith(baseCardId)) {
+    const suffix = variantId.slice(baseCardId.length).replace(/^[_-]+/, '');
+    if (suffix) return { main: baseCardId, suffix };
+  }
+  return { main: variantId, suffix: '' };
 }
 
 // printingId (una vera UUID risolta dal catalogo, Fase 4) è la chiave di

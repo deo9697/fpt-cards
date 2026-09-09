@@ -1,10 +1,9 @@
-import { member, esc, formatDate } from './core.js';
+import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
 import { positiveMovers } from './market-watch.js';
 
 export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
-  const firstName = me?.name?.split(' ')[0] || 'duellante';
   const teamLoans = state.loans.filter(loan => loan.game === game);
   const personal = teamLoans.filter(loan => loan.owner === me?.id || loan.borrower === me?.id);
   const active = personal.filter(loan => !['returned','completed','rejected'].includes(loan.status));
@@ -18,10 +17,9 @@ export function dashboardView(state, game = 'yugioh', market = {}) {
   const activeMembers = new Set(teamLoans.flatMap(loan => [loan.owner, loan.borrower]).filter(Boolean)).size;
 
   return `<section class="dashboard duel-dashboard page-stack">
-    <header class="duel-welcome">
-      <span class="eyebrow">${greeting()}</span>
-      <h1>Bentornato,<br><strong>${esc(firstName)}!</strong> <span aria-hidden="true">👋</span></h1>
-      <p>Il tuo team è pronto per un altro duello.</p>
+    <header class="duel-welcome duel-welcome-logo">
+      <div class="duel-game-logo"><img src="${GAMES[game].logo}" alt="${esc(GAMES[game].name)}"></div>
+      <p>${esc(dashboardTagline(game))}</p>
     </header>
 
     <section class="stat-grid duel-stat-grid" aria-label="Riepilogo team">
@@ -103,9 +101,8 @@ function loanSnapshot(loan) {
   </button>`;
 }
 
-function greeting() {
-  const hour = new Date().getHours();
-  return hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
+function dashboardTagline(game) {
+  return game === 'onepiece' ? 'Il tuo equipaggio è pronto a salpare.' : 'Il tuo team è pronto per un altro duello.';
 }
 
 function metric(symbol, value, label, color, detail) {

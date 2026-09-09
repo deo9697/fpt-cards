@@ -1,5 +1,6 @@
 import {esc} from './core.js';
 import {icon} from './icons.js';
+import {getGameAdapter} from './games/index.js';
 
 export const DEFAULT_DECK_THEME='arcane-purple';
 export const DEFAULT_DECK_BOX_TEMPLATE='procedural';
@@ -27,6 +28,10 @@ export function deckThemeOptions(selected){const current=normalizeDeckTheme(sele
 export function resolveDeckSignature(deck){
   const cards=deck?.cards||[],id=String(deck?.signatureCardId||'');
   if(id){const selected=cards.find(card=>String(card.catalogCardId)===id);if(selected)return selected;}
+  // One Piece: il Leader è la "faccia" del mazzo (1 copia sola, sempre
+  // significativa) — priorità sul Main come cover di default, non un
+  // ripiego. Un mazzo con solo il Leader scelto deve già avere una cover.
+  if(deck?.game==='onepiece')return cards.find(card=>card.section==='leader')||cards.find(card=>card.section==='main')||null;
   return cards.find(card=>card.section==='main')||cards.find(card=>card.section==='extra')||null;
 }
 
@@ -39,7 +44,27 @@ export function preferredDeckArtwork(card){
 export function deckBoxModel(deck,{availability=null,marketValue=null,marketIndicative=false,marketCoverage='',delta24=null,delta7=null,topMover=null}={}){
   const signature=resolveDeckSignature(deck),template=normalizeDeckBoxTemplate(deck?.deckBoxTemplate),templatePreset=DECK_BOX_TEMPLATES[template],theme=normalizeDeckTheme(deck?.deckTheme||templatePreset.theme),preset=DECK_THEMES[theme];
   return {deckId:String(deck?.id||''),deckName:deck?.name||'Mazzo senza nome',signature,template,templatePreset,artwork:templatePreset.image||preferredDeckArtwork(signature),theme,preset,
-    mainCount:sectionTotal(deck,'main'),extraCount:sectionTotal(deck,'extra'),sideCount:sectionTotal(deck,'side'),availability,marketValue,marketIndicative,marketCoverage,delta24,delta7,topMover};
+    statLine:deckBoxStatLine(deck),availability,marketValue,marketIndicative,marketCoverage,delta24,delta7,topMover};
+}
+
+// Ogni gioco ha la sua riga di stato sulla card del Deck Box: Main/Extra/Side
+// per Yu-Gi-Oh, Leader/Main/DON!! per One Piece — mai un elenco fisso che
+// presuppone le sezioni dell'altro gioco (bug corretto 2026-09-09: la card
+// mostrava "Main • Extra • Side" anche per i mazzi One Piece).
+function deckBoxStatLine(deck){
+  if(deck?.game==='onepiece'){
+    const {counts}=getGameAdapter('onepiece').validateDeck(deck);
+    return [
+      {label:'Leader',value:counts.leader.count?'✓':'—'},
+      {label:'Main',value:`${counts.main.count}/${counts.main.target}`},
+      {label:'DON!!',value:`${counts.don.count}/${counts.don.target}`}
+    ];
+  }
+  return [
+    {label:'Main',value:sectionTotal(deck,'main')},
+    {label:'Extra',value:sectionTotal(deck,'extra')},
+    {label:'Side',value:sectionTotal(deck,'side')}
+  ];
 }
 
 export function renderDeckBoxCard(deck,options={}){
@@ -55,7 +80,7 @@ export function renderDeckBoxCard(deck,options={}){
   // browser consente solo video muti — un video con autoplay E audio
   // viene silenziosamente bloccato senza nessun errore da intercettare.
   const celebrate=mode!=='market'&&options.celebrate;
-  return `<button class="deck-box-card dynamic-deck-box ${mode==='market'?'market-deck-box':''} ${options.selected?'selected':''} ${options.active?'active':''}" ${themeAttributes(model)} ${action}="${esc(model.deckId)}" aria-label="${mode==='market'?'Apri il valore di':mode==='team'?'Sfoglia il mazzo di':'Apri il mazzo'} ${esc(model.deckName)}"><span class="deck-box-visual ${model.template!=='procedural'?'uses-template':''}">${renderArtwork(model)}${celebrate?'<video class="deck-box-100-video" data-deck-celebrate src="./assets/ester-eggs/skelet_roar.mp4" playsinline preload="auto" aria-hidden="true"></video>':''}<i></i><b>F.P.T</b></span><span class="deck-box-copy"><strong>${esc(model.deckName)}</strong>${mode==='team'?`<small class="deck-owner-badge">${esc(options.ownerName||'')}</small>`:''}<small><b>${model.mainCount}</b> Main <i>•</i> <b>${model.extraCount}</b> Extra <i>•</i> <b>${model.sideCount}</b> Side</small>${mode==='market'?marketMeta(model):availabilityMeta(model,mode==='team'?'Disponibilità':'Disponibilità personale')}</span></button>`;
+  return `<button class="deck-box-card dynamic-deck-box ${mode==='market'?'market-deck-box':''} ${options.selected?'selected':''} ${options.active?'active':''}" ${themeAttributes(model)} ${action}="${esc(model.deckId)}" aria-label="${mode==='market'?'Apri il valore di':mode==='team'?'Sfoglia il mazzo di':'Apri il mazzo'} ${esc(model.deckName)}"><span class="deck-box-visual ${model.template!=='procedural'?'uses-template':''}">${renderArtwork(model)}${celebrate?'<video class="deck-box-100-video" data-deck-celebrate src="./assets/ester-eggs/skelet_roar.mp4" playsinline preload="auto" aria-hidden="true"></video>':''}<i></i><b>F.P.T</b></span><span class="deck-box-copy"><strong>${esc(model.deckName)}</strong>${mode==='team'?`<small class="deck-owner-badge">${esc(options.ownerName||'')}</small>`:''}<small>${model.statLine.map(s=>`<b>${esc(String(s.value))}</b> ${esc(s.label)}`).join(' <i>•</i> ')}</small>${mode==='market'?marketMeta(model):availabilityMeta(model,mode==='team'?'Disponibilità':'Disponibilità personale')}</span></button>`;
 }
 
 export function renderDeckBoxVisual(deck,{className=''}={}){const model=deckBoxModel(deck);return `<div class="deck-preview-box dynamic-deck-box-visual ${model.template!=='procedural'?'uses-template':''} ${esc(className)}" ${themeAttributes(model)}>${renderArtwork(model)}<i></i><b>F.P.T</b></div>`;}

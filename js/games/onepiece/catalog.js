@@ -24,6 +24,17 @@ export async function findCard(name) {
   return matches.find(card => card.name.toLowerCase() === normalized) || null;
 }
 
+// Usato dall'import OPTCGSim (P1.1): risolve un catalogCardId ESATTO (es.
+// "OP17-086"), non un nome — search_onepiece_catalog cerca anche su
+// catalog_card_id, quindi basta riusare searchCards e filtrare sull'id
+// esatto tra i risultati.
+export async function findCardById(id) {
+  const normalized = String(id || '').trim().toUpperCase();
+  if (!normalized) return null;
+  const matches = await searchCards(normalized);
+  return matches.find(card => String(card.id).toUpperCase() === normalized) || null;
+}
+
 // search_onepiece_catalog restituisce PRINTING fisiche, una riga per
 // variante (regular/parallel/alt art/promo): il raggruppamento in "carte
 // logiche" per catalog_card_id è deliberatamente lato client, non lato SQL
@@ -60,6 +71,11 @@ function groupPrintingsIntoCards(rows) {
       type: metadata.cardType || '',
       image: printing.image,
       fullImage: printing.image,
+      // Stesso catalogCardId => stesso set_code sempre (P1.0.1, filtro
+      // Espansione nel Deck Builder): un catalogCardId come "OP01-016" porta
+      // già il codice set nel prefisso, quindi tutte le sue printing
+      // condividono lo stesso set_code lato RPC.
+      setCode: printing.setCode || '',
       colors: Array.isArray(metadata.colors) ? metadata.colors : [],
       cost: metadata.cost ?? null,
       power: metadata.power ?? null,
