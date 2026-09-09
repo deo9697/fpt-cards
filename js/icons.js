@@ -23,6 +23,11 @@ const paths = {
   ,star: '<path d="m12 3 2.7 5.5 6 .9-4.4 4.3 1 6-5.3-2.8-5.3 2.8 1-6-4.4-4.3 6-.9Z"/>'
   ,lock: '<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'
   ,trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5a3 3 0 0 0 3 4M16 5h3a3 3 0 0 1-3 4M10 15v3M14 15v3M8 21h8"/>'
+  ,send: '<path d="m3 11 18-8-8 18-2.5-7.5L3 11Z"/><path d="M12.5 12.5 21 3"/>'
+  ,filter: '<path d="M4 6h16M7 12h10M10 18h4"/>'
+  ,message: '<path d="M4 5h16v11H8l-4 4V5Z"/>'
+  ,check: '<path d="M4 12.5 9.5 18 20 6"/>'
+  ,scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/>'
 };
 export function icon(name) {
   return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;

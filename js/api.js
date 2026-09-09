@@ -170,7 +170,7 @@ export const api = {
   // Guest-facing: no session token — the share id itself is the only
   // credential, validated server-side against collection_shares.
   async getCollectionShare(shareId) { ensure(); return unwrap(await client.rpc('get_collection_share', { p_share_id:shareId })); },
-  async submitCollectionShareRequest(shareId, requesterName, items) { ensure(); return unwrap(await client.rpc('submit_collection_share_request', { p_share_id:shareId, p_requester_name:requesterName, p_items:items })); },
+  async submitCollectionShareRequest(shareId, requesterName, items, message = '') { ensure(); return unwrap(await client.rpc('submit_collection_share_request', { p_share_id:shareId, p_requester_name:requesterName, p_items:items, p_message:message?.trim() || null })); },
   async progression() { ensure(); return unwrap(await client.rpc('get_my_progression', { p_token:token() })); },
   async stats(game, { deckId, period } = {}) { ensure(); return unwrap(await client.rpc('get_stats', { p_token:token(), p_game:game, p_deck_id:deckId || null, p_period:period || 'all' })); },
   async teamStats(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_team_stats', { p_token:token(), p_game:game, p_period:period || 'all' })); },

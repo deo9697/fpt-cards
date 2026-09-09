@@ -976,6 +976,7 @@ function requestsView() {
 function requestRowHtml(request) {
   const items = request.items || [];
   return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Conferma</button>` : ''}</header>
+    ${request.message ? `<p class="share-request-message">${icon('message')} ${esc(request.message)}</p>` : ''}
     <div class="share-receipt">
       ${items.map(requestReceiptRowHtml).join('')}
       <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
