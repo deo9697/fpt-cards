@@ -181,6 +181,23 @@ try {
   const consoleErrors = await evaluate(`window.__consoleErrors`);
   if (consoleErrors?.length) throw new Error(`Errori console rilevati: ${JSON.stringify(consoleErrors)}`);
 
+  // Exercise the real app router with a signed-in state and a public share.
+  await evaluate(`(async()=>{
+    __share.dispose();
+    history.replaceState(null,'','#/share/11111111-1111-1111-1111-111111111111');
+    const {api}=await import('/js/api.js');
+    api.getCollectionShare=async()=>(${JSON.stringify(fixture)});
+    const {state}=await import('/js/core.js'); state.currentUser='test-user';
+    const originalInterval=window.setInterval;
+    window.setInterval=(fn,ms,...args)=>{if(ms===120000)window.__shareSync=fn;return originalInterval(fn,ms,...args);};
+    await import('/app.js'); window.setInterval=originalInterval;
+  })()`); await delay(150);
+  await evaluate(`document.querySelector('[data-share-toggle="p1"]').click(); document.querySelector('[data-share-review-open]').click(); history.back();`); await delay(150);
+  await evaluate(`window.dispatchEvent(new HashChangeEvent('hashchange'));`); await delay(50);
+  await evaluate(`window.__shareSync?.()`);
+  const routed = await evaluate(`({share:!!document.querySelector('.share-guest-shell'),modal:!!document.querySelector('.share-review-modal'),selected:document.querySelector('.share-guest-selection-text')?.textContent,errors:__consoleErrors})`);
+  if (!routed.share || routed.modal || !routed.selected?.includes('1') || routed.errors.length) throw new Error('Real app router/sync overwrites shared collection: '+JSON.stringify(routed));
+
   console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
 } finally {
   try { socket?.close(); } catch {}
