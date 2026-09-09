@@ -146,6 +146,22 @@ try {
   const messageCount = await evaluate(`document.querySelector('.share-review-message-count')?.textContent`);
   if (messageCount !== '32/250') throw new Error(`Contatore messaggio errato: ${messageCount}`);
 
+  // Browser Back consumes only the review entry and preserves the whole draft.
+  const reviewUrl = await evaluate('location.href');
+  await evaluate('history.back()'); await delay(150);
+  const afterBack = await evaluate(`({url:location.href, modal:!!document.querySelector('.share-review-modal'), size:__share.selected.size, name:__share.requesterName, message:__share.message})`);
+  if (afterBack.url !== reviewUrl || afterBack.modal || afterBack.size !== 1 || afterBack.name !== 'Cristian' || afterBack.message !== 'Mi interessa molto questa carta!') throw new Error('Back loses the share draft or leaves the collection');
+  await evaluate('__share.openReview(); __share.closeReview()'); await delay(150);
+  if (await evaluate('!!document.querySelector(".share-review-modal")')) throw new Error('Explicit close leaves the review open');
+  await evaluate('__share.openReview()');
+  const draft = await evaluate(`JSON.parse(sessionStorage.getItem('fpt-share-draft:share-1'))`);
+  if (draft.name !== 'Cristian' || draft.selected.length !== 1) throw new Error('Share draft not persisted');
+  const invalidRarities = await evaluate(`import('/js/collection-share.js').then(async ({CollectionShareController}) => {
+    const c = new CollectionShareController({shareId:'rarities',api:{getCollectionShare:async()=>({items:[{rarity:'2'},{rarity:3},{rarity:'Ultra Rare'}]})}});
+    await c.load(); const values=c.facetOptions('rarity'); c.dispose(); return values;
+  })`);
+  if (JSON.stringify(invalidRarities) !== JSON.stringify(['Ultra Rare'])) throw new Error('Invalid numeric rarity exposed');
+
   // 12) Invio: usa l'API guest esistente, estesa solo con il messaggio; stato finale FPT senza redirect al login
   const modalOverflow = await evaluate(`document.documentElement.scrollWidth>innerWidth`);
   if (modalOverflow) throw new Error('Overflow orizzontale col modal aperto a 390px');

@@ -272,7 +272,9 @@ async function run() {
 
   await evaluate(`Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true})`);
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1440, height:1000, deviceScaleFactor:1, mobile:false, screenWidth:1440, screenHeight:1000 });
-  await evaluate(`document.querySelector('.fab[data-page="new"]').click()`);
+  await evaluate(`document.querySelector('.sidebar nav button[data-page="loans"]').click()`);
+  await waitFor(`Boolean(document.querySelector('.loan-hero-new'))`, 'Pagina Prestiti non raggiunta');
+  await evaluate(`document.querySelector('.loan-hero-new').click()`);
   await waitFor(`Boolean(document.querySelector('.loan-builder-grid'))`, 'Loan Builder non renderizzato');
   assert(await evaluate(`document.querySelector('.loan-submit').disabled`), 'Submit senza carte/destinatario non disabilitato');
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
@@ -325,7 +327,8 @@ async function run() {
   await evaluate(`window.__authTest.releaseCreate();window.__authTest.holdCreate=false`);
   await waitFor(`Boolean(document.querySelector('#loan-query'))`, 'Submit valido Loan Builder non completato');
   assert(await evaluate(`window.__authTest.lastCreate.p_borrower_slug==='first-access' && window.__authTest.lastCreate.p_cards.length===2 && window.__authTest.lastCreate.p_cards[0].quantity===2 && window.__authTest.lastCreate.p_cards[0].image.endsWith('/icon-512.png') && window.__authTest.lastCreate.p_notes.includes('Near Mint')`), 'Payload prestito o immagine completa non rispettati');
-  await evaluate(`document.querySelector('.fab[data-page="new"]').click()`);
+  await waitFor(`Boolean(document.querySelector('.loan-hero-new'))`, 'Pagina Prestiti non raggiunta dopo il submit');
+  await evaluate(`document.querySelector('.loan-hero-new').click()`);
   await waitFor(`Boolean(document.querySelector('[data-loan-mode="request"]'))`, 'Interruttore bidirezionale assente');
   await evaluate(`document.querySelector('[data-loan-mode="request"]').click()`);
   await waitFor(`document.querySelector('.loan-mode-switch').classList.contains('request') && document.querySelector('.loan-direction-flag').textContent.includes('Stai richiedendo')`, 'Modalità ricezione non attivata');

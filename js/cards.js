@@ -235,8 +235,17 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
       exact.slice(0,8).forEach((row,index)=>{
         const card=cards[index];if(!card)return;
         const variants=card.printings.filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+        // row.id è l'id YGOPRODeck di QUESTA riga del set lookup: per le carte
+        // con più artwork alternativi l'API assegna un id diverso per ogni
+        // variante pur trattandosi della stessa identità carta (vedi
+        // YUGIOH_CATALOG_ALIASES). Senza canonicalCatalogCardId() qui,
+        // un artwork alternativo tornava a diventare l'identità salvata in
+        // catalog_card_id — l'immagine resta invece quella reale di questa
+        // riga (findCardById(row.id,...) sopra), verificata da YGOPRODeck per
+        // questo id specifico, non inventata: canonicalizziamo solo l'identità.
+        const canonicalId=canonicalCatalogCardId(row.id,'yugioh')||String(row.id);
         for(const printing of variants){
-          mapped.push({printingId:'',game:'yugioh',catalogCardId:String(row.id),cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
+          mapped.push({printingId:'',game:'yugioh',catalogCardId:canonicalId,cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
         }
       });
       if(mapped.length)break;

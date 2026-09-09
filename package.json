@@ -18,6 +18,7 @@
     ,"test:printing-editor": "node scripts/printing-editor-integrity-smoke.mjs"
     ,"test:share-guest": "node scripts/collection-share-guest-smoke.mjs"
     ,"test:loan-idempotency": "node scripts/loan-request-idempotency-smoke.mjs"
+    ,"test:catalog-alt-art": "node scripts/catalog-alternate-artwork-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

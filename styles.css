@@ -176,8 +176,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .nav button i { position: absolute; top: -5px; margin-left: -4px; min-width: 16px; padding: 1px 4px; border-radius: 9px; background: var(--danger); color: white; font-size: .62rem; font-style: normal; }
 .icon { display: inline-block; width: 1.35em; height: 1.35em; vertical-align: middle; }
 .nav .icon { width: 22px; height: 22px; }
-.fab { position: fixed; z-index: 7; right: max(18px, calc((100vw - 760px) / 2 + 18px)); bottom: calc(84px + env(safe-area-inset-bottom)); display: grid; place-items: center; width: 54px; height: 54px; border: 0; border-radius: 18px; background: linear-gradient(145deg, #ffd36f, var(--accent-dark)); color: #201708; box-shadow: 0 10px 28px #0009, 0 0 0 5px #f4b94218; animation: fab-in .3s ease both; }
-.fab .icon { width: 27px; height: 27px; }
 .dashboard { display: grid; gap: 10px; }
 .welcome-card { position: relative; display: flex; justify-content: space-between; align-items: center; overflow: hidden; padding: 15px 17px; border: 1px solid #59689c88; border-radius: 20px; background: linear-gradient(135deg, #202d5d, #121a38 65%, #382150); box-shadow: 0 12px 30px #0004; animation: rise-in .28s ease both; }
 .welcome-card::after { content: ''; position: absolute; width: 150px; height: 150px; right: -55px; top: -65px; border-radius: 50%; background: #f4b94215; }
@@ -231,10 +229,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .activity-row strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
 .activity-row small, .activity-row time { color: var(--muted); font-size: .66rem; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 8px #f4b94205; } }
-.btn:not(:disabled):active, .fab:active { transform: scale(.96); }
+.btn:not(:disabled):active { transform: scale(.96); }
 .toast.show { animation: toast-pop .25s ease both; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
-@keyframes fab-in { from { opacity: 0; transform: scale(.75) rotate(-8deg); } }
 @keyframes toast-pop { 50% { transform: translate(-50%, -3px) scale(1.02); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 .notice { border-left: 3px solid var(--accent); padding: 10px 12px; color: var(--muted); background: #f4b9420c; font-size: .86rem; border-radius: 4px 12px 12px 4px; }
@@ -382,7 +379,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .game-options > button.active { border-color: rgba(var(--accent-rgb), .48); background: linear-gradient(90deg, rgba(var(--accent-rgb), .14), transparent); }
 .game-logo, .game-trigger-chip { border: 1px solid #ffffff26; box-shadow: 0 7px 16px #0006; }
 
-.fab { width: 58px; height: 58px; border: 1px solid #fff2b455; border-radius: 20px; background: linear-gradient(145deg, #ffdc82, var(--accent) 50%, var(--accent-dark)); box-shadow: 0 14px 34px #000b, 0 0 0 5px rgba(var(--accent-rgb), .1), inset 0 1px #fff9; }
 .nav { bottom: max(10px, env(safe-area-inset-bottom)); width: min(750px, calc(100% - 20px)); padding: 8px 10px; border: 1px solid #46537a88; border-radius: 22px; background: linear-gradient(120deg, #0e142beF, #080c1def); box-shadow: 0 18px 45px #000a, inset 0 1px #ffffff0d; backdrop-filter: blur(22px) saturate(135%); }
 .nav::before { content: ''; position: absolute; top: -1px; right: 25%; left: 25%; height: 1px; background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), .75), transparent); }
 .nav button { position: relative; border-radius: 14px; transition: color .18s, background .18s, transform .18s; }
@@ -404,7 +400,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .welcome-card { min-height: 126px; padding: 17px; }
   .welcome-card h2 { font-size: 1.48rem; }
   .nav { bottom: max(7px, env(safe-area-inset-bottom)); width: calc(100% - 14px); border-radius: 20px; backdrop-filter: none; }
-  .fab { right: 16px; bottom: calc(88px + env(safe-area-inset-bottom)); }
   .card, .summary-card, .attention-card, .suggestions, .profile-picker-options, .connection-banner { backdrop-filter: none; }
   .loan-thumb::after { animation: none; opacity: .18; }
 }
@@ -1317,7 +1312,6 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .chip { border-color: var(--line); background: #0d1017; }
 .chip.active { border-color: #8650cf; background: #9b5cff17; color: #cba9ff; box-shadow: none; }
 .game-menu { top: 62px; border: 1px solid var(--line-strong); background: #10131bf7; box-shadow: 0 20px 60px #000b; }
-.fab { position: fixed; z-index: 20; right: 28px; bottom: 28px; display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid #ac75ff; border-radius: 50%; background: #8a4dea; color: white; box-shadow: 0 10px 28px #0009; }
 .mobile-nav { display: none; }
 .market-empty { padding: clamp(50px, 10vw, 120px) 20px; }
 .market-orbit { display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto 18px; border: 1px solid #704ca1; border-radius: 50%; color: var(--accent); }
@@ -1377,7 +1371,6 @@ img.card-image-unavailable { opacity: 0; }
   .mobile-nav button.active { background: #9b5cff12; color: #c7a1ff; }
   .mobile-nav button.active::after { display: none; }
   .mobile-nav button i { top: -3px; left: calc(50% + 5px); }
-  .fab { right: 18px; bottom: calc(76px + env(safe-area-inset-bottom)); }
   .dashboard-columns { grid-template-columns: 1fr; }
   .duel-dashboard::before { inset-inline: -14px; }
   .collection-toolbar { grid-template-columns: 1fr 1fr; }
@@ -1843,7 +1836,7 @@ button.market-row:hover { background:#15121d; }
 
 /* Hero */
 .share-guest-hero { position: relative; margin: 0 0 18px; padding: max(20px, env(safe-area-inset-top)) 16px 22px; overflow: hidden; background: linear-gradient(180deg, #150c24 0%, #0a0c14 78%, #07080d 100%); border-bottom: 1px solid #241c38; }
-.share-guest-hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center 18%; opacity: .32; mask-image: linear-gradient(180deg, #000 0%, #000 35%, transparent 92%); -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 35%, transparent 92%); pointer-events: none; }
+.share-guest-hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center center; opacity: .32; mask-image: linear-gradient(180deg, #000 0%, #000 35%, transparent 92%); -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 35%, transparent 92%); pointer-events: none; }
 .share-guest-hero > :not(.share-guest-hero-bg) { position: relative; }
 .share-guest-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
 .share-guest-brand { display: flex; align-items: center; gap: 8px; }
@@ -1912,7 +1905,7 @@ button.market-row:hover { background:#15121d; }
 /* .btn è oggi viola (--accent, ritemato altrove nel file) — le due CTA
    principali della share page devono restare oro come nel mockup, quindi
    sovrascrivono qui lo sfondo con lo stesso oro letterale già usato per gli
-   altri accenti dorati dell'app (.member-daniele, .game-pill.yugioh, .fab). */
+   altri accenti dorati dell'app (.member-daniele, .game-pill.yugioh). */
 .share-guest-selection-cta, .share-review-submit { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(145deg, #ffd36f, #b97818); color: #201708; box-shadow: 0 8px 20px #f4b9422e, 0 0 0 1px #f4b94255 inset; }
 .share-guest-selection-cta .icon { width: 15px; height: 15px; }
 

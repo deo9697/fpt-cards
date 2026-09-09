@@ -92,7 +92,6 @@ let profileCustomizeOpen = false;
 let profileCustomizeTab = 'avatar';
 let cosmeticActionPending = '';
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
-function showFab() { return page !== 'new' && page !== 'market' && page !== 'stats' && !(page === 'decks' && decks.screen !== 'gallery'); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
     const image = event.target;
@@ -119,6 +118,7 @@ function setFastScanRoute(mode){
 function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); if(page==='requests')void refreshCollectionShareRequests(); if(previous!=='stats'&&page==='stats')stats.checkLossStreakEasterEgg(); }
 
 function render(force = false) {
+  if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
   const activeField = document.activeElement;
   const editingLoan = state.currentUser && page === 'new'
@@ -139,21 +139,20 @@ function render(force = false) {
 }
 
 function renderRoute() {
+  if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
   const shell = document.querySelector('.app-shell');
   const stage = shell?.querySelector('.page-stage');
   if (!state.currentUser || !shell || !stage) { render(); return; }
   document.body.dataset.page = page;
   stage.innerHTML = pageContent();
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
-  shell.querySelector(':scope > .fab')?.remove();
-  if (showFab()) shell.querySelector(':scope > .mobile-nav')?.insertAdjacentHTML('beforebegin', `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>`);
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
     button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats'].includes(page)));
   });
   // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
   // ricostruire la pagina e le sue immagini.
-  for (const selector of ['.sidebar','.topbar','.mobile-nav',':scope > .fab']) {
+  for (const selector of ['.sidebar','.topbar','.mobile-nav']) {
     const node = shell.querySelector(selector);
     if (node) node.replaceWith(node.cloneNode(true));
   }
@@ -213,7 +212,6 @@ function appView() {
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
       <section class="page-stage" aria-live="polite">${pageContent()}</section>
     </section>
-    ${showFab() ? `<button class="fab" data-page="new" aria-label="Nuovo prestito">${icon('plus')}</button>` : ''}
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
@@ -1880,12 +1878,17 @@ async function updateLoan(id, action) {
 }
 
 async function startGuestShare(shareId) {
+  if (guestShare?.shareId === shareId) { renderGuestShare(); return; }
+  guestShare?.dispose();
   document.body.dataset.page = 'share';
   guestShare = new CollectionShareController({ api, shareId, onRender:renderGuestShare, onToast:toast });
   renderGuestShare();
   await guestShare.load();
 }
 function renderGuestShare() {
+  if (!guestShare || location.hash.match(SHARE_HASH)?.[1] !== guestShare.shareId) return;
+  document.body.dataset.page = 'share';
+  document.body.dataset.game = guestShare.data?.game || 'yugioh';
   // The focused field (e.g. the search box) has to be read BEFORE innerHTML
   // wipes it out — by the time bind() runs afterward, document.activeElement
   // has already reverted to <body>, so restoring focus there is always too late.
@@ -1985,7 +1988,7 @@ window.addEventListener('hashchange', () => {
 // ritorno invece di aspettare fino a 2 minuti (stesso pattern già usato in
 // pwa-update.js per il controllo aggiornamenti).
 async function syncPrimaryData() {
-  if (!state.currentUser || document.hidden) return;
+  if (!state.currentUser || document.hidden || SHARE_HASH.test(location.hash)) return;
   try {
     await loadPrimaryData();
     saveState();

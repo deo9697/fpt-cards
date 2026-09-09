@@ -63,10 +63,37 @@ export class CollectionShareController {
     this.requesterName = '';
     this.message = '';
     this.submitting = false; this.submitted = false;
+    this.draftKey = `fpt-share-draft:${shareId}`;
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(this.draftKey) || 'null');
+      if (draft) { this.selected = new Map(draft.selected || []); this.requesterName = String(draft.name || ''); this.message = String(draft.message || ''); }
+    } catch {}
+    this.onRender = () => { this.persistDraft(); onRender?.(); };
+    this._onBack = event => {
+      if (!this.reviewing || event.state?.collectionShareReview === this.shareId) return;
+      this.reviewing = false; this.onRender?.();
+    };
+    window.addEventListener('popstate', this._onBack);
   }
+  persistDraft() {
+    try {
+      if (this.submitted) sessionStorage.removeItem(this.draftKey);
+      else sessionStorage.setItem(this.draftKey, JSON.stringify({ selected:[...this.selected], name:this.requesterName, message:this.message }));
+    } catch {}
+  }
+  dispose() { clearTimeout(this._searchTimer); window.removeEventListener('popstate', this._onBack); }
   async load() {
     this.loading = true;
-    try { this.data = await this.api.getCollectionShare(this.shareId); this.error = ''; }
+    try {
+      this.data = await this.api.getCollectionShare(this.shareId);
+      this.data.items = (this.data.items || []).map(item => ({ ...item, rarity: typeof item.rarity === 'string' && /[a-z]/i.test(item.rarity) ? item.rarity.trim() : '' }));
+      for (const [id, quantity] of this.selected) {
+        const item = this.data.items.find(row => row.printingId === id);
+        const safeQuantity = Math.min(availableQuantity(item || {}), Math.max(0, Math.floor(Number(quantity) || 0)));
+        if (!safeQuantity) this.selected.delete(id); else this.selected.set(id, safeQuantity);
+      }
+      this.error = '';
+    }
     catch (error) { this.error = error?.message || 'Link non valido o scaduto'; }
     finally { this.loading = false; this.onRender?.(); }
   }
@@ -113,11 +140,19 @@ export class CollectionShareController {
     const clamped = Math.max(0, Math.min(max, Math.round(quantity) || 0));
     if (clamped <= 0) this.selected.delete(printingId);
     else this.selected.set(printingId, clamped);
-    if (!this.selected.size) this.reviewing = false;
+    if (!this.selected.size && this.reviewing) this.closeReview();
     this.onRender?.();
   }
-  openReview() { if (!this.selected.size) return; this.reviewing = true; this._focusName = !this.requesterName.trim(); this.onRender?.(); }
-  closeReview() { this.reviewing = false; this.onRender?.(); }
+  openReview() {
+    if (!this.selected.size || this.reviewing) return;
+    if (history.state?.collectionShareReview !== this.shareId) history.pushState({ ...history.state, collectionShareReview:this.shareId }, '', location.href);
+    this.reviewing = true; this._focusName = !this.requesterName.trim(); this.onRender?.();
+  }
+  closeReview() {
+    this.reviewing = false;
+    if (history.state?.collectionShareReview === this.shareId) history.back();
+    this.onRender?.();
+  }
   async submit() {
     if (!this.selected.size || this.submitting) return;
     if (!this.requesterName.trim()) { this.onToast?.('Scrivi il tuo nome prima di inviare'); return; }
@@ -188,7 +223,7 @@ export class CollectionShareController {
       <div class="share-guest-hero-bg"${heroBg} aria-hidden="true"></div>
       <div class="share-guest-hero-top">
         <div class="share-guest-brand"><img src="icon-512.png" alt="F.P.T Cards"><b>F.P.T<small>CARDS</small></b></div>
-        <span class="share-guest-payoff">MORE THAN CARDS<br>A HIGHER PASSION</span>
+
       </div>
       <span class="eyebrow">Raccolta condivisa</span>
       <h1>Collezione di ${esc(data.ownerName)}</h1>
@@ -203,7 +238,7 @@ export class CollectionShareController {
   footerView() {
     return `<footer class="share-guest-footer">
       <button type="button" class="share-guest-footer-link" data-share-advanced>${icon('filter')} Filtri avanzati</button>
-      <span>Le grandi collezioni<br>uniscono le persone</span>
+      <span>fatti l'uacchi ;)<br>uniscono le persone</span>
     </footer>`;
   }
   facetOptions(key) {
@@ -333,6 +368,7 @@ export class CollectionShareController {
     // focus sul campo — si aggiorna quindi solo l'attributo disabled, non
     // tutto il modal.
     const syncSubmitState = () => {
+      this.persistDraft();
       const submitButton = root.querySelector('[data-share-submit]');
       if (submitButton) submitButton.disabled = !this.requesterName.trim() || !this.selected.size || this.submitting;
     };
