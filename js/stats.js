@@ -294,13 +294,15 @@ export class StatsController {
     const playerName = MEMBERS.find(m => m.id === this.state.currentUser)?.name || 'Tu';
     const progress = progressForXp(this.progression?.totalXp || 0), level = this.progression?.level || 1;
     const equippedAvatar = findCosmetic(this.cosmetics?.activeAvatar);
+    const equippedTitle = findCosmetic(this.cosmetics?.activeTitle);
+    const titleLabel = equippedTitle?.label || titleForLevel(level);
     const avatarMarkup = equippedAvatar?.image
       ? `<span class="avatar large has-image"><img src="${esc(equippedAvatar.image)}" alt="${esc(equippedAvatar.label)}"></span>`
       : `<i class="mini-avatar lg member-${esc(this.state.currentUser)}">${initials(playerName)}</i>`;
     return `<section class="stats-player-card foil-frame">
       <div class="stats-player-row">
         ${avatarMarkup}
-        <div class="stats-player-copy"><strong>${esc(playerName)}<i class="stats-online-dot" aria-hidden="true"></i></strong><small>${esc(titleForLevel(level))}</small></div>
+        <div class="stats-player-copy"><strong>${esc(playerName)}<i class="stats-online-dot" aria-hidden="true"></i></strong><small>${esc(titleLabel)}</small></div>
         <div class="stats-player-level"><b>LV ${level}</b><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
       </div>
     </section>

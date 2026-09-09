@@ -17,7 +17,7 @@ function unwrap(result) { if (result.error) throw result.error; return result.da
 export const api = {
   configured,
   async members() { ensure(); return unwrap(await client.rpc('list_login_members')); },
-  async memberAvatars() { ensure(); return unwrap(await client.rpc('list_member_avatars', { p_token:token() })); },
+  async memberProfiles() { ensure(); return unwrap(await client.rpc('list_member_profiles', { p_token:token() })); },
   async login(slug, pin) { ensure(); return unwrap(await client.rpc('login_member', { p_slug:slug, p_pin:pin, p_token:token() })); },
   async logout() { if (client) await client.rpc('logout_member', { p_token:token() }); localStorage.removeItem(TOKEN_KEY); },
   async loans({signal}={}) { ensure(); return pagedRpc(client,'list_team_loans',{p_token:token()},{signal,orders:[{column:'created_at'},{column:'id'}]}); },

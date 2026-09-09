@@ -246,7 +246,8 @@ function appView() {
 
 function xpStripView(u) {
   const progress = progressForXp(stats.progression?.totalXp || 0);
-  return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV ${progress.level}</span><span class="xp-bar"><i style="--progress:${progress.progress}"></i></span><span class="xp-strip-detail">${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</span></span><span class="xp-strip-identity">${esc(u.name)} · ${esc(titleForLevel(progress.level))}</span></button>`;
+  const titleLabel = findCosmetic(activeCosmetics().activeTitle)?.label || titleForLevel(progress.level);
+  return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV ${progress.level}</span><span class="xp-bar"><i style="--progress:${progress.progress}"></i></span><span class="xp-strip-detail">${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</span></span><span class="xp-strip-identity">${esc(u.name)} · ${esc(titleLabel)}</span></button>`;
 }
 
 function progressionDrawerView() {
@@ -353,7 +354,12 @@ async function equipCosmeticAndRefresh(type, id) {
   cosmeticActionPending = type; render();
   try {
     await api.equipCosmetic(type, id);
-    stats.cosmetics = { ...activeCosmetics(), [type === 'avatar' ? 'activeAvatar' : 'activeTitle']: id };
+    const field = type === 'avatar' ? 'activeAvatar' : 'activeTitle';
+    stats.cosmetics = { ...activeCosmetics(), [field]: id };
+    // La sezione Team legge memberProfiles (fetchata da loadMembers, non da
+    // stats.cosmetics): senza questo la propria riga lì resterebbe con
+    // l'avatar/titolo vecchio finché l'app non ricarica i membri da zero.
+    if (memberProfiles.has(state.currentUser)) memberProfiles.set(state.currentUser, { ...memberProfiles.get(state.currentUser), [field]: id });
   } catch (error) { toast(error.message || 'Operazione non riuscita'); }
   finally { cosmeticActionPending = ''; render(); }
 }
@@ -689,7 +695,12 @@ function teamView() {
   const notificationState = !supported ? 'Non supportate' : configured ? 'Push attive anche ad app chiusa' : 'Da configurare su questo dispositivo';
   const admin = state.role === 'admin';
   const manager = admin ? `<section class="card member-manager"><div class="dashboard-title"><div><span class="eyebrow">Amministrazione</span><h3>Gestione membri</h3></div></div><form id="member-form"><input id="new-member-name" maxlength="100" placeholder="Nome e cognome" required><button class="btn small" type="submit">Aggiungi</button></form></section>` : '';
-  const rows = MEMBERS.map(m => `<div class="card team-member-row">${profileAvatarMarkup(m, { activeAvatar:memberAvatars.get(m.id) || '' })}<div><strong>${m.name}</strong><small>${m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T'}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`).join('');
+  const rows = MEMBERS.map(m => {
+    const profile = memberProfiles.get(m.id) || {};
+    const titleLabel = findCosmetic(profile.activeTitle)?.label || titleForLevel(profile.level || 1);
+    const roleLabel = m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T';
+    return `<div class="card team-member-row">${profileAvatarMarkup(m, profile)}<div><strong>${m.name}</strong><small>${roleLabel} · ${esc(titleLabel)}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`;
+  }).join('');
   return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${manager}<div class="team-list">${rows}</div>`;
 }
 
@@ -1457,12 +1468,12 @@ async function submitCollectionLoanRequest(event) {
   } catch (error) { toast(error.message || 'Richiesta non riuscita'); if (submit?.isConnected) submit.disabled = false; }
 }
 
-let memberAvatars = new Map();
+let memberProfiles = new Map();
 async function loadMembers() {
-  const [items, avatars] = await Promise.all([api.members(), api.memberAvatars().catch(() => [])]);
+  const [items, profiles] = await Promise.all([api.members(), api.memberProfiles().catch(() => [])]);
   state.members = items;
   setMembers(items);
-  memberAvatars = new Map(avatars.map(row => [row.member_slug, row.active_avatar || '']));
+  memberProfiles = new Map(profiles.map(row => [row.member_slug, { activeAvatar:row.active_avatar || '', activeTitle:row.active_title || '', level:row.level || 1 }]));
 }
 
 async function addMember(event) {
