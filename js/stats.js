@@ -122,6 +122,20 @@ export class StatsController {
     this._lossStreakEggShown = true;
     if (this.scope !== 'mine') { this.scope = 'mine'; this.onRender(); }
     requestAnimationFrame(() => triggerLossStreakZoomVideo(document.querySelector('[data-stats-streak-badge]')));
+    void this.claimEasterEggTitle('title_skill_issue', 'Skill Issue');
+  }
+  // Titoli "easter egg" (vedi js/cosmetics.js): nessuna condizione da
+  // ricalcolare, si sbloccano nel momento esatto in cui l'utente vede il
+  // rispettivo easter egg — claim_cosmetic è idempotente lato server
+  // (on conflict do nothing), quindi richiamarla più volte non fa danni,
+  // ma evitiamo comunque un secondo toast se è già nella lista sbloccati.
+  async claimEasterEggTitle(id, label) {
+    if (this.cosmetics?.unlocked?.includes(id)) return;
+    try {
+      await this.api.claimCosmetic(id);
+      if (this.cosmetics) this.cosmetics = { ...this.cosmetics, unlocked:[...this.cosmetics.unlocked, id] };
+      this.onToast?.(`Titolo sbloccato: ${label}`);
+    } catch {}
   }
   async loadStats() {
     if (this.scope === 'mine') {

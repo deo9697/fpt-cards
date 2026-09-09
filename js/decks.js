@@ -10,6 +10,7 @@ function sectionsFor(deck) { return getGameAdapter(deck?.game).sections; }
 function labelsFor(deck) { return getGameAdapter(deck?.game).labels; }
 const DRAFTS_KEY = 'fpt-cards-deck-drafts-v1';
 const DECK_100_CELEBRATED_KEY = 'fpt-cards-deck-100-celebrated-v1';
+const BATTLE_READY_CLAIMED_KEY = 'fpt-cards-title-battle-ready-claimed-v1';
 const CARD_TYPE_CACHE_KEY = 'fpt-cards-type-index-v1';
 const TYPE_FILTERS = [
   { value: 'all', label: 'Tutte' },
@@ -98,6 +99,19 @@ export class DeckController {
     if (percent !== 100) { if (celebrated.has(deckId)) { celebrated.delete(deckId); writeCelebratedDecks(celebrated); } return false; }
     if (celebrated.has(deckId)) return false;
     celebrated.add(deckId); writeCelebratedDecks(celebrated); return true;
+  }
+  // Titolo "easter egg" Battle Ready (vedi js/cosmetics.js): claim_cosmetic è
+  // idempotente lato server, ma il toast di sblocco deve comparire una volta
+  // sola nella vita del membro, non ad ogni ri-celebrazione dello stesso o di
+  // un altro mazzo — da qui il guard locale, separato da quello per-mazzo
+  // di checkDeck100Celebration.
+  claimBattleReadyTitle() {
+    let claimed; try { claimed = localStorage.getItem(BATTLE_READY_CLAIMED_KEY) === '1'; } catch { claimed = false; }
+    this.api.claimCosmetic('title_battle_ready').then(() => {
+      if (claimed) return;
+      try { localStorage.setItem(BATTLE_READY_CLAIMED_KEY, '1'); } catch {}
+      this.onToast?.('Titolo sbloccato: Battle Ready');
+    }).catch(() => {});
   }
   galleryPreview(deck) { const report = deckAvailability(deck, this.state.collection, this.state.currentUser, { loans:this.state.loans }), total = deck.cards.reduce((sum, item) => sum + item.quantity, 0); return `<aside class="deck-gallery-preview surface" aria-label="Anteprima ${esc(deck.name)}"><span class="eyebrow">Mazzo selezionato</span>${renderDeckBoxVisual(deck)}<h2>${esc(deck.name)}</h2><p>${deck.dirty ? 'Bozza salvata sul dispositivo' : `Formato: ${esc(deck.format || 'TCG Avanzato')}`}</p><div class="deck-preview-counts"><span><small>Totale</small><b>${total}</b></span>${sectionsFor(deck).map(section => `<span><small>${esc(labelsFor(deck)[section].replace(' Deck', ''))}</small><b>${sectionTotal(deck, section)}</b></span>`).join('')}</div><div class="deck-preview-ready"><span><small>Disponibilità personale</small><strong>${report.percent}%</strong></span><i style="--ready:${report.percent}"></i></div><button class="btn wide" data-deck-open="${esc(deck.id)}">Apri mazzo ${icon('arrow')}</button></aside>`; }
   teamDetailView(deck) {
@@ -289,6 +303,7 @@ export class DeckController {
     // almeno il video parte — non lasciarlo semplicemente fermo.
     root.querySelectorAll('[data-deck-celebrate]').forEach(video => {
       video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+      this.claimBattleReadyTitle();
     });
     root.querySelectorAll('[data-deck-new]').forEach(button => button.addEventListener('click', () => this.create()));
     root.querySelector('[data-deck-gallery]')?.addEventListener('click', () => this.showGallery());

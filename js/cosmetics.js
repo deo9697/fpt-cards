@@ -6,11 +6,15 @@
 //
 // Ogni cosmetic: { id, type:'avatar'|'title', label, unlock:{type,value}, ... }.
 // Tipi di unlock supportati oggi: 'level' (richiede progression.level >= value,
-// sempre vero per value<=1) e 'achievement' (richiede che context.rivalWins
+// sempre vero per value<=1), 'achievement' (richiede che context.rivalWins
 // abbia almeno unlock.value vittorie contro unlock.opponentSlug — vedi
-// get_rival_wins in supabase-milestone-14-rival-avatars.sql). Pensato per
-// estendersi ulteriormente a 'daily' | 'event' | 'admin' | 'special' senza
-// cambiare la struttura sopra.
+// get_rival_wins in supabase-milestone-14-rival-avatars.sql) ed 'event'
+// (nessuna condizione calcolabile: sbloccato SOLO quando chi trigghera
+// l'easter egg corrispondente chiama api.claimCosmetic() direttamente nel
+// momento in cui l'utente lo vede — isCosmeticUnlocked() torna sempre false
+// per questi, non c'è uno stato da ricontrollare al login). Pensato per
+// estendersi ulteriormente a 'daily' | 'admin' | 'special' senza cambiare
+// la struttura sopra.
 
 export const COSMETICS = [
   // Avatar: per ora solo il mascotte "Tonno" (artwork reale, non più
@@ -44,7 +48,15 @@ export const COSMETICS = [
   // opponentSlug/value), così sbloccano insieme in un colpo solo.
   { id:'title_nellento', type:'title', label:'Nello, Ryu-ge Lento', unlock:{ type:'achievement', opponentSlug:'cristian-spadafora', value:5 } },
   { id:'title_christofer', type:'title', label:"L'Altezzoso", unlock:{ type:'achievement', opponentSlug:'cristofer', value:5 } },
-  { id:'title_capeleira', type:'title', label:"Capeleira, Malebranche dell'Abisso Bruciante", unlock:{ type:'achievement', opponentSlug:'daniele', value:5 } }
+  { id:'title_capeleira', type:'title', label:"Capeleira, Malebranche dell'Abisso Bruciante", unlock:{ type:'achievement', opponentSlug:'daniele', value:5 } },
+
+  // Titoli "easter egg": sbloccati assistendo a un easter egg specifico, non
+  // da una condizione calcolabile — vedi checkLossStreakEasterEgg() in
+  // stats.js (triple sconfitta) e il bind di [data-deck-celebrate] in
+  // decks.js (mazzo al 100%), che chiamano claimCosmetic() nel momento
+  // esatto in cui l'utente vede il rispettivo video.
+  { id:'title_skill_issue', type:'title', label:'Skill Issue', unlock:{ type:'event', value:'triple_loss' } },
+  { id:'title_battle_ready', type:'title', label:'Battle Ready', unlock:{ type:'event', value:'deck_100' } }
 ];
 
 export function isCosmeticUnlocked(cosmetic, progression, context = {}) {
@@ -52,6 +64,8 @@ export function isCosmeticUnlocked(cosmetic, progression, context = {}) {
   const { type, value, opponentSlug } = cosmetic.unlock;
   if (type === 'level') return (progression?.level || 1) >= value;
   if (type === 'achievement') return (context.rivalWins?.[opponentSlug] || 0) >= value;
+  // 'event': mai vero qui, va sempre e solo claimato direttamente da chi
+  // trigghera l'easter egg — vedi commento sopra COSMETICS.
   return false;
 }
 
