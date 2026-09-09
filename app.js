@@ -1,3 +1,4 @@
+import {renderTeamPage, bindTeamPage} from './js/team.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
@@ -689,21 +690,15 @@ function loanCard(l) {
   return `<article class="card loan"><div><p><strong>${esc(l.cardName)}</strong> × ${l.quantity}</p><div class="meta">${isOwner ? `A ${member(l.borrower).name}` : `Da ${member(l.owner).name}`} · ${formatDate(l.createdAt)}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ''}</div><span class="badge ${l.status === 'returned' ? 'ok' : l.status.includes('pending') ? 'wait' : ''}">${statusLabel(l.status)}</span>${buttons ? `<div class="actions">${buttons}</div>` : ''}</article>`;
 }
 
-function teamView() {
-  const supported = pushSupported();
-  const configured = supported && pushConfigured();
-  const notificationState = !supported ? 'Non supportate' : configured ? 'Push attive anche ad app chiusa' : 'Da configurare su questo dispositivo';
-  const admin = state.role === 'admin';
-  const manager = admin ? `<section class="card member-manager"><div class="dashboard-title"><div><span class="eyebrow">Amministrazione</span><h3>Gestione membri</h3></div></div><form id="member-form"><input id="new-member-name" maxlength="100" placeholder="Nome e cognome" required><button class="btn small" type="submit">Aggiungi</button></form></section>` : '';
-  const rows = MEMBERS.map(m => {
-    const profile = memberProfiles.get(m.id) || {};
-    const titleLabel = findCosmetic(profile.activeTitle)?.label || titleForLevel(profile.level || 1);
-    const roleLabel = m.id === state.currentUser ? 'Tu' : m.role === 'admin' ? 'Amministratore' : 'Membro F.P.T';
-    return `<div class="card team-member-row">${profileAvatarMarkup(m, profile)}<div><strong>${m.name}</strong><small>${roleLabel} · ${esc(titleLabel)}</small></div>${admin && m.role !== 'admin' ? `<div class="member-admin-actions"><button class="btn secondary small" data-member-action="reset-pin" data-member-id="${m.id}">Reset PIN</button><button class="btn secondary danger small" data-member-action="deactivate" data-member-id="${m.id}">Disattiva</button></div>` : ''}</div>`;
-  }).join('');
-  return `<h2>Il team</h2><section class="card notification-setting"><div><strong>Notifiche richieste</strong><small>${notificationState}</small></div><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></section>${manager}<div class="team-list">${rows}</div>`;
+function teamModel() {
+  const supported=pushSupported();
+  return {members:MEMBERS,currentUser:state.currentUser,admin:state.role==='admin',supported,configured:supported&&pushConfigured(),
+    openLoans:state.loans.filter(loan=>!['returned','completed','rejected'].includes(loan.status)).length,
+    avatar:m=>profileAvatarMarkup(m,memberProfiles.get(m.id)||{}),
+    title:m=>{const profile=memberProfiles.get(m.id)||{};return findCosmetic(profile.activeTitle)?.label||titleForLevel(profile.level||1);}
+  };
 }
-
+function teamView() { return renderTeamPage(teamModel()); }
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#member')?.addEventListener('change', event => {
@@ -813,7 +808,7 @@ function bind() {
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
-  document.querySelectorAll('[data-member-action]').forEach(button => button.addEventListener('click', () => manageMember(button.dataset.memberAction, button.dataset.memberId)));
+  bindTeamPage(document, teamModel(), manageMember);
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks') decks.bind(document);

@@ -2376,3 +2376,74 @@ button.market-row:hover { background:#15121d; }
   .duel-welcome-logo .duel-game-logo::before,.xp-bar>i::before,.xp-bar>i::after { animation:none; }
   .xp-bar>i { transition:none; }
 }
+/* Team management: shared roster, real account roles and existing admin actions. */
+.team-page { max-width:1080px;margin-inline:auto;gap:18px; }
+.team-hero { min-height:170px;position:relative;display:flex;align-items:center;isolation:isolate;overflow:hidden;padding:18px 6px; }
+.team-hero>div { position:relative;z-index:1; }
+.team-hero .eyebrow { color:#c699ed;font-size:.65rem;letter-spacing:.15em; }
+.team-hero h1 { margin:6px 0;font-family:Georgia,serif;font-size:clamp(2.6rem,5vw,4rem);line-height:1.12;color:#ffe3b1;text-shadow:0 2px 18px #d5a15230; }
+.team-hero p { margin:10px 0 0;color:#b9b6ce;line-height:1.6;font-size:.88rem; }
+.team-hero>img { position:absolute;right:22px;top:-30px;width:170px;height:255px;object-fit:contain;transform:rotate(15deg);opacity:.55;z-index:-1;mask-image:linear-gradient(#000 40%,transparent 95%); }
+.team-summary { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:20px 6px;border:1px solid #79529b;border-bottom-color:#ae864b;border-radius:19px;background:linear-gradient(125deg,#251733cc,#0d1321ee 65%);box-shadow:inset 0 1px #ffffff12,0 9px 25px #0004; }
+.team-summary>div { display:grid;justify-items:center;gap:5px;padding:0 4px;text-align:center; }
+.team-summary>div+div { border-left:1px solid #39334b; }
+.team-summary .icon { width:22px;height:22px;color:#b28aff;margin-bottom:3px; }
+.team-summary>div:nth-child(2) .icon { color:#efc572; }
+.team-summary>div:nth-child(3) .icon { color:#86dfc2; }
+.team-summary>div:nth-child(4) .icon { color:#b4bcff; }
+.team-summary strong { color:#faf5ff;font-size:1.55rem;line-height:1.15; }
+.team-summary small { color:#b3b4cb;font-size:.7rem; }
+.team-notifications { display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:14px;align-items:center;padding:20px;border:1px solid #b18d4e;border-radius:16px;background:#111320;box-shadow:inset 0 1px #ffd99020,0 0 18px #efb8560c; }
+.team-notification-icon { color:#ffd67e; }
+.team-notification-icon .icon { width:30px;height:30px; }
+.team-notifications h2 { margin:0 0 5px;font-size:.95rem; }
+.team-notifications p { margin:0;color:#b1b4c8;font-size:.76rem;line-height:1.6;max-width:55ch; }
+.team-notifications .btn { border-color:#b99656;color:#ffde94;min-height:42px; }
+.team-section-heading { display:flex;align-items:center;gap:12px;margin:8px 0 18px; }
+.team-section-heading>.icon { width:28px;height:28px;color:#edc57d; }
+.team-section-heading h2 { font-family:Georgia,serif;font-size:1.5rem;margin:0 0 5px;color:#f5eee2; }
+.team-section-heading p { margin:0;color:#aeb2c7;font-size:.8rem; }
+.team-toolbar { display:flex;gap:12px;align-items:center; }
+.team-search { display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:0 12px;border:1px solid #565377;border-radius:12px;background:#0b0f1a; }
+.team-search>.icon { flex:none;width:20px;color:#aeb1cd; }
+.team-search input { min-width:0;width:100%;padding:14px 0;font-size:16px;border:0;background:transparent;color:#f5f3fc;box-shadow:none; }
+.team-search:focus-within { outline:2px solid #b87ef4;outline-offset:2px; }
+.team-add-toggle { min-height:48px;border:1px solid #dcb56f;border-radius:12px;box-shadow:0 0 14px #a850df33; }
+.team-filters { display:flex;gap:9px;margin:16px 0 0; }
+.team-filters button { flex:1;display:flex;justify-content:center;align-items:center;gap:7px;min-height:42px;border:1px solid #4b456a;border-radius:999px;background:#0c101b;color:#bfc2d8;font-size:.8rem; }
+.team-filters button span { font-size:.7rem;opacity:.8; }
+.team-filters button.active { color:white;border-color:#c285ff;background:#5c2293;box-shadow:inset 0 1px #e9c5ff40,0 0 15px #a63ff933; }
+.team-result-count { font-size:.65rem;color:#979db5;letter-spacing:.06em;margin:13px 2px 9px; }
+.team-roster { display:grid;gap:12px; }
+.team-person { display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:12px;padding:18px;border:1px solid #49466c;border-radius:15px;background:linear-gradient(115deg,#171a2b,#0b101b);box-shadow:inset 0 1px #ffffff0a; }
+.team-person.is-self { border-color:#d7ad60;background:linear-gradient(115deg,#242031,#11121d);box-shadow:0 0 13px #d6a14a1b,inset 0 1px #ffda8633; }
+.team-person-avatar { align-self:start; }
+.team-person-avatar .avatar { width:52px;height:52px; }
+.team-person-copy { min-width:0; }
+.team-person-copy h3 { margin:0;color:#f3f1fa;font-size:1rem;line-height:1.4;overflow-wrap:anywhere; }
+.team-person-copy p { margin:4px 0 0;color:#a8aec5;font-size:.76rem; }
+.team-you { display:inline-block;vertical-align:middle;padding:2px 8px;margin-left:4px;border:1px solid #b38b4a;border-radius:999px;color:#ffda8b;font-size:.63rem;font-family:var(--font);font-weight:600; }
+.team-role { border:1px solid #4b5470;border-radius:999px;padding:5px 10px;font-size:.67rem;color:#bcc7dc; }
+.team-role.is-admin { border-color:#8553b9;color:#d0a0ff;background:#44236544; }
+.team-person-actions { grid-column:2/-1;display:flex;gap:10px; }
+.team-person-actions .btn { flex:1;min-height:40px;justify-content:center;border-radius:10px;font-size:.72rem; }
+.team-person-actions .icon { width:16px;height:16px; }
+.team-person-actions .danger { border-color:#8e394e;background:#30131e55;color:#ff91a4; }
+.team-add-panel { margin-top:12px;padding:18px;border:1px solid #7753a2;border-radius:12px;background:#151322; }
+.team-add-panel[hidden] { display:none; }
+.team-add-panel form>div { display:flex;gap:10px;margin:8px 0; }
+.team-add-panel input { min-width:0;flex:1;font-size:16px; }
+.team-add-panel small { color:#aeb1c5;font-size:.7rem; }
+.team-no-results { text-align:center;padding:38px 16px;color:#aeb1c5; }
+.team-no-results>.icon { width:28px;height:28px; }
+.team-no-results h3 { color:#eee8fa; }
+.team-page button:focus-visible { outline:2px solid #e6b8ff;outline-offset:3px; }
+@media(min-width:900px) { .team-roster { grid-template-columns:repeat(2,minmax(0,1fr)); }.team-hero>img { width:210px;height:315px;right:50px; }.team-hero { min-height:195px; } }
+@media(max-width:480px) {
+  .team-page { gap:14px; }.team-hero { min-height:153px; }.team-hero>img { right:-10px;width:140px;opacity:.38; }
+  .team-hero p { font-size:.78rem; }.team-summary { padding:16px 4px; }.team-summary small { font-size:.6rem; }
+  .team-notifications { padding:15px;grid-template-columns:26px minmax(0,1fr);gap:10px; }.team-notification-icon .icon { width:25px; }.team-notifications .btn { grid-column:2;justify-self:start;font-size:.75rem; }
+  .team-person { padding:14px 12px;grid-template-columns:44px minmax(0,1fr) auto;gap:10px; }.team-person-avatar .avatar { width:44px;height:44px; }.team-person-copy h3 { font-size:.87rem; }.team-person-copy p { font-size:.68rem; }.team-role { font-size:.59rem;padding:4px 7px; }
+  .team-person-actions { grid-column:1/-1; }.team-toolbar { gap:8px; }.team-add-toggle { font-size:.76rem;padding-inline:12px; }.team-section-heading h2 { font-size:1.25rem; }
+  .team-add-panel form>div { flex-direction:column; }
+}
