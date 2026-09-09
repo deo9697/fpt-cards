@@ -24,12 +24,15 @@ alter table public.card_printings
   drop column if exists catalog_verification_version,
   drop column if exists catalog_verification_status;
 
--- Rimuove soltanto l'alias inserito da questa migration, senza toccare un
--- eventuale mapping omonimo creato o modificato da altre procedure.
+-- Rimuove soltanto l'alias inserito da questa migration (73642297 come
+-- artwork alternativo, 73642296 come identita canonica — vedi il commento
+-- nella migration forward), senza toccare un eventuale mapping omonimo
+-- creato o modificato da altre procedure. Non deve MAI reinserire la
+-- direzione invertita (73642296 come alias): è solo una delete.
 delete from public.card_catalog_aliases
 where game = 'yugioh'
-  and alias_catalog_card_id = '73642296'
-  and canonical_catalog_card_id = '73642297'
+  and alias_catalog_card_id = '73642297'
+  and canonical_catalog_card_id = '73642296'
   and source = 'FPT legacy Ghost Belle identity';
 
 notify pgrst, 'reload schema';

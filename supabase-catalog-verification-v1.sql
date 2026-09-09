@@ -3,20 +3,38 @@
 
 begin;
 
--- Alias legacy rilevato nei mazzi esistenti: l'inventario canonico usa 73642297.
+-- Ghost Belle & Haunted Mansion: 73642297 e' l'artwork alternativo,
+-- 73642296 e' l'identita' canonica (confermato contro il catalogo live —
+-- vedi YUGIOH_CATALOG_ALIASES in js/cards.js e
+-- scripts/catalog-alternate-artwork-smoke.mjs, entrambi verificano la stessa
+-- direzione). Una versione precedente di questa migration aveva le due
+-- colonne scambiate (73642296 come alias, 73642297 come canonico) — mai
+-- applicata al Supabase reale ("NON applicare automaticamente" in testa al
+-- file), corretta qui prima che potesse esserlo.
 insert into public.card_catalog_aliases(
   game, alias_catalog_card_id, canonical_catalog_card_id, source
 ) values (
-  'yugioh', '73642296', '73642297', 'FPT legacy Ghost Belle identity'
+  'yugioh', '73642297', '73642296', 'FPT legacy Ghost Belle identity'
 )
 on conflict (game, alias_catalog_card_id) do nothing;
 
+-- Guardia esplicita, non solo un controllo di non-conflitto: blocca la
+-- migration se l'alias Ghost Belle risulta mai orientato nella direzione
+-- sbagliata (73642296 come alias, o 73642297 associato a un canonico che
+-- non sia 73642296), cosi' l'inversione non può essere reintrodotta per
+-- errore in una revisione futura di questo file.
 do $$
 begin
   if exists (
     select 1 from public.card_catalog_aliases
     where game = 'yugioh' and alias_catalog_card_id = '73642296'
-      and canonical_catalog_card_id <> '73642297'
+  ) then
+    raise exception 'Alias Ghost Belle invertito: 73642296 e canonico, non deve comparire come alias_catalog_card_id';
+  end if;
+  if exists (
+    select 1 from public.card_catalog_aliases
+    where game = 'yugioh' and alias_catalog_card_id = '73642297'
+      and canonical_catalog_card_id <> '73642296'
   ) then
     raise exception 'Alias Ghost Belle gia associato a una identita differente';
   end if;

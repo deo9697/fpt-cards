@@ -9,6 +9,19 @@
 // Nessuna chiamata di rete reale: fetch è mockato con dati strutturalmente
 // validi ma inventati, stesso pattern di scripts/collection-loans-2-1-smoke.mjs.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+// Guardia statica (nessun DB necessario): la migration card_catalog_aliases
+// per Ghost Belle è già stata trovata invertita una volta (73642296 come
+// alias invece che canonico) — verifica il testo dei due file così una
+// revisione futura non possa reintrodurre l'inversione senza far fallire
+// anche solo questo script, prima ancora di toccare Supabase.
+const forwardSql = fs.readFileSync(new URL('../supabase-catalog-verification-v1.sql', import.meta.url), 'utf8');
+assert(forwardSql.includes("'yugioh', '73642297', '73642296', 'FPT legacy Ghost Belle identity'"), 'migration forward: direzione alias Ghost Belle non corretta (deve essere 73642297 alias -> 73642296 canonico)');
+assert(!/'yugioh',\s*'73642296',\s*'73642297'/.test(forwardSql), 'migration forward: trovata la direzione invertita (73642296 come alias)');
+const rollbackSql = fs.readFileSync(new URL('../supabase-catalog-verification-v1-rollback.sql', import.meta.url), 'utf8');
+assert(rollbackSql.includes("alias_catalog_card_id = '73642297'") && rollbackSql.includes("canonical_catalog_card_id = '73642296'"), 'rollback: non rimuove la riga con la direzione corretta');
+assert(!rollbackSql.includes("alias_catalog_card_id = '73642296'"), 'rollback: non deve mai referenziare 73642296 come alias (direzione invertita)');
 
 const SET_ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardsetsinfo.php';
 const ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardinfo.php';
@@ -77,4 +90,12 @@ assert.equal(unmapped[0].catalogCardId, String(UNMAPPED_ALT_ART_ID), 'un id non 
 assert.equal(canonicalCatalogCardId(String(ALT_ART_ID), 'yugioh'), CANONICAL_ID);
 assert.equal(canonicalCatalogCardId(String(UNMAPPED_ALT_ART_ID), 'yugioh'), String(UNMAPPED_ALT_ART_ID));
 
-console.log('PASS lookupPrintingBySetCode canonicalizza gli artwork alternativi confermati (94145022→94145021) · lascia invariate le identità non mappate · immagine reale della riga preservata, non inventata');
+// 4) Casi reali verificati contro il DB, non solo Droll & Lock Bird: senza
+// queste due la tabella locale poteva restare incompleta (SDDC-IT013/
+// Red-Eyes Darkness Metal Dragon, 88264979 mai aggiunta) o invertita (Ghost
+// Belle & Haunted Mansion, 73642297/73642296 scambiati) e il test restava
+// comunque verde.
+assert.equal(canonicalCatalogCardId('88264979', 'yugioh'), '88264978', 'Red-Eyes Darkness Metal Dragon (SDDC-IT013): alias mancante, la scansione futura non è protetta');
+assert.equal(canonicalCatalogCardId('73642297', 'yugioh'), '73642296', 'Ghost Belle & Haunted Mansion: direzione alias invertita');
+
+console.log('PASS lookupPrintingBySetCode canonicalizza gli artwork alternativi confermati (94145022→94145021, 88264979→88264978, 73642297→73642296) · lascia invariate le identità non mappate · immagine reale della riga preservata, non inventata');
