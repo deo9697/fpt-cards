@@ -17,6 +17,7 @@
     ,"test:high-regressions": "node scripts/high-regression-smoke.mjs"
     ,"test:printing-editor": "node scripts/printing-editor-integrity-smoke.mjs"
     ,"test:share-guest": "node scripts/collection-share-guest-smoke.mjs"
+    ,"test:loan-idempotency": "node scripts/loan-request-idempotency-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

@@ -121,9 +121,6 @@ export const api = {
       p_token:token(), p_id:id, p_action:action, p_quantity:quantity
     }));
   },
-  async create(cardName, quantity, borrower, notes) {
-    ensure(); return unwrap(await client.rpc('create_team_loan', { p_token:token(), p_card_name:cardName, p_quantity:quantity, p_borrower_slug:borrower, p_notes:notes }));
-  },
   async createMany(cards, borrower, notes, game) {
     ensure(); return unwrap(await client.rpc('create_team_loans', { p_token:token(), p_cards:cards.map(c => ({ name:c.name, quantity:c.quantity, image:c.image || '', externalId:c.id || '', collectionItemId:c.collectionItemId || '' })), p_borrower_slug:borrower, p_notes:notes, p_game:game }));
   },

@@ -1430,7 +1430,7 @@ async function submitCollectionLoanRequest(event) {
   const submit = event.submitter;
   if (submit) submit.disabled = true;
   try {
-    await api.requestCollectionLoan(item.id, quantity, notes);
+    await api.requestCollectionLoan(item.id, quantity, notes, false, crypto.randomUUID());
     await Promise.all([loadCloudLoans(), loadCollection()]);
     collectionLoanRequest = null; saveState(); render(); toast('Richiesta inviata al proprietario');
   } catch (error) { toast(error.message || 'Richiesta non riuscita'); if (submit?.isConnected) submit.disabled = false; }
@@ -1626,7 +1626,7 @@ async function createLoan(e) {
   render(true);
   try {
     if (requesting) {
-      const results = await Promise.allSettled(draftCards.map(card => api.requestCollectionLoan(card.collectionItemId, card.quantity, notes)));
+      const results = await Promise.allSettled(draftCards.map(card => api.requestCollectionLoan(card.collectionItemId, card.quantity, notes, false, crypto.randomUUID())));
       const failed = results.map((result,index) => result.status === 'rejected' ? draftCards[index] : null).filter(Boolean);
       if (failed.length) {
         const sent = draftCards.length - failed.length;
