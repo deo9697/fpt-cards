@@ -2313,3 +2313,79 @@ button.market-row:hover { background:#15121d; }
 @media(prefers-reduced-motion:reduce) {
   .deck-page.is-gallery .deck-box-card { transition:none; }
 }
+
+/* Deck gallery: immersive covers and a readable mobile-first list. */
+.deck-page.is-gallery .deck-gallery-layout { grid-template-columns:minmax(0,1fr) 300px;gap:24px; }
+.deck-page.is-gallery .deck-box-grid { grid-template-columns:1fr;gap:12px; }
+.deck-page.is-gallery .deck-box-card { grid-template-columns:39% minmax(0,1fr);grid-template-rows:auto;min-height:216px;background:#0b0e17;border-radius:16px; }
+.deck-page.is-gallery .deck-box-card::before { display:none; }
+.deck-page.is-gallery .deck-box-card:hover,.deck-page.is-gallery .deck-box-card.selected { transform:none;border-color:#b966ee;box-shadow:0 0 0 1px #b966ee30,0 0 22px #a245cf25; }
+.deck-page.is-gallery .deck-box-card .deck-box-visual { align-self:stretch;width:100%;height:100%;min-height:216px;margin:0;border:0;border-radius:0;background:#10121c;transform:none;box-shadow:none;overflow:hidden; }
+.deck-page.is-gallery .deck-box-visual::before,.deck-page.is-gallery .deck-box-visual::after,.deck-page.is-gallery .deck-box-visual>i { display:none; }
+.deck-page.is-gallery .deck-box-card .deck-box-visual img { border-radius:0;transform:none;filter:none;object-fit:cover; }
+.deck-page.is-gallery .deck-box-copy { display:flex;flex-direction:column;justify-content:center;gap:12px;padding:20px;border:0;border-left:1px solid #ffffff0c;background:transparent; }
+.deck-page.is-gallery .deck-box-copy>strong { font-size:1.2rem;line-height:1.3;white-space:normal;overflow-wrap:anywhere; }
+.deck-page.is-gallery .deck-box-copy>small { font-size:.73rem;line-height:1.6; }
+.deck-page.is-gallery .deck-box-copy>small>b:nth-of-type(1) { color:#c681ff; }
+.deck-page.is-gallery .deck-box-copy>small>b:nth-of-type(2) { color:#62d0ff; }
+.deck-page.is-gallery .deck-box-copy>small>b:nth-of-type(3) { color:#ff8499; }
+.deck-page.is-gallery .deck-box-copy>em { grid-template-columns:1fr auto;font-size:.7rem;color:#aeb5c5; }
+.deck-page.is-gallery .deck-availability-meter>b { color:var(--availability-color);font-size:.88rem; }
+.deck-page.is-gallery .deck-mini-ready { display:block;grid-column:1/-1;width:100%;mask:none;height:5px;border-radius:10px;background:#333741;overflow:hidden; }
+.deck-page.is-gallery .deck-mini-ready::before { content:'';display:block;width:calc(var(--ready)*1%);height:100%;border-radius:inherit;background:var(--availability-color);box-shadow:0 0 8px var(--availability-color); }
+.deck-card-footer { display:none; }
+.deck-page.is-gallery .deck-card-footer { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto; }
+.deck-card-footer>span:first-child { color:#b8becb;font-size:.61rem; }
+.deck-page.is-gallery .deck-card-open { display:flex;align-items:center;justify-content:center;gap:18px;min-height:36px;padding:5px 16px;border:1px solid #414454;border-radius:8px;font-size:.76rem;color:#f7edff; }
+.deck-page.is-gallery .selected .deck-card-open { border-color:#8750ac;background:#271537; }
+.deck-card-open .icon { width:16px;height:16px; }
+.deck-page.is-gallery .deck-gallery-preview { position:sticky;top:90px;background:#0b0e17;border-color:#393143; }
+.deck-gallery-hero h1 { letter-spacing:-.045em; }
+.deck-gallery-hero .eyebrow { color:#c681ff; }
+.deck-page.is-gallery>.tabs { padding:4px;border:1px solid #33333f;border-radius:12px;background:#080b12; }
+.deck-page.is-gallery>.tabs button { flex:1;border-radius:9px; }
+.deck-page.is-gallery>.tabs button.active { background:#251733;color:#f6eaff;box-shadow:inset 0 0 0 1px #a45bd540; }
+.deck-cover-picker { width:min(1100px,100%);background:#0b0d16;border:1px solid #82549c; }
+.deck-studio-layout { display:grid;grid-template-columns:220px minmax(0,1fr) minmax(240px,.9fr);gap:24px;margin-top:24px;align-items:start; }
+.deck-studio-preview { display:grid;justify-items:center;text-align:center;gap:8px;position:sticky;top:0;padding:12px;min-width:0; }
+.deck-studio-preview .deck-preview-box { width:165px;height:230px;margin:15px auto 28px; }
+.deck-studio-preview>strong { overflow-wrap:anywhere;max-width:100%; }
+.deck-studio-preview>small { color:var(--muted);font-size:.7rem; }
+.deck-studio-theme { display:grid;gap:8px;font-size:.8rem; }
+.deck-studio-controls h3,.deck-studio-signature h3 { margin:16px 0 12px;font-size:.85rem; }
+.deck-studio-controls .deck-template-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.deck-studio-controls .deck-template-options img,.deck-studio-controls .deck-template-options button>span { height:130px; }
+.deck-studio-signature .deck-signature-heading { display:block;margin:0; }
+.deck-studio-signature .deck-signature-heading p { font-size:.7rem;line-height:1.6; }
+.deck-studio-signature .deck-cover-options { grid-template-columns:1fr;max-height:380px; }
+.deck-studio-signature .deck-cover-options strong { font-size:.76rem; }
+.deck-studio-signature .deck-cover-options small { font-size:.66rem; }
+.deck-cover-back { min-height:44px; }
+@media(min-width:1500px) {
+  .deck-page.is-gallery .deck-box-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:1050px) {
+  .deck-page.is-gallery .deck-gallery-layout { grid-template-columns:1fr; }
+  .deck-studio-layout { grid-template-columns:190px minmax(0,1fr); }
+  .deck-studio-signature { grid-column:1/-1; }
+}
+@media(max-width:600px) {
+  .deck-page.is-gallery .deck-box-card { grid-template-columns:38% minmax(0,1fr);min-height:194px; }
+  .deck-page.is-gallery .deck-box-card .deck-box-visual { min-height:194px; }
+  .deck-page.is-gallery .deck-box-copy { padding:14px 12px;gap:9px; }
+  .deck-page.is-gallery .deck-box-copy>strong { font-size:1.02rem; }
+  .deck-page.is-gallery .deck-box-copy>small { font-size:.65rem; }
+  .deck-page.is-gallery .deck-card-footer { flex-wrap:wrap;gap:6px; }
+  .deck-page.is-gallery .deck-card-open { flex:1;min-height:34px; }
+  .deck-gallery-hero h1 { font-size:1.7rem; }
+  .deck-studio-layout { grid-template-columns:1fr;gap:16px; }
+  .deck-studio-preview { position:static; }
+  .deck-studio-preview .deck-preview-box { width:130px;height:175px;margin:8px auto 20px; }
+  .deck-studio-controls .deck-template-options { grid-template-columns:repeat(4,minmax(0,1fr));gap:6px; }
+  .deck-studio-controls .deck-template-options img,.deck-studio-controls .deck-template-options button>span { height:90px; }
+  .deck-studio-controls .deck-template-options strong { white-space:normal;font-size:.59rem; }
+  .deck-studio-signature .deck-cover-options { max-height:280px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .deck-page.is-gallery .deck-box-card { transition:none; }
+}

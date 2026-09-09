@@ -43,7 +43,7 @@ export class FastScanController {
     if(this.paddleState==='paddle')return;if(this.primaryOcrPreparing)return this.primaryOcrPreparing;this.paddleState='preparing';this.paddleError='';this.primaryOcrPreparing=(async()=>{try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(error){this.paddleState='unavailable';this.paddleError=error?.message||String(error);}})();try{await this.primaryOcrPreparing;}finally{this.primaryOcrPreparing=null;}}
   async recognizeProduction(canvas){
     if(this.paddleState!=='paddle')await this.prepareProductionOcr();
-    if(this.paddleState==='paddle'){const result=await this.paddleOcr.recognize(canvas);return {text:result.text,confidence:result.confidence,engine:'paddle'};}
+    if(this.paddleState==='paddle'){const started=performance.now();const result=await this.paddleOcr.recognize(canvas);this.debugTrace('ocr:timing',{durationMs:Math.round(performance.now()-started),width:canvas.width,height:canvas.height,confidence:result.confidence});return {text:result.text,confidence:result.confidence,engine:'paddle'};}
     throw new Error(this.paddleError||'Motore OCR non disponibile');
   }
   async disposeProductionOcr(){if(this.primaryOcrPreparing)await this.primaryOcrPreparing.catch(()=>{});await this.paddleOcr.dispose?.();this.paddleState='idle';this.paddleError='';}
@@ -179,12 +179,12 @@ export class FastScanController {
       // frame is available because some mobile cameras return shifted frames.
       if(!snapshot)snapshot=await this.camera.captureSnapshot(roi,{preferVideoFrame:false,includeRaw:true});
       if(!snapshot||this.phase!=='scanning'||this.exitOpen||this.manualOpen){if(!snapshot)await this.recordFailure();return;}
-      this.lastPreprocessing=snapshot.preprocessing;await this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
+      this.lastPreprocessing=snapshot.preprocessing;void this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
       const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
       this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;const plan=createOcrInputPlan(snapshot),productionReadings=[];try{
         this.renderDebugCrop(plan.primary.canvas,snapshot.mapping,'grayscale');
         const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted;productionReadings.push(primary);let outcome=null;
-        if(primaryCode.valid&&!repeatedLast){this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();const resolved=await this.resolve(primary.text,primary.confidence,{consensus:1});if(resolved.status==='high_confidence'){this.gate.accept(resolved.code,frame.signature,Date.now());this.consensus.reset();this.failureStreak=0;this.lastPreprocessing=primary.preprocessing;await this.commitResolution(resolved,primary.text);this.camera.clearPreprocessingPreference?.();outcome=resolved;this.debugTrace('ocr:short-circuit',{rawOcr:primary.text,parsedCode:primaryCode.code,decision:resolved.decision,printingId:resolved.matches?.[0]?.printingId||''});}}
+        if(primaryCode.valid&&!repeatedLast){this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();const resolved=await this.resolve(primary.text,primary.confidence,{consensus:1,exactOnly:true});if(resolved.status==='high_confidence'){this.gate.accept(resolved.code,frame.signature,Date.now());this.consensus.reset();this.failureStreak=0;this.lastPreprocessing=primary.preprocessing;await this.commitResolution(resolved,primary.text);this.camera.clearPreprocessingPreference?.();outcome=resolved;this.debugTrace('ocr:short-circuit',{rawOcr:primary.text,parsedCode:primaryCode.code,decision:resolved.decision,printingId:resolved.matches?.[0]?.printingId||''});}}
         if(!outcome){this.setStatus('Verifico lettura OCR…');this.renderDebugCrop(plan.fallback.canvas,snapshot.mapping,'adaptive');const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();}
         if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
       }finally{plan.release();}
@@ -235,12 +235,12 @@ export class FastScanController {
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
-  async resolve(raw,ocrConfidence,{consensus=0,manual=false}={}){
+  async resolve(raw,ocrConfidence,{consensus=0,manual=false,exactOnly=false}={}){
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};
     const fast=await this.resolveFast(raw,ocrConfidence,{consensus,manual});if(!fast.fastMiss&&!fast.corrected)return fast;
-    const exact=candidates[0],exactLookup=await this.lookupDetailed(exact.code);
+    const exact=candidates[0],exactLookup=await this.lookupDetailed(exact.code,{allowExternal:!exactOnly});
     if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
-    if(!fast.fastMiss&&fast.corrected)return fast;
+    if(exactOnly)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus}; if(!fast.fastMiss&&fast.corrected)return fast;
     let corrected=(await Promise.all(candidates.slice(1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
     if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus};
