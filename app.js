@@ -1864,7 +1864,13 @@ async function updateLoan(id, action) {
       const quantity = Number(document.querySelector(`[data-return-qty="${id}"]`)?.value);
       await api.returnQuantity(id, quantity);
     } else await api.transition(id, action);
-    await loadCloudLoans(); try { await loadCollection(); } catch {} saveState(); selectedLoanId = ''; render(); toast('Prestito aggiornato');
+    // Le due liste sono indipendenti (nessuna delle due usa l'output
+    // dell'altra): eseguirle in parallelo invece che in sequenza dimezza
+    // l'attesa percepita dopo ogni azione sul prestito, senza cambiare la
+    // gestione errori — un fallimento di loadCollection resta silenzioso
+    // come prima, uno di loadCloudLoans va comunque al catch esterno.
+    await Promise.all([loadCloudLoans(), loadCollection().catch(() => {})]);
+    saveState(); selectedLoanId = ''; render(); toast('Prestito aggiornato');
   } catch (error) { toast(error.message); }
 }
 
