@@ -18,6 +18,7 @@ export class StatsController {
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
     this.progression = null; this.cosmetics = null; this.missions = []; this.streak = null; this.myRows = []; this.teamRows = []; this.error = ''; this.rivalWins = {};
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
+    this.matchDetailOpen = false; this.matchDetail = null;
     this.loadInFlight = null;
     this.teamDecksAll = []; this.teamDecksLoaded = false; this.teamDecksLoadInFlight = null;
     this.boardRows = []; this.boardError = ''; this.boardLoadInFlight = null;
@@ -175,6 +176,13 @@ export class StatsController {
   setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onModalRender(); }
   setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.onModalRender(); }
   setMatchField(field, value) { this.matchForm[field] = value; }
+  toggleMatchWentFirst(checked) { this.matchForm.wentFirst = checked; }
+  openMatchDetail(id) {
+    const match = this.timeline.find(item => item.id === id);
+    if (!match) return;
+    this.matchDetail = match; this.matchDetailOpen = true; this.onModalRender();
+  }
+  closeMatchDetail() { this.matchDetailOpen = false; this.matchDetail = null; this.onModalRender(); }
   setOpponentMode(mode) {
     if (!['external','team'].includes(mode) || mode === this.opponentMode) return;
     this.opponentMode = mode; this.matchForm.opponentMemberSlug = ''; this.matchForm.opponentDeckId = '';
@@ -206,10 +214,11 @@ export class StatsController {
         opponentLabel:form.opponentLabel, opponentDeck:this.opponentMode === 'external' ? form.opponentDeck : '', notes:form.notes,
         opponentMemberSlug:this.opponentMode === 'team' ? form.opponentMemberSlug : null,
         opponentDeckId:this.opponentMode === 'team' && !isNewOpponentDeck ? form.opponentDeckId : null,
-        opponentDeckName:isNewOpponentDeck ? form.opponentDeckName.trim() : ''
+        opponentDeckName:isNewOpponentDeck ? form.opponentDeckName.trim() : '',
+        wentFirst:form.wentFirst
       });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
-      this.lastResult = { result:form.result, ...response };
+      this.lastResult = { result:form.result, wentFirst:form.wentFirst, ...response };
       // Solo una vittoria contro un compagno reale può far scattare un avatar
       // "rivalità" (vedi js/cosmetics.js) — evita una RPC in più per ogni
       // altro esito, ma aggiorna il conteggio subito quando può contare,
@@ -334,12 +343,12 @@ export class StatsController {
     const visible = matches.slice(0, this.mineMatchesExpanded ? 20 : 4);
     return `<section class="stats-section foil-frame">
       <div class="stats-section-head"><h2>${icon('flash')} Ultimi match</h2>${matches.length > 4 ? `<button type="button" data-mine-matches-toggle>${this.mineMatchesExpanded ? 'Mostra meno' : 'Vedi tutti'} ${icon('arrow')}</button>` : ''}</div>
-      ${visible.length ? `<div class="stats-recent-list">${visible.map(match => `<div class="stats-recent-row">
+      ${visible.length ? `<div class="stats-recent-list">${visible.map(match => `<button type="button" class="stats-recent-row" data-stats-match-open="${esc(match.id)}">
         <small class="stats-recent-date">${esc(formatDate(match.playedAt))}</small>
         <span class="stats-recent-matchup"><strong>${esc(match.deckName)}</strong> <i>vs</i> <strong>${esc(match.opponentDeck || match.opponentLabel || 'Avversario esterno')}</strong>${match.opponentLabel && match.opponentDeck ? `<small>(${esc(match.opponentLabel)})</small>` : ''}</span>
-        <span class="badge-result ${match.result}">${RESULT_LABEL[match.result]}</span>
+        <span class="stats-recent-outcome"><span class="badge-result ${match.result}">${RESULT_LABEL[match.result]}</span>${matchDieBadge(match.wentFirst)}</span>
         <span class="badge-scope ${match.isTeamMatch ? 'team' : 'external'}">${match.isTeamMatch ? 'Team' : 'Esterno'}</span>
-      </div>`).join('')}</div>` : `<p class="stats-chart-empty">Nessun match registrato.</p>`}
+      </button>`).join('')}</div>` : `<p class="stats-chart-empty">Nessun match registrato.</p>`}
     </section>`;
   }
   deckListView() {
@@ -388,6 +397,7 @@ export class StatsController {
       <span class="eyebrow">Registra match</span><h2>Nuovo risultato</h2>
       <label>Mazzo<select data-match-deck>${this.decks.map(deck => `<option value="${esc(deck.id)}" ${form.deckId === deck.id ? 'selected' : ''}>${esc(deck.name)}</option>`).join('') || '<option value="">Nessun mazzo disponibile</option>'}</select></label>
       <div class="match-result-group" role="group" aria-label="Risultato">${Object.entries(RESULT_LABEL).map(([value, label]) => `<button type="button" class="match-result-btn ${value} ${form.result === value ? 'active' : ''}" data-match-result="${value}">${label}</button>`).join('')}</div>
+      <label class="match-went-first">${icon('dice')}<span>Sei andato primo? <small>(hai vinto il tiro di dado)</small></span><input type="checkbox" data-match-went-first ${form.wentFirst ? 'checked' : ''}></label>
       <div class="opponent-mode-group" role="group" aria-label="Tipo avversario">
         <button type="button" class="chip ${this.opponentMode === 'external' ? 'active' : ''}" data-opponent-mode="external">Avversario esterno</button>
         <button type="button" class="chip ${this.opponentMode === 'team' ? 'active' : ''}" data-opponent-mode="team">${icon('team')} Compagno di squadra</button>
@@ -406,12 +416,28 @@ export class StatsController {
     const capped = result.xpAwarded < xpAmountForResult(result.result);
     return `<div class="detail-backdrop deck-dialog-backdrop" data-match-close><aside class="card-detail match-feedback foil-frame stats-modal-glow" role="dialog" aria-modal="true" aria-label="Match registrato">
       <button class="detail-close" data-match-close aria-label="Chiudi">×</button>
-      <span class="eyebrow">✓ Match registrato</span><h2 class="match-feedback-result ${result.result}">${RESULT_LABEL[result.result]}</h2>
+      <span class="eyebrow">✓ Match registrato</span><h2 class="match-feedback-result ${result.result}">${RESULT_LABEL[result.result]} ${matchDieBadge(result.wentFirst)}</h2>
       <p class="match-feedback-xp foil-text">+${result.xpAwarded} XP</p>
       ${capped ? `<p class="match-feedback-cap">${icon('info')} Limite giornaliero raggiunto</p>` : ''}
       <div class="xp-bar-block"><small>LV ${result.level}</small><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
       ${result.levelUp ? `<div class="level-up-banner foil-frame">${icon('star')} LEVEL UP!<b>LV ${result.level}</b><small>${esc(title)}</small></div>` : ''}
       <button class="btn wide" data-match-close>Chiudi</button>
+    </aside></div>`;
+  }
+  matchDetailView() {
+    const match = this.matchDetail;
+    if (!match) return '';
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-match-detail-close><aside class="card-detail foil-frame stats-modal-glow" role="dialog" aria-modal="true" aria-label="Resoconto match">
+      <button class="detail-close" data-match-detail-close aria-label="Chiudi">×</button>
+      <span class="eyebrow">Resoconto match</span><h2 class="match-feedback-result ${match.result}">${RESULT_LABEL[match.result]} ${matchDieBadge(match.wentFirst)}</h2>
+      <div class="match-detail-row"><small>Data</small><b>${esc(formatDate(match.playedAt))}</b></div>
+      <div class="match-detail-row"><small>Il tuo mazzo</small><b>${esc(match.deckName)}</b></div>
+      <div class="match-detail-row"><small>Avversario</small><b>${esc(match.opponentDeck || match.opponentLabel || 'Avversario esterno')}${match.opponentLabel && match.opponentDeck ? ` (${esc(match.opponentLabel)})` : ''}</b></div>
+      <div class="match-detail-row"><small>Tipo</small><b>${match.isTeamMatch ? 'Compagno di squadra' : 'Avversario esterno'}</b></div>
+      ${match.wentFirst !== null ? `<div class="match-detail-row"><small>Ordine di turno</small><b>${match.wentFirst ? 'Sei andato primo' : 'Sei andato secondo'}</b></div>` : ''}
+      <div class="match-detail-row"><small>XP guadagnati</small><b>+${match.xpAwarded}</b></div>
+      ${match.notes ? `<p class="match-detail-notes">${esc(match.notes)}</p>` : ''}
+      <button class="btn wide" data-match-detail-close>Chiudi</button>
     </aside></div>`;
   }
   bind(root) {
@@ -436,11 +462,14 @@ export class StatsController {
       if (submit) submit.disabled = this.busy || !this.matchForm.deckId || !this.matchForm.result || !this.teamOpponentValid;
     });
     root.querySelectorAll('[data-match-field]').forEach(field => field.addEventListener('input', event => this.setMatchField(event.currentTarget.dataset.matchField, event.currentTarget.value)));
+    root.querySelector('[data-match-went-first]')?.addEventListener('change', event => this.toggleMatchWentFirst(event.currentTarget.checked));
     root.querySelector('[data-match-submit]')?.addEventListener('click', () => void this.registerMatch());
+    root.querySelectorAll('[data-stats-match-open]').forEach(button => button.addEventListener('click', () => this.openMatchDetail(button.dataset.statsMatchOpen)));
+    root.querySelectorAll('[data-match-detail-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDetail(); }));
   }
 }
 
-function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'', opponentMemberSlug:'', opponentDeckId:'', opponentDeckName:'' }; }
+function emptyForm(deckId = '') { return { deckId, result:'', opponentLabel:'', opponentDeck:'', notes:'', opponentMemberSlug:'', opponentDeckId:'', opponentDeckName:'', wentFirst:false }; }
 
 function normalizeRows(rows) {
   return (rows || []).map(row => ({ deckId:row.deck_id, deckName:row.deck_name, matches:row.matches, wins:row.wins, losses:row.losses, draws:row.draws, winRate:Number(row.win_rate) }));
@@ -451,8 +480,19 @@ function normalizeTeamRows(rows) {
 function normalizeH2HRows(rows) {
   return (rows || []).map(row => ({ memberSlug:row.member_slug, memberName:row.member_name, opponentSlug:row.opponent_slug, opponentName:row.opponent_name, wins:row.wins, losses:row.losses, draws:row.draws, matches:row.matches }));
 }
+// Nessun badge per i match registrati prima di questa feature (went_first
+// è null in DB, non false): meglio non mostrare nulla che mostrare un dato
+// inventato.
+function matchDieBadge(wentFirst) {
+  if (wentFirst === null || wentFirst === undefined) return '';
+  return `<span class="match-die-badge ${wentFirst ? 'first' : 'second'}" title="${wentFirst ? 'Sei andato primo' : 'Sei andato secondo'}">${icon(wentFirst ? 'dice' : 'diceOff')}</span>`;
+}
 function normalizeTimeline(rows) {
-  return (rows || []).map(row => ({ playedAt:row.played_at, result:row.result, deckName:row.deck_name, opponentLabel:row.opponent_label || '', opponentDeck:row.opponent_deck || '', isTeamMatch:Boolean(row.is_team_match) }));
+  return (rows || []).map(row => ({
+    id:row.id, playedAt:row.played_at, result:row.result, deckName:row.deck_name,
+    opponentLabel:row.opponent_label || '', opponentDeck:row.opponent_deck || '', isTeamMatch:Boolean(row.is_team_match),
+    notes:row.notes || '', xpAwarded:row.xp_awarded ?? 0, wentFirst:row.went_first === null || row.went_first === undefined ? null : Boolean(row.went_first)
+  }));
 }
 
 // Grafico "Andamento giocatore": una sola serie (win rate cumulativo), quindi

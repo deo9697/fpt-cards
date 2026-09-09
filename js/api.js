@@ -109,10 +109,27 @@ export const api = {
   async deleteCollection(id) {
     ensure(); return unwrap(await client.rpc('delete_collection_item', { p_token:token(), p_id:id }));
   },
-  async requestCollectionLoan(collectionItemId, quantity, notes = '') {
+  // p_client_request_id: un uuid generato dal chiamante per tentativo di
+  // invio — un retry con la STESSA chiave (rete instabile, doppio tap) fa
+  // rispondere l'RPC con la riga già creata invece di crearne una seconda.
+  async requestCollectionLoan(collectionItemId, quantity, notes = '', preAgreed = false, clientRequestId = null) {
     ensure();
     return unwrap(await client.rpc('request_collection_loan', {
-      p_token:token(), p_collection_item_id:collectionItemId, p_quantity:quantity, p_notes:notes
+      p_token:token(), p_collection_item_id:collectionItemId, p_quantity:quantity, p_notes:notes,
+      p_pre_agreed:preAgreed, p_client_request_id:clientRequestId
+    }));
+  },
+  // Versione batch di requestCollectionLoan — non ancora richiamata
+  // dall'app (P1 del backlog Loan DB v2): una sola RPC invece di N chiamate
+  // parallele, con la stessa idempotenza per-item. items: [{collectionItemId,
+  // quantity, notes, preAgreed, clientRequestId}].
+  async requestCollectionLoans(items) {
+    ensure();
+    return unwrap(await client.rpc('request_collection_loans', {
+      p_token:token(), p_items:items.map(item => ({
+        collectionItemId:item.collectionItemId, quantity:item.quantity, notes:item.notes || '',
+        preAgreed:item.preAgreed || false, clientRequestId:item.clientRequestId || null
+      }))
     }));
   },
   async respondCollectionLoan(id, action, quantity = null) {
@@ -171,7 +188,7 @@ export const api = {
   async progression() { ensure(); return unwrap(await client.rpc('get_my_progression', { p_token:token() })); },
   async stats(game, { deckId, period } = {}) { ensure(); return unwrap(await client.rpc('get_stats', { p_token:token(), p_game:game, p_deck_id:deckId || null, p_period:period || 'all' })); },
   async teamStats(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_team_stats', { p_token:token(), p_game:game, p_period:period || 'all' })); },
-  async registerMatch(payload) { ensure(); return unwrap(await client.rpc('register_match', { p_token:token(), p_game:payload.game, p_deck_id:payload.deckId, p_result:payload.result, p_opponent_label:payload.opponentLabel || '', p_opponent_deck:payload.opponentDeck || '', p_notes:payload.notes || '', p_opponent_member_slug:payload.opponentMemberSlug || null, p_opponent_deck_id:payload.opponentDeckId || null, p_opponent_deck_name:payload.opponentDeckName || '' })); },
+  async registerMatch(payload) { ensure(); return unwrap(await client.rpc('register_match', { p_token:token(), p_game:payload.game, p_deck_id:payload.deckId, p_result:payload.result, p_opponent_label:payload.opponentLabel || '', p_opponent_deck:payload.opponentDeck || '', p_notes:payload.notes || '', p_opponent_member_slug:payload.opponentMemberSlug || null, p_opponent_deck_id:payload.opponentDeckId || null, p_opponent_deck_name:payload.opponentDeckName || '', p_went_first:payload.wentFirst ?? null })); },
   async deleteMatch(id) { ensure(); return unwrap(await client.rpc('delete_match', { p_token:token(), p_id:id })); },
   async myCosmetics() { ensure(); return unwrap(await client.rpc('get_my_cosmetics', { p_token:token() })); },
   async claimCosmetic(cosmeticId) { ensure(); return unwrap(await client.rpc('claim_cosmetic', { p_token:token(), p_cosmetic_id:cosmeticId })); },

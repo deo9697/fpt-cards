@@ -36,7 +36,9 @@ function recipientFor(type, record, old) {
   // than requiring a second endpoint per source table.
   if (record.category) return recipientForNotification(type, record);
   const names = { daniele:'Daniele', 'cristian-arlia':'Cristian Arlia', 'cristian-spadafora':'Cristian Spadafora', cristofer:'Cristofer' };
-  if (type === 'INSERT' && record.status === 'requested') return { slug:record.owner_slug, body:`${names[record.borrower_slug] || record.borrower_slug} ti richiede ${record.requested_quantity || record.quantity}× ${record.card_name}`, tag:'loan' };
+  if (type === 'INSERT' && record.status === 'requested') return { slug:record.owner_slug, body:record.pre_agreed
+    ? `${names[record.borrower_slug] || record.borrower_slug} conferma con te il prestito già concordato di ${record.requested_quantity || record.quantity}× ${record.card_name}`
+    : `${names[record.borrower_slug] || record.borrower_slug} ti richiede ${record.requested_quantity || record.quantity}× ${record.card_name}`, tag:'loan' };
   if (type === 'INSERT' && record.status === 'pending') return { slug:record.borrower_slug, body:`${names[record.owner_slug] || record.owner_slug} ti ha prestato ${record.quantity}× ${record.card_name}`, tag:'loan' };
   if (type === 'UPDATE' && record.status === 'return_pending' && old.status !== 'return_pending') return { slug:record.owner_slug, body:`${names[record.borrower_slug] || record.borrower_slug} ha segnalato la restituzione di ${record.card_name}`, tag:'loan' };
   return null;

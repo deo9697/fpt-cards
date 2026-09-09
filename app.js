@@ -224,6 +224,7 @@ function appView() {
     ${progressionDrawerOpen ? progressionDrawerView() : ''}
     ${avatarPanelOpen ? avatarPanelView(u) : ''}
     ${page === 'stats' && stats.matchModalOpen ? stats.matchModalView() : ''}
+    ${page === 'stats' && stats.matchDetailOpen ? stats.matchDetailView() : ''}
   </main>`;
 }
 
@@ -600,7 +601,9 @@ function loanDetailSheetView(l) {
   const remaining = Math.max(0, (l.acceptedQuantity || l.quantity) - (l.returnedQuantity || 0));
   const inventory = [...(state.collection.mine || []), ...(state.collection.team || [])].find(item => item.id === l.collectionItemId);
   const available = inventory?.quantityAvailable;
-  if (l.status === 'requested' && outgoing) buttons = `<div class="request-response"><label>Quantità da accettare<input type="number" min="1" max="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" value="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" data-accept-qty="${l.id}"></label><button class="btn small" data-action="accept-request" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject-request" data-id="${l.id}">Rifiuta</button></div>`;
+  if (l.status === 'requested' && outgoing) buttons = l.preAgreed
+    ? `<div class="request-response"><input type="hidden" data-accept-qty="${l.id}" value="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}"><button class="btn small" data-action="accept-request" data-id="${l.id}">${icon('check')} Conferma prestito già concordato</button><button class="btn secondary danger small" data-action="reject-request" data-id="${l.id}">Rifiuta</button></div>`
+    : `<div class="request-response"><label>Quantità da accettare<input type="number" min="1" max="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" value="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" data-accept-qty="${l.id}"></label><button class="btn small" data-action="accept-request" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject-request" data-id="${l.id}">Rifiuta</button></div>`;
   if (l.status === 'reserved' && incoming) buttons = `<button class="btn small" data-action="activate" data-id="${l.id}">Conferma ricezione</button>`;
   if (l.status === 'pending' && !outgoing) buttons = `<button class="btn small" data-action="accept" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject" data-id="${l.id}">Rifiuta</button>`;
   if (l.status === 'active' && !outgoing) buttons = `<div class="partial-return"><input type="number" min="1" max="${remaining}" value="${remaining}" data-return-qty="${l.id}" aria-label="Quantità da restituire"><button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button></div>`;
@@ -621,7 +624,9 @@ function loanDetailSheetView(l) {
 function loanPresentation(l, outgoing, incoming, owner, borrower) {
   if (outgoing) {
     const states = {
-      requested: [`${borrower.name} richiede ${l.cardName} ×${l.requestedQuantity}`, 'Da valutare', 'wait', true],
+      requested: l.preAgreed
+        ? [`${borrower.name} conferma il prestito già concordato di ${l.cardName} ×${l.requestedQuantity}`, 'Da confermare', 'wait', true]
+        : [`${borrower.name} richiede ${l.cardName} ×${l.requestedQuantity}`, 'Da valutare', 'wait', true],
       reserved: ['Attendi la conferma di ricezione', 'Riservata', 'wait', false],
       pending: ['Attendi che il destinatario accetti', 'In attesa', 'wait', false],
       active: ['La carta deve tornare a te', 'Da ricevere', 'outgoing', false],
@@ -1584,7 +1589,7 @@ async function fetchCloudLoans() {
     const externalId = l.card_external_id;
     const storedImage = normalizeCardImageUrl(l.card_image);
     const acceptedQuantity = l.accepted_quantity ?? (l.status === 'requested' ? 0 : l.quantity);
-    return { id:l.id, cardName:l.card_name, quantity:l.quantity, requestedQuantity:l.requested_quantity || l.quantity, acceptedQuantity, remainingQuantity:Math.max(acceptedQuantity - (l.returned_quantity || 0), 0), owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:game === 'yugioh' ? (storedImage || canonicalYgoCardImage(externalId)) : storedImage, externalId, collectionItemId:l.collection_item_id || '', game, returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0, requestOrigin:l.request_origin || 'legacy', setCode:l.card_set_code || '', setName:l.card_set_name || '', rarity:l.card_rarity || '' };
+    return { id:l.id, cardName:l.card_name, quantity:l.quantity, requestedQuantity:l.requested_quantity || l.quantity, acceptedQuantity, remainingQuantity:Math.max(acceptedQuantity - (l.returned_quantity || 0), 0), owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:game === 'yugioh' ? (storedImage || canonicalYgoCardImage(externalId)) : storedImage, externalId, collectionItemId:l.collection_item_id || '', game, returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0, requestOrigin:l.request_origin || 'legacy', setCode:l.card_set_code || '', setName:l.card_set_name || '', rarity:l.card_rarity || '', preAgreed:l.pre_agreed || false };
   });
   cloudError = '';
   scheduleCatalogRepairs();

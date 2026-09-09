@@ -26,7 +26,7 @@ function triggerLossStreakVideo(onClose) {
   overlay.id = 'loss-streak-video';
   overlay.className = 'rickroll-video';
   const src = encodeURI('./assets/ester-eggs/Cat Laughing At You.mp4');
-  overlay.innerHTML = `<video src="${src}" autoplay playsinline preload="auto"></video><div class="rickroll-video-label"><strong>3 sconfitte di fila…</strong><small>Ride bene chi ride ultimo</small></div><button type="button" aria-label="Chiudi">×</button>`;
+  overlay.innerHTML = `<video src="${src}" autoplay playsinline preload="auto"></video><div class="rickroll-video-label"><strong>3 sconfitte di fila…</strong><small>CHI SCARSU!!!</small></div><button type="button" aria-label="Chiudi">×</button>`;
   document.body.append(overlay);
   const video = overlay.querySelector('video'), close = overlay.querySelector('button');
   video.muted = false; video.volume = 1;

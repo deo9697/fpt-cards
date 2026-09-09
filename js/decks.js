@@ -35,6 +35,9 @@ export class DeckController {
     this.optcgImportOpen = false; this.optcgImportBusy = false; this.optcgImportResult = null;
     this.scope = 'mine'; this.teamDecksAll = []; this.teamDetailId = ''; this.teamLoadInFlight = null; this.teamError = ''; this.teamLoaded = false; this.teamMemberFilter = '';
     this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.cardSort = 'type'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
+    // Scelta prestatore + "già concordato" per riga di carta mancante: transiente,
+    // non fa parte dello stato del mazzo, si azzera quando il pannello si chiude.
+    this.missingRowChoices = new Map();
     // Filtri catalogo One Piece (P1.0.1): Espansione è sempre manuale, Colore
     // parte "automatico" sui colori del Leader finché l'utente non tocca un
     // chip (catalogColorsTouched) — a quel punto diventa un set esplicito.
@@ -272,7 +275,7 @@ export class DeckController {
       <button class="detail-close" data-deck-missing-close aria-label="Chiudi">×</button>
       <span class="eyebrow">Disponibilità</span><h2>${report.percent}% pronto per il team</h2>
       ${readonly ? `<p class="deck-missing-readonly-note">Solo ${esc(ownerName || 'il proprietario')} può inviare una richiesta per queste carte.</p>` : ''}
-      <div class="missing-card-list">${report.rows.length ? report.rows.map(row => missingRow(row, this.state.currentUser, { readonly })).join('') : `<div class="deck-all-ready">✓ Tutte le carte sono disponibili ${readonly ? 'per il proprietario' : 'nella tua raccolta'}.</div>`}</div>
+      <div class="missing-card-list">${report.rows.length ? report.rows.map(row => missingRow(row, this.state.currentUser, { readonly, choice: this.missingRowChoices.get(row.catalogCardId) })).join('') : `<div class="deck-all-ready">✓ Tutte le carte sono disponibili ${readonly ? 'per il proprietario' : 'nella tua raccolta'}.</div>`}</div>
       ${!readonly && report.requestable ? `<button type="button" class="btn wide" data-deck-request-all ${this.busy || !this.isOnline() ? 'disabled' : ''}>${icon('swap')} Richiedi tutte le carte mancanti</button>` : ''}
     </aside></div>`;
   }
@@ -307,6 +310,8 @@ export class DeckController {
     root.querySelectorAll('[data-deck-printing-option]').forEach(button => button.addEventListener('click', () => void this.choosePrinting(button.dataset.deckPrintingOption)));
     root.querySelectorAll('[data-deck-request]').forEach(button => button.addEventListener('click', () => void this.request(button.dataset.deckRequest)));
     root.querySelector('[data-deck-request-all]')?.addEventListener('click', () => void this.requestAll());
+    root.querySelectorAll('[data-deck-owner]').forEach(select => select.addEventListener('change', () => this.setMissingRowChoice(select.dataset.deckOwner, { ownerSlug: select.value })));
+    root.querySelectorAll('[data-deck-pre-agreed]').forEach(checkbox => checkbox.addEventListener('change', () => this.setMissingRowChoice(checkbox.dataset.deckPreAgreed, { preAgreed: checkbox.checked })));
     root.querySelectorAll('[data-deck-import]').forEach(button => button.addEventListener('click', () => { if (!this.active()) this.create(false); this.importOpen = true; this.moreMenuOpen = false; this.onRender(); }));
     root.querySelector('[data-deck-import-new]')?.addEventListener('click', () => { this.create(false); this.importOpen = true; this.onRender(); });
     root.querySelectorAll('[data-deck-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.importOpen = false; this.onRender(); }));
@@ -398,7 +403,7 @@ export class DeckController {
     this.selectedCard = null;
     this.markDirty(deck); this.onRender();
   }
-  toggleMissingPanel(open) { this.missingPanelOpen = open; if (open) this.selectedCard = null; this.onRender(); }
+  toggleMissingPanel(open) { this.missingPanelOpen = open; if (open) this.selectedCard = null; else this.missingRowChoices.clear(); this.onRender(); }
   toggleMoreMenu() { this.moreMenuOpen = !this.moreMenuOpen; this.onRender(); }
   setSort(value) { if (!SORT_OPTIONS.some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
   cycleSort() { const index = SORT_OPTIONS.findIndex(option => option.value === this.cardSort); this.setSort(SORT_OPTIONS[(index + 1) % SORT_OPTIONS.length].value); }
@@ -589,7 +594,26 @@ export class DeckController {
   markDirty(deck) { deck.dirty = true; deck.ownerSlug = this.state.currentUser; this.persistDrafts(); }
   persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); }
   clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); }
-  async request(cardId) { const row = deckAvailability(this.active(), this.state.collection, this.state.currentUser, { loans:this.state.loans }).rows.find(item => item.catalogCardId === cardId); if (!row?.best) return; this.busy = true; this.onRender(); try { let remaining = row.missing; for (const item of row.best.items) { const quantity = Math.min(remaining, item.quantityAvailable); if (quantity > 0) await this.api.requestCollectionLoan(item.id, quantity, `Richiesta automatica dal mazzo ${this.active().name}`); remaining -= quantity; if (!remaining) break; } await this.onLoansChanged?.(); this.onToast(`Richiesta inviata a ${row.best.ownerName}`); } catch (error) { this.onToast(error.message || 'Richiesta non riuscita'); } finally { this.busy = false; this.onRender(); } }
+  setMissingRowChoice(cardId, patch) { if (!cardId) return; this.missingRowChoices.set(cardId, { ...this.missingRowChoices.get(cardId), ...patch }); }
+  async request(cardId) {
+    const row = deckAvailability(this.active(), this.state.collection, this.state.currentUser, { loans:this.state.loans }).rows.find(item => item.catalogCardId === cardId);
+    const choice = this.missingRowChoices.get(cardId);
+    const owner = (row?.owners || []).find(candidate => candidate.ownerSlug === choice?.ownerSlug) || row?.best;
+    if (!row || !owner) return;
+    const preAgreed = Boolean(choice?.preAgreed);
+    this.busy = true; this.onRender();
+    try {
+      let remaining = row.missing;
+      const note = preAgreed ? `Prestito già concordato per il mazzo ${this.active().name}` : `Richiesta automatica dal mazzo ${this.active().name}`;
+      for (const item of owner.items) {
+        const quantity = Math.min(remaining, item.quantityAvailable);
+        if (quantity > 0) await this.api.requestCollectionLoan(item.id, quantity, note, preAgreed, crypto.randomUUID());
+        remaining -= quantity; if (!remaining) break;
+      }
+      await this.onLoansChanged?.();
+      this.onToast(preAgreed ? `${owner.ownerName} deve solo confermare: prestito segnato come già concordato` : `Richiesta inviata a ${owner.ownerName}`);
+    } catch (error) { this.onToast(error.message || 'Richiesta non riuscita'); } finally { this.busy = false; this.onRender(); }
+  }
   async requestAll() { const rows = deckAvailability(this.active(), this.state.collection, this.state.currentUser, { loans:this.state.loans }).rows.filter(row => row.best); for (const row of rows) await this.request(row.catalogCardId); }
 }
 
@@ -611,9 +635,9 @@ export function deckAvailability(deck, collection, currentUser, { ownerSlug = ''
       const entry = owners.get(item.ownerSlug) || { ownerSlug: item.ownerSlug, ownerName: item.ownerName, quantity: 0, items: [] };
       entry.quantity += Number(item.quantityAvailable || 0); entry.items.push(item); owners.set(item.ownerSlug, entry);
     }
-    const missing = Math.max(0, card.quantity - owned), best = [...owners.values()].sort((a, b) => b.quantity - a.quantity)[0] || null;
+    const missing = Math.max(0, card.quantity - owned), sortedOwners = [...owners.values()].sort((a, b) => b.quantity - a.quantity), best = sortedOwners[0] || null;
     total += card.quantity; covered += Math.min(card.quantity, owned);
-    const entry = { ...card, owned, ownedMine, borrowed: borrowed.quantity, borrowedFrom: borrowed.sources, missing, best };
+    const entry = { ...card, owned, ownedMine, borrowed: borrowed.quantity, borrowedFrom: borrowed.sources, missing, best, owners: sortedOwners };
     perCard.set(deckCardIdentityKey(card), entry);
     if (missing) { if (best) requestable += 1; rows.push(entry); }
   }
@@ -704,4 +728,13 @@ function ownershipLabel(info) {
   }
   return parts.join(' · ');
 }
-function missingRow(row, currentUser, { readonly = false } = {}) { const owner = row.best, profile = owner ? member(owner.ownerSlug) : null, ownership = ownershipLabel(row); return `<article class="missing-card"><div>${row.imageUrl ? `<img src="${esc(row.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(row.cardName)}</strong><small>Disponibili per il mazzo ${row.owned} di ${row.quantity} · mancano ${row.missing}${ownership ? ` (${esc(ownership)})` : ''}</small>${owner ? `<em><i class="mini-avatar member-${esc(owner.ownerSlug)}">${initials(profile?.name || owner.ownerName || '?')}</i>${esc(owner.ownerName)} ne ha ${owner.quantity}</em>` : '<em>Nessuna copia disponibile nel team</em>'}</span></div>${owner && !readonly ? `<button class="btn secondary small" data-deck-request="${esc(row.catalogCardId)}" ${owner.ownerSlug === currentUser ? 'disabled' : ''}>Richiedi</button>` : ''}</article>`; }
+function missingRow(row, currentUser, { readonly = false, choice = null } = {}) {
+  const owners = row.owners || (row.best ? [row.best] : []);
+  const owner = owners.find(candidate => candidate.ownerSlug === choice?.ownerSlug) || row.best;
+  const profile = owner ? member(owner.ownerSlug) : null, ownership = ownershipLabel(row);
+  const picker = !readonly && owners.length > 1
+    ? `<select class="missing-owner-select" data-deck-owner="${esc(row.catalogCardId)}" aria-label="Scegli da chi richiedere ${esc(row.cardName)}">${owners.map(candidate => `<option value="${esc(candidate.ownerSlug)}" ${candidate.ownerSlug === owner?.ownerSlug ? 'selected' : ''}>${esc(candidate.ownerName)} · ne ha ${candidate.quantity}</option>`).join('')}</select>`
+    : owner ? `<em><i class="mini-avatar member-${esc(owner.ownerSlug)}">${initials(profile?.name || owner.ownerName || '?')}</i>${esc(owner.ownerName)} ne ha ${owner.quantity}</em>` : '<em>Nessuna copia disponibile nel team</em>';
+  const preAgreed = !readonly && owner ? `<label class="missing-pre-agreed"><input type="checkbox" data-deck-pre-agreed="${esc(row.catalogCardId)}" ${choice?.preAgreed ? 'checked' : ''}> Ci siamo già accordati</label>` : '';
+  return `<article class="missing-card"><div>${row.imageUrl ? `<img src="${esc(row.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(row.cardName)}</strong><small>Disponibili per il mazzo ${row.owned} di ${row.quantity} · mancano ${row.missing}${ownership ? ` (${esc(ownership)})` : ''}</small>${picker}${preAgreed}</span></div>${owner && !readonly ? `<button class="btn secondary small" data-deck-request="${esc(row.catalogCardId)}" ${owner.ownerSlug === currentUser ? 'disabled' : ''}>Richiedi</button>` : ''}</article>`;
+}

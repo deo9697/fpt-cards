@@ -16,7 +16,7 @@
 --      salvataggio dei mazzi One Piece (oggi save_deck/save_deck_with_box
 --      rifiutano qualunque section fuori da main/extra/side).
 --   4) save_deck e save_deck_with_box: validano la section in base al game
---      del mazzo invece di un'unica lista fissa.
+--      del mazzo ianvece di un'unica lista fissa.
 --   5) save_collection_item guadagna p_printing_id (opzionale): se il
 --      chiamante ha già risolto una printing precisa la usa direttamente,
 --      altrimenti si comporta come oggi (solo per Yu-Gi-Oh — One Piece senza
