@@ -23,7 +23,8 @@ const SORT_OPTIONS = [
   { value: 'type', label: 'Tipo', title: 'Ordina per tipo: Mostri → Magie → Trappole' },
   { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
   { value: 'name-desc', label: 'Z–A', title: 'Ordina per nome, Z–A' },
-  { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' }
+  { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' },
+  { value: 'manual', label: 'Manuale', title: 'Tieni premuta una carta e trascinala per riordinarla' }
 ];
 const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limitata a 2 copie', forbidden: 'Proibita' };
 
@@ -122,7 +123,7 @@ export class DeckController {
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
       ${isOnePiece ? this.leaderHero(deck, { readonly:true }) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton()}</div>${this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
       ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck, { readonly:true }) : this.availabilityPeek(report)}
@@ -170,7 +171,7 @@ export class DeckController {
       ${this.editorHeader(deck, total, report)}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label>${isOnePiece ? '<div data-deck-catalog-filters></div>' : ''}<div data-deck-search-results class="deck-search-results"></div></div>
       ${isOnePiece ? this.leaderHero(deck) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton()}</div>${this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
       ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck) : this.availabilityPeek(report)}
@@ -231,6 +232,10 @@ export class DeckController {
   sortCards(cards) {
     const sorted = [...cards];
     switch (this.cardSort) {
+      // Ordine manuale: l'array arriva già nell'ordine voluto dall'utente
+      // (deck.cards viene riordinato in place dal drag&drop, vedi
+      // reorderCard) — qui non si tocca nulla.
+      case 'manual': return sorted;
       case 'name-desc': return sorted.sort((a, b) => b.cardName.localeCompare(a.cardName, 'it'));
       case 'qty-desc': return sorted.sort((a, b) => b.quantity - a.quantity || a.cardName.localeCompare(b.cardName, 'it'));
       case 'name-asc': return sorted.sort((a, b) => a.cardName.localeCompare(b.cardName, 'it'));
@@ -246,7 +251,7 @@ export class DeckController {
     // Più printing della stessa carta logica (regular/parallel, Fase 4.1)
     // diventano più tile distinte in griglia: data-deck-card-select-printing
     // è ciò che le distingue quando si seleziona/modifica/rimuove.
-    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
+    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''} ${this.cardSort === 'manual' ? 'manual-sort' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
   }
   cardSheet(item, report, deck, { readonly = false } = {}) {
     // DON!! non è più raggiungibile dalla griglia (P1.0, gestito in automatico):
@@ -260,7 +265,7 @@ export class DeckController {
         <span class="deck-sheet-copy"><strong>${esc(item.cardName)}</strong><small>${labelsFor(deck)[item.section]}${item.printingSetCode ? ` · ${esc(item.printingSetCode)}` : ''}</small>${item.banTcg ? `<i class="deck-sheet-badge ${item.banTcg}">${esc(BAN_LABELS[item.banTcg] || '')}</i>` : ''}${info?.borrowed > 0 ? `<i class="deck-sheet-badge loan">${icon('swap')} ${ownershipLabel(info)}</i>` : ''}</span>
       </div>
       <div class="deck-sheet-stepper">${readonly ? '' : `<button type="button" data-deck-sheet-qty="minus" aria-label="Rimuovi una copia">−</button>`}<span>${item.quantity}</span>${readonly ? '' : `<button type="button" data-deck-sheet-qty="plus" aria-label="Aggiungi una copia">+</button>`}</div>
-      ${readonly ? '' : `<div class="deck-sheet-actions">${otherSections.map(section => `<button type="button" data-deck-sheet-move="${section}">${icon('swap')} In ${labelsFor(deck)[section].replace(' Deck', '')}</button>`).join('')}<button type="button" class="danger" data-deck-sheet-remove>${icon('trash')} Rimuovi</button></div>`}
+      ${readonly ? '' : `<div class="deck-sheet-actions">${otherSections.map(section => `<button type="button" data-deck-sheet-move="${section}">${icon('swap')} In ${labelsFor(deck)[section].replace(' Deck', '')}</button>`).join('')}<button type="button" data-deck-printing="${esc(item.catalogCardId)}" data-deck-printing-section="${esc(item.section)}">${icon('card')} ${item.printingSetCode ? `${esc(item.printingSetCode)} · ${esc(item.printingRarity || 'Rarità')}` : 'Scegli rarità/edizione'}</button><button type="button" class="danger" data-deck-sheet-remove>${icon('trash')} Rimuovi</button></div>`}
       ${this.availabilityFoot(report)}
     </div>`;
   }
@@ -295,7 +300,7 @@ export class DeckController {
   }
   importView() { return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-import-close><aside class="card-detail deck-import" role="dialog" aria-modal="true"><button class="detail-close" data-deck-import-close aria-label="Chiudi">×</button><span class="eyebrow">Importazione</span><h2>Carica un mazzo</h2><p>Supporta file .ydk, passcode Yu-Gi-Oh! e liste del tipo “3 Nome carta”.</p><label>File YDK o testo<input type="file" data-deck-file accept=".ydk,.txt,text/plain"></label><label>Oppure incolla la lista<textarea data-deck-import-text rows="12" placeholder="#main&#10;46986414&#10;46986414&#10;#extra&#10;..."></textarea></label><button class="btn wide" data-deck-import-run ${this.busy ? 'disabled' : ''}>${this.busy ? 'Importazione…' : 'Importa nel mazzo'}</button></aside></div>`; }
   coverPickerView(deck) { const cards = uniqueDeckCards(deck.cards), template = normalizeDeckBoxTemplate(deck.deckBoxTemplate); return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-cover-close><aside class="card-detail deck-cover-picker" role="dialog" aria-modal="true" aria-labelledby="deck-cover-title"><button class="detail-close" data-deck-cover-close aria-label="Chiudi">×</button><span class="eyebrow">Deck Box Studio</span><h2 id="deck-cover-title">Personalizza la Deck Box</h2><p>Scegli modello, colore e carta firma. Anteprima immediata; modifiche conservate nella bozza del mazzo.</p><div class="deck-studio-layout"><div class="deck-studio-preview">${renderDeckBoxVisual(deck)}<strong>${esc(deck.name)}</strong><small>Anteprima in tempo reale</small></div><div class="deck-studio-controls"><label class="deck-studio-theme">Colore & cornice<select data-deck-theme>${deckThemeOptions(deck.deckTheme)}</select></label><h3>Modello Deck Box</h3><div class="deck-template-options">${Object.entries(DECK_BOX_TEMPLATES).map(([value, option]) => `<button data-deck-box-template="${value}" class="${template === value ? 'active' : ''}">${option.image ? `<img src="${esc(option.image)}" alt="${esc(option.label)}" loading="lazy">` : `<span>${icon('deck')}</span>`}<strong>${esc(option.label)}</strong>${template === value ? '<b>Selezionato</b>' : ''}</button>`).join('')}</div></div><div class="deck-studio-signature"><div class="deck-signature-heading"><h3>Carta signature</h3><p>Usata dal modello dinamico. Deve essere già presente nel mazzo.</p></div>${cards.length ? `<div class="deck-cover-options">${cards.map(card => `<button data-deck-cover-card="${esc(card.catalogCardId)}" class="${String(deck.signatureCardId || '') === String(card.catalogCardId) ? 'active' : ''}">${card.imageUrl ? `<img src="${esc(card.imageUrl)}" alt="${esc(card.cardName)}" loading="lazy">` : icon('card')}<span><strong>${esc(card.cardName)}</strong><small>${labelsFor(deck)[card.section] || card.section}</small></span>${String(deck.signatureCardId || '') === String(card.catalogCardId) ? '<b>Signature</b>' : icon('arrow')}</button>`).join('')}</div>` : '<div class="deck-signature-empty">Aggiungi almeno una carta al mazzo per scegliere la signature.</div>'}</div></div><button class="btn wide deck-cover-back" data-deck-cover-close>Fatto · Torna al mazzo</button></aside></div>`; }
-  printingPickerView() { const picker = this.printingPicker; return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-printing-close><aside class="card-detail deck-printing-picker" role="dialog" aria-modal="true"><button class="detail-close" data-deck-printing-close aria-label="Chiudi">×</button><span class="eyebrow">Market Watch</span><h2>Seleziona la printing</h2><p>${esc(picker.cardName)} · nessuna scelta viene effettuata automaticamente.</p>${picker.loading ? '<div class="deck-printing-loading"><span class="loading-spinner"></span> Caricamento printing…</div>' : picker.error ? `<div class="connection-banner error">${esc(picker.error)}</div>` : picker.options.length ? `<div class="deck-printing-options">${picker.options.map(option => `<button data-deck-printing-option="${esc(option.printingId)}">${option.imageUrl ? `<img src="${esc(option.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(option.setCode || 'Set non indicato')}</strong><small>${esc(option.setName || 'Espansione non indicata')} · ${esc(option.rarity || 'Rarità non indicata')}</small></span>${icon('arrow')}</button>`).join('')}</div>` : '<div class="empty-state compact"><h3>Nessuna printing disponibile</h3><p>Aggiungi prima una copia precisa alla Raccolta.</p></div>'}</aside></div>`; }
+  printingPickerView() { const picker = this.printingPicker; return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-printing-close><aside class="card-detail deck-printing-picker" role="dialog" aria-modal="true"><button class="detail-close" data-deck-printing-close aria-label="Chiudi">×</button><span class="eyebrow">Mazzo</span><h2>Seleziona la printing</h2><p>${esc(picker.cardName)} · nessuna scelta viene effettuata automaticamente.</p>${picker.loading ? '<div class="deck-printing-loading"><span class="loading-spinner"></span> Caricamento printing…</div>' : picker.error ? `<div class="connection-banner error">${esc(picker.error)}</div>` : picker.options.length ? `<div class="deck-printing-options">${picker.options.map(option => `<button data-deck-printing-option="${esc(option.printingId)}">${option.imageUrl ? `<img src="${esc(option.imageUrl)}" alt="">` : icon('card')}<span><strong>${esc(option.setCode || 'Set non indicato')}</strong><small>${esc(option.setName || 'Espansione non indicata')} · ${esc(option.rarity || 'Rarità non indicata')}</small></span>${icon('arrow')}</button>`).join('')}</div>` : '<div class="empty-state compact"><h3>Nessuna printing disponibile</h3><p>Aggiungi prima una copia precisa alla Raccolta.</p></div>'}</aside></div>`; }
   bind(root = document) {
     // L'attributo HTML autoplay funziona solo per video muti: per avere
     // l'audio il play() va chiamato da JS. Prova con audio, e solo se il
@@ -350,6 +355,87 @@ export class DeckController {
     root.querySelectorAll('[data-deck-missing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.toggleMissingPanel(false); }));
     root.querySelector('[data-deck-more]')?.addEventListener('click', () => this.toggleMoreMenu());
     root.querySelectorAll('[data-deck-more-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.moreMenuOpen = false; this.onRender(); }));
+    // Drag&drop solo nel proprio editor (mai sul mazzo di un compagno in
+    // sola lettura) e solo quando l'ordinamento "Manuale" è attivo.
+    if (this.screen === 'detail' && this.cardSort === 'manual') {
+      root.querySelectorAll('.deck-mobile-grid .deck-tile').forEach(tile => tile.addEventListener('pointerdown', event => this.startTileDrag(event, tile)));
+    }
+  }
+  // Tieni premuto (touch) o trascina subito (mouse) una tile in modalità
+  // "Manuale" per riordinarla dentro la sua sezione. Il ritardo per il touch
+  // esiste apposta per non rubare lo scroll verticale della griglia: se il
+  // dito si muove prima che scatti, si interpreta come uno scroll e si
+  // annulla tutto senza mai chiamare preventDefault.
+  startTileDrag(event, tile) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const deck = this.active();
+    if (!deck) return;
+    const grid = tile.closest('.deck-mobile-grid');
+    if (!grid) return;
+    const catalogCardId = tile.dataset.deckCardSelect, section = tile.dataset.deckCardSelectSection, printingId = tile.dataset.deckCardSelectPrinting || null;
+    const startX = event.clientX, startY = event.clientY, pointerId = event.pointerId;
+    let armed = event.pointerType === 'mouse', moved = false, cancelled = false, lastTarget = null;
+    const armTimer = event.pointerType === 'mouse' ? null : setTimeout(() => {
+      if (cancelled) return;
+      armed = true;
+      try { tile.setPointerCapture(pointerId); } catch {}
+      tile.classList.add('dragging');
+      if (navigator.vibrate) { try { navigator.vibrate(12); } catch {} }
+    }, 160);
+    if (armed) { try { tile.setPointerCapture(pointerId); } catch {} tile.classList.add('dragging'); }
+    const cleanup = () => {
+      cancelled = true;
+      if (armTimer) clearTimeout(armTimer);
+      tile.removeEventListener('pointermove', onMove);
+      tile.removeEventListener('pointerup', onUp);
+      tile.removeEventListener('pointercancel', onCancel);
+      tile.classList.remove('dragging');
+      tile.style.transform = ''; tile.style.zIndex = ''; tile.style.pointerEvents = '';
+      if (lastTarget) { lastTarget.classList.remove('drop-target'); lastTarget = null; }
+    };
+    const onMove = moveEvent => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dx = moveEvent.clientX - startX, dy = moveEvent.clientY - startY;
+      if (!armed) { if (Math.hypot(dx, dy) > 8) cleanup(); return; }
+      moved = true;
+      moveEvent.preventDefault();
+      tile.style.zIndex = '5';
+      tile.style.transform = `translate(${dx}px, ${dy}px) scale(1.05)`;
+      tile.style.pointerEvents = 'none';
+      const hovered = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('.deck-tile');
+      tile.style.pointerEvents = '';
+      if (lastTarget && lastTarget !== hovered) lastTarget.classList.remove('drop-target');
+      lastTarget = hovered && hovered !== tile && grid.contains(hovered) ? hovered : null;
+      if (lastTarget) lastTarget.classList.add('drop-target');
+    };
+    const onUp = upEvent => {
+      if (upEvent.pointerId !== pointerId) return;
+      const shouldCommit = armed && moved && lastTarget;
+      const target = lastTarget;
+      cleanup();
+      if (shouldCommit) this.reorderCard(deck, section, { catalogCardId, printingId }, { catalogCardId: target.dataset.deckCardSelect, printingId: target.dataset.deckCardSelectPrinting || null });
+    };
+    const onCancel = () => cleanup();
+    tile.addEventListener('pointermove', onMove);
+    tile.addEventListener('pointerup', onUp);
+    tile.addEventListener('pointercancel', onCancel);
+  }
+  // Riordina `from` alla posizione di `to` dentro la stessa sezione: sposta
+  // l'oggetto nella slice della sezione, poi lo reinserisce in deck.cards
+  // sostituendo ogni occorrenza della sezione nell'ordine originale — così
+  // l'interleaving con le altre sezioni resta intatto, cambia solo l'ordine
+  // interno di questa.
+  reorderCard(deck, section, from, to) {
+    const items = deck.cards.filter(card => card.section === section);
+    const fromIndex = items.findIndex(card => card.catalogCardId === from.catalogCardId && (card.printingId || null) === (from.printingId || null));
+    const toIndex = items.findIndex(card => card.catalogCardId === to.catalogCardId && (card.printingId || null) === (to.printingId || null));
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+    const [moved] = items.splice(fromIndex, 1);
+    items.splice(toIndex, 0, moved);
+    let cursor = 0;
+    deck.cards = deck.cards.map(card => card.section === section ? items[cursor++] : card);
+    this.markDirty(deck);
+    this.onRender();
   }
   open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); this.onRender(); }
   openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); this.onRender(); }

@@ -1167,6 +1167,11 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .deck-tile-art>.icon { width:100%;height:100%;padding:25%;color:#49536b; }
 .deck-tile-art b { position:absolute;top:3px;right:3px;display:grid;place-items:center;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:#0a0812e8;color:#f7f4eb;font-size:.54rem;font-weight:800;box-shadow:0 0 0 1px #ffffff22; }
 .deck-tile-art .deck-ban-badge { top:3px;left:3px;width:16px;height:16px;font-size:.5rem; }
+.deck-tile.manual-sort { touch-action: pan-y; }
+.deck-tile.dragging { z-index:5;touch-action:none; }
+.deck-tile.dragging .deck-tile-art { box-shadow:0 14px 30px #000b,0 0 0 2px #c66cff; transition:none; }
+.deck-tile.drop-target .deck-tile-art { box-shadow:0 8px 18px #0007,0 0 0 2px #55d6a5; }
+.deck-manual-sort-hint { margin:8px 18px 0; }
 .deck-loan-badge { position:absolute;z-index:1;bottom:3px;left:3px;display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#2f5bd7e0;box-shadow:0 0 0 1px #ffffff33;color:#fff; }
 .deck-loan-badge .icon { width:10px;height:10px; }
 .deck-sheet-badge.loan { display:flex;align-items:center;gap:5px;background:#2f5bd722;color:#8fb0ff; }

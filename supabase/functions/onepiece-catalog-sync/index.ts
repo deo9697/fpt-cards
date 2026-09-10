@@ -16,7 +16,7 @@
 //
 // OPTCG chiede di non fare un numero eccessivo di chiamate: questo sync ne
 // fa 4 (5 se scatta il fallback promo), mai una per carta.
-import { normalizeStandardCard, normalizeDonCard, identityKey, SOURCE_PROVIDER } from './normalizer.mjs';
+import { normalizeStandardCard, normalizeDonCard, identityKey, resolveVariantCollisions, SOURCE_PROVIDER } from './normalizer.mjs';
 
 const OPTCG_BASE = 'https://optcgapi.com/api';
 const BATCH_SIZE = 400;
@@ -61,23 +61,34 @@ Deno.serve(async request => {
   const nowIso = new Date().toISOString();
 
   let normalized = 0, skipped = 0;
-  const unique = new Map<string, Record<string, unknown>>();
+  const normalizedRows: Record<string, unknown>[] = [];
 
   for (const raw of [...setsRaw, ...starterRaw, ...promoRaw]) {
     const row = normalizeStandardCard(raw, nowIso);
     if (!row) { skipped++; continue; }
     normalized++;
-    // L'ultimo che arriva vince: se la stessa identità comparisse sia nei
-    // set/starter sia tra i promo (non atteso, ma non impossibile), non
-    // vogliamo comunque due righe con la stessa chiave nello stesso batch
-    // upsert — Postgres rifiuterebbe l'intero INSERT con "ON CONFLICT DO
-    // UPDATE command cannot affect row a second time".
-    unique.set(identityKey(row as any), row);
+    normalizedRows.push(row);
   }
   for (const raw of donRaw) {
     const row = normalizeDonCard(raw, nowIso);
     if (!row) { skipped++; continue; }
     normalized++;
+    normalizedRows.push(row);
+  }
+
+  // Ristampe promo/torneo che condividono variant_id con una carta diversa
+  // (stesso identity key, nome diverso — vedi resolveVariantCollisions):
+  // disambiguale PRIMA del dedupe, o l'una sovrascriverebbe silenziosamente
+  // l'altra esattamente come nel bug originale.
+  resolveVariantCollisions(normalizedRows as any);
+
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of normalizedRows) {
+    // L'ultimo che arriva vince: per righe VERAMENTE identiche (stesso
+    // identity key E stesso nome) comparse sia nei set/starter sia tra i
+    // promo, non vogliamo comunque due righe con la stessa chiave nello
+    // stesso batch upsert — Postgres rifiuterebbe l'intero INSERT con "ON
+    // CONFLICT DO UPDATE command cannot affect row a second time".
     unique.set(identityKey(row as any), row);
   }
 

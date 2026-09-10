@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   deriveSetCode, normalizeColorList, normalizeTraits, cleanNumber, extractTrigger,
-  normalizeStandardCard, normalizeDonCard, identityKey
+  normalizeStandardCard, normalizeDonCard, identityKey, resolveVariantCollisions
 } from '../supabase/functions/onepiece-catalog-sync/normalizer.mjs';
 
 const NOW = '2026-09-08T00:00:00.000Z';
@@ -110,5 +110,53 @@ const duplicateB = normalizeStandardCard({ ...op01RegularRaw }, NOW);
 assert.equal(identityKey(duplicateA), identityKey(duplicateB));
 assert.deepEqual(duplicateA, duplicateB);
 console.log('PASS stesso raw normalizzato due volte produce la stessa identity_key (dedupe sicuro)');
+
+// -- resolveVariantCollisions: bug reale segnalato dall'utente 2026-09-10 --
+// -- ("codice di Hawkins mostra l'immagine di un'altra carta") — OPTCG --
+// -- riusa lo stesso card_image_id per ristampe promo/torneo che sono --
+// -- carte diverse (nome/immagine diversi). Esempio reale confermato --
+// -- dal vivo su optcgapi.com: Otama base vs "Otama (Online Regional --
+// -- 2023) [Winner]", entrambe card_set_id=OP01-006, card_image_id= --
+// -- OP01-006, stessa rarity — senza il fix collasserebbero sulla --
+// -- stessa identity key e l'upsert ne perderebbe una a caso.
+const otamaBaseRaw = { card_set_id: 'OP01-006', card_image_id: 'OP01-006', card_name: 'Otama', card_color: 'Red', card_type: 'Character', rarity: 'C', set_name: 'Romance Dawn', card_image: 'https://optcgapi.com/media/static/Card_Images/OP01-006.jpg' };
+const otamaWinnerRaw = { ...otamaBaseRaw, card_name: 'Otama (Online Regional 2023) [Winner]', card_image: 'https://optcgapi.com/media/static/Card_Images/Otama_Online_Regional_2023_Winner_img.jpg' };
+const otamaBase = normalizeStandardCard(otamaBaseRaw, NOW);
+const otamaWinner = normalizeStandardCard(otamaWinnerRaw, NOW);
+assert.equal(identityKey(otamaBase), identityKey(otamaWinner), 'prima del fix le due righe devono collidere, altrimenti il test non prova nulla');
+const otamaFixed = [normalizeStandardCard(otamaBaseRaw, NOW), normalizeStandardCard(otamaWinnerRaw, NOW)];
+resolveVariantCollisions(otamaFixed);
+assert.notEqual(identityKey(otamaFixed[0]), identityKey(otamaFixed[1]), 'dopo il fix le due Otama devono restare printing distinte');
+assert.equal(otamaFixed[0].card_name, 'Otama');
+assert.equal(otamaFixed[1].card_name, 'Otama (Online Regional 2023) [Winner]');
+console.log('PASS resolveVariantCollisions separa Otama base e la ristampa "Online Regional 2023 Winner"');
+
+// -- Stessa collisione ma con card_image VUOTO sul lato promo (capita --
+// -- davvero su OPTCG per alcune ristampe non ancora fotografate): deve --
+// -- comunque disambiguare usando il card_name, non lasciarle collise. --
+const momoBaseRaw = { card_set_id: 'OP01-041', card_image_id: 'OP01-041', card_name: 'Kouzuki Momonosuke', rarity: 'R', card_image: 'https://optcgapi.com/media/static/Card_Images/OP01-041.jpg' };
+const momoPromoRaw = { ...momoBaseRaw, card_name: 'Kouzuki Momonosuke (CS 2024 Celebration Pack)', card_image: '' };
+const momoRows = [normalizeStandardCard(momoBaseRaw, NOW), normalizeStandardCard(momoPromoRaw, NOW)];
+resolveVariantCollisions(momoRows);
+assert.notEqual(identityKey(momoRows[0]), identityKey(momoRows[1]), 'senza immagine sul lato promo, deve disambiguare comunque dal card_name');
+console.log('PASS resolveVariantCollisions disambigua anche quando la ristampa non ha ancora un\'immagine');
+
+// -- Righe che condividono variant_id ma sono davvero la stessa carta --
+// -- (stesso card_name, es. presente sia in allSetCards sia in allSTCards) --
+// -- non vanno toccate: non è una collisione, è un duplicato legittimo. --
+const dupRows = [normalizeStandardCard(op01RegularRaw, NOW), normalizeStandardCard({ ...op01RegularRaw }, NOW)];
+resolveVariantCollisions(dupRows);
+assert.equal(identityKey(dupRows[0]), identityKey(dupRows[1]));
+console.log('PASS resolveVariantCollisions non tocca righe realmente duplicate (stesso nome)');
+
+// -- Righe SENZA nessuna collisione restano byte-per-byte identiche: il --
+// -- fix non deve introdurre drift di variant_id per le migliaia di --
+// -- righe già pulite, altrimenti ogni sync ne creerebbe duplicati --
+// -- fantasma nel DB (mai una delete, vedi index.ts). --
+const untouchedRows = [normalizeStandardCard(op01RegularRaw, NOW), normalizeStandardCard(op01AltRaw, NOW)];
+const untouchedBefore = JSON.stringify(untouchedRows);
+resolveVariantCollisions(untouchedRows);
+assert.equal(JSON.stringify(untouchedRows), untouchedBefore, 'righe non in collisione non devono cambiare variant_id');
+console.log('PASS resolveVariantCollisions lascia intatte le righe che non collidono con nessun\'altra');
 
 console.log('\nTutti i controlli del normalizer One Piece sono passati.');

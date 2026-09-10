@@ -125,3 +125,59 @@ export function normalizeDonCard(raw, sourceUpdatedAt) {
 export function identityKey(row) {
   return [row.game, row.catalog_card_id, row.set_code, row.rarity, row.variant_id].join('|');
 }
+
+function imageFilenameStem(imageUrl) {
+  const filename = String(imageUrl || '').split('/').pop() || '';
+  return filename.replace(/\.(jpe?g|png|webp|gif)$/i, '');
+}
+
+function slugify(value, max = 60) {
+  const slug = String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+  return truncate(slug, max);
+}
+
+// Bug reale confermato sui dati OPTCG dal vivo: molte ristampe promozionali/
+// da torneo (Winner, Judge Pack, Treasure Cup, Celebration Pack, Demo Deck,
+// Dash Pack...) riusano LO STESSO card_image_id della stampa base pur
+// essendo carte a tutti gli effetti diverse (nome e immagine diversi) — a
+// volte con card_image perfino vuoto lato OPTCG. La nostra identity key
+// (catalog_card_id + set_code + rarity + variant_id) le confondeva con la
+// stampa base: l'upsert ne "perdeva" una a caso, con effetti visibili come
+// il codice di una carta che mostra l'immagine di un'altra, o l'etichetta
+// "Alternate Art" presente/assente in modo incoerente da un sync all'altro.
+//
+// Gira DOPO la normalizzazione pura, PRIMA del dedupe/upsert, e tocca SOLO
+// le righe effettivamente in collisione (stessa identity key, card_name
+// diverso) — le altre migliaia di righe restano bit-per-bit identiche,
+// altrimenti ogni riga già pulita si duplicherebbe nel DB al prossimo sync
+// (mai una delete, vedi index.ts). Il suffisso usato per disambiguare è
+// derivato dalla riga stessa (nome del file immagine se distintivo, altrimenti
+// slug del card_name) — mai dall'ordine di elaborazione — così resta stabile
+// da un sync all'altro invece di generare righe fantasma sempre nuove.
+export function resolveVariantCollisions(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = [row.game, row.catalog_card_id, row.set_code, row.rarity, row.variant_id].join('|');
+    const list = groups.get(key);
+    if (list) list.push(row); else groups.set(key, [row]);
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    if (new Set(list.map(row => row.card_name)).size < 2) continue; // duplicati veri, non una collisione
+    for (const row of list) {
+      const stem = imageFilenameStem(row.image_url);
+      const upperStem = stem.toUpperCase(), upperCode = String(row.catalog_card_id).toUpperCase();
+      // Filename "pulito" (combacia col codice carta, eventualmente con un
+      // breve suffisso hash del CDN OPTCG): già univoco così com'è, non è
+      // lui la fonte della collisione — usa lo slug del nome invece.
+      const isCodeLikeFilename = upperStem === upperCode || upperStem.startsWith(`${upperCode}_`);
+      const suffix = stem && !isCodeLikeFilename ? slugify(stem) : slugify(row.card_name);
+      if (suffix) row.variant_id = truncate(`${row.variant_id}--${suffix}`, 100);
+    }
+  }
+  return rows;
+}
