@@ -1,7 +1,7 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage } from './js/cards.js';
+import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
@@ -234,7 +234,7 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.data.items) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
@@ -1281,8 +1281,20 @@ async function openCollectionEditor(id) {
   selectedCollectionItem = '';
   render();
   const expectedId = item.id;
-  const catalog = await findCard(item.cardName, item.game);
+  let catalog = await findCard(item.cardName, item.game);
   if (!catalog || collectionEditor?.item?.id !== expectedId) return;
+  // card_printings (il nostro catalogo, verificato nel tempo da Fast Scan/
+  // Market Watch) ha priorità su YGOPRODeck per elencare le rarità/set reali
+  // di questa carta: YGOPRODeck resta solo un fallback per printing che il
+  // DB non conosce ancora.
+  if (item.game === 'yugioh') {
+    try {
+      const canonicalId = canonicalCatalogCardId(item.catalogCardId || catalog.id, item.game) || String(item.catalogCardId || catalog.id);
+      const dbPrintings = await api.lookupPrintingsByCatalogId(canonicalId, item.game);
+      if (collectionEditor?.item?.id !== expectedId) return;
+      catalog = mergeAuthoritativePrintings(catalog, dbPrintings);
+    } catch {}
+  }
   const alreadyListed = catalog.printings.some(printing => (currentPrinting.printingId && printing.printingId)
     ? String(printing.printingId) === String(currentPrinting.printingId)
     : (sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,currentPrinting.rarity)));
@@ -1308,12 +1320,31 @@ function onCollectionCardSearch(event) {
     box.querySelectorAll('[data-collection-card-result]').forEach(button => button.addEventListener('click', () => {
       const card = collectionSearchResults[Number(button.dataset.collectionCardResult)];
       if (!card || !collectionEditor) return;
-      collectionEditor.card = collectionCardWithLocalizedPrintings(card, document.querySelector('#collection-language')?.value || 'Italiano');
-      const options = collectionPrintingOptions(collectionEditor.card);
-      collectionEditor.setCode = options[0]?.setCode || '';
-      const firstSetOptions = options.filter(printing => sameCollectionSet(printing.setCode, collectionEditor.setCode));
-      collectionEditor.printing = firstSetOptions.length === 1 ? firstSetOptions[0] : null;
-      render();
+      const applyCard = catalogCard => {
+        if (!collectionEditor) return;
+        collectionEditor.card = collectionCardWithLocalizedPrintings(catalogCard, document.querySelector('#collection-language')?.value || 'Italiano');
+        const options = collectionPrintingOptions(collectionEditor.card);
+        collectionEditor.setCode = options[0]?.setCode || '';
+        const firstSetOptions = options.filter(printing => sameCollectionSet(printing.setCode, collectionEditor.setCode));
+        collectionEditor.printing = firstSetOptions.length === 1 ? firstSetOptions[0] : null;
+        render();
+      };
+      applyCard(card);
+      // card_printings ha priorità su YGOPRODeck (vedi la stessa nota sopra,
+      // riga ~1284): la selezione appare subito coi dati YGOPRODeck, poi si
+      // completa con le rarità/set verificati dal DB non appena arrivano.
+      if (state.game === 'yugioh') {
+        (async () => {
+          try {
+            const canonicalId = canonicalCatalogCardId(card.id, state.game) || String(card.id);
+            const dbPrintings = await api.lookupPrintingsByCatalogId(canonicalId, state.game);
+            // Nessun click successivo (stesso o altro risultato) deve essere
+            // sovrascritto da un merge in arrivo in ritardo.
+            if (!collectionEditor || collectionEditor.card?.id !== card.id) return;
+            applyCard(mergeAuthoritativePrintings(card, dbPrintings));
+          } catch {}
+        })();
+      }
     }));
   }, 320);
 }

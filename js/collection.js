@@ -120,22 +120,30 @@ function azIndexView(items) {
   return `<div class="inventory-az-index" role="group" aria-label="Salta alla lettera">${[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'].map(letter => `<button type="button" data-collection-jump="${letter}" ${present.has(letter) ? '' : 'disabled'}>${letter}</button>`).join('')}</div>`;
 }
 
-export function collectionDetailView(id, scope, collection, connected, currentUser = '') {
-  const mine = collection.mine || [];
-  const team = collection.team || [];
+export function collectionDetailView(id, scope, collection, connected, currentUser = '', marketItems = []) {
+  const mine = collection.mine || [], team = collection.team || [];
   const item = scope === 'mine' ? mine.find(entry => entry.id === id) : groupTeamItems(team).find(entry => entry.id === id);
   if (!item) return '';
   const rows = scope === 'team' ? item.items : team.filter(entry => entry.printingId === item.printingId);
-  const meta = [item.setCode, item.rarity, item.language, item.condition, item.edition].filter(Boolean);
-  return `<div class="detail-backdrop" data-close-collection-detail><aside class="card-detail inventory-detail" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title"><button class="detail-close" data-close-collection-detail aria-label="Chiudi">×</button>
-    <div class="detail-layout"><div class="detail-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">` : icon('card')}</div><div class="detail-copy"><span class="eyebrow">${scope === 'mine' ? 'La mia raccolta' : 'Raccolta team'}</span><h2 id="collection-detail-title">${esc(item.cardName)}</h2><p>${meta.length ? meta.map(esc).join(' · ') : 'Printing senza metadati aggiuntivi'}</p>
-      <dl class="${scope === 'mine' ? 'stat-grid-4' : 'stat-grid-3'}">${scope === 'mine' ? quantityDefinition(item) : `<div><dt>In prestito</dt><dd>${item.quantityLoaned}</dd></div><div><dt>Prenotate</dt><dd>${item.quantityReserved}</dd></div><div><dt>Disponibili</dt><dd>${item.quantityAvailable}</dd></div>`}</dl>
-      ${item.legacyAmbiguous ? `<div class="data-note warning">${icon('bell')} Esistono vecchi prestiti non attribuibili con certezza a questa printing: non sono stati sottratti automaticamente.</div>` : ''}
-      ${scope === 'team' ? `<h3>Disponibilità nel team</h3><div class="team-availability">${rows.map(row => ownerAvailability(row, connected, currentUser)).join('')}</div><div class="detail-actions"><button class="btn wide" data-market-watch-add="${esc(item.printingId)}" ${connected?'':'disabled'}>${icon('chart')} Segui printing</button></div>` : `<div class="detail-actions"><button class="btn wide" data-collection-loan="${esc(item.id)}" ${item.quantityAvailable > 0 && connected ? '' : 'disabled'}>${icon('swap')} Crea prestito</button><div class="detail-actions-row"><button class="btn secondary" data-market-watch-add="${esc(item.printingId)}" ${connected?'':'disabled'}>${icon('chart')} Segui</button><button class="btn secondary" data-collection-edit="${esc(item.id)}" ${connected ? '' : 'disabled'}>Modifica</button><button class="btn secondary danger" data-collection-delete="${esc(item.id)}" ${connected ? '' : 'disabled'}>Rimuovi</button></div></div>`}
-    </div></div>
-  </aside></div>`;
+  const market = item.printingId ? marketItems.find(row => row.printingId === item.printingId) : null;
+  const price = market?.referencePrice;
+  const hasPrice = typeof price === 'number' && Number.isFinite(price) && price >= 0;
+  const stats = scope === 'mine'
+    ? [['collection','Possedute',item.quantityOwned],['swap','In prestito',item.quantityLoaned],['loans','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]]
+    : [['swap','In prestito',item.quantityLoaned],['loans','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]];
+  const meta = [[item.setCode,'code'],[item.rarity,'rarity'],[item.language,'language'],[item.condition,'condition'],[item.edition,'edition']].filter(([value])=>value);
+  return '<div class="detail-backdrop inventory-detail-backdrop" data-close-collection-detail><aside class="card-detail inventory-detail" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title">'
+    + `<header class="inventory-detail-heading"><span class="eyebrow">${scope==='mine'?'La mia raccolta':'Raccolta team'}</span><button type="button" class="detail-close" data-close-collection-detail aria-label="Chiudi dettaglio carta">×</button></header>
+    <div class="detail-layout"><div class="inventory-art-stage"><div class="detail-art">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">`:icon('card')}</div></div>
+    <div class="detail-copy"><h2 id="collection-detail-title">${esc(item.cardName)}</h2>
+      <div class="inventory-printing-meta">${meta.map(([value,kind])=>`<span class="inventory-meta-badge is-${kind}">${esc(value)}</span>`).join('')}<span class="inventory-availability ${item.quantityAvailable>0?'is-available':''}">${icon(item.quantityAvailable>0?'check':'lock')} ${item.quantityAvailable>0?'Disponibile':'Non disponibile'}</span></div>
+      <dl class="${scope==='mine'?'stat-grid-4':'stat-grid-3'} inventory-quantity-stats">${stats.map(([symbol,label,value])=>`<div><dt>${icon(symbol)}<span>${label}</span></dt><dd>${Number(value)||0}</dd></div>`).join('')}</dl>
+      ${item.legacyAmbiguous?`<div class="data-note warning">${icon('bell')} Esistono vecchi prestiti non attribuibili con certezza a questa printing: non sono stati sottratti automaticamente.</div>`:''}
+      <div class="inventory-market-summary">${icon('chart')}<div><small>${hasPrice?'Valore indicativo per copia':'Valore di mercato'}</small><strong>${hasPrice?new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(price):'Prezzo non disponibile'}</strong></div><button type="button" class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
+      ${scope==='team'?`<h3>Disponibilità nel team</h3><div class="team-availability">${rows.map(row=>ownerAvailability(row,connected,currentUser)).join('')}</div><div class="detail-actions"><button type="button" class="btn wide" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui printing</button></div>`:`<div class="detail-actions"><button type="button" class="btn wide inventory-loan-cta" data-collection-loan="${esc(item.id)}" ${item.quantityAvailable>0&&connected?'':'disabled'}>${icon('swap')} Crea prestito</button><div class="detail-actions-row"><button type="button" class="btn secondary" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui</button><button type="button" class="btn secondary" data-collection-edit="${esc(item.id)}" ${connected?'':'disabled'}>${icon('settings')} Modifica</button><button type="button" class="btn secondary danger" data-collection-delete="${esc(item.id)}" ${connected?'':'disabled'}>${icon('trash')} Rimuovi</button></div></div>`}
+      ${!connected?'<p class="inventory-offline-note">Sei offline. Torna online per modificare la raccolta o creare un prestito.</p>':''}
+    </div></div></aside></div>`;
 }
-
 export function collectionLoanRequestView(item, connected) {
   if (!item) return '';
   const disabled = !connected || item.quantityAvailable < 1 || item.legacyAmbiguous;

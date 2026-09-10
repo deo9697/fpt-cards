@@ -267,6 +267,29 @@ function catalogSetCodeCandidates(code) {
 
 function normalizeSetCode(value) { return String(value || '').trim().toUpperCase(); }
 
+// L'editor Raccolta elencava set/rarità di una carta usando solo YGOPRODeck:
+// quando YGOPRODeck non conosce (ancora, o mai) una rarità che card_printings
+// ha già verificato altrove (Fast Scan, Market Watch, ...), l'editor mostrava
+// un sottoinsieme incompleto — caso reale: CH01-EN019, YGOPRODeck non elenca
+// tutte e tre le rarità reali (Ultra/Secret/Starlight Rare). card_printings è
+// ora la fonte autorevole; YGOPRODeck resta solo un fallback per le printing
+// che il DB non conosce ancora (nessuna riga persa se il DB è indietro).
+export function mergeAuthoritativePrintings(card, dbRows = []) {
+  if (!card) return card;
+  const authoritative = (dbRows || []).map(row => ({
+    printingId: row.printingId || row.printing_id || null,
+    variantId: '',
+    setCode: normalizeSetCode(row.setCode || row.set_code),
+    setName: String(row.setName || row.set_name || '').trim(),
+    rarity: String(row.rarity || '').trim(),
+    image: row.imageUrl || row.image_url || ''
+  }));
+  const printingKey = printing => `${normalizeSetCode(printing.setCode)} ${String(printing.rarity || '').trim().toLocaleLowerCase('it')}`;
+  const covered = new Set(authoritative.map(printingKey));
+  const fallback = (card.printings || []).filter(printing => !covered.has(printingKey(printing)));
+  return { ...card, printings: [...authoritative, ...fallback] };
+}
+
 export function cardImageMatches(card, url) {
   const imageId = String(url || '').match(/\/([0-9]{5,10})\.(?:jpe?g|png)(?:[?#].*)?$/i)?.[1];
   if (!imageId || !Array.isArray(card?.imageIds) || !card.imageIds.length) return null;

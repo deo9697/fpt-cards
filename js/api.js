@@ -62,6 +62,12 @@ export const api = {
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },
+  // card_printings è il catalogo autorevole (verificato da Fast Scan/Market
+  // Watch nel tempo): l'editor Raccolta lo usa per completare le rarità/set
+  // che YGOPRODeck da solo non elenca tutte.
+  async lookupPrintingsByCatalogId(catalogCardId, game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('lookup_card_printings_by_catalog_id', { p_token:token(),p_game:game,p_catalog_card_id:catalogCardId }));
+  },
   async saveCollectionBatch(items) {
     ensure(); return unwrap(await client.rpc('save_collection_batch', { p_token:token(),p_items:items }));
   },
