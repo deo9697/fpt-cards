@@ -26,6 +26,17 @@ const SORT_OPTIONS = [
   { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' },
   { value: 'manual', label: 'Manuale', title: 'Tieni premuta una carta e trascinala per riordinarla' }
 ];
+// One Piece non ha Mostri/Magie/Trappole: "Tipo" non ha senso, al suo posto
+// c'è "Costo" (crescente) — ed è anche il default all'apertura del mazzo,
+// non solo un'opzione da scegliere (richiesta utente 2026-09-10).
+const ONE_PIECE_SORT_OPTIONS = [
+  { value: 'cost-asc', label: 'Costo', title: 'Ordina per costo, dal più basso al più alto' },
+  { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
+  { value: 'name-desc', label: 'Z–A', title: 'Ordina per nome, Z–A' },
+  { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' },
+  { value: 'manual', label: 'Manuale', title: 'Tieni premuta una carta e trascinala per riordinarla' }
+];
+function sortOptionsFor(game) { return game === 'onepiece' ? ONE_PIECE_SORT_OPTIONS : SORT_OPTIONS; }
 const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limitata a 2 copie', forbidden: 'Proibita' };
 
 export class DeckController {
@@ -45,6 +56,10 @@ export class DeckController {
     // chip (catalogColorsTouched) — a quel punto diventa un set esplicito.
     this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false;
     this.cardTypes = readTypeCache(); this.typesLoading = false;
+    // Costo carte One Piece (per l'ordinamento "Costo", default del Main
+    // Deck): non è cache-su-disco come cardTypes, si risolve al volo ad ogni
+    // apertura mazzo — dataset piccolo, nessun bisogno di persisterlo.
+    this.cardCosts = {}; this.costsLoading = false;
     // La ricerca carte del deck editor resta aperta finché non la chiudi
     // esplicitamente (X o indietro) — selezionare una carta da aggiungere
     // NON la chiude più, così se ne possono aggiungere più di seguito
@@ -123,7 +138,7 @@ export class DeckController {
     return `<div class="deck-mobile">
       ${this.teamEditorHeader(deck, total, report)}
       ${isOnePiece ? this.leaderHero(deck, { readonly:true }) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton()}</div>${this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton(deck)}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton(deck)}</div>${this.costsLoading && this.cardSort === 'cost-asc' ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto calcolando i costi…</div>' : this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
       ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck, { readonly:true }) : this.availabilityPeek(report)}
@@ -171,7 +186,7 @@ export class DeckController {
       ${this.editorHeader(deck, total, report)}
       <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label>${isOnePiece ? '<div data-deck-catalog-filters></div>' : ''}<div data-deck-search-results class="deck-search-results"></div></div>
       ${isOnePiece ? this.leaderHero(deck) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
-      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton()}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton()}</div>${this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
+      ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton(deck)}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton(deck)}</div>${this.costsLoading && this.cardSort === 'cost-asc' ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto calcolando i costi…</div>' : this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
       ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
       ${this.sectionGrid(deck, report)}
       ${sheetCard ? this.cardSheet(sheetCard, report, deck) : this.availabilityPeek(report)}
@@ -225,8 +240,9 @@ export class DeckController {
     for (const item of sectionCards) { const type = this.cardTypes[item.catalogCardId]; if (type in counts) counts[type] += item.quantity; }
     return TYPE_FILTERS.map(f => `<button type="button" class="chip ${f.value !== 'all' ? `deck-type-chip ${f.value}` : ''} ${this.cardTypeFilter === f.value ? 'active' : ''}" data-deck-type-filter="${f.value}">${f.value !== 'all' ? '<i class="deck-type-dot"></i>' : ''}${f.label}${f.value !== 'all' ? ` <b>${counts[f.value]}</b>` : ''}</button>`).join('');
   }
-  sortButton() {
-    const current = SORT_OPTIONS.find(option => option.value === this.cardSort) || SORT_OPTIONS[0];
+  sortButton(deck) {
+    const options = sortOptionsFor(deck?.game);
+    const current = options.find(option => option.value === this.cardSort) || options[0];
     return `<button type="button" class="deck-mh-sort" data-deck-sort-cycle title="${esc(current.title)} (tocca per cambiare)" aria-label="${esc(current.title)}">${icon('chart')}<span>${esc(current.label)}</span></button>`;
   }
   sortCards(cards) {
@@ -236,6 +252,14 @@ export class DeckController {
       // (deck.cards viene riordinato in place dal drag&drop, vedi
       // reorderCard) — qui non si tocca nulla.
       case 'manual': return sorted;
+      // Costo crescente (default One Piece): le carte senza costo risolto
+      // (es. Stage, o non ancora sincronizzate) finiscono in fondo per
+      // nome invece che mischiate a caso in mezzo alle altre.
+      case 'cost-asc': return sorted.sort((a, b) => {
+        const costA = this.cardCosts[a.catalogCardId], costB = this.cardCosts[b.catalogCardId];
+        const rankA = typeof costA === 'number' ? costA : Infinity, rankB = typeof costB === 'number' ? costB : Infinity;
+        return rankA - rankB || a.cardName.localeCompare(b.cardName, 'it');
+      });
       case 'name-desc': return sorted.sort((a, b) => b.cardName.localeCompare(a.cardName, 'it'));
       case 'qty-desc': return sorted.sort((a, b) => b.quantity - a.quantity || a.cardName.localeCompare(b.cardName, 'it'));
       case 'name-asc': return sorted.sort((a, b) => a.cardName.localeCompare(b.cardName, 'it'));
@@ -437,8 +461,8 @@ export class DeckController {
     this.markDirty(deck);
     this.onRender();
   }
-  open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); this.onRender(); }
-  openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); this.onRender(); }
+  open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); void this.resolveCardCosts(this.active()); this.onRender(); }
+  openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); void this.resolveCardCosts(this.activeTeamDeck()); this.onRender(); }
   showGallery(render = true) { this.screen = 'gallery'; this.teamDetailId = ''; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; if (render) this.onRender(); }
   create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (deck.game === 'onepiece') void this.autofillDon(deck); if (render) this.onRender(); }
   // Le 10 carte DON!! (P1.0) non passano più da un tab dedicato: ogni mazzo
@@ -461,7 +485,18 @@ export class DeckController {
   // Riparte sempre dalla prima sezione dell'adapter per Yu-Gi-Oh (Main). Per
   // One Piece il Leader ha ora la sua card dedicata (P1.0) fuori dai tab, così
   // la ricerca generica targetizza subito il Main invece del Leader.
-  resetEditorView() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = deck?.game === 'onepiece' ? 'main' : (sectionsFor(deck)[0] || 'main'); this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false; }
+  // L'ordinamento resta quello scelto dall'utente quando si riapre un mazzo
+  // dello STESSO gioco (persiste apposta, non va azzerato ogni volta) — ma
+  // se non è un'opzione valida per questo gioco (es. si arriva da un mazzo
+  // Yu-Gi-Oh con "Tipo" e si apre un mazzo One Piece) si torna al default di
+  // quel gioco, che per One Piece è "Costo" crescente su richiesta esplicita
+  // dell'utente (non va scelto a mano ogni volta).
+  resetEditorView() {
+    const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = deck?.game === 'onepiece' ? 'main' : (sectionsFor(deck)[0] || 'main');
+    this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false;
+    const sortOptions = sortOptionsFor(deck?.game);
+    if (!sortOptions.some(option => option.value === this.cardSort)) this.cardSort = sortOptions[0].value;
+  }
   setSection(section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sectionsFor(deck).includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
   // Apre la ricerca generica targetizzata sul Leader (bottone "Scegli"/"Cambia"
   // della hero, P1.0) — stessa apertura che fa `search()` digitando, così il
@@ -506,8 +541,8 @@ export class DeckController {
   }
   toggleMissingPanel(open) { this.missingPanelOpen = open; if (open) this.selectedCard = null; else this.missingRowChoices.clear(); this.onRender(); }
   toggleMoreMenu() { this.moreMenuOpen = !this.moreMenuOpen; this.onRender(); }
-  setSort(value) { if (!SORT_OPTIONS.some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
-  cycleSort() { const index = SORT_OPTIONS.findIndex(option => option.value === this.cardSort); this.setSort(SORT_OPTIONS[(index + 1) % SORT_OPTIONS.length].value); }
+  setSort(value) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sortOptionsFor(deck?.game).some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
+  cycleSort() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); const options = sortOptionsFor(deck?.game); const index = options.findIndex(option => option.value === this.cardSort); this.setSort(options[(index + 1) % options.length].value); }
   async resolveCardTypes(deck) {
     if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds || this.typesLoading) return;
     const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardTypes));
@@ -519,6 +554,24 @@ export class DeckController {
       writeTypeCache(this.cardTypes);
     } finally {
       this.typesLoading = false;
+      this.onRender();
+    }
+  }
+  // Costo One Piece per l'ordinamento "Costo" (default del Main): stesso
+  // ruolo di resolveCardTypes, ma la fonte è l'adapter di gioco
+  // (card_printings) invece di YGOPRODeck, e non c'è nulla da fare per
+  // Yu-Gi-Oh (l'adapter non espone cardCostsByIds).
+  async resolveCardCosts(deck) {
+    const adapter = getGameAdapter(deck?.game);
+    if (!deck || !adapter.cardCostsByIds || this.costsLoading) return;
+    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardCosts));
+    if (!ids.length) return;
+    this.costsLoading = true;
+    try {
+      const resolved = await adapter.cardCostsByIds(ids);
+      for (const id of ids) this.cardCosts[id] = resolved[id] ?? null;
+    } finally {
+      this.costsLoading = false;
       this.onRender();
     }
   }
@@ -612,6 +665,7 @@ export class DeckController {
     else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
     this.rememberCardType(id, card.type);
+    this.rememberCardCost(id, card.cost);
     this.markDirty(deck);
     this.onRender();
     // La ricerca resta aperta: dopo il re-render pieno (che rimette l'input
@@ -624,6 +678,11 @@ export class DeckController {
     }
   }
   rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
+  // Il risultato di ricerca One Piece porta già il costo (catalog.js): non
+  // serve aspettare resolveCardCosts (pensato per backfillare le carte di
+  // un mazzo già salvato, che non lo portano con sé) per una carta appena
+  // aggiunta in questa sessione.
+  rememberCardCost(id, cost) { if (!(id in this.cardCosts)) this.cardCosts[id] = typeof cost === 'number' ? cost : null; }
   quantity(id, section, delta, printingId = null) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section && (card.printingId || null) === (printingId || null)); if (!item) return; item.quantity = Math.min(copyBudget(deck, section, id, item), item.quantity + delta); if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
   chooseCover(catalogCardId) { const deck = this.active(); if (!deck?.cards.some(card => String(card.catalogCardId) === String(catalogCardId))) return this.onToast('La cover deve appartenere al mazzo'); deck.signatureCardId = String(catalogCardId); this.markDirty(deck); this.onToast('Carta signature aggiornata'); this.onRender(); }
   chooseDeckBoxTemplate(value) { const deck = this.active(), template = normalizeDeckBoxTemplate(value), preset = DECK_BOX_TEMPLATES[template]; if (!deck) return; deck.deckBoxTemplate = template; if (preset.theme) deck.deckTheme = preset.theme; this.markDirty(deck); this.onToast(`Deck Box: ${preset.label}`); this.onRender(); }
@@ -632,7 +691,7 @@ export class DeckController {
   async save() { const deck = this.active(); if (!deck || !deck.name.trim() || !this.isOnline()) return this.onToast('Nome del mazzo o connessione non disponibili'); for (const card of deck.cards) card.catalogCardId = canonicalCatalogCardId(card.catalogCardId, deck.game) || card.catalogCardId; const oldId = deck.id; this.busy = true; this.onRender(); try { const result = await this.api.saveDeck(deck), id = String(result?.id || result || oldId); this.clearDraft(oldId); if (result?.deckBoxPersisted === false) { deck.id = id; deck.persisted = true; deck.dirty = true; this.persistDrafts(); await this.load(); this.onToast('Mazzo salvato · Deck Box locale fino alla migration'); } else { await this.load(); this.onToast('Mazzo salvato'); } this.activeId = id; this.previewId = id; } catch (error) { this.error = error.message || 'Salvataggio non riuscito'; } finally { this.busy = false; this.onRender(); } }
   async remove() { const deck = this.active(); if (!deck?.persisted || !confirm(`Eliminare “${deck.name}”?`)) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
-  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.markDirty(deck); }
+  addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.rememberCardCost(id, card.cost); this.markDirty(deck); }
   // Import OPTCGSim (P1.1): formato "4xOP17-086", una carta logica per riga —
   // niente printing fisica assunta (resta printingId null, la Fase 4.1 la
   // aggancerà eventualmente dalla Raccolta). Leader/Main si distinguono dal

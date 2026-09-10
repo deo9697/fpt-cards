@@ -35,6 +35,36 @@ export async function findCardById(id) {
   return matches.find(card => String(card.id).toUpperCase() === normalized) || null;
 }
 
+const costCache = new Map();
+
+// Usato dal Deck Builder per l'ordinamento "Costo" (P1.x): il costo non è
+// persistito su deck_cards (è metadata di catalogo, non inventario), quindi
+// va risolto per catalogCardId ogni volta che serve — stesso ruolo di
+// cardTypesByIds per Yu-Gi-Oh, ma risolto da card_printings invece che da
+// YGOPRODeck. Le carte senza costo (es. Stage) tornano null, non 0: 0 è un
+// costo reale (i pochi Leader/Character a costo 0), null vuol dire "questa
+// carta non ha un costo".
+export async function cardCostsByIds(ids) {
+  const unique = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+  const missing = unique.filter(id => !costCache.has(id));
+  if (missing.length) {
+    let rows = [];
+    try { rows = await api.onePieceCardCosts(missing) || []; } catch { rows = []; }
+    const resolved = new Set();
+    for (const row of rows) {
+      const id = String(row.catalog_card_id ?? row.catalogCardId ?? '').trim();
+      if (!id) continue;
+      const cost = row.cost === null || row.cost === undefined ? null : Number(row.cost);
+      costCache.set(id, Number.isFinite(cost) ? cost : null);
+      resolved.add(id);
+    }
+    for (const id of missing) if (!resolved.has(id)) costCache.set(id, null);
+  }
+  const map = {};
+  for (const id of unique) map[id] = costCache.get(id) ?? null;
+  return map;
+}
+
 // search_onepiece_catalog restituisce PRINTING fisiche, una riga per
 // variante (regular/parallel/alt art/promo): il raggruppamento in "carte
 // logiche" per catalog_card_id è deliberatamente lato client, non lato SQL

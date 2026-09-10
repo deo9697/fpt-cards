@@ -91,6 +91,12 @@ export const api = {
   async onePieceCatalogSearch(query, limit = 60) {
     ensure(); return unwrap(await client.rpc('search_onepiece_catalog', { p_token:token(),p_query:query,p_limit:limit }));
   },
+  // Il costo non viaggia sulle righe deck_cards (non è dato di inventario,
+  // è metadata di catalogo) — si risolve al volo per catalogCardId, come i
+  // tipi carta Yu-Gi-Oh via cardTypesByIds.
+  async onePieceCardCosts(catalogCardIds) {
+    ensure(); return unwrap(await client.rpc('list_onepiece_card_costs', { p_token:token(),p_catalog_card_ids:catalogCardIds }));
+  },
   async catalogVerificationQueue(version,{signal}={}) {
     ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {
       p_token:token(), p_verification_version:version
