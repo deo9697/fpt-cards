@@ -78,7 +78,7 @@ const personalHtml = collectionView({ mine, team }, filters, 'yugioh', true);
 assert.match(personalHtml, /Possedute[\s\S]*12/);
 assert.match(personalHtml, /Disponibili[\s\S]*7/);
 const personalDetail = collectionDetailView('mine-1', 'mine', { mine, team }, true);
-assert.match(personalDetail, /Prenotate<\/dt><dd>3/);
+assert.match(personalDetail, /Prenotate<\/span><\/dt><dd>3/);
 const teamHtml = collectionView({ mine, team }, { ...filters, scope:'team' }, 'yugioh', true);
 assert(!teamHtml.includes('Possedute'), 'vista team senza quantità totale posseduta');
 const teamDetail = collectionDetailView('printing-sdk', 'team', { mine, team }, true, 'daniele');

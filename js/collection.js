@@ -129,8 +129,8 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
   const price = market?.referencePrice;
   const hasPrice = typeof price === 'number' && Number.isFinite(price) && price >= 0;
   const stats = scope === 'mine'
-    ? [['collection','Possedute',item.quantityOwned],['swap','In prestito',item.quantityLoaned],['loans','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]]
-    : [['swap','In prestito',item.quantityLoaned],['loans','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]];
+    ? [['collection','Possedute',item.quantityOwned],['swap','In prestito',item.quantityLoaned],['lock','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]]
+    : [['swap','In prestito',item.quantityLoaned],['lock','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]];
   const meta = [[item.setCode,'code'],[item.rarity,'rarity'],[item.language,'language'],[item.condition,'condition'],[item.edition,'edition']].filter(([value])=>value);
   return '<div class="detail-backdrop inventory-detail-backdrop" data-close-collection-detail><aside class="card-detail inventory-detail" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title">'
     + `<header class="inventory-detail-heading"><span class="eyebrow">${scope==='mine'?'La mia raccolta':'Raccolta team'}</span><button type="button" class="detail-close" data-close-collection-detail aria-label="Chiudi dettaglio carta">×</button></header>
