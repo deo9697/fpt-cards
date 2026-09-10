@@ -8,7 +8,7 @@ import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
-import { triggerRickrollVideo } from './js/easter-egg.js';
+import { triggerRickrollVideo, isLossStreakZoomActive } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
@@ -117,7 +117,20 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); if(page==='requests')void refreshCollectionShareRequests(); if(previous!=='stats'&&page==='stats')stats.checkLossStreakEasterEgg(); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
+
+// Niente più poll globale ogni 2 minuti: ogni pagina che non ha copertura
+// Realtime si aggiorna da sola quando l'utente la apre, invece di dipendere
+// da un timer cieco che ricaricava tutto indipendentemente da cosa serviva
+// davvero. Collection/loans restano coperti da Realtime (vedi startRealtime
+// più sotto); requests/market/decks/stats non hanno un canale dedicato e si
+// aggiornano quindi qui, all'ingresso nella rispettiva pagina.
+function dispatchPageEnterRefresh(previous, next) {
+  if (next === 'requests') void refreshCollectionShareRequests();
+  if (next === 'market') void marketWatch.load();
+  if (next === 'decks') void loadDecks().then(() => renderRoute());
+  if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { renderRoute(); stats.checkLossStreakEasterEgg(); });
+}
 
 function animateXpFill() {
   const key = state.currentUser;
@@ -157,6 +170,7 @@ function render(force = false) {
 }
 
 function renderRoute() {
+  if (isLossStreakZoomActive()) return;
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
   const shell = document.querySelector('.app-shell');
   const stage = shell?.querySelector('.page-stage');
@@ -1594,7 +1608,7 @@ function startRealtime() {
 }
 
 function scheduleRealtimeSync(source) {
-  realtimeSyncSources.add(source);
+  if (source) realtimeSyncSources.add(source);
   clearTimeout(realtimeSyncTimer);
   realtimeSyncTimer = setTimeout(() => runRealtimeSync(), 250);
 }
@@ -1615,7 +1629,7 @@ async function runRealtimeSync() {
     if (!editing) renderRoute();
   } catch {} finally {
     realtimeSyncRunning = false;
-    if (realtimeSyncSources.size) scheduleRealtimeSync('collection');
+    if (realtimeSyncSources.size) scheduleRealtimeSync();
   }
 }
 
@@ -2033,26 +2047,22 @@ window.addEventListener('hashchange', () => {
   const previous = page;
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
   if(previous==='fastscan'||page==='fastscan')render();else renderRoute();
+  dispatchPageEnterRefresh(previous, page);
 });
-// document.hidden qui è quello che manca a un setInterval: il timer da solo
-// continua a girare anche a schermo spento/app in background (a differenza
-// delle animazioni CSS, che i browser sospendono da soli), rifacendo 5
-// fetch in parallelo + un render completo ogni 2 minuti per sempre — una
-// causa comune di surriscaldamento/consumo batteria per una PWA "aperta"
-// ma non in primo piano. Skippa mentre è nascosta, e si allinea subito al
-// ritorno invece di aspettare fino a 2 minuti (stesso pattern già usato in
-// pwa-update.js per il controllo aggiornamenti).
-async function syncPrimaryData() {
-  if (!state.currentUser || document.hidden || SHARE_HASH.test(location.hash)) return;
-  try {
-    await loadPrimaryData();
-    saveState();
-    const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
-    if (!editing) renderRoute();
-  } catch {}
-}
-setInterval(syncPrimaryData, 120000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void syncPrimaryData(); });
+// Niente più mega-refresh ogni 2 minuti (ricaricava tutti e 6 i domini +
+// render completo, anche a schermo spento/app in background — una causa
+// comune di surriscaldamento/consumo batteria per una PWA "aperta" ma non
+// in primo piano). Al ritorno in foreground riconciliamo solo collection e
+// loans: sono gli unici due domini con un canale Realtime (vedi
+// startRealtime più sotto), ma quel canale è un broadcast Supabase
+// (fire-and-forget) — un evento arrivato mentre il socket era sospeso in
+// background va perso per sempre e non viene ri-consegnato alla
+// riconnessione, quindi questa riconciliazione mirata resta necessaria per
+// correttezza. Le altre pagine (market/decks/stats/requests) si aggiornano
+// da sole quando l'utente le apre (vedi dispatchPageEnterRefresh).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.currentUser && !SHARE_HASH.test(location.hash)) scheduleRealtimeSync('loans');
+});
 
 // Deep link dal tap su una notifica di sistema: sw.js manda un postMessage
 // invece di navigare da solo, perché è la pagina già aperta a sapere come

@@ -3,6 +3,14 @@
 // stesso (già nel DOM, renderizzato appena prima da chi chiama questa
 // funzione) — se manca (badge non ancora disponibile) lo zoom resta
 // centrato sulla pagina invece di puntare a un elemento inesistente.
+// Durante la fase di zoom (prima che parta il video) un renderRoute()
+// concorrente (es. sync realtime) rimpiazzerebbe .page-stage proprio mentre
+// è sotto trasformazione CSS — visivamente stonato. app.js controlla questo
+// flag in testa a renderRoute() e salta il render finché non torna false: i
+// dati non si perdono, il prossimo trigger naturale li mostra.
+let zoomActive = false;
+export function isLossStreakZoomActive() { return zoomActive; }
+
 export function triggerLossStreakZoomVideo(targetElement) {
   const stage = document.querySelector('.page-stage') || document.body;
   if (targetElement) {
@@ -11,6 +19,7 @@ export function triggerLossStreakZoomVideo(targetElement) {
     const originY = stageRect.height ? ((badgeRect.top + badgeRect.height / 2 - stageRect.top) / stageRect.height) * 100 : 50;
     stage.style.transformOrigin = `${originX}% ${originY}%`;
   }
+  zoomActive = true;
   document.body.classList.add('loss-streak-zoom-active');
   stage.classList.add('loss-streak-zoom');
   window.setTimeout(() => triggerLossStreakVideo(() => {
@@ -18,6 +27,7 @@ export function triggerLossStreakZoomVideo(targetElement) {
     stage.style.transformOrigin = '';
     document.body.classList.remove('loss-streak-zoom-active');
   }), 1650);
+  window.setTimeout(() => { zoomActive = false; }, 1650);
 }
 
 function triggerLossStreakVideo(onClose) {
