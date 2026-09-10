@@ -29,7 +29,7 @@ export class MarketWatchController {
       movers=nextMovers;anomalies=nextAnomalies;extrasReady=true;
       if(!current()||this.loading)return;
       this.data.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
-      this.onRender?.();void this.loadFeaturedHistories();
+      this.refreshAfterLoad();void this.loadFeaturedHistories();
     });
     const request=(async()=>{
       try{
@@ -47,11 +47,26 @@ export class MarketWatchController {
         if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}
         this.data=next;this.anomalies=anomalies||[];this.error='';
       }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
-      finally{if(current()){this.loading=false;this.onRender?.();if(extrasReady)void this.loadFeaturedHistories();}}
+      finally{if(current()){this.loading=false;this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}
       return this.data;
     })();
     this.loadInFlight=request;
     try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}
+  }
+  // load() ora gira anche mentre l'utente è già fermo su Market Watch (apertura
+  // pagina + fallback periodico, vedi app.js), non solo al boot: un onRender()
+  // pieno lì ricostruirebbe l'intera route (immagini comprese) solo perché sono
+  // arrivati prezzi aggiornati. Se la sezione board è già in pagina, la
+  // aggiorniamo sul posto (stesso principio di refreshBoardSection); altrimenti
+  // (boot, o l'utente è sulla Home dove vive il pannello "movers") si passa dal
+  // render pieno come prima.
+  refreshAfterLoad(){
+    const section=document.querySelector('[data-market-board-section]');
+    if(!section||this.selected||this.selectedDeck){this.onRender?.();return;}
+    const heroValue=document.querySelector('.market-hero-value'),heroSync=document.querySelector('.market-hero-sync');
+    if(heroValue){const summary=portfolioSummary(this.data.items);heroValue.textContent=summary.complete?money(summary.current):'Dati parziali';}
+    if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}`;
+    this.refreshBoardSection();
   }
   dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
   // Cards where the resolver deliberately refused to guess a price:

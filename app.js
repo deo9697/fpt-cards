@@ -129,7 +129,7 @@ function dispatchPageEnterRefresh(previous, next) {
   if (next === 'requests') void refreshCollectionShareRequests();
   if (next === 'market') void marketWatch.load();
   if (next === 'decks') void loadDecks().then(() => renderRoute());
-  if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { renderRoute(); stats.checkLossStreakEasterEgg(); });
+  if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); });
 }
 
 function animateXpFill() {
@@ -2063,6 +2063,19 @@ window.addEventListener('hashchange', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.currentUser && !SHARE_HASH.test(location.hash)) scheduleRealtimeSync('loans');
 });
+
+// Fallback leggero SOLO per i domini senza copertura Realtime (market/decks/
+// stats squadra), e SOLO per la pagina che l'utente ha davvero aperta in quel
+// momento — non loadPrimaryData() travestito da polling più raro (sarebbe
+// lo stesso problema, solo più raro): niente loans/collection (coperti da
+// Realtime + riconciliazione al foreground), niente "Io" in Stats (si
+// aggiorna da sé dopo ogni match registrato), niente altre pagine.
+setInterval(() => {
+  if (document.hidden || !state.currentUser || SHARE_HASH.test(location.hash)) return;
+  if (page === 'market') void marketWatch.load();
+  else if (page === 'decks') void loadDecks().then(() => renderRoute());
+  else if (page === 'stats' && stats.scope !== 'mine') void stats.load().then(() => stats.refreshBody());
+}, 15 * 60 * 1000);
 
 // Deep link dal tap su una notifica di sistema: sw.js manda un postMessage
 // invece di navigare da solo, perché è la pagina già aperta a sapere come

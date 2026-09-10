@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
 import { renderDeckBoxVisual } from './deck-box.js';
-import { triggerLossStreakZoomVideo } from './easter-egg.js';
+import { triggerLossStreakZoomVideo, isLossStreakZoomActive } from './easter-egg.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
@@ -120,7 +120,7 @@ export class StatsController {
     if (this.streak?.result !== 'loss') { this._lossStreakEggShown = false; return; }
     if ((this.streak.count || 0) < 3 || this._lossStreakEggShown) return;
     this._lossStreakEggShown = true;
-    if (this.scope !== 'mine') { this.scope = 'mine'; this.onRender(); }
+    if (this.scope !== 'mine') { this.scope = 'mine'; this.refreshBody(); }
     requestAnimationFrame(() => triggerLossStreakZoomVideo(document.querySelector('[data-stats-streak-badge]')));
     void this.claimEasterEggTitle('title_skill_issue', 'Skill Issue');
   }
@@ -164,27 +164,27 @@ export class StatsController {
   }
   setScope(value) {
     if (!SCOPES.includes(value) || value === this.scope) return;
-    this.scope = value; this.deckFilter = 'all'; this.memberFilter = 'all'; this.onRender();
-    if (value === 'board') void this.loadBoard().then(() => this.onRender());
-    else void this.loadStats().then(() => this.onRender());
+    this.scope = value; this.deckFilter = 'all'; this.memberFilter = 'all'; this.refreshBody();
+    if (value === 'board') void this.loadBoard().then(() => this.refreshBody());
+    else void this.loadStats().then(() => this.refreshBody());
   }
-  setMemberFilter(value) { this.memberFilter = value; this.onRender(); }
+  setMemberFilter(value) { this.memberFilter = value; this.refreshBody(); }
   // Filtro mazzo/periodo: solo Team li usa (filtro client-side su teamRows già
   // caricate). "Io" non ha più filtri — mostra sempre lo storico completo.
-  setDeckFilter(value) { this.deckFilter = value; this.onRender(); }
+  setDeckFilter(value) { this.deckFilter = value; this.refreshBody(); }
   setPeriodFilter(value) {
     if (!PERIODS.some(p => p.value === value) || value === this.periodFilter) return;
-    this.periodFilter = value; this.onRender();
-    if (this.scope === 'board') void this.loadBoard().then(() => this.onRender());
-    else if (this.scope === 'team') void this.loadStats().then(() => this.onRender());
+    this.periodFilter = value; this.refreshBody();
+    if (this.scope === 'board') void this.loadBoard().then(() => this.refreshBody());
+    else if (this.scope === 'team') void this.loadStats().then(() => this.refreshBody());
   }
   setChartPeriod(value) {
     const normalized = value === 'all' ? 'all' : Number(value);
     if (![10, 30, 'all'].includes(normalized)) return;
-    this.chartPeriod = normalized; this.onRender();
+    this.chartPeriod = normalized; this.refreshBody();
   }
-  toggleMineDecks() { this.mineDecksExpanded = !this.mineDecksExpanded; this.onRender(); }
-  toggleMineMatches() { this.mineMatchesExpanded = !this.mineMatchesExpanded; this.onRender(); }
+  toggleMineDecks() { this.mineDecksExpanded = !this.mineDecksExpanded; this.refreshBody(); }
+  toggleMineMatches() { this.mineMatchesExpanded = !this.mineMatchesExpanded; this.refreshBody(); }
   openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.onModalRender(); }
   closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.onModalRender(); }
   setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onModalRender(); }
@@ -263,9 +263,24 @@ export class StatsController {
     return `<section class="page-stack stats-page">
       ${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}
       <header class="page-header split"><div><span class="eyebrow">Statistiche</span><h1>${this.state.game === 'onepiece' ? 'One Piece Card Game' : 'Yu-Gi-Oh!'}</h1></div><button class="btn" data-stats-new-match>${icon('plus')} Registra match</button></header>
-      <div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button><button type="button" data-stats-scope="board" class="${this.scope === 'board' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'board'}">${icon('trophy')} Tabellone</button></div>
-      ${this.scope === 'mine' ? this.mineOverviewView() : this.scope === 'board' ? this.boardView() : `${this.heroView()}${this.filtersView()}${this.deckListView()}`}
+      <div data-stats-body>${this.bodyView()}</div>
     </section>`;
+  }
+  // Cambio scope/filtri/chart-period è puro stato UI locale a questa pagina
+  // (this.error/l'header non cambiano): niente renderRoute() completo — che
+  // ricostruirebbe anche sidebar/topbar/mobile-nav per un cambio di tab —
+  // solo questo blocco si ricostruisce e riaggancia (stesso principio di
+  // refreshBoardSection() in market-watch.js).
+  bodyView() {
+    return `<div class="tabs" role="tablist" aria-label="Ambito statistiche"><button type="button" data-stats-scope="mine" class="${this.scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'mine'}">Io</button><button type="button" data-stats-scope="team" class="${this.scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'team'}">Team</button><button type="button" data-stats-scope="board" class="${this.scope === 'board' ? 'active' : ''}" role="tab" aria-selected="${this.scope === 'board'}">${icon('trophy')} Tabellone</button></div>
+      ${this.scope === 'mine' ? this.mineOverviewView() : this.scope === 'board' ? this.boardView() : `${this.heroView()}${this.filtersView()}${this.deckListView()}`}`;
+  }
+  refreshBody() {
+    if (isLossStreakZoomActive()) return;
+    const body = document.querySelector('[data-stats-body]');
+    if (!body) { this.onRender(); return; }
+    body.innerHTML = this.bodyView();
+    this.bind(body);
   }
   // Solo Team la usa ormai: "Io" non ha più filtri, mostra sempre lo storico completo.
   filtersView() {
