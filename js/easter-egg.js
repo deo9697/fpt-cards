@@ -3,13 +3,19 @@
 // stesso (già nel DOM, renderizzato appena prima da chi chiama questa
 // funzione) — se manca (badge non ancora disponibile) lo zoom resta
 // centrato sulla pagina invece di puntare a un elemento inesistente.
-// Durante la fase di zoom (prima che parta il video) un renderRoute()
-// concorrente (es. sync realtime) rimpiazzerebbe .page-stage proprio mentre
-// è sotto trasformazione CSS — visivamente stonato. app.js controlla questo
-// flag in testa a renderRoute() e salta il render finché non torna false: i
-// dati non si perdono, il prossimo trigger naturale li mostra.
+// Durante la fase di zoom (prima che parta il video) un renderRoute()/
+// refreshBody() concorrente (es. sync realtime) rimpiazzerebbe .page-stage
+// proprio mentre è sotto trasformazione CSS — visivamente stonato. Chi lo
+// chiama controlla isLossStreakZoomActive() e, se attivo, si registra con
+// onLossStreakZoomEnd() invece di limitarsi a saltare il giro: il dato non
+// va perso, arriva un istante dopo la fine dello zoom invece che a metà.
+// zoomEndListeners è un Set: passare la STESSA reference di funzione più
+// volte durante la stessa finestra di zoom (es. tre eventi realtime di
+// fila) la deduplica automaticamente in un solo flush.
 let zoomActive = false;
+const zoomEndListeners = new Set();
 export function isLossStreakZoomActive() { return zoomActive; }
+export function onLossStreakZoomEnd(callback) { zoomEndListeners.add(callback); }
 
 export function triggerLossStreakZoomVideo(targetElement) {
   const stage = document.querySelector('.page-stage') || document.body;
@@ -27,7 +33,12 @@ export function triggerLossStreakZoomVideo(targetElement) {
     stage.style.transformOrigin = '';
     document.body.classList.remove('loss-streak-zoom-active');
   }), 1650);
-  window.setTimeout(() => { zoomActive = false; }, 1650);
+  window.setTimeout(() => {
+    zoomActive = false;
+    const pending = [...zoomEndListeners];
+    zoomEndListeners.clear();
+    pending.forEach(callback => { try { callback(); } catch {} });
+  }, 1650);
 }
 
 function triggerLossStreakVideo(onClose) {

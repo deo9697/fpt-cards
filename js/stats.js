@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
 import { renderDeckBoxVisual } from './deck-box.js';
-import { triggerLossStreakZoomVideo, isLossStreakZoomActive } from './easter-egg.js';
+import { triggerLossStreakZoomVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './easter-egg.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
 const STREAK_PLURAL = { win:'vittorie', loss:'sconfitte', draw:'pareggi' };
@@ -24,6 +24,10 @@ export class StatsController {
     this.boardRows = []; this.boardError = ''; this.boardLoadInFlight = null;
     this.timeline = []; this.timelineError = ''; this.chartPeriod = 30;
     this.mineDecksExpanded = false; this.mineMatchesExpanded = false;
+    // Reference stabile: onLossStreakZoomEnd() la mette in un Set, così più
+    // refreshBody() saltati durante lo stesso zoom (es. più eventi realtime
+    // di fila) si deduplicano in un solo flush invece di accodarsi N volte.
+    this.refreshBody = this.refreshBody.bind(this);
   }
   get state() { return this.getState(); }
   get decks() { return (this.state.decks || []).filter(deck => deck.game === this.state.game); }
@@ -185,32 +189,32 @@ export class StatsController {
   }
   toggleMineDecks() { this.mineDecksExpanded = !this.mineDecksExpanded; this.refreshBody(); }
   toggleMineMatches() { this.mineMatchesExpanded = !this.mineMatchesExpanded; this.refreshBody(); }
-  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.onModalRender(); }
-  closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.onModalRender(); }
-  setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.onModalRender(); }
-  setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.onModalRender(); }
+  openMatchDialog() { this.matchForm = emptyForm(this.decks[0]?.id); this.opponentMode = 'external'; this.lastResult = null; this.matchModalOpen = true; this.refreshModal(); }
+  closeMatchDialog() { this.matchModalOpen = false; this.lastResult = null; this.refreshModal(); }
+  setMatchDeck(deckId) { this.matchForm.deckId = deckId; this.refreshModal(); }
+  setMatchResult(result) { if (!RESULT_LABEL[result]) return; this.matchForm.result = result; this.refreshModal(); }
   setMatchField(field, value) { this.matchForm[field] = value; }
   toggleMatchWentFirst(checked) { this.matchForm.wentFirst = checked; }
   openMatchDetail(id) {
     const match = this.timeline.find(item => item.id === id);
     if (!match) return;
-    this.matchDetail = match; this.matchDetailOpen = true; this.onModalRender();
+    this.matchDetail = match; this.matchDetailOpen = true; this.refreshModal();
   }
-  closeMatchDetail() { this.matchDetailOpen = false; this.matchDetail = null; this.onModalRender(); }
+  closeMatchDetail() { this.matchDetailOpen = false; this.matchDetail = null; this.refreshModal(); }
   setOpponentMode(mode) {
     if (!['external','team'].includes(mode) || mode === this.opponentMode) return;
     this.opponentMode = mode; this.matchForm.opponentMemberSlug = ''; this.matchForm.opponentDeckId = '';
-    if (mode === 'team') void this.loadTeamDecks().then(() => this.onModalRender());
-    this.onModalRender();
+    if (mode === 'team') void this.loadTeamDecks().then(() => this.refreshModal());
+    this.refreshModal();
   }
   setOpponentMember(slug) {
     this.matchForm.opponentMemberSlug = slug;
     const decks = this.opponentDecksForMember(slug);
     this.matchForm.opponentDeckId = decks[0]?.id || (slug ? NEW_DECK_VALUE : '');
     this.matchForm.opponentDeckName = '';
-    this.onModalRender();
+    this.refreshModal();
   }
-  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; if (deckId !== NEW_DECK_VALUE) this.matchForm.opponentDeckName = ''; this.onModalRender(); }
+  setOpponentDeck(deckId) { this.matchForm.opponentDeckId = deckId; if (deckId !== NEW_DECK_VALUE) this.matchForm.opponentDeckName = ''; this.refreshModal(); }
   get teamOpponentValid() {
     if (this.opponentMode !== 'team') return true;
     if (!this.matchForm.opponentMemberSlug) return false;
@@ -221,7 +225,7 @@ export class StatsController {
     const form = this.matchForm;
     if (this.busy || !form.deckId || !form.result || !this.teamOpponentValid) return;
     const isNewOpponentDeck = this.opponentMode === 'team' && form.opponentDeckId === NEW_DECK_VALUE;
-    this.busy = true; this.onModalRender();
+    this.busy = true; this.refreshModal();
     try {
       const response = await this.api.registerMatch({
         game:this.state.game, deckId:form.deckId, result:form.result,
@@ -248,17 +252,22 @@ export class StatsController {
       if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab
       if (isNewOpponentDeck) { this.teamDecksLoaded = false; this.teamDecksAll = []; } // il mazzo appena creato per il compagno deve comparire nel prossimo dialog
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
-    finally { this.busy = false; this.onModalRender(); }
+    finally { this.busy = false; this.refreshModal(); }
   }
-  // Il modal "Registra match" NON viene emesso qui dentro: .page-stage ha
+  // Il modal "Registra match" NON viene emesso dentro .page-stage: ha
   // view-transition-name, che in Chrome intrappola i figli position:fixed nel
   // proprio containing block invece della viewport (stesso motivo per cui gli
   // altri modal top-level dell'app — prestito, drawer progressione, pannello
-  // avatar — sono renderizzati fuori da .page-stage in appView()). Lo rende
-  // app.js leggendo stats.matchModalOpen/stats.matchModalView(); per questo
-  // le azioni del modal chiamano onModalRender (render(true) completo) invece
-  // di onRender (renderRoute, che tocca solo .page-stage e non
-  // aggiornerebbe mai un modal fuori da lì).
+  // avatar — sono renderizzati fuori da .page-stage in appView()). app.js lo
+  // espone in un contenitore stabile, [data-stats-modal-root] (vedi appView());
+  // refreshModal() patcha solo quello — niente più render(true) completo
+  // (sidebar/topbar/mobile-nav comprese) per ogni tasto premuto nel form.
+  refreshModal() {
+    const root = document.querySelector('[data-stats-modal-root]');
+    if (!root) { this.onModalRender(); return; }
+    root.innerHTML = `${this.matchModalOpen ? this.matchModalView() : ''}${this.matchDetailOpen ? this.matchDetailView() : ''}`;
+    this.bind(root);
+  }
   view() {
     return `<section class="page-stack stats-page">
       ${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}
@@ -276,7 +285,7 @@ export class StatsController {
       ${this.scope === 'mine' ? this.mineOverviewView() : this.scope === 'board' ? this.boardView() : `${this.heroView()}${this.filtersView()}${this.deckListView()}`}`;
   }
   refreshBody() {
-    if (isLossStreakZoomActive()) return;
+    if (isLossStreakZoomActive()) { onLossStreakZoomEnd(this.refreshBody); return; }
     const body = document.querySelector('[data-stats-body]');
     if (!body) { this.onRender(); return; }
     body.innerHTML = this.bodyView();

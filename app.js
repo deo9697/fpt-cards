@@ -8,7 +8,7 @@ import { icon } from './js/icons.js';
 import { dashboardView } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
-import { triggerRickrollVideo, isLossStreakZoomActive } from './js/easter-egg.js';
+import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
 import { FastScanController } from './js/fast-scan.js';
@@ -170,7 +170,7 @@ function render(force = false) {
 }
 
 function renderRoute() {
-  if (isLossStreakZoomActive()) return;
+  if (isLossStreakZoomActive()) { onLossStreakZoomEnd(renderRoute); return; }
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
   const shell = document.querySelector('.app-shell');
   const stage = shell?.querySelector('.page-stage');
@@ -254,8 +254,7 @@ function appView() {
     ${collectionShareModal ? collectionShareModalView() : ''}
     ${progressionDrawerOpen ? progressionDrawerView() : ''}
     ${avatarPanelOpen ? avatarPanelView(u) : ''}
-    ${page === 'stats' && stats.matchModalOpen ? stats.matchModalView() : ''}
-    ${page === 'stats' && stats.matchDetailOpen ? stats.matchDetailView() : ''}
+    <div data-stats-modal-root>${page === 'stats' ? `${stats.matchModalOpen ? stats.matchModalView() : ''}${stats.matchDetailOpen ? stats.matchDetailView() : ''}` : ''}</div>
   </main>`;
 }
 
@@ -2073,7 +2072,16 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => {
   if (document.hidden || !state.currentUser || SHARE_HASH.test(location.hash)) return;
   if (page === 'market') void marketWatch.load();
-  else if (page === 'decks') void loadDecks().then(() => renderRoute());
+  // Decks non ha (ancora) un aggiornamento mirato come refreshBoardSection()/
+  // refreshBody(): un renderRoute() incondizionato qui potrebbe interrompere
+  // l'utente a metà modifica di un mazzo (editor aperto, picker, import in
+  // corso). Ricarica comunque i dati in background, ma mostra il render solo
+  // se si è fermi sulla gallery e non si sta scrivendo da nessuna parte —
+  // altrimenti i dati freschi arrivano comunque al prossimo render naturale.
+  else if (page === 'decks') void loadDecks().then(() => {
+    const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+    if (!editing && decks.screen === 'gallery') renderRoute();
+  });
   else if (page === 'stats' && stats.scope !== 'mine') void stats.load().then(() => stats.refreshBody());
 }, 15 * 60 * 1000);
 
