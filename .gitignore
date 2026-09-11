@@ -6,3 +6,7 @@ node_modules/
 .env.*
 !.env.example
 preview-server*.log
+
+# Dump locali di backup del database Supabase (possono contenere dati utente
+# reali) — mai committare, mai sincronizzare.
+backups/
