@@ -102,14 +102,39 @@ export async function cardTypesByIds(ids, game = 'yugioh') {
   if (game !== 'yugioh') return {};
   const unique = [...new Set((ids || []).map(id => String(id).trim()).filter(id => /^\d{5,10}$/.test(id)))];
   if (!unique.length) return {};
-  try {
-    const response = await fetch(`${ENDPOINT}?id=${unique.join(',')}`);
-    if (!response.ok) return {};
-    const rows = (await response.json()).data || [];
-    const map = {};
-    for (const row of rows) map[String(row.id)] = row.type || '';
-    return map;
-  } catch { return {}; }
+  // A grande raccolta condivisa può passare centinaia di id in un colpo solo
+  // (sfondo per tipo in griglia): un solo fetch con tutti gli id nell'URL
+  // rischierebbe i limiti di lunghezza URL lato server. A blocchi di 40,
+  // in parallelo — stesso risultato, nessun rischio, nessun cambio per i
+  // chiamanti esistenti (Mazzi ne passa sempre pochi, resta un solo blocco).
+  const CHUNK = 40;
+  const chunks = [];
+  for (let index = 0; index < unique.length; index += CHUNK) chunks.push(unique.slice(index, index + CHUNK));
+  const results = await Promise.all(chunks.map(async chunk => {
+    try {
+      const response = await fetch(`${ENDPOINT}?id=${chunk.join(',')}`);
+      if (!response.ok) return {};
+      const rows = (await response.json()).data || [];
+      const map = {};
+      for (const row of rows) map[String(row.id)] = row.type || '';
+      return map;
+    } catch { return {}; }
+  }));
+  return Object.assign({}, ...results);
+}
+
+const CARD_TYPE_BACKGROUNDS = [
+  { match: 'fusion', image: 'assets/background/fusion_monster_backgroudn.png' },
+  { match: 'spell', image: 'assets/background/spell_background.png' },
+  { match: 'trap', image: 'assets/background/trap_backgroud.png' }
+];
+// Solo i 3 tipi per cui esiste davvero un asset: tutto il resto (mostri
+// normali/effetto/synchro/xyz/link/rituali, One Piece) non deve avere uno
+// sfondo inventato — resta quello di default della griglia/del dettaglio.
+export function backgroundForCardType(rawType) {
+  const type = String(rawType || '').trim().toLowerCase();
+  if (!type) return '';
+  return CARD_TYPE_BACKGROUNDS.find(entry => type.includes(entry.match))?.image || '';
 }
 
 export async function findCardById(id, expectedName = '', game = 'yugioh') {

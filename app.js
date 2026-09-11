@@ -44,6 +44,10 @@ let collectionShareRequests = [];
 let requestsTab = 'pending';
 let selectedCardKey = '';
 let selectedCollectionItem = '';
+// tipo YGOPRODeck (Spell/Trap/Fusion/...) per catalogCardId, solo per lo
+// sfondo del dettaglio carta — nessun dato di raccolta lo porta già con sé.
+const cardTypeCache = new Map();
+const cardTypeInFlight = new Set();
 let collectionEditor = null;
 let collectionLoanRequest = null;
 let collectionSearchResults = [];
@@ -248,7 +252,7 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.data.items) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.data.items, cardTypeForDetail(selectedCollectionItem)) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
@@ -755,7 +759,7 @@ function bind() {
     catch (error) { toast(error.message || 'Operazione non riuscita'); }
   }));
   document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
-  document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => { selectedCollectionItem = button.dataset.collectionItem; render(); }));
+  document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   if (page === 'collection') observeCollectionSentinel();
   document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCollectionItem = ''; render(); }));
   document.querySelectorAll('[data-close-collection-editor]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionEditor = null; collectionSearchResults = []; render(); }));
@@ -909,10 +913,7 @@ function refreshCollectionResults() {
   const results = document.querySelector('[data-collection-results]');
   if (!results) return;
   results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
-  results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => {
-    selectedCollectionItem = button.dataset.collectionItem;
-    render();
-  }));
+  results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   results.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => {
     if (!online()) return toast('Torna online per modificare la raccolta');
     collectionEditor = { item:null, card:null, printing:null };
@@ -1108,6 +1109,26 @@ function quickNavigate(target) {
     loanFilters.status = target === 'attention' ? 'attention' : 'all';
   }
   navigate(page);
+}
+
+function openCollectionDetail(id) { selectedCollectionItem = id; ensureCardTypeForDetail(id); render(); }
+function cardTypeForDetail(id) {
+  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
+  return item?.catalogCardId ? cardTypeCache.get(String(item.catalogCardId)) || '' : '';
+}
+// Sfondo del dettaglio per tipo (magia/trappola/mostro fusione): nessun dato
+// di raccolta porta già il tipo YGOPRODeck, va risolto al volo la prima
+// volta che si apre quella carta e messo in cache (mai per One Piece).
+function ensureCardTypeForDetail(id) {
+  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
+  if (!item || item.game !== 'yugioh' || !item.catalogCardId) return;
+  const key = String(item.catalogCardId);
+  if (cardTypeCache.has(key) || cardTypeInFlight.has(key)) return;
+  cardTypeInFlight.add(key);
+  cardTypesByIds([key], 'yugioh').then(map => {
+    cardTypeCache.set(key, map[key] || '');
+    if (selectedCollectionItem === id) render();
+  }).finally(() => cardTypeInFlight.delete(key));
 }
 
 function mapCollectionItem(item) {

@@ -1,5 +1,6 @@
 import { esc, GAMES } from './core.js';
 import { icon } from './icons.js';
+import { cardTypesByIds, backgroundForCardType } from './cards.js';
 
 const PAGE_SIZE = 60;
 const SORT_OPTIONS = [
@@ -63,6 +64,11 @@ export class CollectionShareController {
     this.requesterName = '';
     this.message = '';
     this.submitting = false; this.submitted = false;
+    // Tipo YGOPRODeck per catalogCardId (Spell/Trap/Fusion/...), solo per lo
+    // sfondo per tipo dietro l'immagine di ogni tile — nessun dato di
+    // get_collection_share lo porta già con sé, va risolto al volo.
+    this.cardTypes = new Map();
+    this.cardTypesInFlight = new Set();
     this.draftKey = `fpt-share-draft:${shareId}`;
     try {
       const draft = JSON.parse(sessionStorage.getItem(this.draftKey) || 'null');
@@ -272,18 +278,39 @@ export class CollectionShareController {
     // <img> ad ogni tasto premuto o filtro cambiato — "Mostra altre" carica
     // altre PAGE_SIZE senza mai buttare giù 500+ immagini insieme.
     const shown = items.slice(0, this.visibleCount);
+    void this.ensureCardTypesForVisible(shown);
     const grid = `<div class="share-guest-grid">${shown.map(item => this.itemTile(item)).join('')}</div>`;
     const showMore = items.length > this.visibleCount
       ? `<button type="button" class="btn secondary share-guest-more" data-share-show-more>Mostra altre (${items.length - this.visibleCount})</button>` : '';
     return `${filterBar}${resultCount}${grid}${showMore}`;
+  }
+  // Chiamata a "fire and forget" da gridContent(): risolve solo i tipi delle
+  // tile ATTUALMENTE visibili (mai tutta la raccolta in un colpo, stesso
+  // principio del tetto PAGE_SIZE) e poi aggiorna solo la griglia — non
+  // blocca il render sincrono, le tile mostrano subito lo sfondo neutro e
+  // si aggiornano appena il tipo arriva.
+  async ensureCardTypesForVisible(items) {
+    if (this.data?.game !== 'yugioh') return;
+    const ids = [...new Set(items.map(item => String(item.catalogCardId || '')).filter(Boolean))]
+      .filter(id => !this.cardTypes.has(id) && !this.cardTypesInFlight.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => this.cardTypesInFlight.add(id));
+    try {
+      const resolved = await cardTypesByIds(ids, 'yugioh');
+      for (const id of ids) this.cardTypes.set(id, resolved[id] || '');
+    } finally {
+      ids.forEach(id => this.cardTypesInFlight.delete(id));
+      this.refreshGrid();
+    }
   }
   itemTile(item) {
     const quantity = this.selected.get(item.printingId) || 0;
     const available = availableQuantity(item);
     const exhausted = available <= 0;
     const meta = [item.edition, item.condition, item.language ? languageShort(item.language) : ''].filter(Boolean).join(' · ');
+    const typeBackground = this.data.game === 'yugioh' ? backgroundForCardType(this.cardTypes.get(String(item.catalogCardId || ''))) : '';
     return `<button type="button" class="share-guest-tile ${quantity ? 'selected' : ''} ${exhausted ? 'exhausted' : ''}" data-share-toggle="${esc(item.printingId)}" ${exhausted ? 'disabled' : ''}>
-      <span class="share-guest-art">
+      <span class="share-guest-art"${typeBackground ? ` style="background:radial-gradient(circle, #301742, #0c0e15 70%) center/cover, url('${esc(typeBackground)}') center/contain no-repeat"` : ''}>
         ${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}
         <b class="share-guest-qty">${exhausted ? 'Esaurita' : `x${available}`}</b>
         <i class="share-guest-select ${quantity ? 'on' : ''}">${quantity ? (quantity > 1 ? `${quantity}×` : icon('check')) : icon('plus')}</i>

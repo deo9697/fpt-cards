@@ -42,15 +42,32 @@ try {
   await send('Page.navigate', { url: 'http://localhost:8080/scripts/fixtures/collection-share-harness.html' });
   await delay(500);
   await evaluate(`window.__consoleErrors = []; window.addEventListener('error', e => window.__consoleErrors.push(String(e.message)));`);
+  // Sfondo per tipo (spell/trap/fusion): cardTypesByIds() chiama davvero
+  // YGOPRODeck (nessun token, nessun passaggio da api) — qui lo intercettiamo
+  // per restare deterministici e senza rete reale, stesso principio del resto
+  // del test (api.getCollectionShare è già mockata).
+  await evaluate(`(()=>{
+    const types = {11111:'Normal Monster', 22222:'Spell Card', 33333:'Trap Card', 44444:'Fusion Monster'};
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (url, ...rest) => {
+      const parsed = new URL(url, location.href);
+      if (parsed.hostname === 'db.ygoprodeck.com' && parsed.pathname.endsWith('cardinfo.php')) {
+        const ids = (parsed.searchParams.get('id') || '').split(',').filter(Boolean);
+        const data = ids.map(id => ({ id: Number(id), type: types[Number(id)] || '' }));
+        return Promise.resolve({ ok: true, json: async () => ({ data }) });
+      }
+      return originalFetch(url, ...rest);
+    };
+  })()`);
 
   const now = new Date().toISOString();
   const fixture = {
     ownerName: 'Daniele', game: 'yugioh', cardCount: 3, printingCount: 4,
     items: [
-      { printingId: 'p1', cardName: 'Drago Bianco Occhi Blu', setCode: 'SDK-001', setName: 'Starter Deck Kaiba', rarity: 'Ultra Rare', imageUrl: 'icon-192.png', quantityOwned: 3, quantityAvailable: 2, edition: '1a Edizione', condition: 'Near Mint', language: 'Italiano', alternateNames: ['Blue-Eyes White Dragon'] },
-      { printingId: 'p2', cardName: 'Mago Nero', setCode: 'LOB-005', setName: 'Legend of Blue Eyes', rarity: 'Secret Rare', imageUrl: 'icon-192.png', quantityOwned: 1, quantityAvailable: 0, edition: 'Unlimited', condition: 'Excellent', language: 'Inglese', alternateNames: [] },
-      { printingId: 'p3', cardName: "Cavaliere dell'Ombra", setCode: 'BLTR-IT099', setName: 'Battles of Legend', rarity: 'Ultra Rare', imageUrl: '', quantityOwned: 2, quantityAvailable: 2, edition: '1a Edizione', condition: 'Near Mint', language: 'Italiano', alternateNames: [] },
-      { printingId: 'p4', cardName: 'Sintonizzare', setCode: 'DUEL-IT045', setName: 'Duelist Pack', rarity: 'Common', imageUrl: '', quantityOwned: 1, quantityAvailable: 1, edition: '', condition: 'Good', language: 'Italiano', alternateNames: ['Tuning'] }
+      { printingId: 'p1', catalogCardId: '11111', cardName: 'Drago Bianco Occhi Blu', setCode: 'SDK-001', setName: 'Starter Deck Kaiba', rarity: 'Ultra Rare', imageUrl: 'icon-192.png', quantityOwned: 3, quantityAvailable: 2, edition: '1a Edizione', condition: 'Near Mint', language: 'Italiano', alternateNames: ['Blue-Eyes White Dragon'] },
+      { printingId: 'p2', catalogCardId: '22222', cardName: 'Mago Nero', setCode: 'LOB-005', setName: 'Legend of Blue Eyes', rarity: 'Secret Rare', imageUrl: 'icon-192.png', quantityOwned: 1, quantityAvailable: 0, edition: 'Unlimited', condition: 'Excellent', language: 'Inglese', alternateNames: [] },
+      { printingId: 'p3', catalogCardId: '33333', cardName: "Cavaliere dell'Ombra", setCode: 'BLTR-IT099', setName: 'Battles of Legend', rarity: 'Ultra Rare', imageUrl: '', quantityOwned: 2, quantityAvailable: 2, edition: '1a Edizione', condition: 'Near Mint', language: 'Italiano', alternateNames: [] },
+      { printingId: 'p4', catalogCardId: '44444', cardName: 'Sintonizzare', setCode: 'DUEL-IT045', setName: 'Duelist Pack', rarity: 'Common', imageUrl: '', quantityOwned: 1, quantityAvailable: 1, edition: '', condition: 'Good', language: 'Italiano', alternateNames: ['Tuning'] }
     ]
   };
   const submitted = [];
@@ -82,6 +99,22 @@ try {
   if (grid.tiles !== 4) throw new Error(`Attese 4 tile iniziali, trovate ${grid.tiles}`);
   if (!grid.p2) throw new Error('La stampa con disponibilità 0 deve risultare esaurita e non selezionabile');
   if (grid.p1Badge !== 'x2') throw new Error(`Badge quantità disponibile errato per p1: ${grid.p1Badge}`);
+
+  // 2b) Sfondo per tipo carta: risolto in modo asincrono dopo il render
+  // iniziale (fire-and-forget, non blocca la griglia), poi applicato via
+  // refreshGrid(). p1=Normal Monster (nessuno sfondo, non è uno dei 3 tipi
+  // con asset), p2=Spell, p3=Trap, p4=Fusion.
+  await delay(300);
+  const typeBackgrounds = await evaluate(`({
+    p1: document.querySelector('[data-share-toggle="p1"] .share-guest-art')?.getAttribute('style') || '',
+    p2: document.querySelector('[data-share-toggle="p2"] .share-guest-art')?.getAttribute('style') || '',
+    p3: document.querySelector('[data-share-toggle="p3"] .share-guest-art')?.getAttribute('style') || '',
+    p4: document.querySelector('[data-share-toggle="p4"] .share-guest-art')?.getAttribute('style') || ''
+  })`);
+  if (typeBackgrounds.p1.includes('assets/background/')) throw new Error(`p1 (Normal Monster) non deve avere uno sfondo per tipo: ${typeBackgrounds.p1}`);
+  if (!typeBackgrounds.p2.includes('spell_background.png')) throw new Error(`p2 (Spell Card) sfondo mancante/errato: ${typeBackgrounds.p2}`);
+  if (!typeBackgrounds.p3.includes('trap_backgroud.png')) throw new Error(`p3 (Trap Card) sfondo mancante/errato: ${typeBackgrounds.p3}`);
+  if (!typeBackgrounds.p4.includes('fusion_monster_backgroudn.png')) throw new Error(`p4 (Fusion Monster) sfondo mancante/errato: ${typeBackgrounds.p4}`);
 
   // 3) Ricerca per alternateName (Blue-Eyes -> p1) e per nome italiano (Tuning -> p4, stesso esempio del commento RPC)
   await evaluate(`window.__share.search('Blue-Eyes')`); await delay(250);
@@ -198,7 +231,7 @@ try {
   const routed = await evaluate(`({share:!!document.querySelector('.share-guest-shell'),modal:!!document.querySelector('.share-review-modal'),selected:document.querySelector('.share-guest-selection-text')?.textContent,errors:__consoleErrors})`);
   if (!routed.share || routed.modal || !routed.selected?.includes('1') || routed.errors.length) throw new Error('Real app router/sync overwrites shared collection: '+JSON.stringify(routed));
 
-  console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
+  console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · sfondo per tipo carta (spell/trap/fusion) risolto async senza bloccare la griglia · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

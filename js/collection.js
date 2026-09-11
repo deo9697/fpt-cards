@@ -2,6 +2,7 @@ import { esc } from './core.js';
 import { icon } from './icons.js';
 import { deckNamesForCollectionItem } from './decks.js';
 import { getGameAdapter } from './games/index.js';
+import { backgroundForCardType } from './cards.js';
 
 const STATUS_CHIPS = [
   { value:'all', label:'Tutte' },
@@ -120,10 +121,11 @@ function azIndexView(items) {
   return `<div class="inventory-az-index" role="group" aria-label="Salta alla lettera">${[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'].map(letter => `<button type="button" data-collection-jump="${letter}" ${present.has(letter) ? '' : 'disabled'}>${letter}</button>`).join('')}</div>`;
 }
 
-export function collectionDetailView(id, scope, collection, connected, currentUser = '', marketItems = []) {
+export function collectionDetailView(id, scope, collection, connected, currentUser = '', marketItems = [], cardType = '') {
   const mine = collection.mine || [], team = collection.team || [];
   const item = scope === 'mine' ? mine.find(entry => entry.id === id) : groupTeamItems(team).find(entry => entry.id === id);
   if (!item) return '';
+  const typeBackground = item.game === 'yugioh' ? backgroundForCardType(cardType) : '';
   const rows = scope === 'team' ? item.items : team.filter(entry => entry.printingId === item.printingId);
   const market = item.printingId ? marketItems.find(row => row.printingId === item.printingId) : null;
   const price = market?.referencePrice;
@@ -134,7 +136,7 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
   const meta = [[item.setCode,'code'],[item.rarity,'rarity'],[item.language,'language'],[item.condition,'condition'],[item.edition,'edition']].filter(([value])=>value);
   return '<div class="detail-backdrop inventory-detail-backdrop" data-close-collection-detail><aside class="card-detail inventory-detail" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title">'
     + `<header class="inventory-detail-heading"><span class="eyebrow">${scope==='mine'?'La mia raccolta':'Raccolta team'}</span><button type="button" class="detail-close" data-close-collection-detail aria-label="Chiudi dettaglio carta">×</button></header>
-    <div class="detail-layout"><div class="inventory-art-stage"><div class="detail-art">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">`:icon('card')}</div></div>
+    <div class="detail-layout"><div class="inventory-art-stage${typeBackground?' has-type-background':''}"${typeBackground?` style="background:linear-gradient(#090d1733,#090d1766) center/cover, url('${esc(typeBackground)}') center/contain no-repeat"`:''}><div class="detail-art">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">`:icon('card')}</div></div>
     <div class="detail-copy"><h2 id="collection-detail-title">${esc(item.cardName)}</h2>
       <div class="inventory-printing-meta">${meta.map(([value,kind])=>`<span class="inventory-meta-badge is-${kind}">${esc(value)}</span>`).join('')}<span class="inventory-availability ${item.quantityAvailable>0?'is-available':''}">${icon(item.quantityAvailable>0?'check':'lock')} ${item.quantityAvailable>0?'Disponibile':'Non disponibile'}</span></div>
       <dl class="${scope==='mine'?'stat-grid-4':'stat-grid-3'} inventory-quantity-stats">${stats.map(([symbol,label,value])=>`<div><dt>${icon(symbol)}<span>${label}</span></dt><dd>${Number(value)||0}</dd></div>`).join('')}</dl>

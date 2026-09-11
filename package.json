@@ -22,6 +22,7 @@
     ,"test:collection-editor-printings": "node scripts/collection-editor-authoritative-printings-smoke.mjs"
     ,"test:onepiece-normalizer": "node scripts/onepiece-catalog-normalizer-smoke.mjs"
     ,"test:onepiece-deck-e2e": "node scripts/onepiece-deck-e2e-smoke.mjs"
+    ,"test:card-type-background": "node scripts/card-type-background-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
