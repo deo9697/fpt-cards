@@ -377,6 +377,13 @@ export function normalizeCatalogPrintings(rows = []) {
   return [...printings.values()];
 }
 
+// Artwork di identità CARD (ricerca, dettaglio catalogo generico) — MAI usare
+// questa funzione o il suo .image/.fullImage come artwork di una PRINTING
+// specifica (set_code): card_images[] non ha alcuna relazione garantita con
+// una stampa precisa. Per una printing usare sempre js/ygo-printing-registry.js
+// (resolveYgoPrintings/resolveYgoPrinting), che restituisce '' (placeholder)
+// quando l'artwork corretto non è determinabile in modo affidabile, invece
+// di indovinare da questo array.
 function mapCard(card) {
   const artworks = Array.isArray(card.card_images) ? card.card_images : [];
   const artwork = artworks.find(image => String(image?.id || '') === String(card.id || ''))

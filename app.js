@@ -1,7 +1,8 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, lookupPrintingBySetCode, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
+import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
+import { externalLookupViaRegistry } from './js/ygo-printing-registry.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
@@ -85,7 +86,7 @@ let catalogRepairQueued = false;
 const catalogRepairAttempted = new Set();
 const unresolvedCards = new Set();
 const fastScan = new FastScanController({
-  api, externalLookup:lookupPrintingBySetCode, getCollection:()=>state.collection,
+  api, externalLookup:externalLookupViaRegistry, getCollection:()=>state.collection,
   isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
@@ -1139,7 +1140,13 @@ function mapCollectionItem(item) {
     cardName:item.card_name, setCode:item.set_code || '', setName:item.set_name || '',
     rarity:normalizeCatalogRarity(item.rarity) || item.rarity || '', language:item.language || 'Italiano',
     condition:item.condition || 'Near Mint', edition:item.edition || '',
-    imageUrl:item.game === 'yugioh' ? (storedImage || canonicalYgoCardImage(item.catalog_card_id)) : storedImage, quantityOwned:Number(item.quantity_owned || 0),
+    // Niente fallback a canonicalYgoCardImage(catalogCardId) quando manca
+    // image_url: quello sarebbe l'artwork "principale" della CARD per
+    // YGOPRODeck, non necessariamente quello di QUESTA printing (set_code
+    // specifico) — esattamente il bug che il Printing Registry risolve
+    // (vedi js/ygo-printing-registry.js). Meglio il placeholder (già gestito
+    // da ogni vista, vedi js/collection.js) che un artwork sbagliato.
+    imageUrl:storedImage, quantityOwned:Number(item.quantity_owned || 0),
     quantityLoaned:Number(item.quantity_loaned || 0),
     quantityReserved:Number(item.quantity_reserved || 0),
     quantityAvailable:Number(item.quantity_physically_available ?? item.quantity_available ?? 0),
