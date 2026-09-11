@@ -12,6 +12,14 @@
 -- repair.sql), così la classifica qui sotto rispecchia esattamente cosa il
 -- codice applicativo farebbe/ha fatto con ciascuna riga.
 --
+-- Fix 2026-09-11 (trovato eseguendo questa stessa query sui dati reali:
+-- 8 dei 10 risultati in 3_immagine_sbagliata_cross_code erano falsi positivi
+-- promo tipo "P-029_R1" con immagine "P-029_r1.jpg" — il catalog_card_id
+-- stesso porta il suffisso di variante, non solo il filename). expected_code
+-- ora spoglia lo stesso suffisso "_XX" da catalog_card_id prima di
+-- confrontare, invece di confrontare il codice BASE del filename contro il
+-- catalog_card_id INTERO.
+--
 -- Bucket prodotti (priorità nell'ordine elencato):
 --   1_mancante_upstream            — nessuna immagine, nessun indizio che OPTCG
 --                                     ne avesse mai fornita una diversa
@@ -64,7 +72,10 @@ with base as (
       then regexp_replace(upper(extracted_code_raw), '^DON-', 'DON_')
       else null
     end as extracted_code,
-    regexp_replace(upper(catalog_card_id), '^DON-', 'DON_') as expected_code
+    coalesce(
+      regexp_replace(upper(substring(catalog_card_id from '^(([A-Za-z]{1,4}[0-9]{0,3}-[0-9]{1,4})|([Dd][Oo][Nn][_-]?[0-9]+))')), '^DON-', 'DON_'),
+      upper(catalog_card_id)
+    ) as expected_code
   from extracted
 ), classified as (
   select

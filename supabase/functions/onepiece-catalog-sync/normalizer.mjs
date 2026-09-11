@@ -92,15 +92,32 @@ function imageFilenameStem(imageUrl) {
 // possiamo dire nulla da questa sola regola: non blocchiamo un'immagine solo
 // perché il nome del file è "strano", solo quando sembra il codice di
 // un'ALTRA carta.
-const CODE_LIKE_IMAGE_PATTERN = /^([A-Z]{1,4}\d{0,3}-\d{1,4}|DON[_-]?\d+)(?:_.+)?$/i;
+//
+// Fix 2026-09-11 (falso positivo confermato sull'audit reale, vedi
+// supabase-onepiece-image-audit.sql): per alcuni promo il catalog_card_id
+// stesso porta già un suffisso di variante (es. "P-029_R1", non solo
+// "P-029") — OPTCG tratta quella variante come card_set_id a sé, non solo
+// come card_image_id. La prima versione confrontava il codice BASE estratto
+// dal filename ("P-029") contro il catalog_card_id INTERO ("P-029_R1"),
+// segnalando come cross-code immagini in realtà coerenti. baseCode() ora
+// spoglia il suffisso da ENTRAMBI i lati prima di confrontare — il controllo
+// resta sulla carta di base, non sulla variante esatta (che non è comunque
+// lo scopo di questa regola: qui cerchiamo "immagine di un'altra carta", non
+// "immagine della variante sbagliata della carta giusta").
+const CODE_LIKE_IMAGE_PATTERN = /^(([A-Z]{1,4}\d{0,3}-\d{1,4})|(DON[_-]?\d+))(?:_.+)?$/i;
+
+function baseCode(value) {
+  const match = String(value || '').toUpperCase().match(CODE_LIKE_IMAGE_PATTERN);
+  return match ? match[1].replace(/^DON-/, 'DON_') : null;
+}
 
 export function imageMatchesCode(catalogCardId, imageUrl) {
   const stem = imageFilenameStem(imageUrl);
   if (!stem) return true;
-  const match = stem.match(CODE_LIKE_IMAGE_PATTERN);
-  if (!match) return true;
-  const normalize = value => String(value || '').toUpperCase().replace(/^DON-/, 'DON_');
-  return normalize(match[1]) === normalize(catalogCardId);
+  const imageBase = baseCode(stem);
+  if (imageBase === null) return true;
+  const catalogBase = baseCode(catalogCardId) ?? String(catalogCardId || '').toUpperCase();
+  return imageBase === catalogBase;
 }
 
 // Copre allSetCards/allSTCards/allPromos (allPromoCards di fallback): stesso

@@ -17,6 +17,18 @@
 --
 -- Nessun cambio di firma della funzione: create or replace basta, non serve
 -- notify pgrst (i parametri restano identici a prima).
+--
+-- Fix 2026-09-11 (falso positivo confermato sull'audit reale, vedi
+-- supabase-onepiece-image-audit.sql): alcuni promo hanno il suffisso di
+-- variante già dentro il catalog_card_id stesso (es. "P-029_R1", non solo
+-- "P-029") — la prima versione confrontava il codice BASE estratto dal
+-- filename ("P-029") contro il catalog_card_id INTERO ("P-029_R1"),
+-- rifiutando repair in realtà legittimi. Ora il suffisso viene spogliato da
+-- ENTRAMBI i lati prima di confrontare (stesso fix applicato in
+-- supabase/functions/onepiece-catalog-sync/normalizer.mjs:baseCode e in
+-- js/games/onepiece/catalog.js). Se questa migration era già stata
+-- applicata con la versione precedente, va semplicemente rilanciata: create
+-- or replace, nessuna migrazione di dati necessaria.
 
 create or replace function public.repair_collection_item_catalog_identity(
   p_token text, p_collection_item_id uuid, p_catalog_card_id text,
@@ -32,6 +44,7 @@ declare
   current_printing public.card_printings;
   target_printing_id uuid;
   canonical_id text;
+  canonical_base text;
   image_id text;
   image_stem text;
   image_code text;
@@ -66,7 +79,9 @@ begin
     image_code := substring(image_stem from '^(([A-Za-z]{1,4}[0-9]{0,3}-[0-9]{1,4})|([Dd][Oo][Nn][_-]?[0-9]+))');
     if image_code is not null then
       image_code := regexp_replace(upper(image_code), '^DON-', 'DON_');
-      if image_code <> regexp_replace(upper(canonical_id), '^DON-', 'DON_') then
+      canonical_base := substring(canonical_id from '^(([A-Za-z]{1,4}[0-9]{0,3}-[0-9]{1,4})|([Dd][Oo][Nn][_-]?[0-9]+))');
+      canonical_base := coalesce(regexp_replace(upper(canonical_base), '^DON-', 'DON_'), upper(canonical_id));
+      if image_code <> canonical_base then
         raise exception 'Immagine e catalog ID non coerenti';
       end if;
     end if;

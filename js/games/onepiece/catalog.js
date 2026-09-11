@@ -76,14 +76,24 @@ function imageFilenameStem(imageUrl) {
 // per righe già in DB da prima del fix di sync, o non ancora risincronizzate.
 // Se il filename dell'immagine ha la forma di UN ALTRO codice carta, non la
 // usiamo: si comporta come "immagine mancante" (fallback riga sotto).
-const CODE_LIKE_IMAGE_PATTERN = /^([A-Z]{1,4}\d{0,3}-\d{1,4}|DON[_-]?\d+)(?:_.+)?$/i;
+// Fix 2026-09-11 (falso positivo confermato sull'audit reale): alcuni promo
+// hanno il suffisso di variante già dentro il catalog_card_id stesso (es.
+// "P-029_R1"), non solo nel filename — va spogliato da ENTRAMBI i lati
+// prima di confrontare, altrimenti "P-029" (dal filename) vs "P-029_R1"
+// (catalog_card_id intero) risulta un falso cross-code. Vedi stesso fix in
+// supabase/functions/onepiece-catalog-sync/normalizer.mjs:baseCode.
+const CODE_LIKE_IMAGE_PATTERN = /^(([A-Z]{1,4}\d{0,3}-\d{1,4})|(DON[_-]?\d+))(?:_.+)?$/i;
+function baseCode(value) {
+  const match = String(value || '').toUpperCase().match(CODE_LIKE_IMAGE_PATTERN);
+  return match ? match[1].replace(/^DON-/, 'DON_') : null;
+}
 function imageMatchesCode(catalogCardId, imageUrl) {
   const stem = imageFilenameStem(imageUrl);
   if (!stem) return true;
-  const match = stem.match(CODE_LIKE_IMAGE_PATTERN);
-  if (!match) return true;
-  const normalize = value => String(value || '').toUpperCase().replace(/^DON-/, 'DON_');
-  return normalize(match[1]) === normalize(catalogCardId);
+  const imageBase = baseCode(stem);
+  if (imageBase === null) return true;
+  const catalogBase = baseCode(catalogCardId) ?? String(catalogCardId || '').toUpperCase();
+  return imageBase === catalogBase;
 }
 
 // search_onepiece_catalog restituisce PRINTING fisiche, una riga per

@@ -196,4 +196,26 @@ assert.equal(imageMatchesCode('don_183', 'https://example.test/don-183.png'), tr
 assert.equal(imageMatchesCode('don_183', 'https://example.test/don_1.png'), false, 'don_1 non deve combaciare con don_183');
 console.log('PASS controllo cross-code DON!! tollera sia "_" che "-" come separatore');
 
+// -- Fix 2026-09-11 (falso positivo trovato dall'utente sull'audit reale, --
+// -- supabase-onepiece-image-audit.sql): alcuni promo hanno il suffisso di --
+// -- variante GIÀ DENTRO il catalog_card_id stesso ("P-029_R1"), non solo --
+// -- nel filename dell'immagine. La prima versione confrontava il codice --
+// -- BASE del filename ("P-029") contro il catalog_card_id INTERO --
+// -- ("P-029_R1") e li marcava come cross-code — falso positivo, l'immagine --
+// -- era coerente. Il confronto ora spoglia il suffisso da entrambi i lati. --
+const promoVariantSuffixRaw = { card_set_id: 'P-029_R1', card_image_id: 'P-029_R1', set_id: 'P', set_name: 'One Piece Promotion Cards', card_name: 'Portgas.D.Ace', rarity: 'PR', card_image: 'https://optcgapi.com/media/static/Card_Images/P-029_r1.jpg' };
+const promoVariantSuffix = normalizeStandardCard(promoVariantSuffixRaw, NOW);
+assert.equal(promoVariantSuffix.image_url, 'https://optcgapi.com/media/static/Card_Images/P-029_r1.jpg', 'P-029_R1 con immagine P-029_r1.jpg è coerente, non va azzerata');
+assert.equal(promoVariantSuffix.game_metadata.rawSuspectImageUrl, undefined);
+console.log('PASS catalog_card_id con suffisso di variante (P-029_R1) non genera più un falso cross-code');
+
+// -- Lo stesso caso, ma stavolta l'immagine appartiene DAVVERO a un'altra --
+// -- carta anche dopo aver spogliato i suffissi (OP05-067 vs OP09-051, --
+// -- caso reale trovato dall'utente sull'audit) — deve restare bloccata. --
+const realCrossCodeWithSuffixRaw = { card_set_id: 'OP05-067', card_image_id: 'OP05-067', card_name: 'Buggy (Manga)', rarity: 'SR', set_name: 'Awakening of the New Era', card_image: 'https://optcgapi.com/media/static/Card_Images/OP09-051_p2.jpg' };
+const realCrossCodeWithSuffix = normalizeStandardCard(realCrossCodeWithSuffixRaw, NOW);
+assert.equal(realCrossCodeWithSuffix.image_url, '', 'OP05-067 con immagine di OP09-051 (variante compresa) deve restare bloccata');
+assert.equal(realCrossCodeWithSuffix.game_metadata.rawSuspectImageUrl, 'https://optcgapi.com/media/static/Card_Images/OP09-051_p2.jpg');
+console.log('PASS cross-code reale (OP05-067 con immagine di OP09-051_p2) resta bloccato anche con suffissi su entrambi i lati');
+
 console.log('\nTutti i controlli del normalizer One Piece sono passati.');
