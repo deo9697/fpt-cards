@@ -207,6 +207,10 @@ export const api = {
   async equipCosmetic(type, cosmeticId) { ensure(); return unwrap(await client.rpc('equip_cosmetic', { p_token:token(), p_type:type, p_cosmetic_id:cosmeticId })); },
   async dailyMissions() { ensure(); return unwrap(await client.rpc('get_my_daily_missions', { p_token:token() })); },
   async matchStreak(game) { ensure(); return unwrap(await client.rpc('get_match_streak', { p_token:token(), p_game:game })); },
+  // Striscia di vittorie consecutive per UN mazzo specifico (non per gioco
+  // come matchStreak) — usata dai Deck Box sbloccabili per archetipo, vedi
+  // js/deck-archetype-unlocks.js.
+  async deckWinStreak(deckId) { ensure(); return unwrap(await client.rpc('get_deck_win_streak', { p_token:token(), p_deck_id:deckId })); },
   async matchTimeline(game) { ensure(); return unwrap(await client.rpc('get_match_timeline', { p_token:token(), p_game:game })); },
   async headToHead(game, { period } = {}) { ensure(); return unwrap(await client.rpc('get_head_to_head', { p_token:token(), p_game:game, p_period:period || 'all' })); },
   async rivalWins() { ensure(); return unwrap(await client.rpc('get_rival_wins', { p_token:token() })); }

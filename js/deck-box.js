@@ -8,7 +8,16 @@ export const DECK_BOX_TEMPLATES={
   procedural:{label:'Artwork dinamico',image:'',theme:null},
   'arcane-vault':{label:'Volta arcana',image:'assets/deck-boxes/arcane-vault.png',theme:'arcane-purple'},
   'infernal-dragon':{label:'Drago infernale',image:'assets/deck-boxes/infernal-dragon.png',theme:'infernal-red'},
-  'cyber-core':{label:'Nucleo cyber',image:'assets/deck-boxes/cyber-core.png',theme:'cyber-cyan'}
+  'cyber-core':{label:'Nucleo cyber',image:'assets/deck-boxes/cyber-core.png',theme:'cyber-cyan'},
+  // Sbloccabili per archetipo (2026-09-11): 10 vittorie consecutive con un
+  // mazzo di composizione specifica — vedi js/deck-archetype-unlocks.js per
+  // le regole esatte e js/cosmetics.js per il cosmetic abbinato
+  // (deckbox_<chiave>). Chiave del template = suffisso dell'id cosmetic,
+  // per lookup diretto nel gating di js/decks.js coverPickerView(). Nessun
+  // theme forzato: il box stesso è il premio, non un tema colore imposto.
+  sacred_beast_orcust:{label:'Sacred Beast Orcust',image:'assets/deck-boxes/sacred_beast_orcust_deckbox.png',theme:null},
+  mitsurugi:{label:'Mitsurugi',image:'assets/deck-boxes/mitsurugi_deckbox.png',theme:null},
+  skystriker:{label:'Skystriker',image:'assets/deck-boxes/skystriker_deckbox.png',theme:null}
 };
 export const DECK_THEMES={
   'arcane-purple':{label:'Arcano viola',accent:'#c66cff',border:'#9b50d2',glow:'#9f47e8',dark:'#160b20',hue:279},

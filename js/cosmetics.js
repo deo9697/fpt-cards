@@ -4,17 +4,26 @@
 // ho equipaggiato" vive nel database (supabase-milestone-9-cosmetics.sql);
 // questo file decide solo QUANDO un item è sbloccabile e COME mostrarlo.
 //
-// Ogni cosmetic: { id, type:'avatar'|'title', label, unlock:{type,value}, ... }.
+// Ogni cosmetic: { id, type:'avatar'|'title'|'deckbox', label, unlock:{type,value}, ... }.
+// 'deckbox' (2026-09-11): stesso catalogo/stessa tabella di sblocchi degli
+// avatar/titoli, ma "equipaggiato" diversamente — non un cosmetic account-
+// wide, è scelto per singolo mazzo (deck.deckBoxTemplate, vedi js/deck-box.js
+// DECK_BOX_TEMPLATES e il gating in js/decks.js coverPickerView). Qui serve
+// solo per sapere COSA è sbloccato, non COME si applica.
+//
 // Tipi di unlock supportati oggi: 'level' (richiede progression.level >= value,
 // sempre vero per value<=1), 'achievement' (richiede che context.rivalWins
 // abbia almeno unlock.value vittorie contro unlock.opponentSlug — vedi
 // get_rival_wins in supabase-milestone-14-rival-avatars.sql) ed 'event'
 // (nessuna condizione calcolabile: sbloccato SOLO quando chi trigghera
-// l'easter egg corrispondente chiama api.claimCosmetic() direttamente nel
-// momento in cui l'utente lo vede — isCosmeticUnlocked() torna sempre false
-// per questi, non c'è uno stato da ricontrollare al login). Pensato per
-// estendersi ulteriormente a 'daily' | 'admin' | 'special' senza cambiare
-// la struttura sopra.
+// l'easter egg/achievement corrispondente chiama api.claimCosmetic()
+// direttamente nel momento in cui la condizione scatta — isCosmeticUnlocked()
+// torna sempre false per questi, non c'è uno stato da ricontrollare al
+// login). I Deck Box "archetipo" sotto sono 'event' per lo stesso motivo dei
+// titoli easter egg: la condizione (composizione mazzo + striscia vittorie
+// su QUEL mazzo) non è esprimibile con level/achievement, va calcolata da
+// js/deck-archetype-unlocks.js. Pensato per estendersi ulteriormente a
+// 'daily' | 'admin' | 'special' senza cambiare la struttura sopra.
 
 export const COSMETICS = [
   // Avatar: per ora solo il mascotte "Tonno" (artwork reale, non più
@@ -56,7 +65,25 @@ export const COSMETICS = [
   // decks.js (mazzo al 100%), che chiamano claimCosmetic() nel momento
   // esatto in cui l'utente vede il rispettivo video.
   { id:'title_skill_issue', type:'title', label:'Skill Issue', unlock:{ type:'event', value:'triple_loss' } },
-  { id:'title_battle_ready', type:'title', label:'Battle Ready', unlock:{ type:'event', value:'deck_100' } }
+  { id:'title_battle_ready', type:'title', label:'Battle Ready', unlock:{ type:'event', value:'deck_100' } },
+
+  // Deck Box "archetipo": sbloccati con 10 vittorie CONSECUTIVE giocando un
+  // mazzo di composizione specifica (vedi js/deck-archetype-unlocks.js per
+  // le regole esatte e js/deck-box.js per il template grafico abbinato).
+  // Stesso pattern 'event' dei titoli easter egg sopra: la condizione non è
+  // ricalcolabile da isCosmeticUnlocked() (richiederebbe conoscere il mazzo
+  // e la sua striscia di vittorie, non solo progression/rivalWins), va
+  // sempre claimata direttamente da checkDeckArchetypeUnlocks() nel momento
+  // in cui scatta — chiamato da stats.js dopo ogni vittoria registrata.
+  { id:'deckbox_sacred_beast_orcust', type:'deckbox', label:'Sacred Beast Orcust', unlock:{ type:'event', value:'archetype_sacred_beast_orcust' } },
+  { id:'deckbox_mitsurugi', type:'deckbox', label:'Mitsurugi', unlock:{ type:'event', value:'archetype_mitsurugi' } },
+  { id:'deckbox_skystriker', type:'deckbox', label:'Skystriker', unlock:{ type:'event', value:'archetype_skystriker' } },
+
+  // Titoli abbinati agli stessi 3 Deck Box: stessa condizione, sbloccati
+  // insieme in un colpo solo da checkDeckArchetypeUnlocks().
+  { id:'title_apocaliptic_symphony', type:'title', label:'Apocaliptic Symphony', unlock:{ type:'event', value:'archetype_sacred_beast_orcust' } },
+  { id:'title_rivelo_abakiri', type:'title', label:'Rivelo Abakiri', unlock:{ type:'event', value:'archetype_mitsurugi' } },
+  { id:'title_heaven_striker', type:'title', label:'Heaven Striker', unlock:{ type:'event', value:'archetype_skystriker' } }
 ];
 
 export function isCosmeticUnlocked(cosmetic, progression, context = {}) {

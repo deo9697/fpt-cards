@@ -85,7 +85,7 @@ const fastScan = new FastScanController({
   isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
-const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();}});
+const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
 let progressionDrawerOpen = false;

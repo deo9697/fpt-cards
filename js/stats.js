@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
 import { renderDeckBoxVisual } from './deck-box.js';
+import { checkDeckArchetypeUnlocks } from './deck-archetype-unlocks.js';
 import { triggerLossStreakZoomVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './easter-egg.js';
 
 const RESULT_LABEL = { win:'Vittoria', loss:'Sconfitta', draw:'Pareggio' };
@@ -104,6 +105,26 @@ export class StatsController {
     try {
       await Promise.all(fresh.map(item => this.api.claimCosmetic(item.id)));
       this.cosmetics = { ...this.cosmetics, unlocked: [...this.cosmetics.unlocked, ...fresh.map(item => item.id)] };
+    } catch {}
+  }
+  // Deck Box "archetipo" (Sacred Beast Orcust/Mitsurugi/Skystriker): a
+  // differenza di claimNewCosmetics() sopra (ricalcolabile da progression/
+  // rivalWins ad ogni load), questa condizione dipende dal MAZZO appena
+  // usato per vincere — va ricontrollata solo dopo una vittoria, non ad ogni
+  // apertura della pagina Statistiche. Un toast per ogni sblocco, stesso
+  // stile di claimEasterEggTitle().
+  async checkArchetypeUnlocks(deckId) {
+    if (!this.cosmetics) return;
+    const deck = this.decks.find(item => item.id === deckId);
+    if (!deck) return;
+    try {
+      const claimed = await checkDeckArchetypeUnlocks(deck, this.api, this.cosmetics.unlocked);
+      if (!claimed.length) return;
+      this.cosmetics = { ...this.cosmetics, unlocked: [...this.cosmetics.unlocked, ...claimed] };
+      for (const id of claimed) {
+        const label = findCosmetic(id)?.label || id;
+        this.onToast?.(id.startsWith('deckbox_') ? `Deck Box sbloccato: ${label}` : `Titolo sbloccato: ${label}`);
+      }
     } catch {}
   }
   // register_match aggiorna il progresso missione lato server via trigger
@@ -245,6 +266,7 @@ export class StatsController {
         try { this.rivalWins = await this.api.rivalWins(); } catch {}
       }
       void this.claimNewCosmetics();
+      if (form.result === 'win') void this.checkArchetypeUnlocks(form.deckId);
       void this.refreshMissions();
       const [, streak, timelineRows] = await Promise.all([this.loadStats(), this.api.matchStreak(this.state.game), this.api.matchTimeline(this.state.game).catch(() => null)]);
       this.streak = streak;
