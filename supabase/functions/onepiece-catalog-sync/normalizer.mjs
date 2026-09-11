@@ -74,6 +74,35 @@ export function buildGameMetadata(raw) {
   };
 }
 
+function imageFilenameStem(imageUrl) {
+  const filename = String(imageUrl || '').split('/').pop() || '';
+  return filename.replace(/\.(jpe?g|png|webp|gif)$/i, '');
+}
+
+// Caso Hawkins (bug reale segnalato dall'utente 2026-09-10): OPTCG può
+// restituire una printing (es. "OP10-109") con card_image che in realtà
+// punta all'immagine di UN'ALTRA carta (es. "OP10-103") — due catalog_card_id
+// già distinti, quindi resolveVariantCollisions() qui sotto non li vede mai
+// (quello risolve solo collisioni sulla STESSA identity key). Forme di
+// codice confermate dal vivo: "OP01-016"/"ST04-016" (set-numero), "P-017"
+// (promo, un solo prefisso prima del trattino), "don_183" (DON!!, separatore
+// non riconfermato dal vivo — solo il fixture sintetico del test usa "don-",
+// per questo il pattern accetta sia "_" che "-" qui). Se il filename non ha
+// affatto la forma di un codice (slug del nome carta, hash del CDN) non
+// possiamo dire nulla da questa sola regola: non blocchiamo un'immagine solo
+// perché il nome del file è "strano", solo quando sembra il codice di
+// un'ALTRA carta.
+const CODE_LIKE_IMAGE_PATTERN = /^([A-Z]{1,4}\d{0,3}-\d{1,4}|DON[_-]?\d+)(?:_.+)?$/i;
+
+export function imageMatchesCode(catalogCardId, imageUrl) {
+  const stem = imageFilenameStem(imageUrl);
+  if (!stem) return true;
+  const match = stem.match(CODE_LIKE_IMAGE_PATTERN);
+  if (!match) return true;
+  const normalize = value => String(value || '').toUpperCase().replace(/^DON-/, 'DON_');
+  return normalize(match[1]) === normalize(catalogCardId);
+}
+
 // Copre allSetCards/allSTCards/allPromos (allPromoCards di fallback): stesso
 // shape di record confermato dal vivo su tutti e tre gli endpoint.
 export function normalizeStandardCard(raw, sourceUpdatedAt) {
@@ -83,6 +112,10 @@ export function normalizeStandardCard(raw, sourceUpdatedAt) {
   const variantId = String(raw?.card_image_id || catalogCardId).trim();
   const setCode = deriveSetCode(catalogCardId);
   const setName = String(raw?.set_name || '').trim() || (setCode === 'P' ? 'One Piece Promotion Cards' : '');
+  const rawImageUrl = truncate(String(raw?.card_image || '').trim(), 500);
+  const imageSuspect = rawImageUrl && !imageMatchesCode(catalogCardId, rawImageUrl);
+  const metadata = buildGameMetadata(raw);
+  if (imageSuspect) metadata.rawSuspectImageUrl = rawImageUrl;
   return {
     game: 'onepiece',
     catalog_card_id: truncate(catalogCardId, 100),
@@ -91,8 +124,8 @@ export function normalizeStandardCard(raw, sourceUpdatedAt) {
     set_code: truncate(setCode, 100),
     set_name: truncate(setName, 200),
     rarity: truncate(String(raw?.rarity || '').trim(), 100),
-    image_url: truncate(String(raw?.card_image || '').trim(), 500),
-    game_metadata: buildGameMetadata(raw),
+    image_url: imageSuspect ? '' : rawImageUrl,
+    game_metadata: metadata,
     source_provider: SOURCE_PROVIDER,
     source_updated_at: sourceUpdatedAt
   };
@@ -103,6 +136,10 @@ export function normalizeDonCard(raw, sourceUpdatedAt) {
   const id = String(raw?.card_image_id || '').trim().toLowerCase();
   const cardName = String(raw?.card_name || '').trim();
   if (!id || !cardName) return null;
+  const rawImageUrl = truncate(String(raw?.card_image || '').trim(), 500);
+  const imageSuspect = rawImageUrl && !imageMatchesCode(id, rawImageUrl);
+  const metadata = buildGameMetadata(raw);
+  if (imageSuspect) metadata.rawSuspectImageUrl = rawImageUrl;
   return {
     game: 'onepiece',
     catalog_card_id: truncate(id, 100),
@@ -111,8 +148,8 @@ export function normalizeDonCard(raw, sourceUpdatedAt) {
     set_code: 'DON',
     set_name: 'DON!! Cards',
     rarity: truncate(String(raw?.rarity || 'DON!!').trim(), 100),
-    image_url: truncate(String(raw?.card_image || '').trim(), 500),
-    game_metadata: buildGameMetadata(raw),
+    image_url: imageSuspect ? '' : rawImageUrl,
+    game_metadata: metadata,
     source_provider: SOURCE_PROVIDER,
     source_updated_at: sourceUpdatedAt
   };
@@ -124,11 +161,6 @@ export function normalizeDonCard(raw, sourceUpdatedAt) {
 // cosa Postgres considera davvero la stessa riga.
 export function identityKey(row) {
   return [row.game, row.catalog_card_id, row.set_code, row.rarity, row.variant_id].join('|');
-}
-
-function imageFilenameStem(imageUrl) {
-  const filename = String(imageUrl || '').split('/').pop() || '';
-  return filename.replace(/\.(jpe?g|png|webp|gif)$/i, '');
 }
 
 function slugify(value, max = 60) {

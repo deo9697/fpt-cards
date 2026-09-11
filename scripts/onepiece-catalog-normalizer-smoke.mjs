@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   deriveSetCode, normalizeColorList, normalizeTraits, cleanNumber, extractTrigger,
-  normalizeStandardCard, normalizeDonCard, identityKey, resolveVariantCollisions
+  normalizeStandardCard, normalizeDonCard, identityKey, resolveVariantCollisions, imageMatchesCode
 } from '../supabase/functions/onepiece-catalog-sync/normalizer.mjs';
 
 const NOW = '2026-09-08T00:00:00.000Z';
@@ -158,5 +158,42 @@ const untouchedBefore = JSON.stringify(untouchedRows);
 resolveVariantCollisions(untouchedRows);
 assert.equal(JSON.stringify(untouchedRows), untouchedBefore, 'righe non in collisione non devono cambiare variant_id');
 console.log('PASS resolveVariantCollisions lascia intatte le righe che non collidono con nessun\'altra');
+
+// -- Caso Hawkins (bug reale segnalato dall'utente 2026-09-10): OPTCG manda --
+// -- una printing (es. "OP10-109") con card_image che punta all'immagine --
+// -- di UN'ALTRA carta già distinta (es. "OP10-103") — non una collisione --
+// -- di identity key come Otama sopra, due catalog_card_id già separati. --
+// -- Prima del fix quell'immagine sbagliata sarebbe stata scritta così --
+// -- com'è; ora normalizeStandardCard deve azzerarla e tenere traccia del --
+// -- valore grezzo per un audit futuro, senza scartare la riga. --
+const hawkinsRaw = { card_set_id: 'OP10-109', card_image_id: 'OP10-109', card_name: 'Hawkins', card_color: 'Purple', card_type: 'Character', rarity: 'R', set_name: 'One Piece the Best', card_image: 'https://optcgapi.com/media/static/Card_Images/OP10-103.jpg' };
+const hawkins = normalizeStandardCard(hawkinsRaw, NOW);
+assert.equal(hawkins.catalog_card_id, 'OP10-109', 'la riga non deve essere scartata, solo l\'immagine ripulita');
+assert.equal(hawkins.image_url, '', 'immagine cross-code non deve mai essere scritta su card_printings');
+assert.equal(hawkins.game_metadata.rawSuspectImageUrl, 'https://optcgapi.com/media/static/Card_Images/OP10-103.jpg', 'il valore grezzo va conservato per l\'audit, non perso');
+console.log('PASS caso Hawkins: immagine cross-code (OP10-109 con URL di OP10-103) azzerata, non mostrata');
+
+// -- Un'immagine coerente con la propria carta non deve mai essere toccata, --
+// -- alt-art compresa (suffisso dopo il codice). --
+const hawkinsOk = normalizeStandardCard({ ...hawkinsRaw, card_image: 'https://optcgapi.com/media/static/Card_Images/OP10-109.jpg' }, NOW);
+assert.equal(hawkinsOk.image_url, 'https://optcgapi.com/media/static/Card_Images/OP10-109.jpg');
+assert.equal(hawkinsOk.game_metadata.rawSuspectImageUrl, undefined);
+const hawkinsAltArt = normalizeStandardCard({ ...hawkinsRaw, card_image: 'https://optcgapi.com/media/static/Card_Images/OP10-109_p1.jpg' }, NOW);
+assert.equal(hawkinsAltArt.image_url, 'https://optcgapi.com/media/static/Card_Images/OP10-109_p1.jpg', 'suffisso alt-art dopo il codice corretto non deve essere trattato come cross-code');
+console.log('PASS immagini coerenti (base e alt-art) non vengono mai toccate dal controllo cross-code');
+
+// -- Un filename senza forma di codice (slug nome, hash CDN) non è --
+// -- classificabile da questa regola: non blocca l'immagine solo perché --
+// -- il nome del file è insolito, esattamente come per Otama sopra. --
+const hawkinsUnclassifiable = normalizeStandardCard({ ...hawkinsRaw, card_image: 'https://optcgapi.com/media/static/Card_Images/Hawkins_Alt_Art_img.jpg' }, NOW);
+assert.equal(hawkinsUnclassifiable.image_url, 'https://optcgapi.com/media/static/Card_Images/Hawkins_Alt_Art_img.jpg', 'filename non a forma di codice non deve essere azzerato');
+console.log('PASS filename non a forma di codice (slug/hash) non viene bloccato dal controllo cross-code');
+
+// -- DON!!: stessa regola, separatore "_" o "-" tollerato (non confermato --
+// -- dal vivo quale dei due OPTCG usa davvero per le immagini DON). --
+assert.equal(imageMatchesCode('don_183', 'https://example.test/don_183.png'), true);
+assert.equal(imageMatchesCode('don_183', 'https://example.test/don-183.png'), true);
+assert.equal(imageMatchesCode('don_183', 'https://example.test/don_1.png'), false, 'don_1 non deve combaciare con don_183');
+console.log('PASS controllo cross-code DON!! tollera sia "_" che "-" come separatore');
 
 console.log('\nTutti i controlli del normalizer One Piece sono passati.');

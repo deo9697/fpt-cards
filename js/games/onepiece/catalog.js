@@ -65,6 +65,27 @@ export async function cardCostsByIds(ids) {
   return map;
 }
 
+function imageFilenameStem(imageUrl) {
+  const filename = String(imageUrl || '').split('/').pop() || '';
+  return filename.replace(/\.(jpe?g|png|webp|gif)$/i, '');
+}
+
+// Caso Hawkins: stessa regola di supabase/functions/onepiece-catalog-sync/
+// normalizer.mjs:imageMatchesCode (duplicata qui, non importabile da un
+// Edge Function — vedi commento in cima a quel file) — rete di sicurezza
+// per righe già in DB da prima del fix di sync, o non ancora risincronizzate.
+// Se il filename dell'immagine ha la forma di UN ALTRO codice carta, non la
+// usiamo: si comporta come "immagine mancante" (fallback riga sotto).
+const CODE_LIKE_IMAGE_PATTERN = /^([A-Z]{1,4}\d{0,3}-\d{1,4}|DON[_-]?\d+)(?:_.+)?$/i;
+function imageMatchesCode(catalogCardId, imageUrl) {
+  const stem = imageFilenameStem(imageUrl);
+  if (!stem) return true;
+  const match = stem.match(CODE_LIKE_IMAGE_PATTERN);
+  if (!match) return true;
+  const normalize = value => String(value || '').toUpperCase().replace(/^DON-/, 'DON_');
+  return normalize(match[1]) === normalize(catalogCardId);
+}
+
 // search_onepiece_catalog restituisce PRINTING fisiche, una riga per
 // variante (regular/parallel/alt art/promo): il raggruppamento in "carte
 // logiche" per catalog_card_id è deliberatamente lato client, non lato SQL
@@ -77,13 +98,14 @@ function groupPrintingsIntoCards(rows) {
     const catalogCardId = String(row.catalog_card_id || '').trim();
     if (!catalogCardId) continue;
     const metadata = row.game_metadata && typeof row.game_metadata === 'object' ? row.game_metadata : {};
+    const rawImage = row.image_url || '';
     const printing = {
       printingId: row.printing_id || null,
       variantId: row.variant_id || '',
       setCode: row.set_code || '',
       setName: row.set_name || '',
       rarity: row.rarity || '',
-      image: row.image_url || ''
+      image: rawImage && imageMatchesCode(catalogCardId, rawImage) ? rawImage : ''
     };
     const existing = groups.get(catalogCardId);
     if (existing) {
