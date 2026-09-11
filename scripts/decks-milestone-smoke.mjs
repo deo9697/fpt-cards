@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const local=new Map();globalThis.localStorage={getItem:key=>local.get(key)||null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)};
+// js/decks.js -> games/index.js -> onepiece/catalog.js -> js/api.js (One
+// Piece Fase 4), che legge window.FPT_CONFIG a livello di modulo: senza uno
+// stub qui l'import fallisce con "window is not defined" prima ancora di
+// eseguire una sola assertion. addEventListener serve perché il costruttore
+// di DeckController lo chiama (guardato da typeof window !== 'undefined',
+// quindi esplode se window esiste senza quel metodo). Stesso gap risolto in
+// scripts/fast-scan-milestone-smoke.mjs.
+globalThis.window={addEventListener:()=>{},FPT_CONFIG:undefined};
 const {DeckController,parseDeckList,deckAvailability,isExtraDeckCard}=await import('../js/decks.js');
 const {DEFAULT_DECK_THEME,DECK_BOX_TEMPLATES,normalizeDeckBoxTemplate,normalizeDeckTheme,resolveDeckSignature,preferredDeckArtwork,renderDeckBoxCard}=await import('../js/deck-box.js');
 const {normalizeTcgBanStatus}=await import('../js/cards.js');
@@ -18,7 +26,10 @@ assert.equal(resolveDeckSignature({cards:[{catalogCardId:'3',cardName:'Side',sec
 assert.equal(normalizeDeckTheme('missing-theme'),DEFAULT_DECK_THEME);assert(preferredDeckArtwork(signatureDeck.cards[1]).includes('cards_cropped/2.jpg'));
 assert(renderDeckBoxCard({...signatureDeck,cards:[]}).includes('deck-box-fallback'),'Deck Box senza artwork non usa il fallback F.P.T');
 assert(renderDeckBoxCard(signatureDeck).includes('data-deck-theme="celestial-gold"'),'Tema Deck Box non applicato');
-assert.equal(normalizeDeckBoxTemplate('unknown'),'procedural');assert.equal(Object.keys(DECK_BOX_TEMPLATES).length,4);
+// Il conteggio è salito da 4 a 7 con gli sblocchi per archetipo del
+// 2026-09-11 (sacred_beast_orcust/mitsurugi/skystriker, vedi js/deck-box.js)
+// — mai notato prima perché questo file non poteva girare sotto plain node.
+assert.equal(normalizeDeckBoxTemplate('unknown'),'procedural');assert.equal(Object.keys(DECK_BOX_TEMPLATES).length,7);
 for(const template of ['arcane-vault','infernal-dragon','cyber-core']){const rendered=renderDeckBoxCard({...signatureDeck,deckBoxTemplate:template});assert(rendered.includes(`data-deck-template="${template}"`)&&rendered.includes(DECK_BOX_TEMPLATES[template].image),`Modello ${template} non renderizzato`);assert(fs.existsSync(new URL(`../${DECK_BOX_TEMPLATES[template].image}`,import.meta.url)),`Asset ${template} non incorporato`);}
 
 const parsed=parseDeckList(`#main
@@ -72,7 +83,12 @@ controller.setSection('side');const sideHtml=controller.view();
 for(const required of ['deck-ban-badge forbidden','Proibita','>⊘</i>'])assert(sideHtml.includes(required),`Bollino banlist TCG Advanced assente nella scheda Side: ${required}`);
 controller.setSection('main');
 controller.toggleMissingPanel(true);const missingHtml=controller.view();
-for(const required of ['Bob ne ha 2','data-deck-request="10000001"','Richiedi tutte le carte mancanti'])assert(missingHtml.includes(required),`Pannello carte mancanti incompleto: ${required}`);
+// 'Bob · ne ha 2' (col separatore a metà, non 'Bob ne ha 2'): con più di un
+// proprietario (qui alice+bob) missingRow() mostra un <select> per scegliere
+// da chi richiedere invece del vecchio <em> a proprietario singolo — feature
+// aggiunta con le richieste "già concordate" (2026-09-10/11), mai vista da
+// questo test perché non poteva girare sotto plain node.
+for(const required of ['Bob · ne ha 2','data-deck-request="10000001"','Richiedi tutte le carte mancanti'])assert(missingHtml.includes(required),`Pannello carte mancanti incompleto: ${required}`);
 controller.toggleMissingPanel(false);
 controller.toggleMoreMenu();const moreHtml=controller.view();
 assert(moreHtml.includes('Tema Deck Box')&&moreHtml.includes('data-deck-cover-open'),'Controlli cover/tema assenti dal menu Altro');
