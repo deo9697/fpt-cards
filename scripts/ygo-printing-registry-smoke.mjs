@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 globalThis.window = { addEventListener: () => {}, FPT_CONFIG: undefined };
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-function installFetchMock({ printcode = {}, cardData = {} } = {}) {
+function installFetchMock({ printcode = {}, cardData = {}, nameIndexEn = null, ygoprodeckById = {} } = {}) {
   globalThis.fetch = async (url) => {
     const parsed = new URL(url);
     if (parsed.hostname === 'db.ygoresources.com' && parsed.pathname.startsWith('/data/idx/printcode/')) {
@@ -24,6 +24,15 @@ function installFetchMock({ printcode = {}, cardData = {} } = {}) {
       const data = cardData[id];
       if (!data) return { status: 404, ok: false, json: async () => ({}) };
       return { status: 200, ok: true, json: async () => data };
+    }
+    if (parsed.hostname === 'db.ygoresources.com' && parsed.pathname === '/data/idx/card/name/en') {
+      if (nameIndexEn === null) throw new Error('indice nomi EN non mockato in questo test (non doveva essere richiesto)');
+      return { status: 200, ok: true, json: async () => nameIndexEn };
+    }
+    if (parsed.hostname === 'db.ygoprodeck.com' && parsed.pathname === '/api/v7/cardinfo.php' && parsed.searchParams.has('id')) {
+      const ids = parsed.searchParams.get('id').split(',');
+      const data = ids.filter(id => ygoprodeckById[id]).map(id => ({ id: Number(id), name: ygoprodeckById[id] }));
+      return { status: 200, ok: true, json: async () => ({ data }) };
     }
     throw new Error(`fetch non mockato in questo test: ${url}`);
   };
@@ -273,4 +282,40 @@ function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
   assert.equal(result.get('MIP-1010').persisted, true);
 }
 
-console.log('PASS ygo-printing-registry: exact code (LDS3-EN063) · override precedence (MIP-1010) · unknown printing · multiple artworks · API failure resilience · normalization · persist-before-return · transient retry · persistent error not masked · override registry sync · sync idempotency');
+// --- 12) Fallback per nome (print code non indicizzato da YGOResources, ma
+// YGOPRODeck conosce la carta): deterministico solo con ESATTAMENTE un
+// Konami ID per quel nome — mai un guess se il nome è ambiguo. Un unico
+// resolveYgoPrintings così l'indice nomi EN (cache di modulo, un solo fetch
+// per processo) viene popolato una volta sola e riusato per entrambi i casi.
+// Dati reali verificati: DRLG-IT003 -> "Amulet Dragon" -> konami 10325
+// (artwork singolo, deterministico). BP01-IT046 qui simula invece un nome
+// storicamente ambiguo (2 Konami ID) per provare che NON si sceglie a caso.
+{
+  installFetchMock({
+    printcode: {}, // nessun prefisso indicizzato da YGOResources per questi due
+    ygoprodeckById: { '10325': 'Amulet Dragon', '99999999': 'Ambiguous Old Name' },
+    nameIndexEn: { 'Amulet Dragon': [10325], 'Ambiguous Old Name': [11111, 22222] }
+  });
+  const api = fakeApi({
+    ygoArtworkIndexLookup: async (ids) => ids.includes('10325') ? [{ konami_card_id: '10325', artwork_count: 1, single_artwork_url: 'https://artworks-en-n.ygoresources.com/1/3/25_1.png' }] : []
+  });
+  const lookupPrintingBySetCode = async code => {
+    if (code === 'DRLG-IT003') return [{ catalogCardId: '10325', cardName: 'Amulet Dragon', setCode: code, setName: 'Dragons of Legend', rarity: 'Rare', imageUrl: 'https://images.ygoprodeck.com/images/cards/10325.jpg' }];
+    if (code === 'AMBI-IT001') return [{ catalogCardId: '99999999', cardName: 'Nome Ambiguo Storico', setCode: code, setName: 'Set di prova', rarity: 'Common', imageUrl: 'https://images.ygoprodeck.com/images/cards/99999999.jpg' }];
+    return [];
+  };
+  const findCard = async name => name === 'Amulet Dragon' ? { id: 10325, name } : null;
+  const result = await resolveYgoPrintings(['DRLG-IT003', 'AMBI-IT001'], { api, findCard, lookupPrintingBySetCode });
+
+  const deterministic = result.get('DRLG-IT003');
+  assert.equal(deterministic.mappingStatus, 'resolved', 'un nome con un solo Konami ID corrispondente deve risolversi deterministicamente');
+  assert.equal(deterministic.konamiCardId, '10325');
+  assert.equal(deterministic.imageUrl, 'https://artworks-en-n.ygoresources.com/1/3/25_1.png');
+  assert.equal(deterministic.persisted, true);
+
+  const ambiguous = result.get('AMBI-IT001');
+  assert.equal(ambiguous.mappingStatus, 'unresolved', 'un nome con PIÙ Konami ID corrispondenti non deve mai essere scelto a caso');
+  assert.ok(!ambiguous.konamiCardId, 'nessun Konami ID deve essere inventato quando il nome è ambiguo');
+}
+
+console.log('PASS ygo-printing-registry: exact code (LDS3-EN063) · override precedence (MIP-1010) · unknown printing · multiple artworks · API failure resilience · normalization · persist-before-return · transient retry · persistent error not masked · override registry sync · sync idempotency · deterministic name-index fallback · ambiguous name never guessed');

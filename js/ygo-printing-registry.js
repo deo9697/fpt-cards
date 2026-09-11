@@ -135,6 +135,41 @@ async function fetchKonamiCardName(konamiCardId) {
   return request;
 }
 
+// Indice nomi->Konami ID (EN) di YGOResources, per il fallback deterministico
+// quando il print-code non è nel loro indice ma YGOPRODeck conosce comunque
+// la carta (vedi resolveExternally più sotto). Un solo fetch per sessione
+// (~500KB, cache indefinita: i nomi ufficiali non cambiano), mai per singola
+// carta — coerente col resto del modulo (niente N+1).
+let nameIndexEnPromise = null;
+async function fetchNameIndexEn() {
+  if (!nameIndexEnPromise) {
+    nameIndexEnPromise = (async () => {
+      const result = await fetchJson(`${YGORESOURCES_BASE}/data/idx/card/name/en`, { timeoutMs: 15000 });
+      return result.ok && result.data && typeof result.data === 'object' ? result.data : {};
+    })();
+  }
+  return nameIndexEnPromise;
+}
+
+const YGOPRODECK_CARDINFO_ENDPOINT = 'https://db.ygoprodeck.com/api/v7/cardinfo.php';
+// Nome inglese canonico per id YGOPRODeck — serve a confrontare contro
+// l'indice nomi EN di YGOResources con lo stesso identico locale su entrambi
+// i lati (il nome restituito da lookupPrintingBySetCode può essere
+// localizzato in italiano). Nessun parametro di lingua = inglese di default,
+// batch da 40 id per richiesta.
+async function fetchEnglishNamesByCatalogId(catalogCardIds) {
+  const map = new Map();
+  const CHUNK = 40;
+  for (let index = 0; index < catalogCardIds.length; index += CHUNK) {
+    const chunk = catalogCardIds.slice(index, index + CHUNK);
+    const result = await fetchJson(`${YGOPRODECK_CARDINFO_ENDPOINT}?id=${chunk.join(',')}`);
+    if (result.ok && Array.isArray(result.data?.data)) {
+      for (const card of result.data.data) map.set(String(card.id), card.name);
+    }
+  }
+  return map;
+}
+
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 // Un errore con .code (SQLSTATE/PostgREST, es. da un `raise exception` lato
@@ -345,24 +380,84 @@ async function resolveExternally(codes, result, deps) {
     }
   }
 
-  // YGOResources non conosce questo set code (o non è raggiungibile): ultimo
-  // tentativo con il vecchio percorso YGOPRODeck (card_sets per set_code
-  // esatto) prima di arrendersi a 'unresolved'. Non è fuzzy matching — resta
-  // un filtro esatto per set_code — ma non passa dal registro, quindi non
-  // può mai diventare 'verified' da solo.
+  // YGOResources non conosce questo print code. Prima di arrendersi,
+  // un secondo tentativo DETERMINISTICO (non fuzzy): se YGOPRODeck conosce
+  // comunque la carta per questo set_code esatto, il suo nome inglese
+  // canonico può corrispondere a ESATTAMENTE UN Konami ID nell'indice nomi
+  // di YGOResources — stesso standard di rigore già usato in senso inverso
+  // da toPrinting() (Konami ID -> nome -> ricerca ESATTA su YGOPRODeck). Se
+  // il nome è ambiguo (0 o >1 corrispondenze) non si procede: resta il
+  // fallback legacy di prima, mai un guess.
+  const legacyIdentities = [];
   for (const code of legacyFallbackCodes) {
     const legacyMatches = await deps.lookupPrintingBySetCode(code).catch(() => []);
-    if (legacyMatches.length === 1) {
-      const match = legacyMatches[0];
-      result.set(code, { ...match, mappingSource: 'legacy', mappingConfidence: 'low', mappingStatus: 'unresolved',
-        mappingNotes: 'Identità/immagine da YGOPRODeck (card_sets), non confermata dal registro: verificare artwork.' });
-      logResolution({ setCode: code, provider: 'legacy', status: 'unresolved', reason: 'fallback YGOPRODeck card_sets' });
-    } else {
+    if (legacyMatches.length === 1) legacyIdentities.push({ code, match: legacyMatches[0] });
+    else {
       const notes = legacyMatches.length > 1 ? 'più corrispondenze ambigue in YGOPRODeck' : 'set code non presente in nessuna fonte';
       result.set(code, unresolved(code, notes));
       logResolution({ setCode: code, provider: 'none', status: 'unresolved', reason: notes });
     }
   }
+
+  const newlyIdentified = [];
+  if (legacyIdentities.length) {
+    const catalogIds = [...new Set(legacyIdentities.map(item => item.match.catalogCardId))];
+    const [enNames, nameIndex] = await Promise.all([
+      fetchEnglishNamesByCatalogId(catalogIds).catch(() => new Map()),
+      fetchNameIndexEn().catch(() => ({}))
+    ]);
+    for (const { code, match } of legacyIdentities) {
+      const enName = enNames.get(match.catalogCardId);
+      const konamiMatches = enName ? nameIndex[enName] : null;
+      if (konamiMatches && konamiMatches.length === 1) {
+        newlyIdentified.push({ code, match, enName, konamiCardId: String(konamiMatches[0]) });
+      } else {
+        result.set(code, { ...match, mappingSource: 'legacy', mappingConfidence: 'low', mappingStatus: 'unresolved',
+          mappingNotes: 'Identità/immagine da YGOPRODeck (card_sets), non confermata dal registro: verificare artwork.' });
+        logResolution({ setCode: code, provider: 'legacy', status: 'unresolved', reason: 'fallback YGOPRODeck card_sets' });
+      }
+    }
+  }
+
+  if (newlyIdentified.length) {
+    const uniqueNewKonamiIds = [...new Set(newlyIdentified.map(item => item.konamiCardId))];
+    let newArtworkRows = [];
+    try { newArtworkRows = await api.ygoArtworkIndexLookup(uniqueNewKonamiIds); } catch { newArtworkRows = []; }
+    const newArtworkByKonamiId = new Map(newArtworkRows.map(row => [row.konami_card_id, row]));
+
+    const byNameIndexMappings = [];
+    for (const { code, enName, konamiCardId } of newlyIdentified) {
+      const artwork = newArtworkByKonamiId.get(konamiCardId);
+      const deterministic = artwork && Number(artwork.artwork_count) === 1 && artwork.single_artwork_url;
+      const mappingStatus = deterministic ? 'resolved' : 'unresolved';
+      const mappingNotes = deterministic
+        ? 'Identità risolta tramite indice nomi YGOResources (print code non indicizzato)'
+        : `Identità nota tramite indice nomi YGOResources (print code non indicizzato) — ${artwork ? `${artwork.artwork_count} artwork disponibili, nessuna regola per scegliere quello corretto` : 'artwork non ancora sincronizzato localmente'}`;
+      byNameIndexMappings.push({ code, resolution: {
+        konamiCardId, cardName: enName, artworkIndex: deterministic ? '1' : '', artworkUrl: deterministic ? artwork.single_artwork_url : '',
+        mappingSource: 'ygoresources', mappingConfidence: deterministic ? 'high' : 'low', mappingStatus, mappingNotes
+      } });
+    }
+
+    const byNamePayload = byNameIndexMappings.map(({ code, resolution }) => ({
+      setCode: code, konamiCardId: resolution.konamiCardId, artworkIndex: resolution.artworkIndex || null,
+      artworkUrl: resolution.artworkUrl || null, cardName: resolution.cardName || null,
+      mappingSource: resolution.mappingSource, mappingConfidence: resolution.mappingConfidence,
+      mappingStatus: resolution.mappingStatus, mappingNotes: resolution.mappingNotes || null
+    }));
+    const byNameOutcome = byNamePayload.length ? await applyMappingsWithRetry(api, byNamePayload) : { persisted: true };
+    if (!byNameOutcome.persisted) {
+      console.error('[ygo-printing-registry] persistence failed after retries (name-index path)', {
+        codes: byNameIndexMappings.map(item => item.code), error: byNameOutcome.error?.message || String(byNameOutcome.error)
+      });
+    }
+    for (const { code, resolution } of byNameIndexMappings) {
+      const printing = await toPrinting(code, { ...resolution, persisted: byNameOutcome.persisted }, deps);
+      result.set(code, printing);
+      logResolution({ setCode: code, provider: 'ygoresources-by-name', konamiCardId: resolution.konamiCardId, artworkIndex: resolution.artworkIndex, confidence: resolution.mappingConfidence, status: resolution.mappingStatus, persisted: byNameOutcome.persisted });
+    }
+  }
+
   if (!konamiByCode.size) return;
 
   const uniqueKonamiIds = [...new Set(konamiByCode.values())];
