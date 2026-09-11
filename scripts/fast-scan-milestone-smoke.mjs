@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { normalizeSetCode,extractSetCodeCandidates,setCodeCandidates,classifyPrintingMatch,classifyNearPrintingMatch,OcrConsensus,ScanGate,ScanSessionBuffer,signatureDistance,SCAN_DECISION } from '../js/fast-scan-core.js';
+import { normalizeSetCode,extractSetCodeCandidates,setCodeCandidates,classifyPrintingMatch,classifyNearPrintingMatch,OcrConsensus,ScanGate,ScanSessionBuffer,signatureDistance,SCAN_DECISION,languageFromSetCode,defaultScanSettings } from '../js/fast-scan-core.js';
 
 assert.deepEqual(normalizeSetCode(' tdgs - it001 '),{raw:' tdgs - it001 ',code:'TDGS-IT001',valid:true});
 assert.equal(normalizeSetCode('YS13IT002').code,'YS13-IT002','trattino mancante non ricostruito dalla struttura SET/REGIONE/NUMERO');
@@ -26,6 +26,38 @@ assert(setCodeCandidates('OCRBR-ITO14').some(item=>item.code==='CRBR-IT014'),'ca
 assert(setCodeCandidates('TG-ZDEJ7').some(item=>item.code==='TG-2DEJ7'),'Z/2 produce soltanto una variante esplicita');
 assert(setCodeCandidates('L26D-ENX4O').some(item=>item.code==='L26D-ENX40'),'O/0 supportato sul nuovo formato');
 assert(setCodeCandidates('L5DD-ENY3S').some(item=>item.code==='L5DD-ENY35'),'S/5 produce un candidato conservativo');
+
+// languageFromSetCode: la lingua Yu-Gi-Oh! va inferita dal marker dopo il
+// trattino, non dalla lingua predefinita della sessione — casi diretti
+// (TDGS-IT001, LOB-EN001, RA02-FR049), tutte le regioni supportate, i codici
+// con lettera di categoria intermedia (L5DD-ENC04, YS13-ITV04) e i codici
+// storici a una sola lettera che restano deliberatamente ambigui (fallback).
+assert.equal(languageFromSetCode('TDGS-IT001'),'Italiano');
+assert.equal(languageFromSetCode('LOB-EN001'),'Inglese');
+assert.equal(languageFromSetCode('RA02-FR049'),'Francese');
+assert.equal(languageFromSetCode('ABCD-DE001'),'Tedesco','qualunque -DE deve risolvere Tedesco');
+assert.equal(languageFromSetCode('ABCD-SP001'),'Spagnolo','qualunque -SP deve risolvere Spagnolo');
+assert.equal(languageFromSetCode('ABCD-PT001'),'Portoghese','qualunque -PT deve risolvere Portoghese');
+assert.equal(languageFromSetCode('L5DD-ENC04'),'Inglese','lettera di categoria (C) tra regione e numero non deve rompere l’inferenza');
+assert.equal(languageFromSetCode('YS13-ITV04'),'Italiano','lettera di categoria (V) tra regione e numero non deve rompere l’inferenza');
+assert.equal(languageFromSetCode('SGX4-ENC14'),'Inglese');
+for(const historic of ['MIP-I010','MIK-I029','MIY-I030','SDF-I026'])
+  assert.equal(languageFromSetCode(historic,'Italiano'),'Italiano',`${historic}: codice storico a una lettera, deve restare sul fallback e non essere inferito`);
+assert.equal(languageFromSetCode('MIP-I010'),'','senza fallback esplicito un codice storico ambiguo non deve produrre nessuna lingua');
+assert.equal(languageFromSetCode('SET-001','Italiano'),'Italiano','nessun marker lingua dopo il trattino: fallback');
+assert.equal(languageFromSetCode(''),'','input vuoto: fallback (default vuoto)');
+
+// ScanSessionBuffer.add(): per Yu-Gi-Oh! la lingua salvata deve venire dal
+// set code, non dalle impostazioni sessione — anche quando settings.language
+// dice qualcos'altro. Per gli altri giochi (One Piece) nessun cambiamento:
+// resta sempre settings.language, il set code non ha marker di lingua Konami.
+const languageBuffer=new ScanSessionBuffer({settings:{...defaultScanSettings(),language:'Inglese'}});
+const italianEntry=languageBuffer.add({printingId:'p-it',game:'yugioh',catalogCardId:'1',cardName:'Carta IT',setCode:'TDGS-IT001',rarity:'Common'});
+assert.equal(italianEntry.language,'Italiano','il set code deve vincere sulla lingua di sessione (Inglese) per Yu-Gi-Oh!');
+const ambiguousEntry=languageBuffer.add({printingId:'p-hist',game:'yugioh',catalogCardId:'2',cardName:'Carta storica',setCode:'MIP-I010',rarity:'Common'});
+assert.equal(ambiguousEntry.language,'Inglese','codice storico ambiguo: deve cadere sul fallback (settings.language), non essere inferito');
+const onePieceEntry=languageBuffer.add({printingId:'p-op',game:'onepiece',catalogCardId:'OP01-001',cardName:'Carta OP',setCode:'OP01-EN001',rarity:'Common'});
+assert.equal(onePieceEntry.language,'Inglese','One Piece non deve cambiare comportamento: resta sempre settings.language');
 assert.equal(classifyPrintingMatch({normalized:normalizeSetCode('LOB-001'),matches:[{id:1}],consensus:2}).decision,SCAN_DECISION.EXACT_UNIQUE);
 assert.equal(classifyPrintingMatch({normalized:normalizeSetCode('LOB-001'),matches:[{id:1}],ocrConfidence:62}).status,'high_confidence','exact unique deve ignorare la confidence Paddle');
 assert.equal(classifyPrintingMatch({normalized:normalizeSetCode('LOB-001'),matches:[{id:1},{id:2}]}).decision,SCAN_DECISION.AMBIGUOUS);

@@ -17,6 +17,18 @@ export function normalizeSetCode(raw) {
   return {raw:String(raw||''),code,valid:plausibleSetCode(code)};
 }
 
+const SET_CODE_LANGUAGES = {IT:'Italiano',EN:'Inglese',FR:'Francese',DE:'Tedesco',SP:'Spagnolo',PT:'Portoghese'};
+// Il marker lingua Konami sono sempre le prime due lettere subito dopo il
+// trattino (IT/EN/FR/DE/SP/PT), a volte seguite da 1-2 lettere di categoria
+// prima del numero (es. "ENC04", "ITV04" — Speed Duel/Structure Deck). I
+// codici storici a una sola lettera (MIP-I010, SDF-I026, ...) non hanno un
+// marker lingua a 2 lettere: il regex non li intercetta apposta, restano sul
+// fallback invece di essere inferiti alla cieca.
+export function languageFromSetCode(setCode, fallback = '') {
+  const match = String(setCode || '').trim().toUpperCase().match(/^[A-Z0-9]+-([A-Z]{2})[A-Z]{0,2}\d/);
+  return (match && SET_CODE_LANGUAGES[match[1]]) || fallback;
+}
+
 export function extractSetCodeCandidates(rawText) {
   const source=String(rawText||'').normalize('NFKC').toUpperCase().replace(/[\u2010-\u2015\u2212_]/g,'-');
   const matches=[];
@@ -102,7 +114,7 @@ export function signatureDistance(left=[],right=[]){if(!left.length||left.length
 
 export class ScanSessionBuffer {
   constructor(snapshot={}){this.entries=new Map((snapshot.entries||[]).map(entry=>[entry.key,{...entry}]));this.review=[...(snapshot.review||[])];this.total=Number(snapshot.total||[...this.entries.values()].reduce((sum,item)=>sum+item.quantity,0));this.scanned=Number(snapshot.scanned??(this.total+this.review.length));this.settings=snapshot.settings||defaultScanSettings();this.updatedAt=snapshot.updatedAt||new Date().toISOString();}
-  add(printing,confidence='high_confidence',warning='',countScan=true){const key=printing.printingId||[printing.game,printing.catalogCardId,printing.setCode,printing.rarity].join(':');const current=this.entries.get(key);if(current)current.quantity+=1;else this.entries.set(key,{key,printingId:printing.printingId||'',game:printing.game||'yugioh',catalogCardId:String(printing.catalogCardId||''),cardName:printing.cardName,setCode:printing.setCode,setName:printing.setName||'',rarity:printing.rarity||'',imageUrl:printing.imageUrl||'',quantity:1,confidence,warning,language:this.settings.language,condition:this.settings.condition,edition:this.settings.edition});this.total+=1;if(countScan)this.scanned+=1;this.touch();return this.entries.get(key);}
+  add(printing,confidence='high_confidence',warning='',countScan=true){const key=printing.printingId||[printing.game,printing.catalogCardId,printing.setCode,printing.rarity].join(':');const current=this.entries.get(key);if(current)current.quantity+=1;else this.entries.set(key,{key,printingId:printing.printingId||'',game:printing.game||'yugioh',catalogCardId:String(printing.catalogCardId||''),cardName:printing.cardName,setCode:printing.setCode,setName:printing.setName||'',rarity:printing.rarity||'',imageUrl:printing.imageUrl||'',quantity:1,confidence,warning,language:(printing.game||'yugioh')==='yugioh'?languageFromSetCode(printing.setCode,this.settings.language):this.settings.language,condition:this.settings.condition,edition:this.settings.edition});this.total+=1;if(countScan)this.scanned+=1;this.touch();return this.entries.get(key);}
   queueReview(item){this.review.push({...item,id:item.id||crypto.randomUUID()});this.scanned+=1;this.touch();}
   updateQuantity(key,quantity){const item=this.entries.get(key);if(!item)return;const next=Math.max(0,Math.min(999,Number(quantity)||0));this.total+=next-item.quantity;if(next)item.quantity=next;else this.entries.delete(key);this.touch();}
   setEdition(key,edition){const item=this.entries.get(key);if(!item)return;item.edition=edition;this.touch();}
