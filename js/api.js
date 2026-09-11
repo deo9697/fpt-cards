@@ -148,6 +148,20 @@ export const api = {
   async ygoPrintingsForBackfill(afterId = null, limit = 500) {
     ensure(); return unwrap(await client.rpc('list_ygo_printings_for_backfill', { p_token:token(), p_after_id:afterId, p_limit:limit }));
   },
+  // Admin Artwork Resolver: coda multi-artwork ordinata per utilizzo reale
+  // (collection/deck/loan) — vedi js/admin.js. Sola lettura, admin-only lato RPC.
+  async ygoArtworkReviewQueue(limit = 50, offset = 0) {
+    ensure(); return unwrap(await client.rpc('list_ygo_artwork_review_queue', { p_token:token(), p_limit:limit, p_offset:offset }));
+  },
+  // Conferma admin di un artwork per una printing multi-artwork: crea/aggiorna
+  // l'override verificato (stessa RPC usata per MIP-1010), mai un guess
+  // automatico — vedi supabase/migrations/20260911160000_ygo_printing_registry.sql.
+  async confirmYgoPrintingArtwork(setCode, konamiCardId, artworkIndex, artworkUrl, reason) {
+    ensure(); return unwrap(await client.rpc('upsert_ygo_printing_override', {
+      p_token:token(), p_set_code:setCode, p_konami_card_id:konamiCardId,
+      p_artwork_index:artworkIndex, p_artwork_url:artworkUrl, p_reason:reason
+    }));
+  },
   async catalogVerificationQueue(version,{signal}={}) {
     ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {
       p_token:token(), p_verification_version:version
