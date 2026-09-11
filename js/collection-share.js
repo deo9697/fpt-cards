@@ -310,7 +310,7 @@ export class CollectionShareController {
     const meta = [item.edition, item.condition, item.language ? languageShort(item.language) : ''].filter(Boolean).join(' · ');
     const typeBackground = this.data.game === 'yugioh' ? backgroundForCardType(this.cardTypes.get(String(item.catalogCardId || ''))) : '';
     return `<button type="button" class="share-guest-tile ${quantity ? 'selected' : ''} ${exhausted ? 'exhausted' : ''}" data-share-toggle="${esc(item.printingId)}" ${exhausted ? 'disabled' : ''}>
-      <span class="share-guest-art"${typeBackground ? ` style="background:radial-gradient(circle, #301742, #0c0e15 70%) center/cover, url('${esc(typeBackground)}') center/contain no-repeat"` : ''}>
+      <span class="share-guest-art${typeBackground ? ' has-type-background' : ''}"${typeBackground ? ` style="background:radial-gradient(circle, #301742, #0c0e15 70%) center/cover, url('${esc(typeBackground)}') center/contain no-repeat"` : ''}>
         ${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}
         <b class="share-guest-qty">${exhausted ? 'Esaurita' : `x${available}`}</b>
         <i class="share-guest-select ${quantity ? 'on' : ''}">${quantity ? (quantity > 1 ? `${quantity}×` : icon('check')) : icon('plus')}</i>

@@ -1884,6 +1884,7 @@ button.market-row:hover { background:#15121d; }
 .share-guest-tile.selected .share-guest-art { border-color: #9b5cff; box-shadow: 0 0 0 3px #9b5cff33, 0 6px 20px #0009; }
 .share-guest-tile.exhausted .share-guest-art { opacity: .45; filter: grayscale(.4); }
 .share-guest-art img { width: 100%; height: 100%; object-fit: cover; }
+.share-guest-art.has-type-background img { width: 74%; height: 74%; margin: 13% auto; object-fit: contain; display: block; }
 .share-guest-art > .icon { width: 100%; height: 100%; padding: 26%; color: #9363aa; }
 .share-guest-qty { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 999px; background: #0a0812e0; color: #f7f4eb; font-size: .6rem; font-weight: 800; letter-spacing: .02em; }
 .share-guest-tile.exhausted .share-guest-qty { background: #3a0f16e0; color: #ff9aaa; }
