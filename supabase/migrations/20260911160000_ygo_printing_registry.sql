@@ -50,7 +50,7 @@ begin;
 --    stesso identico algoritmo affinché set_code_normalized coincida sempre
 --    lato client e lato database.
 create or replace function public.normalize_ygo_set_code(p_set_code text)
-returns text language sql immutable as $$
+returns text language sql immutable set search_path = '' as $$
   select trim(both '-' from regexp_replace(upper(trim(coalesce($1, ''))), '[^A-Z0-9]+', '-', 'g'))
 $$;
 
