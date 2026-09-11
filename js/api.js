@@ -115,6 +115,39 @@ export const api = {
   async onePieceCardCosts(catalogCardIds) {
     ensure(); return unwrap(await client.rpc('list_onepiece_card_costs', { p_token:token(),p_catalog_card_ids:catalogCardIds }));
   },
+  // Printing Registry (set_code -> Konami card ID -> artwork): vedi
+  // js/ygo-printing-registry.js, l'unico chiamante di questi metodi.
+  async ygoPrintingRegistryLookup(setCodes) {
+    ensure(); return unwrap(await client.rpc('ygo_printing_registry_lookup', { p_token:token(), p_set_codes:setCodes }));
+  },
+  async ygoPrintcodeCacheLookup(prefixes) {
+    ensure(); return unwrap(await client.rpc('ygo_printcode_cache_lookup', { p_token:token(), p_prefixes:prefixes }));
+  },
+  async ygoPrintcodeCacheUpsert(prefix, status, entries = []) {
+    ensure(); return unwrap(await client.rpc('ygo_printcode_cache_upsert', { p_token:token(), p_prefix:prefix, p_status:status, p_entries:entries }));
+  },
+  async ygoArtworkIndexLookup(konamiCardIds) {
+    ensure(); return unwrap(await client.rpc('ygo_artwork_index_lookup', { p_token:token(), p_konami_card_ids:konamiCardIds }));
+  },
+  async ygoArtworkIndexUpsert(entries) {
+    ensure(); return unwrap(await client.rpc('ygo_artwork_index_upsert', { p_token:token(), p_entries:entries }));
+  },
+  async applyYgoPrintingMappings(mappings) {
+    ensure(); return unwrap(await client.rpc('apply_ygo_printing_mappings', { p_token:token(), p_mappings:mappings }));
+  },
+  async upsertYgoPrintingOverride(override) {
+    ensure(); return unwrap(await client.rpc('upsert_ygo_printing_override', {
+      p_token:token(), p_set_code:override.setCode, p_konami_card_id:override.konamiCardId || null,
+      p_artwork_index:override.artworkIndex || null, p_artwork_url:override.artworkUrl || null,
+      p_reason:override.reason
+    }));
+  },
+  async ygoPrintingRegistryIssues(statuses = ['unresolved', 'conflict']) {
+    ensure(); return unwrap(await client.rpc('list_ygo_printing_registry_issues', { p_token:token(), p_statuses:statuses }));
+  },
+  async ygoPrintingsForBackfill(afterId = null, limit = 500) {
+    ensure(); return unwrap(await client.rpc('list_ygo_printings_for_backfill', { p_token:token(), p_after_id:afterId, p_limit:limit }));
+  },
   async catalogVerificationQueue(version,{signal}={}) {
     ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {
       p_token:token(), p_verification_version:version
