@@ -6,7 +6,9 @@
 // file paths to try and guess them on your own"). Per questo lo scarichiamo
 // UNA volta qui (mai dal client durante una scansione) e salviamo solo il
 // fatto derivato che serve al resolver: quanti artwork esistono per un dato
-// Konami card ID, e se ne esiste esattamente uno, quale URL.
+// Konami card ID, quale URL se ne esiste esattamente uno, e l'elenco
+// completo dei candidati (per l'Admin Artwork Resolver, che li mostra
+// all'admin per la scelta manuale quando sono più di uno).
 //
 // Uso: node scripts/ygo-artwork-index-sync.mjs [porta CDP, default 9351]
 // Richiede l'app aperta e loggata in una scheda Chrome con quella porta di
@@ -14,6 +16,10 @@
 
 const MANIFEST_URL = 'https://artworks.ygoresources.com/manifest.json';
 const BATCH_SIZE = 2000;
+// Nessuna carta reale nota supera questo numero di artwork (il massimo
+// osservato è 18, Dark Magician): un tetto alto evita solo payload
+// patologici senza mai troncare un caso reale.
+const MAX_CANDIDATES = 50;
 
 console.log('ygo-artwork-index-sync: scarico il manifest (~21MB, una sola volta)…');
 const manifest = await (await fetch(MANIFEST_URL)).json();
@@ -22,7 +28,10 @@ const entries = Object.entries(cards).map(([konamiCardId, artworks]) => {
   const indexes = Object.keys(artworks || {});
   const single = indexes.length === 1 ? artworks[indexes[0]] : null;
   const singleArtworkUrl = single?.bestArt ? new URL(single.bestArt, 'https://artworks.ygoresources.com/').href : null;
-  return { konamiCardId, artworkCount: indexes.length, singleArtworkUrl };
+  const candidates = indexes.slice(0, MAX_CANDIDATES)
+    .map(index => ({ index, url: artworks[index]?.bestArt ? new URL(artworks[index].bestArt, 'https://artworks.ygoresources.com/').href : null }))
+    .filter(candidate => candidate.url);
+  return { konamiCardId, artworkCount: indexes.length, singleArtworkUrl, candidates };
 });
 console.log(`ygo-artwork-index-sync: ${entries.length} Konami card ID nel manifest, ${entries.filter(e => e.artworkCount === 1).length} con artwork singolo (deterministico).`);
 
