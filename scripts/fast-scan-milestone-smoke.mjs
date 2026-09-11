@@ -130,6 +130,14 @@ let stressGrabCount=0,stressCloseCount=0;const stressCamera=new FastScanCamera(n
 const healthListeners={};const healthTrack={readyState:'live',enabled:true,muted:false,getSettings:()=>({width:1920,height:1080}),addEventListener:(name,fn)=>{healthListeners[name]=fn;},removeEventListener:()=>{}};const healthCamera=new FastScanCamera(null);healthCamera.stream={getVideoTracks:()=>[healthTrack]};healthCamera.video=snapshotVideo;healthCamera.attachTrackHealth(healthTrack);assert.equal(healthCamera.healthIssue(performance.now()+300000),'','track live deve restare valida anche dopo 5 minuti');healthTrack.muted=true;healthListeners.mute();assert.equal(healthCamera.healthIssue(performance.now()+1300),'track-muted');healthTrack.muted=false;healthListeners.unmute();assert.equal(healthCamera.healthIssue(),'');healthCamera.blackFrameStreak=8;assert.equal(healthCamera.healthIssue(),'black-preview');healthCamera.blackFrameStreak=0;healthTrack.readyState='ended';healthListeners.ended();assert.equal(healthCamera.healthIssue(),'track-ended');
 
 globalThis.document={...globalThis.document,addEventListener:()=>{},querySelector:()=>null,querySelectorAll:()=>[]};
+// js/fast-scan.js importa js/decks.js -> games/index.js -> onepiece/catalog.js
+// -> js/api.js (Fase 4 One Piece), che legge window.FPT_CONFIG a livello di
+// modulo: senza uno stub qui l'import fallisce con "window is not defined"
+// prima ancora di eseguire una sola assertion. addEventListener serve perché
+// il costruttore di DeckController lo chiama (guardato da
+// typeof window !== 'undefined', quindi esplode se window esiste senza quel
+// metodo). Stesso identico gap già noto per scripts/decks-milestone-smoke.mjs.
+globalThis.window={addEventListener:()=>{},FPT_CONFIG:undefined};
 const {FastScanController,canonicalizeFastScanEntries,selectSnapshotOcrResult,createOcrInputPlan,OCR_SUB_ROI}=await import('../js/fast-scan.js');
 const savedOcrCanvasFactory=document.createElement;document.createElement=()=>memoryCanvas();const rawSource=memoryCanvas();rawSource.width=900;rawSource.height=120;const inputPlan=createOcrInputPlan({canvas:rawSource,rawCanvas:rawSource,preprocessing:{mode:'grayscale'}});document.createElement=savedOcrCanvasFactory;assert.equal(inputPlan.primary.id,'grayscale');assert.equal(inputPlan.fallback.id,'adaptive');assert.equal(inputPlan.items.length,2,'il piano OCR non deve contenere varianti diagnostiche');assert.equal(inputPlan.primary.canvas.width,900);assert.equal(inputPlan.primary.preprocessing.paddingX,.14);assert.equal(inputPlan.primary.preprocessing.paddingY,.2);assert.equal(inputPlan.primary.preprocessing.cropExpansion,0,'il crop OCR include pixel esterni alla ROI visiva');assert.equal(inputPlan.primary.preprocessing.sharpen,false);assert.equal(inputPlan.primary.canvas.fill.color,'#fff');assert.equal(inputPlan.subCrop.sy,Math.round(120*OCR_SUB_ROI.topRatio));assert.equal(inputPlan.subCrop.sh,Math.round(120*OCR_SUB_ROI.heightRatio));assert(inputPlan.subCrop.sh>=rawSource.height*.85,'il crop verticale mozza i caratteri');const subCropCanvas=inputPlan.subCropRaw;inputPlan.release();assert(inputPlan.items.every(item=>item.canvas.width===0&&item.canvas.height===0),'canvas OCR derivati non liberati');assert.equal(subCropCanvas.width,0,'sub-crop raw temporaneo non liberato');
 assert.equal(selectSnapshotOcrResult([{text:'rumore',confidence:96,preprocessing:{mode:'grayscale'}},{text:'L26D-ENX40',confidence:68,preprocessing:{mode:'adaptive'}}]).text,'L26D-ENX40','selezione multipass ignora rumore ad alta confidence');
@@ -138,7 +146,22 @@ const printing={printingId:'l26d',game:'yugioh',catalogCardId:'123',cardName:'Te
 const controller=new FastScanController({camera:{focusSupported:false,refocus:async()=>false},ocr:{},getCollection:()=>({mine:[printing],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});controller.gate=new ScanGate({globalCooldown:0});controller.buildLocalCatalog();
 const debugCanvas=memoryCanvas(),debugLabel={textContent:''},debugSource=memoryCanvas();debugSource.width=900;debugSource.height=120;controller.debugMode=true;document.querySelector=selector=>selector==='[data-scan-debug-crop]'?debugCanvas:selector==='[data-scan-debug-geometry]'?debugLabel:null;controller.renderDebugCrop(debugSource,{snapshotCrop:{sx:10,sy:20,sw:300,sh:40}},'grayscale');assert.equal(debugCanvas.width,900);assert.equal(debugCanvas.height,120);assert.equal(debugCanvas.source,debugSource,'preview debug non mostra lo stesso canvas inviato a Paddle');assert.match(debugLabel.textContent,/source 10,20 300×40/);controller.debugMode=false;document.querySelector=()=>null;
 assert.equal((await controller.processRecognition('TG-ZDEJ7',72,[])).status,'pending_consensus');assert.equal((await controller.processRecognition('TG-ZDEJ7',74,[])).status,'not_found');assert.equal(controller.buffer.scanned,0,'output inesistente non deve entrare nel buffer/review');
-assert.equal((await controller.processRecognition('18 L26D-ENX40',62,[])).decision,SCAN_DECISION.EXACT_UNIQUE);assert.equal(controller.buffer.total,1,'exact unique debole non salvato immediatamente');
+// Assertion aggiornata al 2026-09-11: dal fix 63932f2 (7 settembre) un
+// singolo hit di collection-cache non risolve più immediatamente via
+// resolveFast() — solo il session-cache (RPC già fatto) lo fa, apposta per
+// non committare alla cieca l'unica rarità già posseduta quando il set code
+// ne ha altre (vedi il commento su resolveFast in js/fast-scan.js). Una
+// lettura debole isolata resta quindi 'pending_consensus'; serve una
+// seconda lettura identica (consensus.minVotes=2) perché processRecognition
+// prenda il percorso resolve() pieno, che tratta la collection-cache come
+// fallback legittimo quando RPC/esterno non sono configurati (come in
+// questo controller di test). L'assertion originale testava il comportamento
+// pre-fix e non è mai stata aggiornata: questo file non poteva girare sotto
+// plain node (crash su window mancante) da prima che il fix atterrasse,
+// quindi la discrepanza non era mai stata notata.
+assert.equal((await controller.processRecognition('18 L26D-ENX40',62,[])).status,'pending_consensus','prima lettura debole isolata: consensus non ancora raggiunto (minVotes=2)');
+assert.equal((await controller.processRecognition('18 L26D-ENX40',62,[])).decision,SCAN_DECISION.EXACT_UNIQUE,'seconda lettura identica: consensus raggiunto, risolve exact unique anche da collection-cache');
+assert.equal(controller.buffer.total,1,'exact unique debole risolto via consensus, salvato una sola volta');
 controller.gate.miss();controller.gate.miss();const nearAuto=await controller.processRecognition('L26D-ENX4O',70,[255]);assert.equal(nearAuto.decision,SCAN_DECISION.NEAR_UNIQUE);assert.equal(controller.buffer.total,2,'near unique O/0 sicuro non salvato');assert.equal(controller.buffer.review.length,0);clearTimeout(controller.persistTimer);clearTimeout(controller.feedbackTimer);
 const manualPhotoController=new FastScanController({camera:{focusSupported:false},ocr:{},getCollection:()=>({mine:[printing],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});manualPhotoController.buildLocalCatalog();await manualPhotoController.processRecognition('L26D-ENX40',96,[0],{}, {catalogConfirm:true});await manualPhotoController.processRecognition('L26D-ENX40',96,[0],{}, {catalogConfirm:true});assert.equal(manualPhotoController.buffer.total,2,'due pressioni esplicite sulla stessa printing vengono bloccate come duplicato automatico');clearTimeout(manualPhotoController.persistTimer);clearTimeout(manualPhotoController.feedbackTimer);
 
