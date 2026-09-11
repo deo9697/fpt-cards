@@ -41,6 +41,11 @@ import { findCard, lookupPrintingBySetCode } from './cards.js';
 const YGORESOURCES_BASE = 'https://db.ygoresources.com';
 const FETCH_TIMEOUT_MS = 6000;
 const PRINT_CODE_PATTERN = /^([A-Z0-9-]{1,6})-([A-Z]{0,2})([0-9A-Z]{0,4})$/;
+// apply_ygo_printing_mappings è idempotente (upsert + guardie anti-declassamento
+// lato SQL): ritentare lo STESSO payload dopo un errore transitorio è sicuro,
+// non produce doppie scritture né stati intermedi inconsistenti.
+const MAX_APPLY_RETRIES = 2;
+const APPLY_RETRY_DELAYS_MS = [400, 1200];
 
 // Cache di sessione (non persistita): evita di richiedere due volte lo stesso
 // nome Konami o lo stesso prefisso di set nella stessa apertura dell'app.
@@ -68,12 +73,17 @@ export function splitPrintCode(normalizedCode) {
   return { prefix: `${set}-${locale}`, printNumber };
 }
 
+// persisted:true qui non significa "scritto sul registro" (non c'è nulla da
+// scrivere: nessuna fonte ha dato un'identità) — significa "nessuna
+// persistenza pendente", cioè il chiamante può considerare questo risultato
+// definitivo. Distinto da persisted:false, che significa sempre "una
+// risoluzione POSITIVA che non è però riuscita a essere salvata".
 function unresolved(setCode, notes = '') {
   return {
     printingId: '', game: 'yugioh', catalogCardId: '', cardName: '', setCode, setName: '', rarity: '',
     imageUrl: '', warning: '',
     konamiCardId: '', artworkIndex: '', mappingSource: '', mappingConfidence: '',
-    mappingStatus: 'unresolved', mappingNotes: notes
+    mappingStatus: 'unresolved', mappingNotes: notes, persisted: true
   };
 }
 
@@ -125,13 +135,57 @@ async function fetchKonamiCardName(konamiCardId) {
   return request;
 }
 
+function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Un errore con .code (SQLSTATE/PostgREST, es. da un `raise exception` lato
+// RPC per input non valido) è persistente: ritentare lo stesso payload
+// fallirebbe di nuovo, quindi non è transitorio. Un errore senza .code — fetch
+// fallita, timeout, connessione interrotta — è la classe di errore per cui
+// ha senso un retry limitato.
+function isTransientPersistError(error) { return Boolean(error) && !error.code; }
+
+// Applica un batch di mapping aspettando davvero la persistenza (mai
+// fire-and-forget): un chiamante non deve poter considerare una risoluzione
+// "conclusa" prima che la scrittura sul registro sia terminata o abbia
+// esaurito i tentativi. Un solo batch per chiamata: i retry ripetono la
+// STESSA chiamata, non ne aggiungono una per codice (nessun N+1).
+async function applyMappingsWithRetry(api, payload) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= MAX_APPLY_RETRIES; attempt++) {
+    try {
+      await api.applyYgoPrintingMappings(payload);
+      return { persisted: true };
+    } catch (error) {
+      lastError = error;
+      if (!isTransientPersistError(error) || attempt === MAX_APPLY_RETRIES) break;
+      await delay(APPLY_RETRY_DELAYS_MS[attempt] || APPLY_RETRY_DELAYS_MS.at(-1));
+    }
+  }
+  // Errore persistente (o transitorio con i tentativi esauriti): mai
+  // mascherato — chi chiama riceve persisted:false + il motivo, non un
+  // falso successo silenzioso.
+  return { persisted: false, error: lastError };
+}
+
 function precedenceResult(setCode, row) {
   if (!row) return null;
   if (row.override_konami_card_id) {
+    // Un override verificato deve diventare fonte canonica nel registro
+    // indipendentemente da come/quando è stato creato (seed di migration,
+    // RPC admin, ...): needsRegistrySync=true finché la riga del registro non
+    // rispecchia già esattamente questo override, così "usare" l'override
+    // (qualunque chiamante lo risolva) lo sincronizza al primo utilizzo senza
+    // bisogno di un percorso di creazione specifico.
+    const alreadySynced = row.registry_mapping_status === 'verified'
+      && row.registry_mapping_source === 'override'
+      && row.registry_konami_card_id === row.override_konami_card_id
+      && (row.registry_artwork_index || '') === (row.override_artwork_index || '')
+      && (row.registry_artwork_url || '') === (row.override_artwork_url || '');
     return {
       konamiCardId: row.override_konami_card_id, artworkIndex: row.override_artwork_index || '',
       artworkUrl: row.override_artwork_url || '', cardName: row.registry_card_name || '',
-      mappingSource: 'override', mappingConfidence: 'high', mappingStatus: 'verified'
+      mappingSource: 'override', mappingConfidence: 'high', mappingStatus: 'verified',
+      needsRegistrySync: !alreadySynced
     };
   }
   if (row.registry_mapping_status === 'verified' || row.registry_mapping_status === 'resolved') {
@@ -174,7 +228,12 @@ async function toPrinting(setCode, resolution, deps) {
     imageUrl: resolution.artworkUrl || '', warning: '',
     konamiCardId: resolution.konamiCardId || '', artworkIndex: resolution.artworkIndex || '',
     mappingSource: resolution.mappingSource || '', mappingConfidence: resolution.mappingConfidence || '',
-    mappingStatus: resolution.mappingStatus, mappingNotes: resolution.mappingNotes || ''
+    mappingStatus: resolution.mappingStatus, mappingNotes: resolution.mappingNotes || '',
+    // Sovrascritto dal chiamante una volta noto l'esito reale della
+    // persistenza (vedi resolveExternally/resolveYgoPrintings) — di default
+    // true perché una parte dei chiamanti di toPrinting (precedenza da
+    // registro già verificato/resolved) non ha nulla da scrivere.
+    persisted: resolution.persisted !== false
   };
 }
 
@@ -211,10 +270,33 @@ export async function resolveYgoPrintings(rawSetCodes, {
     await resolveExternally(toResolveExternally, result, deps);
   }
 
+  // Override verificati che il registro non rispecchia ancora esattamente
+  // (creati fuori dal percorso upsert_ygo_printing_override, es. seed di
+  // migration come MIP-1010, o un override aggiornato dopo l'ultima sync):
+  // sincronizzarli è la stessa identica chiamata batch usata per le
+  // risoluzioni automatiche — un override attivo vince sempre lato SQL,
+  // quindi è sempre sicuro riapplicarlo qui.
+  const overridesNeedingSync = pending.filter(item => item.precedence.needsRegistrySync);
+  let overrideSyncOutcome = { persisted: true };
+  if (overridesNeedingSync.length) {
+    const payload = overridesNeedingSync.map(({ code, precedence }) => ({
+      setCode: code, konamiCardId: precedence.konamiCardId, artworkIndex: precedence.artworkIndex || null,
+      artworkUrl: precedence.artworkUrl || null, mappingSource: 'override', mappingConfidence: 'high',
+      mappingStatus: 'verified'
+    }));
+    overrideSyncOutcome = await applyMappingsWithRetry(api, payload);
+    if (!overrideSyncOutcome.persisted) {
+      console.error('[ygo-printing-registry] override registry sync failed', {
+        codes: overridesNeedingSync.map(item => item.code), error: overrideSyncOutcome.error?.message || String(overrideSyncOutcome.error)
+      });
+    }
+  }
+
   for (const { code, precedence } of pending) {
-    const printing = await toPrinting(code, precedence, deps);
+    const persisted = precedence.needsRegistrySync ? overrideSyncOutcome.persisted : true;
+    const printing = await toPrinting(code, { ...precedence, persisted }, deps);
     result.set(code, printing);
-    logResolution({ setCode: code, provider: precedence.mappingSource, konamiCardId: precedence.konamiCardId, artworkIndex: precedence.artworkIndex, confidence: precedence.mappingConfidence, status: precedence.mappingStatus });
+    logResolution({ setCode: code, provider: precedence.mappingSource, konamiCardId: precedence.konamiCardId, artworkIndex: precedence.artworkIndex, confidence: precedence.mappingConfidence, status: precedence.mappingStatus, persisted });
   }
 
   return result;
@@ -303,19 +385,42 @@ async function resolveExternally(codes, result, deps) {
     mappingsToApply.push({ code, resolution });
   }
 
+  // Nome carta risolto ORA (serve nel payload di persistenza, non solo
+  // nell'oggetto restituito): va calcolato prima della persistenza, non dopo,
+  // altrimenti "resolved" tornerebbe al chiamante prima che il registro sappia
+  // anche il nome, non solo l'id.
+  const cardNameByCode = new Map();
   for (const { code, resolution } of mappingsToApply) {
-    const printing = await toPrinting(code, resolution, deps);
-    result.set(code, printing);
-    logResolution({ setCode: code, provider: 'ygoresources', konamiCardId: resolution.konamiCardId, artworkIndex: resolution.artworkIndex, confidence: resolution.mappingConfidence, status: resolution.mappingStatus });
+    if (!resolution.cardName && resolution.konamiCardId) {
+      cardNameByCode.set(code, await fetchKonamiCardName(resolution.konamiCardId));
+    } else cardNameByCode.set(code, resolution.cardName || '');
   }
 
   const payload = mappingsToApply.map(({ code, resolution }) => ({
     setCode: code, konamiCardId: resolution.konamiCardId, artworkIndex: resolution.artworkIndex || null,
-    artworkUrl: resolution.artworkUrl || null, cardName: result.get(code)?.cardName || null,
+    artworkUrl: resolution.artworkUrl || null, cardName: cardNameByCode.get(code) || null,
     mappingSource: resolution.mappingSource, mappingConfidence: resolution.mappingConfidence,
     mappingStatus: resolution.mappingStatus, mappingNotes: resolution.mappingNotes || null
   }));
-  if (payload.length) api.applyYgoPrintingMappings(payload).catch(() => {});
+
+  // Mai fire-and-forget: un chiamante non deve poter trattare questa
+  // risoluzione come conclusa prima che la scrittura sul registro sia
+  // davvero terminata (o abbia esaurito i tentativi su un errore transitorio).
+  let applyOutcome = { persisted: true };
+  if (payload.length) {
+    applyOutcome = await applyMappingsWithRetry(api, payload);
+    if (!applyOutcome.persisted) {
+      console.error('[ygo-printing-registry] persistence failed after retries', {
+        codes: mappingsToApply.map(item => item.code), error: applyOutcome.error?.message || String(applyOutcome.error)
+      });
+    }
+  }
+
+  for (const { code, resolution } of mappingsToApply) {
+    const printing = await toPrinting(code, { ...resolution, cardName: cardNameByCode.get(code), persisted: applyOutcome.persisted }, deps);
+    result.set(code, printing);
+    logResolution({ setCode: code, provider: 'ygoresources', konamiCardId: resolution.konamiCardId, artworkIndex: resolution.artworkIndex, confidence: resolution.mappingConfidence, status: resolution.mappingStatus, persisted: applyOutcome.persisted });
+  }
 }
 
 // Convenienza per un singolo set code (editor, repair puntuale). Per import

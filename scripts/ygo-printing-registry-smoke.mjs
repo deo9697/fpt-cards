@@ -166,4 +166,111 @@ const { resolveYgoPrintings, normalizeSetCode, splitPrintCode } = await import('
   assert.equal(splitPrintCode(normalizeSetCode('mip-1010')).prefix, 'MIP-', 'un codice storico senza marker lingua deve produrre un prefisso a locale vuoto (not_found atteso, mai un guess)');
 }
 
-console.log('PASS ygo-printing-registry: exact code (LDS3-EN063) · override precedence (MIP-1010) · unknown printing · multiple artworks · API failure resilience · normalization');
+function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// --- 7) Persistenza mai fire-and-forget: il return non deve avvenire prima
+// che la scrittura sul registro sia davvero conclusa ---
+{
+  installFetchMock({
+    printcode: { 'LOB-EN': { '005': 4041 } },
+    cardData: { '4041': { cardData: { ae: { name: 'Dark Magician' } } } }
+  });
+  let persistCompletedAt = 0;
+  const api = fakeApi({
+    ygoArtworkIndexLookup: async () => [{ konami_card_id: '4041', artwork_count: 1, single_artwork_url: 'https://artworks.ygoresources.com/dm.png' }],
+    applyYgoPrintingMappings: async () => { await delay(120); persistCompletedAt = Date.now(); }
+  });
+  const findCard = async name => ({ id: 46986414, name });
+  const result = await resolveYgoPrintings(['LOB-EN005'], { api, findCard, lookupPrintingBySetCode: async () => [] });
+  const returnedAt = Date.now();
+  assert.ok(persistCompletedAt > 0, 'la persistenza deve essere stata eseguita prima del return');
+  assert.ok(returnedAt >= persistCompletedAt, 'resolveYgoPrintings non deve tornare prima che la scrittura sul registro sia conclusa (niente fire-and-forget)');
+  assert.equal(result.get('LOB-EN005').persisted, true, 'una persistenza riuscita deve risultare persisted:true');
+}
+
+// --- 8) Errore transitorio (nessun .code, es. rete) -> retry limitato, poi successo ---
+{
+  installFetchMock({
+    printcode: { 'LOB-EN': { '005': 4041 } },
+    cardData: { '4041': { cardData: { ae: { name: 'Dark Magician' } } } }
+  });
+  let attempts = 0;
+  const api = fakeApi({
+    ygoArtworkIndexLookup: async () => [{ konami_card_id: '4041', artwork_count: 1, single_artwork_url: 'https://artworks.ygoresources.com/dm.png' }],
+    applyYgoPrintingMappings: async () => { attempts += 1; if (attempts < 2) throw new Error('fetch failed: network blip'); }
+  });
+  const findCard = async name => ({ id: 46986414, name });
+  const result = await resolveYgoPrintings(['LOB-EN005'], { api, findCard, lookupPrintingBySetCode: async () => [] });
+  assert.equal(attempts, 2, 'un errore transitorio deve essere ritentato (esattamente un retry qui, non uno per ogni elemento del batch)');
+  assert.equal(result.get('LOB-EN005').persisted, true, 'dopo un retry riuscito la persistenza deve risultare completata');
+}
+
+// --- 9) Errore persistente (con .code, es. validazione RPC) -> niente retry, niente falso successo ---
+{
+  installFetchMock({
+    printcode: { 'LOB-EN': { '005': 4041 } },
+    cardData: { '4041': { cardData: { ae: { name: 'Dark Magician' } } } }
+  });
+  let attempts = 0;
+  const api = fakeApi({
+    ygoArtworkIndexLookup: async () => [{ konami_card_id: '4041', artwork_count: 1, single_artwork_url: 'https://artworks.ygoresources.com/dm.png' }],
+    applyYgoPrintingMappings: async () => { attempts += 1; const error = new Error('Stato mapping non valido'); error.code = 'P0001'; throw error; }
+  });
+  const findCard = async name => ({ id: 46986414, name });
+  const result = await resolveYgoPrintings(['LOB-EN005'], { api, findCard, lookupPrintingBySetCode: async () => [] });
+  assert.equal(attempts, 1, 'un errore persistente (con .code, non transitorio) non deve essere ritentato');
+  const printing = result.get('LOB-EN005');
+  assert.equal(printing.mappingStatus, 'resolved', 'la risoluzione (identità/artwork) resta valida anche se il salvataggio fallisce');
+  assert.equal(printing.persisted, false, 'un fallimento di persistenza non deve mai essere mascherato da un falso persisted:true');
+}
+
+// --- 10) Override non ancora sincronizzato -> deve sincronizzare il registro alla prima risoluzione ---
+{
+  installFetchMock({ cardData: { '4547': { cardData: { ae: { name: 'Hane-Hane' } } } } });
+  const unsyncedRow = {
+    set_code_normalized: 'MIP-1010', registry_konami_card_id: null, registry_card_name: null,
+    registry_artwork_index: null, registry_artwork_url: null, registry_mapping_source: null,
+    registry_mapping_confidence: null, registry_mapping_status: null, registry_verified: null,
+    override_konami_card_id: '4547', override_artwork_index: '1',
+    override_artwork_url: 'https://artworks-en-n.ygoresources.com/0/45/47_1.png',
+    override_reason: 'MIP-1010 non risulta in nessuna fonte automatica'
+  };
+  const applyCalls = [];
+  const api = fakeApi({
+    ygoPrintingRegistryLookup: async () => [unsyncedRow],
+    applyYgoPrintingMappings: async payload => { applyCalls.push(payload); }
+  });
+  const findCard = async name => name === 'Hane-Hane' ? { id: 7089711, name } : null;
+  const result = await resolveYgoPrintings(['MIP-1010'], { api, findCard, lookupPrintingBySetCode: async () => [] });
+  assert.equal(applyCalls.length, 1, 'un override verificato non ancora rispecchiato dal registro deve essere sincronizzato al primo utilizzo');
+  assert.equal(applyCalls[0][0].mappingStatus, 'verified', 'la sync deve scrivere lo stato verified');
+  assert.equal(applyCalls[0][0].konamiCardId, '4547', 'la sync deve usare i dati dell\'override, non un guess');
+  const printing = result.get('MIP-1010');
+  assert.equal(printing.mappingStatus, 'verified');
+  assert.equal(printing.persisted, true, 'la sync riuscita deve risultare persisted:true');
+}
+
+// --- 11) Doppia applicazione dello stesso override -> idempotente, nessuna riscrittura inutile ---
+{
+  installFetchMock({ cardData: { '4547': { cardData: { ae: { name: 'Hane-Hane' } } } } });
+  const syncedRow = {
+    set_code_normalized: 'MIP-1010', registry_konami_card_id: '4547', registry_card_name: 'Hane-Hane',
+    registry_artwork_index: '1', registry_artwork_url: 'https://artworks-en-n.ygoresources.com/0/45/47_1.png',
+    registry_mapping_source: 'override', registry_mapping_confidence: 'high', registry_mapping_status: 'verified',
+    registry_verified: true, override_konami_card_id: '4547', override_artwork_index: '1',
+    override_artwork_url: 'https://artworks-en-n.ygoresources.com/0/45/47_1.png',
+    override_reason: 'MIP-1010 non risulta in nessuna fonte automatica'
+  };
+  const applyCalls = [];
+  const api = fakeApi({
+    ygoPrintingRegistryLookup: async () => [syncedRow],
+    applyYgoPrintingMappings: async payload => { applyCalls.push(payload); }
+  });
+  const findCard = async name => name === 'Hane-Hane' ? { id: 7089711, name } : null;
+  const result = await resolveYgoPrintings(['MIP-1010'], { api, findCard, lookupPrintingBySetCode: async () => [] });
+  assert.equal(applyCalls.length, 0, 'un override già sincronizzato non deve generare una nuova scrittura ogni volta che viene usato');
+  assert.equal(result.get('MIP-1010').mappingStatus, 'verified', 'il risultato resta verified anche senza una nuova sync');
+  assert.equal(result.get('MIP-1010').persisted, true);
+}
+
+console.log('PASS ygo-printing-registry: exact code (LDS3-EN063) · override precedence (MIP-1010) · unknown printing · multiple artworks · API failure resilience · normalization · persist-before-return · transient retry · persistent error not masked · override registry sync · sync idempotency');
