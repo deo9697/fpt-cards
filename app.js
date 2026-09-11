@@ -252,7 +252,7 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.data.items, cardTypeForDetail(selectedCollectionItem)) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem)) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}

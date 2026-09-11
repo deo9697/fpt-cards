@@ -9,9 +9,30 @@ const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{d
 const FRESH_MS=48*60*60*1000;
 const ROW_BATCH_SIZE=60;
 const isStatementTimeout=error=>error?.code==='57014'||/statement timeout/i.test(error?.message||'');
+const emptyOwnedPage=()=>({items:[],total:0,limit:ROW_BATCH_SIZE,offset:0});
+const emptyExtra=()=>({items:[],deckUnresolved:[],featuredMovers:undefined});
+const emptySummary=()=>({portfolioValue:{current:0,complete:false},confirmCount:0,aggregatePendingCount:0,catalogPriceFloor:{},lastSync:null});
 
+// 2026-09-11: list_market_watch (un'unica RPC, tutte le printing monitorate
+// in un colpo) sostituita da 4 funzioni più mirate — vedi
+// supabase/migrations/20260911145101_market_watch_owned_pagination.sql per
+// il perché. Il modello dati qui non è più UN array (this.data.items) che
+// serviva tab/sort/ricerca/totali/valore mazzi tutti insieme:
+//   - ownedPage: SOLO la tab Raccolta, vera paginazione server-side
+//     (ROW_BATCH_SIZE per richiesta, non più uno slice locale di un array
+//     già interamente scaricato). Ordina/cerca sono parametri della
+//     richiesta, non più filtri client-side su questa tab.
+//   - extra: tab Mazzi+Watchlist, piccole per costruzione (bounded dai
+//     mazzi/dalla watchlist manuale) — un solo fetch, non paginato.
+//   - summary: solo aggregati (valore portafoglio, conteggi code di
+//     conferma, fallback di prezzo per carta logica) — mai righe intere.
+//   - confirmQueue: l'UNICO posto con mappingEvidence/candidates, caricato
+//     lazy solo quando si apre la tab "Conferma" o si preme "Conferma tutti".
 export class MarketWatchController {
-  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});this.data={items:[],deckUnresolved:[],lastSync:null};this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
+  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});
+    this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
+    this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
+    this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
   async load(){
@@ -19,7 +40,7 @@ export class MarketWatchController {
     if(this.loadInFlight&&this.loadGame===game)return this.loadInFlight;
     const generation=this.loadGeneration=(this.loadGeneration||0)+1;
     const current=()=>this.loadGeneration===generation&&this.getGame()===game;
-    this.loadGame=game;this.loading=true;this.error='';
+    this.loadGame=game;this.loading=true;this.error='';this.confirmQueue=[];this.confirmQueueLoaded=false;
     let extrasReady=false,movers=[],anomalies=[];
     // Accessory panels must not hold up the main card list.
     void Promise.all([
@@ -28,30 +49,55 @@ export class MarketWatchController {
     ]).then(([nextMovers,nextAnomalies])=>{
       movers=nextMovers;anomalies=nextAnomalies;extrasReady=true;
       if(!current()||this.loading)return;
-      this.data.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
+      this.extra.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
       this.refreshAfterLoad();void this.loadFeaturedHistories();
     });
     const request=(async()=>{
       try{
-        let payload;
-        for(let attempt=0;attempt<2;attempt++){
-          try{payload=await this.api.marketWatch(game);break;}
-          catch(error){
-            if(attempt||!isStatementTimeout(error))throw error;
-            await new Promise(resolve=>setTimeout(resolve,350));
-            if(!current())return this.data;
-          }
-        }
-        if(!current())return this.data;
-        const next=mapPayload(payload);next.featuredMovers=mapDashboardMovers(movers);
-        if(next.lastSync&&next.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=next.lastSync;}
-        this.data=next;this.anomalies=anomalies||[];this.error='';
-      }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/list_market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
-      finally{if(current()){this.loading=false;this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}
-      return this.data;
+        const [extraPayload,summaryPayload]=await Promise.all([this.api.marketWatchExtra(game),this.api.marketWatchSummary(game)]);
+        if(!current())return;
+        this.extra={...mapExtraPayload(extraPayload),featuredMovers:mapDashboardMovers(movers)};
+        this.summary=mapSummaryPayload(summaryPayload);
+        if(this.summary.lastSync&&this.summary.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=this.summary.lastSync;}
+        this.error='';
+      }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
+      if(current())await this.loadOwnedPage({reset:true,silent:true});
     })();
     this.loadInFlight=request;
-    try{return await request;}finally{if(this.loadInFlight===request)this.loadInFlight=null;}
+    try{return await request;}finally{if(this.loadInFlight===request){this.loadInFlight=null;if(current()){this.loading=false;this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}}
+  }
+  // Sola tab Raccolta: reset=true ricomincia da zero (cambio tab/ordina/
+  // ricerca/gioco, o il load() iniziale — compreso il refresh periodico di
+  // sfondo in app.js mentre l'utente è già su Market Watch), altrimenti
+  // accoda la pagina successiva a quella già in memoria — "Mostra altre" ora
+  // è una VERA richiesta di rete con offset più alto, non più uno slice
+  // locale di un array già interamente scaricato. silent=true salta il
+  // refresh della UI qui (load() lo fa già a fine giro, per non ridisegnare
+  // due volte). Nota: reset NON svuota subito ownedPage — lo sostituisce solo
+  // a richiesta riuscita, altrimenti un refresh di sfondo fallito (timeout,
+  // rete) cancellerebbe una lista già popolata al posto di lasciarla com'era.
+  async loadOwnedPage({reset=false,silent=false}={}){
+    const game=this.getGame();
+    const offset=reset?0:this.ownedPage.items.length;
+    const generation=this.ownedPageGeneration=(this.ownedPageGeneration||0)+1;
+    const current=()=>this.ownedPageGeneration===generation&&this.getGame()===game;
+    this.ownedLoading=true;if(!silent)this.refreshBoardSection();
+    try{
+      let payload;
+      for(let attempt=0;attempt<2;attempt++){
+        try{payload=await this.api.marketWatchOwnedPage(game,{limit:ROW_BATCH_SIZE,offset,sort:this.sort,query:this.query});break;}
+        catch(error){
+          if(attempt||!isStatementTimeout(error))throw error;
+          await new Promise(resolve=>setTimeout(resolve,350));
+          if(!current())return;
+        }
+      }
+      if(!current())return;
+      const mapped=mapOwnedPagePayload(payload);
+      this.ownedPage={items:reset?mapped.items:[...this.ownedPage.items,...mapped.items],total:mapped.total,limit:ROW_BATCH_SIZE,offset};
+      this.error='';
+    }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');}
+    finally{if(current()){this.ownedLoading=false;if(!silent)this.refreshBoardSection();}}
   }
   // load() ora gira anche mentre l'utente è già fermo su Market Watch (apertura
   // pagina + fallback periodico, vedi app.js), non solo al boot: un onRender()
@@ -64,33 +110,29 @@ export class MarketWatchController {
     const section=document.querySelector('[data-market-board-section]');
     if(!section||this.selected||this.selectedDeck){this.onRender?.();return;}
     const heroValue=document.querySelector('.market-hero-value'),heroSync=document.querySelector('.market-hero-sync');
-    if(heroValue){const summary=portfolioSummary(this.data.items);heroValue.textContent=summary.complete?money(summary.current):'Dati parziali';}
-    if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}`;
+    if(heroValue){const pv=this.summary.portfolioValue;heroValue.textContent=pv.complete?money(pv.current):'Dati parziali';}
+    if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}`:'In attesa del primo sync'}`;
     this.refreshBoardSection();
   }
-  dashboardState(){return {...this.data,error:this.error,featuredHistory:this.featuredHistory};}
-  // Cards where the resolver deliberately refused to guess a price:
-  // - provider_rarity_mismatch: Cardmarket has a real match but under a
-  //   different rarity than the one we have on file.
-  // - AMBIGUOUS (multiple_provider_expansions / internal_rarity_conflict_
-  //   provider_rarity_missing): resolveCardmarketPrinting() found more than
-  //   one plausible product and can't tell which is right on its own.
-  // All three leave the printing unresolved on purpose rather than guessing.
-  // Before this queue existed for AMBIGUOUS too, those cards just silently
-  // showed no price forever with no way for anyone to notice or act on it —
-  // confirmed by reading resolveCardmarketPrinting(): AMBIGUOUS never had a
-  // reason:'provider_rarity_mismatch', so the old queue (which only checked
-  // that one reason) never caught it. Kept as a permanent, always-available
-  // section (not a one-off cleanup) since new cases can appear any time a
-  // new printing or a Cardmarket catalog change introduces one.
-  rarityMismatchQueue(){return this.data.items.filter(needsMappingReview);}
-  // Aggregate items only ever surface ONE candidate (the Cardmarket product
-  // the resolver itself already matched at expansion level) — confirming here
-  // doesn't ask the user to pick anything, it just accepts what the resolver
-  // already found, in bulk, instead of clicking "Conferma questa" one card at
-  // a time. Rarity-mismatch items are deliberately excluded: those carry real
-  // alternative candidates that need a human to actually choose between them.
-  aggregatePendingQueue(){return this.data.items.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
+  // dashboard.js usa `items` come sorgente di fallback per i "movers"
+  // (positiveMovers) quando la RPC dedicata non ne restituisce — serve un
+  // set con printing OWNED e prezzo 24h, non le sole extra (mazzi/watchlist,
+  // spesso vuote di owned): allLoadedItems() combina la pagina Raccolta già
+  // in memoria con extra, stessa fonte già usata da loadFeaturedHistories().
+  dashboardState(){return {items:this.allLoadedItems(),deckUnresolved:this.extra.deckUnresolved,lastSync:this.summary.lastSync,featuredMovers:this.extra.featuredMovers,error:this.error,featuredHistory:this.featuredHistory};}
+  // Coda "Conferma rarità"/"Conferma aggregate": lazy, solo quando serve
+  // davvero (apertura della tab, o "Conferma tutti aggregate") — è l'unico
+  // posto che porta mappingEvidence/candidates, vedi
+  // list_market_confirm_queue nella migration.
+  async loadConfirmQueue(){
+    if(this.confirmQueueLoading)return;
+    this.confirmQueueLoading=true;
+    try{const payload=await this.api.marketConfirmQueue(this.getGame());this.confirmQueue=mapConfirmQueuePayload(payload);this.confirmQueueLoaded=true;}
+    catch(error){this.onToast?.(error?.message||'Coda di conferma non disponibile');}
+    finally{this.confirmQueueLoading=false;}
+  }
+  rarityMismatchQueue(){return this.confirmQueue.filter(needsMappingReview);}
+  aggregatePendingQueue(){return this.confirmQueue.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
   // Snapshot che si sono spostati oltre soglia rispetto al precedente noto
   // (trg_flag_price_anomaly, supabase-market-watch-price-anomaly-detection.sql)
   // — già esclusi dalle view attive/derivate lato DB, qui solo per la coda
@@ -100,8 +142,17 @@ export class MarketWatchController {
     try{await this.api.confirmMarketPriceAnomaly(snapshotId);this.anomalies=(this.anomalies||[]).filter(row=>String(row.id)!==String(snapshotId));this.onToast?.('Prezzo confermato');this.refreshBoardSection();}
     catch(error){this.onToast?.(error?.message||'Conferma non riuscita');}
   }
-  async loadFeaturedHistories(){if(this.data.featuredMovers?.length)return;const missing=positiveMovers(this.data.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
-  view(){const summary=portfolioSummary(this.data.items),items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),unresolved=this.tab==='deck'?this.data.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
+  async loadFeaturedHistories(){if(this.extra.featuredMovers?.length)return;const missing=positiveMovers(this.ownedPage.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
+  // Solo la tab Raccolta è impaginata/ordinata/cercata lato server (arriva
+  // già pronta in ownedPage.items) — Mazzi/Watchlist restano piccole per
+  // costruzione, filtrate/ordinate lato client come prima.
+  itemsForTab(){
+    if(this.tab==='owned')return this.ownedPage.items;
+    return sortItems(this.extra.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort);
+  }
+  allLoadedItems(){return [...this.ownedPage.items,...this.extra.items];}
+  findItem(printingId){return this.allLoadedItems().find(item=>item.printingId===printingId);}
+  view(){const items=this.itemsForTab(),unresolved=this.tab==='deck'?this.extra.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
         <div class="market-hero-art" aria-hidden="true"></div>
         <h1 class="market-hero-eyebrow">Market Watch</h1>
@@ -114,59 +165,61 @@ export class MarketWatchController {
         <span class="market-hero-label">La tua collezione vale</span>
         <span class="market-hero-value-wrap">
           ${sparkle('top:-6px;left:6%;width:13px;height:13px;animation-delay:.2s')}
-          <strong class="market-hero-value">${summary.complete?money(summary.current):'Dati parziali'}</strong>
+          <strong class="market-hero-value">${this.summary.portfolioValue.complete?money(this.summary.portfolioValue.current):'Dati parziali'}</strong>
           ${sparkle('bottom:-4px;right:6%;width:15px;height:15px;animation-delay:1.1s')}
         </span>
-        <span class="market-hero-sync"><i class="${this.error?'error':this.data.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.data.lastSync?`Aggiornato ${formatTimestamp(this.data.lastSync)}`:'In attesa del primo sync'}</span>
+        <span class="market-hero-sync"><i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
       <section class="surface market-board"><div data-market-board-section>${this.renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue})}</div>
       </section>${this.selected?this.detailView():''}${this.selectedDeck?this.deckDetailView(marketDecks):''}</section>`;}
-  // Cambiare tab/ordinamento non cambia i dati (this.data resta lo stesso),
-  // solo cosa/come viene mostrato: non serve ricalcolare portfolioSummary()
-  // né ridisegnare l'hero, e soprattutto non serve un innerHTML replace di
-  // TUTTA la pagina (che ricrea ogni immagine della lista, causando reflow
-  // e ricaricamento immagini visibile su mobile). refreshBoardSection()
-  // ricostruisce solo questo blocco (tab/ordina/ricerca + lista).
+  // Cambiare tab/ordinamento non tocca ownedPage/extra (i dati restano gli
+  // stessi finché non si rifà una richiesta), solo cosa/come viene
+  // mostrato: non serve ricalcolare l'hero né un innerHTML replace di TUTTA
+  // la pagina. refreshBoardSection() ricostruisce solo questo blocco.
   renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue}){
     return `<div class="market-board-tools">
-        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this.data,tab,marketDecks.length)}</span></button>`).join('')}${confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${confirmQueue.length}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
+        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.summary.confirmCount||confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
         <div class="market-board-controls">
           ${this.tab!=='deck'&&this.tab!=='confirm'&&this.tab!=='anomaly'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
           <label class="market-sort"><span class="sr-only">Ordina</span><select data-market-sort aria-label="Ordina"><option value="value" ${this.sort==='value'?'selected':''}>Valore</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo</option><option value="change" ${this.sort==='change'?'selected':''}>Var. 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label>
         </div>
-        ${aggregatePending.length?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:`Conferma ${aggregatePending.length} prezzi aggregate`}</button>`:''}
+        ${this.summary.aggregatePendingCount||aggregatePending.length?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:`Conferma ${this.confirmQueueLoaded?aggregatePending.length:this.summary.aggregatePendingCount} prezzi aggregate`}</button>`:''}
       </div>
         <div class="market-board-content" data-market-board-content>${this.boardContent({items,marketDecks,hasSnapshots,confirmQueue,anomalyQueue})}</div>`;
   }
   refreshBoardSection(){
     const section=document.querySelector('[data-market-board-section]');if(!section)return;
-    const items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
+    const items=this.itemsForTab(),marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
     section.innerHTML=this.renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue});
     this.bindBoardSection(section);
   }
   boardContent({items,marketDecks,hasSnapshots,confirmQueue,anomalyQueue}){
-    if(this.tab==='confirm')return this.confirmRows(confirmQueue);
+    if(this.tab==='confirm'){if(!this.confirmQueueLoaded&&!this.confirmQueueLoading)void this.loadConfirmQueue().then(()=>this.refreshBoard());return this.confirmQueueLoading&&!this.confirmQueueLoaded?'<div class="loading-spinner"></div>':this.confirmRows(confirmQueue);}
     if(this.tab==='anomaly')return this.anomalyRows(anomalyQueue||this.anomalyQueue());
     if(this.tab==='deck')return this.deckRows(marketDecks);
-    if(!this.data.items.length)return emptyNoCards();
-    if(!hasSnapshots)return `${emptyPreparing()}${this.rows(items,[])}`;
-    if(this.query.trim()&&!items.length)return `<div class="market-tab-empty">Nessuna printing corrisponde a "${esc(this.query.trim())}".</div>`;
+    if(this.tab==='owned'&&!this.ownedPage.total&&!this.ownedLoading&&!this.loading)return emptyNoCards();
+    if(this.tab!=='owned'&&!this.extra.items.some(item=>item.sources.includes(this.tab))&&!this.loading)return emptyNoCards();
+    if(!hasSnapshots&&!this.loading&&!this.ownedLoading)return `${emptyPreparing()}${this.rows(items,[])}`;
+    if(this.query.trim()&&!items.length&&!this.ownedLoading)return `<div class="market-tab-empty">Nessuna printing corrisponde a "${esc(this.query.trim())}".</div>`;
     return this.rows(items,[]);
   }
   confirmRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):'<div class="market-tab-empty">Nessuna carta da confermare al momento.</div>'}</div>`;}
   anomalyRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(anomalyQueueRow).join(''):'<div class="market-tab-empty">Nessun prezzo insolito da confermare.</div>'}</div>`;}
+  // items arriva già come "la pagina corrente" per la tab Raccolta (niente
+  // più slice locale) — "Mostra altre" ora chiama loadOwnedPage() per una
+  // VERA richiesta di rete, confrontando ownedPage.items.length col totale
+  // server. Per le altre tab (piccole, tutte in memoria) resta un elenco
+  // completo, nessun bottone "mostra altre" necessario.
   rows(items,unresolved){
-    const key=JSON.stringify([this.getGame?.(),this.tab,this.sort,this.query]);
-    if(this.visibleRowsKey!==key){this.visibleRowsKey=key;this.visibleRows=ROW_BATCH_SIZE;}
-    const visible=items.slice(0,this.visibleRows);
-    return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${visible.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>${visible.length<items.length?`<button type="button" class="btn secondary" data-market-show-more>Mostra altre ${Math.min(ROW_BATCH_SIZE,items.length-visible.length)} carte (${visible.length}/${items.length})</button>`:''}`;
+    const showMore=this.tab==='owned'&&this.ownedPage.items.length<this.ownedPage.total;
+    return `<div class="market-list">${unresolved.map(unresolvedDeckRow).join('')}${items.map(item=>marketRow(item,this.history.get(item.printingId),this.tab)).join('')}${!items.length&&!unresolved.length&&!this.ownedLoading?'<div class="market-tab-empty">Nessuna printing in questa sezione.</div>':''}</div>${this.ownedLoading?'<div class="loading-spinner market-list-loading"></div>':''}${showMore?`<button type="button" class="btn secondary" data-market-show-more ${this.ownedLoading?'disabled':''}>Mostra altre ${Math.min(ROW_BATCH_SIZE,this.ownedPage.total-this.ownedPage.items.length)} carte (${this.ownedPage.items.length}/${this.ownedPage.total})</button>`:''}`;
   }
-  marketDecks(){return buildMarketDecks(this.getDecks?.()||this.data.decks||[],this.data.items,this.data.deckUnresolved);}
+  marketDecks(){return buildMarketDecks(this.getDecks?.()||[],this.extra.items,this.extra.deckUnresolved,this.summary.catalogPriceFloor);}
   deckRows(decks){return decks.length?`<div class="market-deck-grid">${decks.map(deck=>renderDeckBoxCard(deck,{mode:'market',marketValue:deck.marketValue,marketIndicative:deck.marketIndicative,marketCoverage:`${deck.valuedCopies}/${deck.totalCopies} copie`,delta24:deck.delta24,delta7:deck.delta7,topMover:deck.topMover})).join('')}</div>`:'<div class="market-tab-empty">Nessun mazzo disponibile nel Market Watch.</div>';}
   deckDetailView(decks){const deck=decks.find(row=>String(row.id)===String(this.selectedDeck));if(!deck)return'';return `<div class="detail-backdrop" data-market-deck-close><aside class="card-detail market-deck-detail" role="dialog" aria-modal="true"><button class="detail-close" aria-label="Chiudi">×</button><span class="eyebrow">${deck.marketIndicative?'Valore indicativo':'Valore mazzo'}</span><div class="market-deck-detail-head">${renderDeckBoxVisual(deck)}<div><h2>${esc(deck.name)}</h2><p>${deck.marketValue==null?'Valore non disponibile':money(deck.marketValue)}</p><small>${deck.valuedCopies}/${deck.totalCopies} copie valorizzate${deck.indicativeValuedCopies?` · ${deck.indicativeValuedCopies} con stima indicativa`:''}${deck.unresolvedCount?` · ${deck.unresolvedCount} printing da definire`:''}</small></div></div><div class="market-deck-kpis"><span><small>24 ore</small><strong class="${tone(deck.delta24)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta24)}</strong></span><span><small>7 giorni</small><strong class="${tone(deck.delta7)}">${deck.marketIndicative?'Non disponibile':changePercent(deck.delta7)}</strong></span><span><small>Top mover</small><strong>${deck.marketIndicative?'Escluso':deck.topMover?`${esc(deck.topMover.cardName)} ${changePercent(deck.topMover.percent)}`:'Non disponibile'}</strong></span></div><p class="data-note">${deck.marketIndicative?'Stima basata anche su prezzi Cardmarket aggregati o su una printing posseduta scelta tramite identità catalogo. Trend e mover restano esclusi.':'Il valore deriva da printing con prezzo specifico. Le fonti restano visibili nei dettagli delle singole printing.'}</p></aside></div>`;}
   detailView(){
-    const item=this.data.items.find(row=>row.printingId===this.selected);if(!item)return'';
+    const item=this.findItem(this.selected);if(!item)return'';
     const providers=Object.entries(item.providers||{}),history=this.history.get(item.printingId)||[],aggregate=isAggregatePrice(item);
     const stats=aggregate?null:historyStats(history);
     const delta=!aggregate&&item.referencePrice!=null&&item.price24h!=null?item.referencePrice-item.price24h:null,percent=delta!=null&&item.price24h?delta/item.price24h*100:null;
@@ -198,14 +251,23 @@ export class MarketWatchController {
     root.querySelectorAll('[data-market-deck-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDeckDetail)history.back();else{this.selectedDeck='';this.onRender();}}));root.querySelectorAll('[data-market-detail-close]').forEach(node=>node.addEventListener('click',event=>{if(event.target!==node&&!event.target.closest('.detail-close'))return;if(history.state?.marketDetail)history.back();else{this.selected='';this.onRender();}}));root.querySelectorAll('[data-market-unwatch]').forEach(button=>button.addEventListener('click',()=>void this.unwatch(button.dataset.marketUnwatch)));root.querySelectorAll('[data-market-watch-toggle]').forEach(button=>button.addEventListener('click',()=>void (button.dataset.marketWatchState==='remove'?this.unwatch(button.dataset.marketWatchToggle):this.watch(button.dataset.marketWatchToggle))));root.querySelectorAll('[data-market-share]').forEach(button=>button.addEventListener('click',()=>void this.share(button.dataset.marketShare)));root.querySelectorAll('[data-market-range]').forEach(button=>button.addEventListener('click',()=>this.setHistoryRange(Number(button.dataset.marketRange))));
     this.bindBoardSection(root);
   }
-  // Cambiare tab/ordinamento è puro stato UI (this.data non cambia): niente
-  // onRender() completo, solo questo blocco si ricostruisce e riaggancia.
+  // Cambiare tab/ordinamento/ricerca è di nuovo puro stato UI per Mazzi/
+  // Watchlist, ma per la tab Raccolta ora significa una VERA richiesta di
+  // rete (ordina/cerca sono parametri server) — refreshBoardSection() resta
+  // il blocco che si ricostruisce, solo dopo aver aspettato la risposta.
   bindBoardSection(root){
-    root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{this.tab=button.dataset.marketTab;this.query='';this.selected='';this.selectedDeck='';this.refreshBoardSection();}));
-    root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;this.refreshBoardSection();});
+    root.querySelectorAll('[data-market-tab]').forEach(button=>button.addEventListener('click',()=>{
+      const next=button.dataset.marketTab;if(next===this.tab)return;
+      this.tab=next;this.query='';this.selected='';this.selectedDeck='';
+      this.refreshBoardSection();
+      if(next==='confirm'&&!this.confirmQueueLoaded)void this.loadConfirmQueue().then(()=>this.refreshBoard());
+    }));
+    root.querySelector('[data-market-sort]')?.addEventListener('change',event=>{this.sort=event.target.value;if(this.tab==='owned')void this.loadOwnedPage({reset:true});else this.refreshBoardSection();});
     // Digitare non deve ridisegnare l'intera sezione (perde il focus): solo
-    // il contenuto della lista si aggiorna, con debounce.
-    root.querySelector('[data-market-query]')?.addEventListener('input',event=>{this.query=event.target.value;clearTimeout(this.searchTimer);this.searchTimer=setTimeout(()=>this.refreshBoard(),200);});
+    // il contenuto della lista si aggiorna, con debounce — per la Raccolta
+    // questo debounce ora è anche ciò che evita una richiesta di rete per
+    // ogni singolo tasto premuto.
+    root.querySelector('[data-market-query]')?.addEventListener('input',event=>{this.query=event.target.value;clearTimeout(this.searchTimer);this.searchTimer=setTimeout(()=>{if(this.tab==='owned')void this.loadOwnedPage({reset:true});else this.refreshBoard();},200);});
     root.querySelector('[data-market-confirm-all-aggregate]')?.addEventListener('click',()=>void this.confirmAllAggregate());
     this.bindBoardContent(root);
   }
@@ -213,7 +275,7 @@ export class MarketWatchController {
   // e refreshBoard() (root=solo .market-board-content): tutto ciò che vive
   // nella lista va ri-agganciato ogni volta che il suo HTML viene ricostruito.
   bindBoardContent(root=document){
-    root.querySelector('[data-market-show-more]')?.addEventListener('click',()=>{this.visibleRows+=ROW_BATCH_SIZE;this.refreshBoard();});
+    root.querySelector('[data-market-show-more]')?.addEventListener('click',()=>void this.loadOwnedPage());
     root.querySelectorAll('[data-market-card]').forEach(button=>button.addEventListener('click',()=>void this.openDetail(button.dataset.marketCard)));
     root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));
     root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));
@@ -223,7 +285,7 @@ export class MarketWatchController {
   }
   refreshBoard(){
     const content=document.querySelector('[data-market-board-content]');if(!content)return;
-    const items=sortItems(this.data.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort),marketDecks=this.marketDecks(),hasSnapshots=this.data.items.some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue();
+    const items=this.itemsForTab(),marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue();
     content.innerHTML=this.boardContent({items,marketDecks,hasSnapshots,confirmQueue});
     this.bindBoardContent(content);
   }
@@ -249,22 +311,23 @@ export class MarketWatchController {
     const button=[...document.querySelectorAll('[data-market-card]')].find(node=>node.dataset.marketCard===printingId);
     const chart=button?.querySelector('.market-row-chart');
     if(!chart)return;
-    const item=this.data.items.find(row=>row.printingId===printingId);
+    const item=this.findItem(printingId);
     const delta=item&&!isAggregatePrice(item)&&item.referencePrice!=null&&item.price24h!=null?item.referencePrice-item.price24h:null;
     chart.outerHTML=rowSparkline(this.history.get(printingId),delta);
   }
-  async openDetail(printingId){history.pushState({marketDetail:printingId},'',location.href);this.selected=printingId;this.historyRange=30;this.onRender();if(this.history.has(printingId))return;const item=this.data.items.find(row=>row.printingId===printingId);if(isAggregatePrice(item)){this.history.set(printingId,[]);return;}await this.fetchHistory(printingId);}
+  async openDetail(printingId){history.pushState({marketDetail:printingId},'',location.href);this.selected=printingId;this.historyRange=30;this.onRender();if(this.history.has(printingId))return;const item=this.findItem(printingId);if(isAggregatePrice(item)){this.history.set(printingId,[]);return;}await this.fetchHistory(printingId);}
   async fetchHistory(printingId){this.historyLoading=true;this.onRender();try{const rows=await this.api.marketPriceHistory(printingId,this.historyRange);this.history.set(printingId,(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})));}catch{this.history.set(printingId,[]);}finally{this.historyLoading=false;this.onRender();}}
-  setHistoryRange(days){if(!RANGES.some(range=>range.days===days)||this.historyRange===days)return;this.historyRange=days;const item=this.data.items.find(row=>row.printingId===this.selected);if(!item||isAggregatePrice(item))return;this.history.delete(this.selected);void this.fetchHistory(this.selected);}
+  setHistoryRange(days){if(!RANGES.some(range=>range.days===days)||this.historyRange===days)return;this.historyRange=days;const item=this.findItem(this.selected);if(!item||isAggregatePrice(item))return;this.history.delete(this.selected);void this.fetchHistory(this.selected);}
   async watch(printingId){try{await this.api.setMarketWatchItem(printingId,true);await this.load();this.onToast('Printing aggiunta alla Watchlist');}catch(error){this.onToast(error.message||'Operazione non riuscita');}this.onRender();}
-  async unwatch(printingId){try{await this.api.setMarketWatchItem(printingId,false);await this.load();const stillListed=this.data.items.some(row=>row.printingId===printingId);if(!stillListed)this.selected='';this.onToast('Printing rimossa dalla Watchlist');}catch(error){this.onToast(error.message||'Operazione non riuscita');}this.onRender();}
+  async unwatch(printingId){try{await this.api.setMarketWatchItem(printingId,false);await this.load();const stillListed=this.allLoadedItems().some(row=>row.printingId===printingId);if(!stillListed)this.selected='';this.onToast('Printing rimossa dalla Watchlist');}catch(error){this.onToast(error.message||'Operazione non riuscita');}this.onRender();}
   async confirmMapping(printingId,productId,meta={}){
     if(!productId)return;
-    try{await this.api.setMarketMappingManual(printingId,productId,meta);await this.load();this.onToast('Printing confermata — il prossimo aggiornamento userà questo prezzo reale');}
+    try{await this.api.setMarketMappingManual(printingId,productId,meta);await this.load();this.confirmQueue=[];this.confirmQueueLoaded=false;void this.loadConfirmQueue();this.onToast('Printing confermata — il prossimo aggiornamento userà questo prezzo reale');}
     catch(error){this.onToast(error.message||'Conferma non riuscita');}
     this.onRender();
   }
   async confirmAllAggregate(){
+    if(!this.confirmQueueLoaded)await this.loadConfirmQueue();
     const pending=this.aggregatePendingQueue();
     if(!pending.length||this.bulkConfirmBusy)return;
     this.bulkConfirmBusy=true;this.bulkConfirmProgress={done:0,total:pending.length};this.onRender();
@@ -280,38 +343,56 @@ export class MarketWatchController {
       this.onRender();
     }
     this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;
-    await this.load();
+    this.confirmQueue=[];this.confirmQueueLoaded=false;
+    await Promise.all([this.load(),this.loadConfirmQueue()]);
     this.onToast(failed?`Confermate ${confirmed} carte, ${failed} non riuscite — riprova più tardi`:`Confermate ${confirmed} carte con prezzo aggregato`);
     this.onRender();
   }
-  async share(printingId){const item=this.data.items.find(row=>row.printingId===printingId);if(!item)return;const url=item.cardmarketUrl||(typeof location!=='undefined'?location.href:''),text=`${item.cardName}${item.referencePrice!=null?` · ${money(item.referencePrice)}`:''}`;try{if(typeof navigator!=='undefined'&&navigator.share){await navigator.share({title:item.cardName,text,url});return;}await navigator.clipboard.writeText(url);this.onToast('Link copiato negli appunti');}catch(error){if(error?.name!=='AbortError')this.onToast('Condivisione non riuscita');}}
+  async share(printingId){const item=this.findItem(printingId);if(!item)return;const url=item.cardmarketUrl||(typeof location!=='undefined'?location.href:''),text=`${item.cardName}${item.referencePrice!=null?` · ${money(item.referencePrice)}`:''}`;try{if(typeof navigator!=='undefined'&&navigator.share){await navigator.share({title:item.cardName,text,url});return;}await navigator.clipboard.writeText(url);this.onToast('Link copiato negli appunti');}catch(error){if(error?.name!=='AbortError')this.onToast('Condivisione non riuscita');}}
 }
 
-export function mapPayload(payload={}){return {items:(payload.items||[]).map(row=>{const priceScope=row.price_scope||row.priceScope||{};return {printingId:row.printing_id||row.printingId,catalogCardId:String(row.catalog_card_id||row.catalogCardId||''),cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',sources:Array.isArray(row.sources)?row.sources:[],ownedQuantity:Number(row.owned_quantity??row.ownedQuantity??0),providers:normalizeProviders(row.providers),referencePrice:nullableNumber(row.reference_price??row.referencePrice),minPrice:nullableNumber(row.min_price??row.minPrice),price24h:nullableNumber(row.price_24h??row.price24h),price7d:nullableNumber(row.price_7d??row.price7d),price30d:nullableNumber(row.price_30d??row.price30d),latestAt:row.latest_at||row.latestAt||null,mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||row.mapping_status||row.mappingStatus||'unresolved',resolverVersion:nullableNumber(row.resolver_version??row.resolverVersion),priceScope,languageScope:row.language_scope||row.languageScope||priceScope.language||null,editionScope:row.edition_scope||row.editionScope||priceScope.edition||null,rarityScope:row.rarity_scope||row.rarityScope||priceScope.rarity||null,foilScope:row.foil_scope||row.foilScope||priceScope.foil||null,mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{},cardmarketProductId:String(row.cardmarket_product_id||row.cardmarketProductId||''),cardmarketUrl:row.cardmarket_url||row.cardmarketUrl||''};}),deckUnresolved:(payload.deckUnresolved||payload.deck_unresolved||[]).map(row=>({deckId:row.deckId||row.deck_id,deckName:row.deckName||row.deck_name,cardName:row.cardName||row.card_name,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),section:row.section,quantity:Number(row.quantity||0)})),lastSync:payload.lastSync||payload.last_sync||null};}
-export function buildMarketDecks(decks=[],items=[],unresolved=[]){
-  const prices=new Map((items||[]).map(item=>[String(item.printingId),item])),catalogPrices=new Map(),unresolvedByDeck=new Map();
-  for(const item of items||[]){const key=canonicalCatalogCardId(item.catalogCardId,item.game||'yugioh');if(!key||item.referencePrice==null||!item.sources?.includes('owned'))continue;const current=catalogPrices.get(key);if(!current||Number(item.referencePrice)<Number(current.referencePrice))catalogPrices.set(key,item);}
+function mapRow(row){const priceScope=row.price_scope||row.priceScope||{};return {printingId:row.printing_id||row.printingId,catalogCardId:String(row.catalog_card_id||row.catalogCardId||''),cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',sources:Array.isArray(row.sources)?row.sources:['owned'],ownedQuantity:Number(row.owned_quantity??row.ownedQuantity??0),providers:normalizeProviders(row.providers),referencePrice:nullableNumber(row.reference_price??row.referencePrice),minPrice:nullableNumber(row.min_price??row.minPrice),price24h:nullableNumber(row.price_24h??row.price24h),price7d:nullableNumber(row.price_7d??row.price7d),price30d:nullableNumber(row.price_30d??row.price30d),latestAt:row.latest_at||row.latestAt||null,mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||row.mapping_status||row.mappingStatus||'unresolved',resolverVersion:nullableNumber(row.resolver_version??row.resolverVersion),priceScope,languageScope:row.language_scope||row.languageScope||priceScope.language||null,editionScope:row.edition_scope||row.editionScope||priceScope.edition||null,rarityScope:row.rarity_scope||row.rarityScope||priceScope.rarity||null,foilScope:row.foil_scope||row.foilScope||priceScope.foil||null,mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{},cardmarketProductId:String(row.cardmarket_product_id||row.cardmarketProductId||''),cardmarketUrl:row.cardmarket_url||row.cardmarketUrl||''};}
+// list_market_watch_owned_page: righe SOLO owned (sources sempre ['owned']
+// lato server — la funzione non ha motivo di calcolarlo, è per definizione
+// la tab Raccolta), niente mapping_evidence nel payload.
+export function mapOwnedPagePayload(payload={}){return {items:(payload.items||[]).map(row=>mapRow({...row,sources:['owned']})),total:Number(payload.total||0),limit:Number(payload.limit||ROW_BATCH_SIZE),offset:Number(payload.offset||0)};}
+// list_market_watch_extra: righe Mazzi+Watchlist (con sources reale, che
+// può includere anche 'owned' se una printing è sia posseduta che in un
+// mazzo/watchlist), niente mapping_evidence.
+export function mapExtraPayload(payload={}){return {items:(payload.items||[]).map(mapRow),deckUnresolved:(payload.deckUnresolved||payload.deck_unresolved||[]).map(row=>({deckId:row.deckId||row.deck_id,deckName:row.deckName||row.deck_name,cardName:row.cardName||row.card_name,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),section:row.section,quantity:Number(row.quantity||0)}))};}
+export function mapSummaryPayload(payload={}){const pv=payload.portfolioValue||payload.portfolio_value||{};return {portfolioValue:{current:Number(pv.current||0),complete:Boolean(pv.complete)},confirmCount:Number(payload.confirmCount??payload.confirm_count??0),aggregatePendingCount:Number(payload.aggregatePendingCount??payload.aggregate_pending_count??0),catalogPriceFloor:Object.fromEntries(Object.entries(payload.catalogPriceFloor||payload.catalog_price_floor||{}).map(([key,value])=>[key,{referencePrice:nullableNumber(value.referencePrice??value.reference_price),isAggregate:Boolean(value.isAggregate??value.is_aggregate)}])),lastSync:payload.lastSync||payload.last_sync||null};}
+// list_market_confirm_queue: l'unico payload con mapping_evidence — righe
+// leggere per il resto (niente providers/prezzi, non servono in quella tab).
+export function mapConfirmQueuePayload(payload={}){return (payload.items||[]).map(row=>({printingId:row.printing_id||row.printingId,cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||'unresolved',mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{}}));}
+// buildMarketDecks: catalogPriceFloor sostituisce il vecchio calcolo locale
+// "prezzo minimo tra le owned items in memoria" — con la Raccolta paginata
+// quell'array non contiene più TUTTE le printing owned, solo la pagina
+// corrente. catalogPriceFloor arriva da get_market_watch_summary (aggregato
+// server-side su tutte le owned, non solo quelle caricate lato client).
+export function buildMarketDecks(decks=[],items=[],unresolved=[],catalogPriceFloor={}){
+  const prices=new Map((items||[]).map(item=>[String(item.printingId),item])),unresolvedByDeck=new Map();
   for(const row of unresolved||[])unresolvedByDeck.set(String(row.deckId),(unresolvedByDeck.get(String(row.deckId))||0)+Number(row.quantity||0));
   const available=(decks||[]).map(deck=>{
     let totalCopies=0,valuedCopies=0,indicativeValuedCopies=0,current=0,current24=0,baseline24=0,current7=0,baseline7=0,has24=false,has7=false,topMover=null;
-    for(const card of deck.cards||[]){const quantity=Number(card.quantity||0);totalCopies+=quantity;const catalogFallback=!card.printingId,item=card.printingId?prices.get(String(card.printingId)):catalogPrices.get(canonicalCatalogCardId(card.catalogCardId,deck.game||'yugioh'));if(!item||item.referencePrice==null)continue;if(catalogFallback||isAggregatePrice(item)){valuedCopies+=quantity;indicativeValuedCopies+=quantity;current+=item.referencePrice*quantity;continue;}if(!derivedPriceEligible(item))continue;valuedCopies+=quantity;current+=item.referencePrice*quantity;
-      if(item.price24h!=null&&item.price24h>0){has24=true;current24+=item.referencePrice*quantity;baseline24+=item.price24h*quantity;const percent=(item.referencePrice-item.price24h)/item.price24h*100;if(!topMover||percent>topMover.percent)topMover={cardName:card.cardName,percent};}
-      if(item.price7d!=null&&item.price7d>0){has7=true;current7+=item.referencePrice*quantity;baseline7+=item.price7d*quantity;}
+    for(const card of deck.cards||[]){const quantity=Number(card.quantity||0);totalCopies+=quantity;const item=card.printingId?prices.get(String(card.printingId)):null;const floorKey=canonicalCatalogCardId(card.catalogCardId,deck.game||'yugioh'),floor=!item&&floorKey?catalogPriceFloor[floorKey]:null;
+      if(item&&item.referencePrice!=null){
+        if(isAggregatePrice(item)){valuedCopies+=quantity;indicativeValuedCopies+=quantity;current+=item.referencePrice*quantity;continue;}
+        if(!derivedPriceEligible(item))continue;
+        valuedCopies+=quantity;current+=item.referencePrice*quantity;
+        if(item.price24h!=null&&item.price24h>0){has24=true;current24+=item.referencePrice*quantity;baseline24+=item.price24h*quantity;const percent=(item.referencePrice-item.price24h)/item.price24h*100;if(!topMover||percent>topMover.percent)topMover={cardName:card.cardName,percent};}
+        if(item.price7d!=null&&item.price7d>0){has7=true;current7+=item.referencePrice*quantity;baseline7+=item.price7d*quantity;}
+      }else if(floor&&floor.referencePrice!=null){
+        // Carta del mazzo non posseduta esattamente: fallback al prezzo più
+        // basso tra le printing owned della stessa carta logica — sempre
+        // indicativo (mai trend/mover, non è la printing esatta).
+        valuedCopies+=quantity;indicativeValuedCopies+=quantity;current+=floor.referencePrice*quantity;
+      }
     }
     const marketIndicative=indicativeValuedCopies>0;return {...deck,marketValue:valuedCopies?current:null,marketIndicative,delta24:!marketIndicative&&has24&&baseline24?((current24-baseline24)/baseline24)*100:null,delta7:!marketIndicative&&has7&&baseline7?((current7-baseline7)/baseline7)*100:null,topMover:!marketIndicative&&topMover?.percent>0?topMover:null,totalCopies,valuedCopies,indicativeValuedCopies,unresolvedCount:unresolvedByDeck.get(String(deck.id))||0};
   });
   if(available.length)return available;
   const grouped=new Map();for(const row of unresolved||[]){const id=String(row.deckId),deck=grouped.get(id)||{id,name:row.deckName||'Mazzo',game:'yugioh',deckTheme:'arcane-purple',cards:[],marketValue:null,marketIndicative:false,delta24:null,delta7:null,topMover:null,totalCopies:0,valuedCopies:0,indicativeValuedCopies:0,unresolvedCount:0};deck.cards.push({catalogCardId:row.catalogCardId,cardName:row.cardName,section:row.section,quantity:row.quantity,imageUrl:''});deck.totalCopies+=row.quantity;deck.unresolvedCount+=row.quantity;grouped.set(id,deck);}return [...grouped.values()];
 }
-// Il valore totale della raccolta accetta QUALSIASI prezzo reale, aggregato
-// incluso: un prezzo indicativo è comunque un numero vero, e la maggior parte
-// delle raccolte reali è a maggioranza aggregate finché non vengono confermate
-// a mano (vedi confirmAllAggregate). Restringere qui a derivedPriceEligible
-// teneva "La tua collezione vale" bloccato su "Dati parziali" quasi sempre.
-// Le percentuali di variazione 24h/7d restano precise per costruzione: la
-// query non popola price24h/price7d dagli snapshot aggregate, quindi finiscono
-// comunque esclusi da with24/with7 senza bisogno di un filtro esplicito qui.
-export function portfolioSummary(items,now=Date.now()){const owned=items.filter(item=>item.sources.includes('owned')&&item.ownedQuantity>0),totalUnits=owned.reduce((sum,item)=>sum+item.ownedQuantity,0),fresh=owned.filter(item=>item.referencePrice!=null&&item.latestAt&&now-new Date(item.latestAt).getTime()<=FRESH_MS),coveredUnits=fresh.reduce((sum,item)=>sum+item.ownedQuantity,0),coverage=totalUnits?coveredUnits/totalUnits:0,current=fresh.reduce((sum,item)=>sum+item.referencePrice*item.ownedQuantity,0),with24=fresh.filter(item=>item.price24h!=null),with7=fresh.filter(item=>item.price7d!=null),old24=with24.reduce((sum,item)=>sum+item.price24h*item.ownedQuantity,0),current24=with24.reduce((sum,item)=>sum+item.referencePrice*item.ownedQuantity,0),old7=with7.reduce((sum,item)=>sum+item.price7d*item.ownedQuantity,0),current7=with7.reduce((sum,item)=>sum+item.referencePrice*item.ownedQuantity,0);return {totalUnits,coveredUnits,totalPrintings:owned.length,coveredPrintings:fresh.length,freshPrintings:items.filter(item=>item.referencePrice!=null&&item.latestAt&&now-new Date(item.latestAt).getTime()<=FRESH_MS).length,coverage,current,complete:totalUnits>0&&coverage>=.9,delta24:current24-old24,delta24Percent:old24?((current24-old24)/old24)*100:null,delta24Complete:fresh.length>0&&with24.length===fresh.length&&coverage>=.9,delta7:current7-old7,delta7Percent:old7?((current7-old7)/old7)*100:null,delta7Complete:fresh.length>0&&with7.length===fresh.length&&coverage>=.9};}
 export function deduplicateMonitored({owned=[],deck=[],manual=[]}={}){const map=new Map();for(const [source,rows] of Object.entries({owned,deck,manual}))for(const row of rows){if(!row.printingId)continue;const entry=map.get(row.printingId)||{printingId:row.printingId,sources:new Set(),quantity:0};entry.sources.add(source);if(source==='owned')entry.quantity+=Number(row.quantity||0);map.set(row.printingId,entry);}return [...map.values()].map(row=>({...row,sources:[...row.sources]}));}
 export function positiveMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice>item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>b.positiveChange-a.positiveChange||(b.referencePrice-b.price24h)-(a.referencePrice-a.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
 export function mapDashboardMovers(rows=[]){return (Array.isArray(rows)?rows:[]).map(row=>({printingId:row.printingId||row.printing_id,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),cardName:row.cardName||row.card_name||'',setCode:row.setCode||row.set_code||'',setName:row.setName||row.set_name||'',rarity:row.rarity||'',imageUrl:row.imageUrl||row.image_url||'',ownedQuantity:Number(row.ownedQuantity??row.owned_quantity??0),referencePrice:nullableNumber(row.referencePrice??row.reference_price),baselinePrice:nullableNumber(row.baselinePrice??row.baseline_price),positiveChange:nullableNumber(row.positiveChange??row.positive_change),capturedAt:row.capturedAt||row.captured_at||null,sparkline:(row.sparkline||[]).map(point=>({label:point.label||'',price:nullableNumber(point.price),order:Number(point.order||0)})).filter(point=>point.price!=null).sort((a,b)=>a.order-b.order)}));}
@@ -485,7 +566,7 @@ function sparkle(style){return `<svg class="market-hero-sparkle" style="${style}
 const HERO_COINS=[[10,3.4,0],[38,3.8,1.3],[66,3.6,1.8],[92,3.3,1.5],[52,3,.2]];
 function heroCoin(){return `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#f6cf5b" stroke="#a8690a" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="none" stroke="#c98a1c" stroke-width="1.5"/><text x="16" y="21" font-family="Georgia, 'Times New Roman', serif" font-size="14" font-weight="700" text-anchor="middle" fill="#a8690a">$</text></svg>`;}
 function heroCoins(){return `<div class="market-hero-coins" aria-hidden="true">${HERO_COINS.map(([left,duration,delay])=>`<span class="market-hero-coin" style="left:${left}%;animation-duration:${duration}s;animation-delay:${delay}s">${heroCoin()}</span>`).join('')}</div>`;}
-function countFor(data,tab,deckCount=0){return tab==='deck'?deckCount:data.items.filter(item=>item.sources.includes(tab)).length;}
+function countFor(controller,tab,deckCount=0){if(tab==='deck')return deckCount;if(tab==='owned')return controller.ownedPage.total;return controller.extra.items.filter(item=>item.sources.includes('manual')).length;}
 function matchesMarketQuery(item,query){const needle=String(query||'').trim().toLowerCase();if(!needle)return true;return [item.cardName,item.setCode,item.setName,item.rarity].join(' ').toLowerCase().includes(needle);}
 function normalizeProviders(value){if(!value||typeof value!=='object')return{};return Object.fromEntries(Object.entries(value).map(([key,row])=>[key,{...row,capturedAt:row.capturedAt||row.captured_at,conditionReference:row.conditionReference||row.condition_reference,price:nullableNumber(row.price)}]));}
 function nullableNumber(value){if(value==null||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null;}

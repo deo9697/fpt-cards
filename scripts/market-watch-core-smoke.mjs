@@ -14,45 +14,63 @@ const cmResolution=resolveCardmarketPrinting({catalogCardId:'1',cardName:'Card A
 const failingCm=new CardmarketPriceGuideProvider({catalogUrl:'https://downloads.s3.cardmarket.com/catalog.csv',priceGuideUrl:'https://downloads.s3.cardmarket.com/prices.csv',fetchImpl:async()=>new Response('down',{status:503})});
 await assert.rejects(()=>failingCm.load(),/Catalogo espansioni non disponibile|Product Catalogue non disponibile/);
 
+// 2026-09-11: list_market_watch (un'unico payload) sostituita da 4 RPC più
+// mirate (owned paginato/extra/summary/coda conferma) — vedi
+// supabase/migrations/20260911145101_market_watch_owned_pagination.sql.
+// portfolioSummary()/mapPayload() lato client sono spariti: il calcolo del
+// valore portafoglio ora vive in get_market_watch_summary (SQL, non
+// verificabile da qui senza un Postgres reale — letto riga per riga con
+// cura, non solo scritto). buildMarketDecks() ha guadagnato un 4° parametro
+// (catalogPriceFloor, l'aggregato server-side che sostituisce il vecchio
+// calcolo locale "prezzo minimo tra le owned in memoria", non più possibile
+// con la Raccolta paginata). js/market-watch.js importa transitivamente
+// js/api.js (via deck-box.js -> games/index.js -> onepiece/catalog.js), che
+// legge window.FPT_CONFIG a livello di modulo: lo stub va PRIMA di questo
+// import, non dopo (altrimenti "window is not defined").
+globalThis.window={FPT_CONFIG:undefined,addEventListener:()=>{}};
 const storage=new Map();globalThis.localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
-const {portfolioSummary,deduplicateMonitored,mapPayload,positiveMovers,mapDashboardMovers,buildMarketDecks,derivedPriceEligible}=await import('../js/market-watch.js');
+const {deduplicateMonitored,mapOwnedPagePayload,mapExtraPayload,mapSummaryPayload,mapConfirmQueuePayload,positiveMovers,mapDashboardMovers,buildMarketDecks,derivedPriceEligible}=await import('../js/market-watch.js');
 const now=Date.now(),fresh=new Date(now-3600000).toISOString();
-const data=mapPayload({items:[
-  {printing_id:'p1',card_name:'A',sources:['owned','deck'],owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:10,capturedAt:fresh}}},
-  {printing_id:'p2',card_name:'B',sources:['owned','manual'],owned_quantity:1,reference_price:20,price_24h:20,price_7d:10,min_price:17.5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:20,capturedAt:fresh}}}
-]});
-assert.equal(data.items.find(item=>item.printingId==='p1').minPrice,null,'min_price assente non deve produrre un valore inventato');
-assert.equal(data.items.find(item=>item.printingId==='p2').minPrice,17.5,'il prezzo minimo Cardmarket ("a partire da") non è mappato dal payload');
-const summary=portfolioSummary(data.items,now);assert(summary.complete);assert.equal(summary.current,110);assert.equal(summary.delta24,18);assert.equal(summary.delta7,55);assert(summary.delta24Complete&&summary.delta7Complete);
-const partial=portfolioSummary([...data.items,{printingId:'p3',sources:['owned'],ownedQuantity:2,referencePrice:null,latestAt:null}],now);assert(!partial.complete,'copertura sotto 90% deve mostrare dati parziali');
+const ownedPage=mapOwnedPagePayload({items:[
+  {printing_id:'p1',card_name:'A',owned_quantity:9,reference_price:10,price_24h:8,price_7d:5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:10,capturedAt:fresh}}},
+  {printing_id:'p2',card_name:'B',owned_quantity:1,reference_price:20,price_24h:20,price_7d:10,min_price:17.5,latest_at:fresh,mapping_status:'resolved',resolver_status:'EXACT',resolver_version:2,providers:{cardmarket:{price:20,capturedAt:fresh}}}
+],total:2,limit:60,offset:0});
+assert.equal(ownedPage.total,2);
+assert.deepEqual(ownedPage.items[0].sources,['owned'],'list_market_watch_owned_page è per definizione solo tab Raccolta');
+assert.deepEqual(ownedPage.items[0].mappingEvidence,{},'nessuna riga owned/extra porta mappingEvidence dal server (il campo mappato resta il default vuoto)');
+assert.equal(ownedPage.items.find(item=>item.printingId==='p1').minPrice,null,'min_price assente non deve produrre un valore inventato');
+assert.equal(ownedPage.items.find(item=>item.printingId==='p2').minPrice,17.5,'il prezzo minimo Cardmarket ("a partire da") non è mappato dal payload');
+const extra=mapExtraPayload({items:[{printing_id:'d1',card_name:'Deck Card',sources:['deck'],owned_quantity:0,reference_price:12,mapping_status:'resolved',resolver_status:'EXACT'}],deckUnresolved:[{deckId:'x',deckName:'Mazzo X',cardName:'Carta',catalogCardId:'1',section:'main',quantity:2}]});
+assert.equal(extra.items[0].sources[0],'deck');assert.equal(extra.deckUnresolved[0].quantity,2);
+const summary=mapSummaryPayload({portfolioValue:{current:110,complete:true},confirmCount:3,aggregatePendingCount:1,catalogPriceFloor:{'73642296':{referencePrice:2,isAggregate:false}},lastSync:fresh});
+assert.equal(summary.portfolioValue.current,110);assert.equal(summary.confirmCount,3);assert.equal(summary.catalogPriceFloor['73642296'].referencePrice,2);
+const confirmQueue=mapConfirmQueuePayload({items:[{printing_id:'q1',card_name:'Da confermare',mapping_status:'resolved',resolver_status:'AMBIGUOUS',mapping_reason:'multiple_provider_expansions',mapping_evidence:{candidates:[{productId:'1'}]}}]});
+assert.equal(confirmQueue[0].mappingEvidence.candidates.length,1,'list_market_confirm_queue è l\'UNICO posto con mappingEvidence popolata');
 const dedup=deduplicateMonitored({owned:[{printingId:'p1',quantity:2}],deck:[{printingId:'p1',quantity:3},{printingId:null}],manual:[{printingId:'p1'},{printingId:'p2'}]});assert.equal(dedup.length,2);assert.deepEqual(new Set(dedup.find(row=>row.printingId==='p1').sources),new Set(['owned','deck','manual']));
 const exactMover={mappingStatus:'resolved',resolverStatus:'EXACT'};
 const movers=positiveMovers([{...exactMover,printingId:'a',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:12,price24h:10},{...exactMover,printingId:'a2',catalogCardId:'1',cardName:'A',sources:['owned'],referencePrice:15,price24h:10},{...exactMover,printingId:'b',catalogCardId:'2',cardName:'B',sources:['owned'],referencePrice:5.5,price24h:5},{...exactMover,printingId:'c',catalogCardId:'3',cardName:'C',sources:['owned'],referencePrice:4,price24h:5}],3);assert.deepEqual(movers.map(item=>item.printingId),['a2','b'],'Le carte in crescita non sono ordinate/deduplicate correttamente');
 const aggregateItem={printingId:'aggregate',catalogCardId:'9',cardName:'Aggregata',sources:['owned'],ownedQuantity:2,referencePrice:99,price24h:1,latestAt:fresh,mappingStatus:'resolved',resolverStatus:'PROVIDER_AGGREGATE',priceScope:{language:'aggregate',edition:'aggregate',rarity:'aggregate',foil:'parallel_columns_unassigned'}};
-// Il valore totale della raccolta conta anche i prezzi aggregate (sono comunque
-// prezzi reali, solo non specifici per rarità/edizione): escluderli teneva "La
-// tua collezione vale" bloccato su "Dati parziali" quasi sempre, dato che la
-// maggior parte delle raccolte reali è a maggioranza aggregate finché non
-// vengono confermate a mano. Mover e trend restano invece rigorosamente esatti.
-assert.equal(portfolioSummary([aggregateItem],now).current,198,'prezzo aggregate deve contribuire al valore totale della raccolta');
 assert.equal(positiveMovers([aggregateItem],3).length,0,'prezzo aggregate escluso dai mover (nessuna base di confronto affidabile)');
-const aggregateDeck=buildMarketDecks([{id:'aggregate-deck',name:'Aggregate',cards:[{printingId:'aggregate',quantity:1}]}],[aggregateItem],[])[0];assert.equal(aggregateDeck.marketValue,99);assert.equal(aggregateDeck.marketIndicative,true);assert.equal(aggregateDeck.indicativeValuedCopies,1);assert.equal(aggregateDeck.delta24,null,'un prezzo aggregato non deve generare trend mazzo');
-const catalogDeck=buildMarketDecks([{id:'catalog-deck',name:'Catalog fallback',game:'yugioh',cards:[{catalogCardId:'73642296',quantity:3}]}],[{...aggregateItem,printingId:'ghost-belle-printing',catalogCardId:'73642297',referencePrice:2}],[])[0];assert.equal(catalogDeck.marketValue,6);assert.equal(catalogDeck.marketIndicative,true);assert.equal(catalogDeck.valuedCopies,3,'alias catalogo non valorizzato nel deck senza printing');
+const aggregateDeck=buildMarketDecks([{id:'aggregate-deck',name:'Aggregate',cards:[{printingId:'aggregate',quantity:1}]}],[aggregateItem],[],{})[0];assert.equal(aggregateDeck.marketValue,99);assert.equal(aggregateDeck.marketIndicative,true);assert.equal(aggregateDeck.indicativeValuedCopies,1);assert.equal(aggregateDeck.delta24,null,'un prezzo aggregato non deve generare trend mazzo');
+// catalogPriceFloor sostituisce il vecchio fallback locale "prezzo minimo tra
+// le owned items passate" — ora arriva da get_market_watch_summary, non più
+// derivato dall'array items (che con la Raccolta paginata non contiene più
+// tutte le printing owned).
+const catalogDeck=buildMarketDecks([{id:'catalog-deck',name:'Catalog fallback',game:'yugioh',cards:[{catalogCardId:'73642296',quantity:3}]}],[],[],{'73642296':{referencePrice:2,isAggregate:false}})[0];assert.equal(catalogDeck.marketValue,6);assert.equal(catalogDeck.marketIndicative,true);assert.equal(catalogDeck.valuedCopies,3,'fallback catalogPriceFloor non valorizzato nel deck senza printing esatta');
+const catalogDeckAggregateFloor=buildMarketDecks([{id:'catalog-deck-2',name:'Catalog fallback aggregate',game:'yugioh',cards:[{catalogCardId:'12345678',quantity:2}]}],[],[],{'12345678':{referencePrice:5,isAggregate:true}})[0];assert.equal(catalogDeckAggregateFloor.marketValue,10);assert.equal(catalogDeckAggregateFloor.marketIndicative,true,'un floor aggregato resta indicativo');
 // Un mapping risolto senza uno specifico tag resolverStatus 'EXACT' non deve essere trattato come
 // ineleggibile: prima del fix derivedPriceEligible richiedeva 'EXACT', uno stato che nessun
 // percorso reale (compreso il resolver Cardmarket, l'unica fonte prezzi dell'app) produce mai,
 // quindi quasi nessuna carta risultava mai "precisa" e valore/trend/mover restavano sempre parziali.
 const preciseItem={printingId:'pr1',catalogCardId:'88',cardName:'Precise Match',sources:['owned'],ownedQuantity:1,referencePrice:10,price24h:8,price7d:9,latestAt:fresh,mappingStatus:'resolved'};
 assert(derivedPriceEligible(preciseItem),'un mapping risolto e non aggregato senza tag resolverStatus deve comunque essere eleggibile');
-assert.equal(portfolioSummary([preciseItem],now).current,10,'prezzo preciso escluso dal valore raccolta');
 assert.equal(positiveMovers([preciseItem],3).length,1,'prezzo preciso escluso dai mover');
-const preciseDeck=buildMarketDecks([{id:'precise-deck',name:'Precise Deck',cards:[{printingId:'pr1',quantity:2}]}],[preciseItem],[])[0];
+const preciseDeck=buildMarketDecks([{id:'precise-deck',name:'Precise Deck',cards:[{printingId:'pr1',quantity:2}]}],[preciseItem],[],{})[0];
 assert.equal(preciseDeck.marketValue,20);assert.equal(preciseDeck.marketIndicative,false,'un prezzo preciso non deve risultare indicativo');
 assert.equal(preciseDeck.delta24,25,'trend mazzo non calcolato per un prezzo preciso');
 const dashboardMovers=mapDashboardMovers([{printingId:'p1',cardName:'A',referencePrice:12,baselinePrice:10,positiveChange:20,sparkline:[{label:'AVG30',price:8,order:1},{label:'TREND',price:12,order:4}]}]);assert.equal(dashboardMovers[0].sparkline.length,2);assert.equal(dashboardMovers[0].positiveChange,20);
-const groupedDecks=buildMarketDecks([{id:'d1',name:'Deck Box Market',deckTheme:'cyber-cyan',deckBoxTemplate:'cyber-core',cards:[{catalogCardId:'1',cardName:'A',section:'main',quantity:3,printingId:'p1'},{catalogCardId:'3',cardName:'Senza prezzo',section:'extra',quantity:1,printingId:null}]}],data.items,[{deckId:'d1',quantity:1}]);assert.equal(groupedDecks.length,1);assert.equal(groupedDecks[0].marketValue,30);assert.equal(groupedDecks[0].delta24,25);assert.equal(groupedDecks[0].unresolvedCount,1);assert.equal(groupedDecks[0].topMover.cardName,'A');
+const groupedDecks=buildMarketDecks([{id:'d1',name:'Deck Box Market',deckTheme:'cyber-cyan',deckBoxTemplate:'cyber-core',cards:[{catalogCardId:'1',cardName:'A',section:'main',quantity:3,printingId:'p1'},{catalogCardId:'3',cardName:'Senza prezzo',section:'extra',quantity:1,printingId:null}]}],ownedPage.items,[{deckId:'d1',quantity:1}],{});assert.equal(groupedDecks.length,1);assert.equal(groupedDecks[0].marketValue,30);assert.equal(groupedDecks[0].delta24,25);assert.equal(groupedDecks[0].unresolvedCount,1);assert.equal(groupedDecks[0].topMover.cardName,'A');
 
-globalThis.window ??= {FPT_CONFIG:{},addEventListener:()=>{}};
 const {DeckController}=await import('../js/decks.js');
 const deckState={game:'yugioh',currentUser:'me',decks:[{id:'d1',persisted:true,name:'Deck',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'1',cardName:'Carta',imageUrl:'',section:'main',quantity:1,printingId:null}]}],collection:{mine:[],team:[]}};
 const deckController=new DeckController({api:{deckPrintingOptions:async()=>[],setDeckCardPrinting:async()=>{}},getState:()=>deckState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});deckController.activeId='d1';assert(!deckController.view().includes('Printing da selezionare'),'Il deck builder non deve mostrare lo stato printing del Market Watch');

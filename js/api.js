@@ -38,8 +38,26 @@ export const api = {
   async setDeckCardPrinting(deckId, catalogCardId, section, printingId) {
     ensure(); return unwrap(await client.rpc('set_deck_card_printing', { p_token:token(),p_deck_id:deckId,p_catalog_card_id:String(catalogCardId),p_section:section,p_printing_id:printingId }));
   },
-  async marketWatch(game = 'yugioh') {
-    ensure(); return unwrap(await client.rpc('list_market_watch', { p_token:token(),p_game:game }));
+  // Sostituisce il vecchio marketWatch(game) unico (list_market_watch):
+  // payload alleggerito (niente mappingEvidence) + vera paginazione
+  // server-side sulla sola tab Raccolta, che è quella con migliaia di righe
+  // — vedi supabase/migrations/20260911145101_market_watch_owned_pagination.sql.
+  async marketWatchOwnedPage(game = 'yugioh', { limit = 60, offset = 0, sort = 'value', query = '' } = {}) {
+    ensure(); return unwrap(await client.rpc('list_market_watch_owned_page', { p_token:token(),p_game:game,p_limit:limit,p_offset:offset,p_sort:sort,p_query:query||null }));
+  },
+  // Tab Mazzi + Watchlist: piccole per costruzione, un solo fetch (non paginato).
+  async marketWatchExtra(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('list_market_watch_extra', { p_token:token(),p_game:game }));
+  },
+  // Solo aggregati (valore portafoglio, conteggi code di conferma, fallback
+  // di prezzo per carta logica) — mai righe intere.
+  async marketWatchSummary(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('get_market_watch_summary', { p_token:token(),p_game:game }));
+  },
+  // L'unico posto che restituisce mappingEvidence/candidates — chiamata solo
+  // quando l'utente apre la tab "Conferma" o preme "Conferma tutti aggregate".
+  async marketConfirmQueue(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('list_market_confirm_queue', { p_token:token(),p_game:game }));
   },
   async marketDashboardMovers(game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('list_market_dashboard_movers', { p_token:token(),p_game:game }));
