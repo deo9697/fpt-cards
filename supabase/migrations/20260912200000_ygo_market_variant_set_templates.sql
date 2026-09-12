@@ -222,6 +222,13 @@ grant execute on function public.apply_ygo_verified_set_template_resolutions(tex
 --    (stessi parametri, stessa CTE usage, stesso filtro/ordinamento): serve
 --    al client per calcolare il badge "AUTO MATCH AVAILABLE" con la stessa
 --    funzione pura del server, senza indovinare la rarity canonica lato UI.
+--    Stessa firma della funzione precedente ma RETURNS TABLE diverso (nuova
+--    colonna rarity_canonical): create or replace da solo non basta quando
+--    cambia l'elenco colonne del return, va droppata prima.
+drop function if exists public.list_ygo_market_variant_review_queue(
+  text, integer, integer, text[], text, text, boolean
+);
+
 create or replace function public.list_ygo_market_variant_review_queue(
   p_token text,
   p_limit integer default 50,
