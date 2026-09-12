@@ -29,6 +29,7 @@
     ,"test:catalog-repair-bootstrap": "node scripts/catalog-repair-bootstrap-smoke.mjs"
     ,"test:market-variant-admin-panel": "node scripts/market-variant-admin-panel-smoke.mjs"
     ,"test:market-variant-exact-price-shadow": "node scripts/market-variant-exact-price-shadow-smoke.mjs"
+    ,"test:market-variant-candidate-metadata": "node scripts/market-variant-candidate-metadata-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
