@@ -416,6 +416,16 @@ Deno.serve(async request=>{
   if(!syncSecret)return json({error:'sync_secret_not_configured'},503);
   if(request.headers.get('x-market-sync-secret')!==syncSecret)return json({error:'unauthorized'},401);
   const payload=await request.json().catch(()=>({}));
+  // Canary admin-only del Market Variant Registry — invocato SOLO da
+  // run_ygo_market_variant_canary (RPC FPT via net.http_post, mai dal
+  // browser direttamente: l'header x-market-sync-secret sopra resta
+  // l'unico gate HTTP, il client non lo vede mai). Ramo indipendente, nessun
+  // altro payload rilevante quando presente.
+  const marketVariantCanaryRunId=typeof payload?.marketVariantCanaryRunId==='string'?payload.marketVariantCanaryRunId.trim():'';
+  if(marketVariantCanaryRunId){
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marketVariantCanaryRunId))return json({error:'invalid_market_variant_canary_run_id'},400);
+    return json(await runYgoMarketVariantCanary(marketVariantCanaryRunId));
+  }
   const dryTargetPrintingIds=printingIds(payload?.dryTargetPrintingIds);
   const canaryPrintingIds=printingIds(payload?.canaryPrintingIds);
   if(payload?.dryTargetPrintingIds&&!dryTargetPrintingIds.length)return json({error:'invalid_dry_target_printing_ids'},400);
@@ -555,6 +565,83 @@ async function dryTargetCardmarket(provider:any,ids:string[]){
     candidates:(row.resolution.candidates||[]).map((candidate:any)=>({providerProductId:candidate.providerProductId||candidate.provider_product_id||null,rawName:candidate.rawName||candidate.name||'',cardName:candidate.cardName||'',rarity:candidate.rarity||'',providerExpansionId:candidate.providerExpansionId||candidate.provider_expansion_id||null,expansion:candidate.setName||candidate.expansion||''})),
     nameCandidates:provider.catalog.filter((candidate:any)=>String(candidate.cardName||candidate.name||'').trim().toLowerCase()===String(row.target.card_name||'').trim().toLowerCase()).slice(0,12).map((candidate:any)=>({providerProductId:candidate.providerProductId||null,providerExpansionId:candidate.providerExpansionId||null,expansion:candidate.setName||''}))
   }))};
+}
+
+// Canary admin-only del Market Variant Registry: eseguito SOLO su richiesta
+// di run_ygo_market_variant_canary (RPC FPT, admin-gated) via net.http_post
+// server-side — il client non conosce mai MARKET_SYNC_SECRET, l'header
+// arriva già impostato dalla richiesta Postgres->Edge Function. Legge la
+// catalogazione Cardmarket (necessaria per calcolare i candidati, stesso
+// costo di dryTargetCardmarket) ma NON chiama mai loadPrices()/getCurrentPrice
+// né resolveCardmarketTargets(): niente prezzi, niente scritture su
+// market_provider_printings/market_price_snapshots (quindi nessun trigger su
+// market_price_events). Scrive SOLO ygo_market_variants (shadow) + il
+// risultato dentro la riga ygo_market_variant_canary_runs stessa.
+async function runYgoMarketVariantCanary(runId:string){
+  const runRows=await restPages(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}&select=id,status,printing_ids`,{key:(row:any)=>row.id});
+  const run=runRows.rows[0];
+  if(!run)return {ok:false,runId,error:'canary_run_not_found'};
+  // Idempotenza: una run già running/succeeded/failed non viene mai
+  // rielaborata, anche se questo endpoint viene invocato una seconda volta
+  // per lo stesso run_id (retry di rete, doppio click admin, ecc.).
+  if(run.status!=='pending')return {ok:true,runId,skipped:true,status:run.status,reason:'already_processed'};
+  await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'running',started_at:new Date().toISOString()},{'Prefer':'return=minimal'});
+  try{
+    const ids=printingIds(run.printing_ids);
+    if(!ids.length)throw new Error('printing_ids della run non valido (vuoto, >20, o non tutti UUID)');
+    const provider=(new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''}));
+    if(provider.getPriceMetadata().status==='unavailable')throw new Error('provider cardmarket non disponibile (secret/feed mancanti)');
+    const printingRows=await listCardPrintingsByIds(ids);
+    const targets=printingRows.map(printingTarget);
+    if(!targets.length)throw new Error('nessuna printing Yu-Gi-Oh! valida trovata per questi id');
+    const allPrintings=await withCanonicalCardNames(printingRows,targets);
+    await provider.loadCatalog(targets,{internalPrintings:allPrintings});
+    const expansionHints=provider.expansionHints;
+    const [rarityAliasMap,existingVariants]=await Promise.all([
+      fetchYgoRarityAliasMap(),
+      fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id)))
+    ]);
+    const resultRows:any[]=[],shadowRowsToPersist:any[]=[];
+    for(const target of targets){
+      const resolution=await provider.resolvePrinting(target,{internalPrintings:allPrintings,expansionHints});
+      const rarityCanonical=canonicalYgoRarity(target.rarity,rarityAliasMap);
+      const cardmarketCandidates=(resolution.candidates||[]).map((row:any)=>({
+        productId:row.providerProductId||row.provider_product_id,
+        expansionId:row.providerExpansionId||row.provider_expansion_id,
+        rarityCanonical:canonicalYgoRarity(row.rarity,rarityAliasMap)
+      }));
+      const existingVariant=existingVariants.get(String(target.printing_id))||null;
+      const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical});
+      const verifiedPreserved=!shouldPersistMarketVariantShadow(existingVariant);
+      if(!verifiedPreserved){
+        shadowRowsToPersist.push({
+          printing_id:target.printing_id,rarity_raw:target.rarity||'',rarity_canonical:rarityCanonical,
+          cardmarket_product_id:decision.cardmarketProductId,cardmarket_expansion_id:decision.cardmarketExpansionId,
+          candidate_product_ids:decision.candidateProductIds,mapping_source:decision.mappingSource,
+          mapping_confidence:decision.mappingConfidence,mapping_status:decision.mappingStatus,
+          resolution_reason:decision.reason,verified:false
+        });
+      }
+      resultRows.push({
+        printing_id:target.printing_id,set_code:target.set_code,rarity:target.rarity,
+        legacy_status:resolution.status,shadow_status:decision.mappingStatus,shadow_product_id:decision.cardmarketProductId,
+        candidate_product_ids:decision.candidateProductIds,resolution_reason:decision.reason,verified_preserved:verifiedPreserved
+      });
+    }
+    if(shadowRowsToPersist.length)await upsertYgoMarketVariantsShadow(shadowRowsToPersist);
+    const summary=summarizeMarketVariantDecisions(resultRows.map((row:any)=>({mappingStatus:row.shadow_status})));
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'succeeded',finished_at:new Date().toISOString(),result:{rows:resultRows,summary}},{'Prefer':'return=minimal'});
+    return {ok:true,runId,status:'succeeded',rows:resultRows.length};
+  }catch(error:any){
+    const message=String(error?.message||error).slice(0,1000);
+    console.error('[market-sync] market variant canary: run fallita',{runId,error:message});
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'failed',finished_at:new Date().toISOString(),error_message:message},{'Prefer':'return=minimal'}).catch(()=>{});
+    return {ok:false,runId,status:'failed',error:message};
+  }
+}
+async function listCardPrintingsByIds(ids:string[]){
+  const result=await restPages(`card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&id=in.(${ids.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
+  return result.rows;
 }
 
 async function resolveCardmarketTargets(provider:any,targets:any[],internalPrintings:any[]){

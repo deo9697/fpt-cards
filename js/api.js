@@ -1,4 +1,5 @@
 import { pagedRpc, paginationMetrics } from './pagination.js';
+import { pollMarketVariantCanaryRun } from './market-variant-canary.js';
 
 const configured = Boolean(window.FPT_CONFIG?.supabaseUrl && window.FPT_CONFIG?.supabaseKey);
 const client = configured ? window.supabase.createClient(window.FPT_CONFIG.supabaseUrl, window.FPT_CONFIG.supabaseKey) : null;
@@ -85,6 +86,22 @@ export const api = {
   // pannello dedicato.
   async marketVariantBackfillReport(game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('ygo_market_variant_backfill_report', { p_token:token(),p_game:game }));
+  },
+  // Canary admin-only dello shadow resolver — crea la run (la RPC stessa
+  // scatena market-sync via net.http_post lato Postgres, MARKET_SYNC_SECRET
+  // non passa mai da qui) e fa polling del risultato. Nessuna UI ancora:
+  // pensata per essere chiamata da console admin, come richiesto.
+  async marketVariantCanary(printingIds, options = {}) {
+    ensure();
+    const created = unwrap(await client.rpc('run_ygo_market_variant_canary', { p_token:token(),p_printing_ids:printingIds }));
+    return pollMarketVariantCanaryRun(
+      async runId => unwrap(await client.rpc('get_ygo_market_variant_canary_run', { p_token:token(),p_run_id:runId })),
+      created.run_id,
+      options
+    );
+  },
+  async getMarketVariantCanaryRun(runId) {
+    ensure(); return unwrap(await client.rpc('get_ygo_market_variant_canary_run', { p_token:token(),p_run_id:runId }));
   },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
