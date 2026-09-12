@@ -1240,9 +1240,30 @@ function cardTypeReadyForDetail(id) {
   if (!item || item.game !== 'yugioh' || !item.catalogCardId) return true;
   return cardTypeCache.has(String(item.catalogCardId));
 }
+// Pre-carica in background il tipo di TUTTE le carte Yu-Gi-Oh! della
+// raccolta (mine+team) appena questa viene sincronizzata, invece di aspettare
+// che l'utente apra un dettaglio: così, quando lo apre, il tipo è quasi
+// sempre già in cache e cardTypeReadyForDetail torna true da subito — niente
+// più stato "is-type-pending" visibile nel caso comune. cardTypesByIds
+// raggruppa già gli id a blocchi di 40, pensata apposta per centinaia di id
+// in un colpo solo (vedi js/cards.js). Fire-and-forget: non deve rallentare
+// loadCollection, e ids già in cache/in-flight vengono filtrati per non
+// duplicare richieste tra sync successivi.
+function prefetchCollectionCardTypes() {
+  const items = [...(state.collection.mine || []), ...(state.collection.team || [])];
+  const ids = [...new Set(items.filter(item => item.game === 'yugioh' && item.catalogCardId).map(item => String(item.catalogCardId)))]
+    .filter(id => !cardTypeCache.has(id) && !cardTypeInFlight.has(id));
+  if (!ids.length) return;
+  ids.forEach(id => cardTypeInFlight.add(id));
+  cardTypesByIds(ids, 'yugioh').then(map => {
+    ids.forEach(id => cardTypeCache.set(id, map[id] || ''));
+    render();
+  }).finally(() => ids.forEach(id => cardTypeInFlight.delete(id)));
+}
 // Sfondo del dettaglio per tipo (magia/trappola/mostro fusione): nessun dato
 // di raccolta porta già il tipo YGOPRODeck, va risolto al volo la prima
-// volta che si apre quella carta e messo in cache (mai per One Piece).
+// volta che si apre quella carta e messo in cache (mai per One Piece) — resta
+// come rete di sicurezza per una carta appena aggiunta/non ancora pre-caricata.
 function ensureCardTypeForDetail(id) {
   const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
   if (!item || item.game !== 'yugioh' || !item.catalogCardId) return;
@@ -1308,6 +1329,7 @@ async function loadCollection({ force = false } = {}) {
     syncLoanImagesFromCollection();
     collectionError = '';
     scheduleCatalogRepairs();
+    prefetchCollectionCardTypes();
     return state.collection;
   })();
   collectionLoadInFlight=request;
