@@ -148,19 +148,30 @@ export const api = {
   async ygoPrintingsForBackfill(afterId = null, limit = 500) {
     ensure(); return unwrap(await client.rpc('list_ygo_printings_for_backfill', { p_token:token(), p_after_id:afterId, p_limit:limit }));
   },
-  // Admin Artwork Resolver: coda multi-artwork ordinata per utilizzo reale
-  // (collection/deck/loan) — vedi js/admin.js. Sola lettura, admin-only lato RPC.
-  async ygoArtworkReviewQueue(limit = 50, offset = 0) {
-    ensure(); return unwrap(await client.rpc('list_ygo_artwork_review_queue', { p_token:token(), p_limit:limit, p_offset:offset }));
-  },
-  // Conferma admin di un artwork per una printing multi-artwork: crea/aggiorna
-  // l'override verificato (stessa RPC usata per MIP-1010), mai un guess
-  // automatico — vedi supabase/migrations/20260911160000_ygo_printing_registry.sql.
-  async confirmYgoPrintingArtwork(setCode, konamiCardId, artworkIndex, artworkUrl, reason) {
-    ensure(); return unwrap(await client.rpc('upsert_ygo_printing_override', {
-      p_token:token(), p_set_code:setCode, p_konami_card_id:konamiCardId,
-      p_artwork_index:artworkIndex, p_artwork_url:artworkUrl, p_reason:reason
+  // Artwork Resolver: coda multi-artwork ordinata per utilizzo reale
+  // (collection/deck/loan) — vedi js/admin.js. Aperta ad admin E a chi ha
+  // can_verify_ygo_artwork (Artwork Curator); il filtro/ordinamento sono
+  // parametri della RPC, non calcolati lato client.
+  async ygoArtworkReviewQueue({ limit = 50, offset = 0, setPrefix = '', query = '', usedOnly = true, orderBy = 'usage_count' } = {}) {
+    ensure(); return unwrap(await client.rpc('list_ygo_artwork_review_queue', {
+      p_token:token(), p_limit:limit, p_offset:offset, p_set_prefix:setPrefix || null,
+      p_query:query || null, p_used_only:usedOnly, p_order_by:orderBy
     }));
+  },
+  // Conferma artwork (admin o Artwork Curator) — l'unico parametro "libero"
+  // è l'indice scelto: konami_card_id/artwork_url non sono nemmeno accettati
+  // come argomenti, la RPC li ricava sempre da ygo_printing_registry/
+  // ygo_artwork_index lato server (mai un valore custom dal client).
+  async confirmYgoPrintingArtwork(setCode, artworkIndex) {
+    ensure(); return unwrap(await client.rpc('confirm_ygo_printing_artwork', {
+      p_token:token(), p_set_code:setCode, p_artwork_index:artworkIndex
+    }));
+  },
+  async myYgoArtworkVerifications(limit = 100) {
+    ensure(); return unwrap(await client.rpc('list_my_ygo_artwork_verifications', { p_token:token(), p_limit:limit }));
+  },
+  async ygoArtworkReviewSetPrefixes() {
+    ensure(); return unwrap(await client.rpc('list_ygo_artwork_review_set_prefixes', { p_token:token() }));
   },
   async catalogVerificationQueue(version,{signal}={}) {
     ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {

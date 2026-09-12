@@ -136,7 +136,7 @@ function dispatchPageEnterRefresh(previous, next) {
   if (next === 'market') void marketWatch.load();
   if (next === 'decks') void loadDecks().then(() => renderRoute());
   if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); });
-  if (next === 'admin' && state.role === 'admin') void loadAdminArtworkQueue(true);
+  if (next === 'admin' && canManageArtwork()) void loadAdminArtworkQueue(true);
 }
 
 function animateXpFill() {
@@ -476,7 +476,7 @@ function settingsView() {
 function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
-  if (state.role === 'admin') links.push(['admin','card','Artwork Resolver','Printing multi-artwork da revisionare']);
+  if (canManageArtwork()) links.push(['admin','card','Artwork Resolver','Printing multi-artwork da revisionare']);
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
@@ -722,27 +722,41 @@ function teamModel() {
 }
 function teamView() { return renderTeamPage(teamModel()); }
 
-// Admin Artwork Resolver: stato locale della coda, mai persistito (si
-// ricarica ogni volta che la pagina si apre — è un elenco di lavoro, non
-// dati utente). selections tiene la scelta corrente per set_code, azzerata
-// dopo ogni conferma riuscita.
-const adminArtworkState = { loading: false, error: '', queue: [], offset: 0, hasMore: false, selections: new Map(), confirming: new Set() };
+// Artwork Resolver: stato locale della coda, mai persistito (si ricarica ogni
+// volta che la pagina si apre — è un elenco di lavoro, non dati utente).
+// canManageArtwork = admin O can_verify_ygo_artwork (Artwork Curator): la UI
+// nascosta è solo comodità, le RPC applicano lo stesso controllo lato server.
+function canManageArtwork() { return state.role === 'admin' || Boolean(state.canVerifyYgoArtwork); }
+
+const adminArtworkState = {
+  loading: false, error: '', queue: [], offset: 0, hasMore: false,
+  selections: new Map(), confirming: new Set(), setPrefixes: [],
+  filters: { query: '', setPrefix: '', usedOnly: true, orderBy: 'usage_count' },
+  view: 'queue', history: [], historyLoading: false
+};
 const ADMIN_ARTWORK_PAGE_SIZE = 30;
 
 function adminModel() {
-  return { loading: adminArtworkState.loading, error: adminArtworkState.error, queue: adminArtworkState.queue, hasMore: adminArtworkState.hasMore, selections: adminArtworkState.selections };
+  return {
+    loading: adminArtworkState.loading, error: adminArtworkState.error, queue: adminArtworkState.queue,
+    hasMore: adminArtworkState.hasMore, selections: adminArtworkState.selections,
+    filters: adminArtworkState.filters, setPrefixes: adminArtworkState.setPrefixes,
+    view: adminArtworkState.view, history: adminArtworkState.history, historyLoading: adminArtworkState.historyLoading,
+    isAdmin: state.role === 'admin', currentUserName: member(state.currentUser)?.name || ''
+  };
 }
 function adminView() { return renderAdminPage(adminModel()); }
 
 async function loadAdminArtworkQueue(reset = true) {
-  if (state.role !== 'admin') return;
+  if (!canManageArtwork()) return;
   if (reset) { adminArtworkState.queue = []; adminArtworkState.offset = 0; adminArtworkState.selections.clear(); }
   adminArtworkState.loading = true; adminArtworkState.error = ''; render();
   try {
-    const rows = await api.ygoArtworkReviewQueue(ADMIN_ARTWORK_PAGE_SIZE, adminArtworkState.offset);
+    const { query, setPrefix, usedOnly, orderBy } = adminArtworkState.filters;
+    const rows = await api.ygoArtworkReviewQueue({ limit:ADMIN_ARTWORK_PAGE_SIZE, offset:adminArtworkState.offset, query, setPrefix, usedOnly, orderBy });
     const mapped = rows.map(row => ({
-      setCode: row.set_code, cardName: row.card_name, konamiCardId: row.konami_card_id,
-      artworkCount: row.artwork_count, currentArtworkUrl: row.current_artwork_url,
+      setCode: row.set_code, cardName: row.card_name, setNames: row.set_names || [], rarities: row.rarities || [],
+      konamiCardId: row.konami_card_id, artworkCount: row.artwork_count, currentArtworkUrl: row.current_artwork_url,
       candidates: Array.isArray(row.candidates) ? row.candidates : [],
       collectionUsage: row.collection_usage, deckUsage: row.deck_usage, loanUsage: row.loan_usage,
       usageCount: row.usage_count
@@ -751,8 +765,14 @@ async function loadAdminArtworkQueue(reset = true) {
     adminArtworkState.offset += mapped.length;
     const total = rows[0]?.total_count ?? adminArtworkState.queue.length;
     adminArtworkState.hasMore = adminArtworkState.queue.length < total;
+    if (reset) api.ygoArtworkReviewSetPrefixes().then(prefixes => { adminArtworkState.setPrefixes = prefixes; render(); }).catch(() => {});
   } catch (error) { adminArtworkState.error = error.message || 'Coda non disponibile'; }
   finally { adminArtworkState.loading = false; render(); }
+}
+
+function setAdminArtworkFilter(key, value) {
+  adminArtworkState.filters[key] = value;
+  void loadAdminArtworkQueue(true);
 }
 
 function selectAdminArtworkCandidate(setCode, index, url) {
@@ -760,21 +780,34 @@ function selectAdminArtworkCandidate(setCode, index, url) {
   render();
 }
 
-async function confirmAdminArtworkSelection(setCode) {
+async function confirmAdminArtworkSelection(setCode, advanceToNext) {
   const selection = adminArtworkState.selections.get(setCode);
   const item = adminArtworkState.queue.find(row => row.setCode === setCode);
   if (!selection || !item || adminArtworkState.confirming.has(setCode)) return;
-  if (!confirm(`Confermare l'artwork #${selection.index} per ${item.cardName || setCode} (${setCode})?`)) return;
-  adminArtworkState.confirming.add(setCode);
+  adminArtworkState.confirming.add(setCode); render();
   try {
-    await api.confirmYgoPrintingArtwork(setCode, item.konamiCardId, selection.index, selection.url,
-      `Confermato manualmente via Admin Artwork Resolver (${item.artworkCount} artwork candidati)`);
+    // Nessun optimistic success: la riga resta in coda finché la RPC non
+    // conferma di aver persistito — un fallimento lascia la selezione intatta.
+    await api.confirmYgoPrintingArtwork(setCode, selection.index);
     adminArtworkState.queue = adminArtworkState.queue.filter(row => row.setCode !== setCode);
     adminArtworkState.selections.delete(setCode);
     toast(`Artwork confermato per ${setCode}`);
     render();
+    if (advanceToNext) document.querySelector('.admin-artwork-queue')?.scrollIntoView({ behavior:'smooth', block:'start' });
   } catch (error) { toast(error.message || 'Conferma non riuscita'); }
-  finally { adminArtworkState.confirming.delete(setCode); }
+  finally { adminArtworkState.confirming.delete(setCode); render(); }
+}
+
+async function loadMyArtworkHistory() {
+  adminArtworkState.view = 'history'; adminArtworkState.historyLoading = true; render();
+  try {
+    const rows = await api.myYgoArtworkVerifications();
+    adminArtworkState.history = rows.map(row => ({
+      setCode: row.set_code, konamiCardId: row.konami_card_id, previousArtworkIndex: row.previous_artwork_index,
+      newArtworkIndex: row.new_artwork_index, verificationSource: row.verification_source, verifiedAt: row.verified_at
+    }));
+  } catch (error) { toast(error.message || 'Storico non disponibile'); }
+  finally { adminArtworkState.historyLoading = false; render(); }
 }
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
@@ -886,7 +919,11 @@ function bind() {
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
   bindTeamPage(document, teamModel(), manageMember);
-  bindAdminPage(document, adminModel(), { onSelectCandidate: selectAdminArtworkCandidate, onConfirm: confirmAdminArtworkSelection, onLoadMore: () => loadAdminArtworkQueue(false) });
+  bindAdminPage(document, adminModel(), {
+    onSelectCandidate: selectAdminArtworkCandidate, onConfirm: confirmAdminArtworkSelection,
+    onLoadMore: () => loadAdminArtworkQueue(false), onFilterChange: setAdminArtworkFilter,
+    onViewHistory: loadMyArtworkHistory, onViewQueue: () => { adminArtworkState.view = 'queue'; render(); }
+  });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks') decks.bind(document);
@@ -1648,6 +1685,7 @@ async function login(e) {
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
     state.role = profile.role;
+    state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
     loginDraft = { member:'', pin:'' };
     saveState();
     render();
@@ -1673,7 +1711,7 @@ async function logout() {
   await fastScan.leave();
   api.unsubscribe();
   await api.logout();
-  state.currentUser = null; state.role = null; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
+  state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
 }
 
 async function enableNotifications() {
@@ -2108,7 +2146,7 @@ async function start() {
       startRealtime(); saveState();
     }
     catch (error) {
-      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.loans = []; saveState(); }
+      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; saveState(); }
       else cloudError = online() ? (error.message || 'Sincronizzazione non riuscita') : '';
     } finally { appLoading = false; }
   }

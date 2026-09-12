@@ -20,7 +20,7 @@ export function setMembers(items) {
 }
 
 const STATE_KEY = 'fpt-cards-state-v2';
-export const state = JSON.parse(localStorage.getItem(STATE_KEY) || 'null') || { currentUser: null, role: null, loans: [] };
+export const state = JSON.parse(localStorage.getItem(STATE_KEY) || 'null') || { currentUser: null, role: null, canVerifyYgoArtwork: false, loans: [] };
 if (!state.game) state.game = 'yugioh';
 if (!state.collection || typeof state.collection !== 'object') state.collection = { mine:[], team:[], syncedAt:null };
 if (!Array.isArray(state.collection.mine)) state.collection.mine = [];
