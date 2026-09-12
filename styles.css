@@ -2462,6 +2462,8 @@ button.market-row:hover { background:#15121d; }
 .inventory-detail-heading .detail-close { position:static;width:42px;height:42px;flex:none;font-size:1.8rem;border:1px solid #4a4563;border-radius:12px;background:#11121e; }
 .inventory-detail .detail-layout { display:grid;grid-template-columns:minmax(220px,.85fr) minmax(0,1.3fr);gap:26px;align-items:center; }
 .inventory-art-stage { display:grid;place-items:center;align-self:stretch;padding:22px 20px;min-height:360px;border-radius:18px;background:linear-gradient(#090d1722,#090d1755),url('./assets/background/yugioh-01.png') center/cover; }
+.inventory-art-stage.is-type-pending { background:#18203d;overflow:hidden;position:relative; }
+.inventory-art-stage.is-type-pending::after { content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff0c,transparent);transform:translateX(-100%);animation:skeleton-wave 1.15s infinite; }
 .inventory-detail .detail-art { width:min(100%,265px);margin:0;aspect-ratio:421/614;border-radius:9px;border:1px solid #c491ff;background:#0a0c14;box-shadow:0 0 0 3px #a86cee25,0 0 25px #aa5bec66,0 14px 28px #000a; }
 .inventory-detail .detail-art img { display:block;width:100%;height:100%;object-fit:contain;background:transparent; }
 .inventory-detail .detail-copy { min-width:0; }

@@ -23,6 +23,7 @@
     ,"test:onepiece-normalizer": "node scripts/onepiece-catalog-normalizer-smoke.mjs"
     ,"test:onepiece-deck-e2e": "node scripts/onepiece-deck-e2e-smoke.mjs"
     ,"test:card-type-background": "node scripts/card-type-background-smoke.mjs"
+    ,"test:card-detail-background-flicker": "node scripts/card-detail-background-flicker-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

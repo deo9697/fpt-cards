@@ -255,7 +255,7 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem)) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem), cardTypeReadyForDetail(selectedCollectionItem)) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
@@ -854,7 +854,7 @@ function bind() {
   document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   if (page === 'collection') observeCollectionSentinel();
-  document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCollectionItem = ''; render(); }));
+  document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; closeCollectionDetail(); }));
   document.querySelectorAll('[data-close-collection-editor]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionEditor = null; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionLoanRequest = null; render(); }));
   document.querySelectorAll('[data-collection-edit]').forEach(button => button.addEventListener('click', () => openCollectionEditor(button.dataset.collectionEdit)));
@@ -1209,10 +1209,36 @@ function quickNavigate(target) {
   navigate(page);
 }
 
-function openCollectionDetail(id) { selectedCollectionItem = id; ensureCardTypeForDetail(id); render(); }
+// Il dettaglio carta è un overlay sopra la Raccolta, non una pagina: gli si
+// dà comunque una voce di history (stesso hash, state dedicato) così il tasto
+// Indietro chiude solo il dettaglio invece di saltare alla pagina precedente
+// (es. Home). Vedi il listener "popstate" più sotto.
+function openCollectionDetail(id) {
+  selectedCollectionItem = id;
+  ensureCardTypeForDetail(id);
+  history.pushState({ collectionDetail: id }, '', location.hash || '#/collection');
+  render();
+}
+function closeCollectionDetail() {
+  if (!selectedCollectionItem) return;
+  if (history.state && history.state.collectionDetail === selectedCollectionItem) {
+    history.back();
+  } else {
+    selectedCollectionItem = '';
+    render();
+  }
+}
 function cardTypeForDetail(id) {
   const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
   return item?.catalogCardId ? cardTypeCache.get(String(item.catalogCardId)) || '' : '';
+}
+// Sfondo pronto solo quando non serve un tipo YGOPRODeck (One Piece, o carta
+// senza catalogCardId) oppure quando il tipo è già in cache: evita di mostrare
+// per errore lo sfondo di default mentre il fetch del tipo è ancora in corso.
+function cardTypeReadyForDetail(id) {
+  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
+  if (!item || item.game !== 'yugioh' || !item.catalogCardId) return true;
+  return cardTypeCache.has(String(item.catalogCardId));
 }
 // Sfondo del dettaglio per tipo (magia/trappola/mostro fusione): nessun dato
 // di raccolta porta già il tipo YGOPRODeck, va risolto al volo la prima
@@ -2173,6 +2199,16 @@ window.addEventListener('hashchange', () => {
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
   if(previous==='fastscan'||page==='fastscan')render();else renderRoute();
   dispatchPageEnterRefresh(previous, page);
+});
+// Il dettaglio carta della Raccolta pusha una entry di history senza cambiare
+// hash (vedi openCollectionDetail): quando la si "pop-a" all'indietro, l'hash
+// resta #/collection quindi non scatta "hashchange" sopra, solo "popstate".
+// Chiude solo il dettaglio: non torna mai alla pagina precedente (Home).
+window.addEventListener('popstate', event => {
+  if (selectedCollectionItem && !(event.state && event.state.collectionDetail === selectedCollectionItem)) {
+    selectedCollectionItem = '';
+    render();
+  }
 });
 // Niente più mega-refresh ogni 2 minuti (ricaricava tutti e 6 i domini +
 // render completo, anche a schermo spento/app in background — una causa
