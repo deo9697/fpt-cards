@@ -180,6 +180,98 @@ function normalizeMarketRarity(value:any):string|null{const rarity=norm(value);r
 function isAuthorizedCardmarketMapping(mapping:any):boolean{if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
 function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return ['unresolved','ambiguous'].includes(mapping?.resolution_status)||String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
+// --- Market Variant Registry: SHADOW MODE ----------------------------------
+// Copia manuale di resolveYgoMarketVariant()/shouldPersistMarketVariantShadow()/
+// summarizeMarketVariantDecisions() da market/providers.js (stesso motivo
+// isAuthorizedCardmarketMapping sopra — il bundler non risolve "../"). Gira
+// SOLO in aggiunta al resolver legacy sopra, mai al posto suo: bodies[] (il
+// path che scrive market_provider_printings, quindi il prezzo live) non
+// viene toccato da nessuna riga qui sotto. Se questo blocco lancia,
+// resolveCardmarketTargets() deve continuare come se non esistesse — vedi il
+// try/catch attorno alla sua unica chiamata più in basso.
+const MARKET_VARIANT_STATUS=Object.freeze({UNRESOLVED:'unresolved',RESOLVED:'resolved',AMBIGUOUS:'ambiguous',CONFLICT:'conflict',VERIFIED:'verified'});
+const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy'});
+function normalizeYgoRarityKey(value:any):string|null{
+  const key=String(value||'').replace(/['’]/g,'').replace(/[^A-Za-z0-9]+/g,' ').trim().toUpperCase();
+  return key||null;
+}
+function canonicalYgoRarity(rawRarity:any,aliasMap:Map<string,string>):string|null{
+  const key=normalizeYgoRarityKey(rawRarity);
+  if(!key||!aliasMap)return null;
+  return aliasMap.get(key)||null;
+}
+function resolveYgoMarketVariant({existingVariant=null as any,cardmarketCandidates=[] as any[],rarityCanonical=null as string|null,legacyMapping=null as any,forceRefresh=false}={}):any{
+  if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:true,reason:'verified_mapping_preserved'});
+  }
+  if(!forceRefresh&&existingVariant?.mapping_status===MARKET_VARIANT_STATUS.RESOLVED&&existingVariant?.cardmarket_product_id){
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:false,reason:'resolved_registry_preserved'});
+  }
+  const candidates=dedupeYgoVariantCandidates(cardmarketCandidates);
+  if(!candidates.length)return ygoLegacyFallbackResult(legacyMapping)||ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.UNRESOLVED,reason:'no_cardmarket_candidates'});
+  const exactRarity=rarityCanonical?candidates.filter(row=>row.rarityCanonical===rarityCanonical):[];
+  const pool=exactRarity.length?exactRarity:candidates;
+  if(pool.length===1){
+    const only=pool[0];
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.RESOLVER,mappingConfidence:exactRarity.length?1:0.6,cardmarketProductId:only.productId,cardmarketExpansionId:only.expansionId,candidateProductIds:candidates.map(row=>row.productId),verified:false,reason:exactRarity.length?'exact_rarity_single_candidate':'single_candidate_no_rarity_signal'});
+  }
+  const distinctExpansions=new Set(pool.map(row=>row.expansionId).filter(Boolean));
+  return ygoMarketVariantResult({mappingStatus:distinctExpansions.size>1?MARKET_VARIANT_STATUS.CONFLICT:MARKET_VARIANT_STATUS.AMBIGUOUS,mappingSource:MARKET_VARIANT_SOURCE.RESOLVER,mappingConfidence:0,candidateProductIds:pool.map(row=>row.productId),verified:false,reason:exactRarity.length?'multiple_exact_rarity_candidates':'multiple_candidates_no_rarity_signal'});
+}
+function ygoLegacyFallbackResult(legacyMapping:any):any{
+  if(!legacyMapping?.cardmarketProductId)return null;
+  const candidateCount=Array.isArray(legacyMapping.candidateProductIds)?legacyMapping.candidateProductIds.length:1;
+  return ygoMarketVariantResult({mappingStatus:candidateCount>1?MARKET_VARIANT_STATUS.AMBIGUOUS:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.LEGACY,mappingConfidence:candidateCount>1?0:0.4,cardmarketProductId:legacyMapping.cardmarketProductId,cardmarketExpansionId:legacyMapping.cardmarketExpansionId||null,candidateProductIds:legacyMapping.candidateProductIds||[],verified:false,reason:'legacy_fallback_not_verified'});
+}
+function ygoMarketVariantResult({mappingStatus,mappingSource=null as any,mappingConfidence=0,cardmarketProductId=null as any,cardmarketExpansionId=null as any,candidateProductIds=[] as string[],verified=false,reason}:any):any{
+  return {mappingStatus,mappingSource,mappingConfidence,cardmarketProductId,cardmarketExpansionId,candidateProductIds,verified,reason};
+}
+function dedupeYgoVariantCandidates(rows:any[]):any[]{
+  const byId=new Map<string,any>();
+  for(const row of rows||[]){
+    const id=String(row.productId||row.providerProductId||row.provider_product_id||'').trim();
+    if(!id||byId.has(id))continue;
+    byId.set(id,{productId:id,expansionId:String(row.expansionId||row.providerExpansionId||row.provider_expansion_id||'')||null,rarityCanonical:row.rarityCanonical||null});
+  }
+  return [...byId.values()];
+}
+function shouldPersistMarketVariantShadow(existingVariant:any):boolean{
+  return !(existingVariant?.verified&&existingVariant?.cardmarket_product_id);
+}
+function summarizeMarketVariantDecisions(decisions:any[]):any{
+  const summary:any={processed:0,verified:0,resolved:0,ambiguous:0,conflict:0,unresolved:0,errors:0};
+  for(const decision of decisions||[]){summary.processed++;summary[decision.mappingStatus]=(summary[decision.mappingStatus]||0)+1;}
+  return summary;
+}
+// Un solo GET per l'intera tabella alias (~55 righe) per run di sync, mai per
+// printing — la stessa identica tabella scritta dalla migration
+// 20260912110000_ygo_market_variant_registry.sql.
+async function fetchYgoRarityAliasMap():Promise<Map<string,string>>{
+  const page=await restPages('ygo_rarity_aliases?select=alias_key,canonical_code',{key:(row:any)=>row.alias_key});
+  return new Map(page.rows.map((row:any)=>[row.alias_key,row.canonical_code]));
+}
+// Un solo GET a blocchi (mai per printing) per sapere quali printing hanno
+// già una riga ygo_market_variants — indispensabile per non riscrivere mai
+// un mapping verified (sezione 6/11 dello shadow mode).
+async function fetchExistingYgoMarketVariants(printingIds:string[]):Promise<Map<string,any>>{
+  const byId=new Map<string,any>(),unique=[...new Set(printingIds.filter(Boolean))];
+  for(let index=0;index<unique.length;index+=150){
+    const chunk=unique.slice(index,index+150);
+    const page=await restPages(`ygo_market_variants?select=printing_id,mapping_status,mapping_source,mapping_confidence,cardmarket_product_id,cardmarket_expansion_id,verified&printing_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.printing_id});
+    for(const row of page.rows)byId.set(String(row.printing_id),row);
+  }
+  return byId;
+}
+// Batch upsert, stesso pattern/dimensione blocco già usato per
+// market_provider_printings poco più sotto (200 righe) — nessuna riga con
+// verified=true finisce mai qui dentro, filtrata a monte da
+// shouldPersistMarketVariantShadow().
+async function upsertYgoMarketVariantsShadow(rows:any[]):Promise<void>{
+  for(let index=0;index<rows.length;index+=200){
+    await rest('ygo_market_variants?on_conflict=printing_id','POST',rows.slice(index,index+200),{'Prefer':'resolution=merge-duplicates,return=minimal'});
+  }
+}
+
 function buildCardmarketExpansionHints(printings:any[]=[],products:any[]=[]):Map<string,any>{
   const groups=new Map<string,Set<string>>(),productsByName=new Map<string,any[]>();
   for(const row of printings||[]){const key=setSeriesKey(row.setCode||row.set_code),name=norm(row.cardName||row.card_name);if(!key||!name)continue;if(!groups.has(key))groups.set(key,new Set());groups.get(key)!.add(name);}
@@ -469,9 +561,63 @@ async function resolveCardmarketTargets(provider:any,targets:any[],internalPrint
   const t0=Date.now();
   console.log('[market-sync] resolveCardmarketTargets: start',{targets:targets.length,catalog:provider.catalog?.length||0,internalPrintings:internalPrintings.length});
   const bodies=[],expansionHints=provider.expansionHints?.size?provider.expansionHints:buildCardmarketExpansionHints(internalPrintings,provider.catalog);
+  // Market Variant Registry — SHADOW MODE. Un solo fetch (mai per printing)
+  // per l'alias map e per le righe ygo_market_variants già esistenti. Se
+  // fallisce (es. migration non ancora applicata su questo ambiente), lo
+  // shadow resolver si disattiva silenziosamente per l'intero run: il
+  // resolver legacy sotto (bodies[], l'unico che conta per il prezzo live)
+  // non dipende in alcun modo da questo blocco.
+  let shadowRarityAliasMap:Map<string,string>|null=null,shadowExistingVariants:Map<string,any>|null=null;
+  if(provider.name==='cardmarket'){
+    try{
+      [shadowRarityAliasMap,shadowExistingVariants]=await Promise.all([
+        fetchYgoRarityAliasMap(),
+        fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id)))
+      ]);
+    }catch(error:any){
+      console.error('[market-sync] market variant shadow: setup fallito, run senza shadow',{error:String(error?.message||error)});
+      shadowRarityAliasMap=null;shadowExistingVariants=null;
+    }
+  }
+  const shadowDecisions:any[]=[],shadowRowsToPersist:any[]=[];
   let index=0;
-  for(const target of targets){index++;if(index%100===0)console.log('[market-sync] resolveCardmarketTargets: resolving',{index,total:targets.length,ms:Date.now()-t0});if(target.resolution_status==='manual'&&target.mapping_id)continue;bodies.push(cardmarketResolutionBody(target,await provider.resolvePrinting(target,{internalPrintings,expansionHints})));}
+  for(const target of targets){
+    index++;if(index%100===0)console.log('[market-sync] resolveCardmarketTargets: resolving',{index,total:targets.length,ms:Date.now()-t0});
+    if(target.resolution_status==='manual'&&target.mapping_id)continue;
+    const resolution=await provider.resolvePrinting(target,{internalPrintings,expansionHints});
+    bodies.push(cardmarketResolutionBody(target,resolution));
+    if(shadowRarityAliasMap&&shadowExistingVariants){
+      try{
+        const rarityCanonical=canonicalYgoRarity(target.rarity,shadowRarityAliasMap);
+        const cardmarketCandidates=(resolution.candidates||[]).map((row:any)=>({
+          productId:row.providerProductId||row.provider_product_id,
+          expansionId:row.providerExpansionId||row.provider_expansion_id,
+          rarityCanonical:canonicalYgoRarity(row.rarity,shadowRarityAliasMap)
+        }));
+        const existingVariant=shadowExistingVariants.get(String(target.printing_id))||null;
+        const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical});
+        shadowDecisions.push(decision);
+        if(shouldPersistMarketVariantShadow(existingVariant)){
+          shadowRowsToPersist.push({
+            printing_id:target.printing_id,rarity_raw:target.rarity||'',rarity_canonical:rarityCanonical,
+            cardmarket_product_id:decision.cardmarketProductId,cardmarket_expansion_id:decision.cardmarketExpansionId,
+            candidate_product_ids:decision.candidateProductIds,mapping_source:decision.mappingSource,
+            mapping_confidence:decision.mappingConfidence,mapping_status:decision.mappingStatus,
+            resolution_reason:decision.reason,verified:false
+          });
+        }
+      }catch(error:any){
+        shadowDecisions.push({mappingStatus:'errors'});
+        console.error('[market-sync] market variant shadow: errore su una printing',{printingId:target.printing_id,error:String(error?.message||error)});
+      }
+    }
+  }
   console.log('[market-sync] resolveCardmarketTargets: resolved',{targets:targets.length,ms:Date.now()-t0});
+  if(shadowRowsToPersist.length){
+    try{await upsertYgoMarketVariantsShadow(shadowRowsToPersist);}
+    catch(error:any){console.error('[market-sync] market variant shadow: upsert fallito',{rows:shadowRowsToPersist.length,error:String(error?.message||error)});}
+  }
+  if(shadowDecisions.length)console.log('[market-sync] market variant shadow summary',summarizeMarketVariantDecisions(shadowDecisions));
   const saved=[];
   for(let index=0;index<bodies.length;index+=200){const response=await fetch(`${supabaseUrl}/rest/v1/market_provider_printings?on_conflict=printing_id,provider,variant_key`,{method:'POST',headers:{...headers(),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(bodies.slice(index,index+200))});if(!response.ok)throw new Error(`mapping cardmarket: ${response.status} ${await response.text()}`);saved.push(...await response.json());}
   const byPrinting=new Map(saved.map((row:any)=>[row.printing_id,row]));return targets.map(target=>{const row:any=byPrinting.get(target.printing_id);return row?{...target,mapping_id:row.id,provider_product_id:row.provider_product_id,provider_expansion_id:row.provider_expansion_id,resolution_status:row.resolution_status,provider_metadata:row.provider_metadata,variant_key:row.variant_key}:target;});
