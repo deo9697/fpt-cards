@@ -335,6 +335,84 @@ export function classifyPriceComparison(legacyPrice,exactPrice){
   return {comparisonStatus,absoluteDelta,percentageDelta};
 }
 
+// --- Candidate Metadata Enrichment ------------------------------------------
+// Arricchimento SOLO per i candidate_product_ids già in coda di review — mai
+// uno scraper generale. Il bulk feed/Price Guide NON hanno rarity (vedi
+// audit): l'unico posto dove Cardmarket la mostra è la pagina prodotto
+// individuale, secondo la documentazione — MAI verificato con successo in
+// questa sessione (fetch di test verso cardmarket.com bloccato con HTTP 403,
+// anche sulla home page category, non solo sull'idProduct — vedi report).
+// Queste funzioni sono pure/testabili a prescindere dall'esito del fetch.
+
+// Il titolo di una pagina prodotto Cardmarket porta spesso un suffisso sito
+// (es. " | Cardmarket") che va tolto prima di applicare il pattern
+// "Card Name (V.N - Rarity Text)" — STESSA forma di parseProductName() sopra
+// (pensata per il nome nel bulk feed, dove il formato non compare quasi mai),
+// qui riusata per il titolo della pagina individuale. Conservativo: se non
+// combacia, ogni campo torna null, mai un guess.
+const PRODUCT_TITLE_TRAILING_SUFFIX=/\s*[|–-]\s*Cardmarket\s*$/i;
+export function parseCardmarketProductTitle(rawTitle){
+  const cleaned=String(rawTitle||'').replace(PRODUCT_TITLE_TRAILING_SUFFIX,'').trim();
+  if(!cleaned)return {productName:'',variantNumber:null,rarityRaw:null};
+  const match=cleaned.match(/^(.*?)\s*\(V\.(\d+)\s*-\s*([^()]+)\)\s*$/i);
+  if(!match)return {productName:cleaned,variantNumber:null,rarityRaw:null};
+  return {productName:match[1].trim(),variantNumber:match[2],rarityRaw:match[3].trim()};
+}
+
+// Un fetch fallito non è mai "rarity sconosciuta per sempre" — stati
+// distinti così l'admin sa se vale la pena ritentare (blocked/parse_error)
+// o se il prodotto semplicemente non esiste più (not_found).
+export function classifyCandidateMetadataFetchOutcome({httpStatus=null,threwError=false,titleFound=false,rarityRaw=null}={}){
+  if(threwError)return 'parse_error';
+  if(httpStatus===404)return 'not_found';
+  if(httpStatus===403||httpStatus===429)return 'blocked';
+  if(httpStatus!=null&&httpStatus>=400)return 'blocked';
+  if(!titleFound)return 'parse_error';
+  return rarityRaw?'resolved':'incomplete';
+}
+
+// Confronto VISIVO, mai un'auto-conferma: dice solo se la rarity FPT e
+// quella letta dalla pagina prodotto (una volta canonicalizzate con lo
+// stesso ygo_rarity_aliases/ygo_rarity_canon) coincidono.
+export function classifyCandidateRarityMatch(fptRarityCanonical,candidateRarityCanonical){
+  if(!fptRarityCanonical||!candidateRarityCanonical)return 'unknown';
+  return fptRarityCanonical===candidateRarityCanonical?'exact_match':'mismatch';
+}
+
+// Sezione "futura auto-resolution, NON implementare ora": solo un
+// suggerimento visivo per l'intero pool di candidati di una printing — non
+// scrive mai verified=true da sola.
+export function classifyCandidatePoolMatch(fptRarityCanonical,candidates){
+  if(!fptRarityCanonical)return 'unknown';
+  const known=(candidates||[]).filter(candidate=>candidate?.rarityCanonical);
+  if(!known.length)return 'unknown';
+  const matching=known.filter(candidate=>candidate.rarityCanonical===fptRarityCanonical);
+  if(matching.length===1)return 'exact_unique';
+  if(matching.length>1)return 'multiple_matches';
+  return 'no_match';
+}
+
+// Guardrail cache: di default non ri-fetchare entro 7 giorni, a meno di
+// force esplicito dall'admin — mai un refresh automatico/continuo.
+export function shouldRefreshCandidateMetadata(lastCheckedAt,force=false,maxAgeDays=7){
+  if(force)return true;
+  if(!lastCheckedAt)return true;
+  const last=new Date(lastCheckedAt).getTime();
+  if(!Number.isFinite(last))return true;
+  return (Date.now()-last)>maxAgeDays*24*60*60*1000;
+}
+
+// Batch piccolo e limitato per costruzione, non solo per policy: la RPC
+// ripete comunque questo controllo lato server (mai fidarsi solo del client).
+export function validateCandidateMetadataBatch(printingIds,productIds,{maxPrintings=5,maxProductIds=40}={}){
+  const printingCount=new Set((printingIds||[]).filter(Boolean)).size;
+  const productCount=new Set((productIds||[]).filter(Boolean)).size;
+  if(printingCount===0)return {ok:false,reason:'empty_printing_ids',printingCount,productCount};
+  if(printingCount>maxPrintings)return {ok:false,reason:'too_many_printings',printingCount,productCount};
+  if(productCount>maxProductIds)return {ok:false,reason:'too_many_product_ids',printingCount,productCount};
+  return {ok:true,printingCount,productCount};
+}
+
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
 export function normalizeMarketRarity(value){const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}

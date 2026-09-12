@@ -135,6 +135,23 @@ export const api = {
       options
     );
   },
+  // Arricchimento metadata dei candidate_product_ids in coda di review —
+  // sola lettura della cache (getYgoMarketVariantCandidateMetadata) più un
+  // trigger esplicito per aggiornarla (refreshYgoMarketVariantCandidateMetadata,
+  // stesso meccanismo net.http_post + poller del canary/price-shadow). Il
+  // fetch vero e proprio gira SOLO nell'Edge Function, mai qui.
+  async getYgoMarketVariantCandidateMetadata(printingId) {
+    ensure(); return unwrap(await client.rpc('get_ygo_market_variant_candidate_metadata', { p_token:token(),p_printing_id:printingId }));
+  },
+  async refreshYgoMarketVariantCandidateMetadata(printingIds, { force = false, ...options } = {}) {
+    ensure();
+    const created = unwrap(await client.rpc('request_ygo_market_variant_candidate_metadata_refresh', { p_token:token(),p_printing_ids:printingIds,p_force:Boolean(force) }));
+    return pollMarketVariantCanaryRun(
+      async runId => unwrap(await client.rpc('get_ygo_market_variant_canary_run', { p_token:token(),p_run_id:runId })),
+      created.run_id,
+      options
+    );
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },

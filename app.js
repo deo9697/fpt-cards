@@ -846,7 +846,12 @@ const marketVariantState = {
   loading: false, error: '', queue: [], offset: 0, hasMore: false,
   selections: new Map(), confirming: new Set(),
   filters: { query: '', usedOnly: true },
-  coverage: null
+  coverage: null,
+  // Arricchimento metadata candidati (sezione dedicata): candidateMetadata è
+  // sola lettura della cache (mai un fetch Cardmarket automatico al render),
+  // popolata una volta per printing visibile in coda; refreshingMetadata
+  // traccia solo quali printing hanno un refresh esplicito in corso.
+  candidateMetadata: new Map(), refreshingMetadata: new Set()
 };
 const MARKET_VARIANT_PAGE_SIZE = 30;
 
@@ -854,7 +859,8 @@ function marketVariantModel() {
   return {
     loading: marketVariantState.loading, error: marketVariantState.error, queue: marketVariantState.queue,
     hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters,
-    coverage: marketVariantState.coverage
+    coverage: marketVariantState.coverage, candidateMetadata: marketVariantState.candidateMetadata,
+    refreshingMetadata: marketVariantState.refreshingMetadata
   };
 }
 function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
@@ -888,8 +894,39 @@ async function loadMarketVariantQueue(reset = true) {
     marketVariantState.offset += mapped.length;
     const total = rows[0]?.total_count ?? marketVariantState.queue.length;
     marketVariantState.hasMore = marketVariantState.queue.length < total;
+    void loadMarketVariantCandidateMetadata(mapped);
   } catch (error) { marketVariantState.error = error.message || 'Coda non disponibile'; }
   finally { marketVariantState.loading = false; render(); }
+}
+
+// Sola lettura della cache metadata (get_ygo_market_variant_candidate_metadata
+// NON fa alcun fetch Cardmarket, legge solo ygo_market_variant_candidate_metadata)
+// per le sole printing appena caricate in coda — mai per tutta la coda intera
+// a ogni render, e mai due volte per la stessa printing in questa sessione.
+async function loadMarketVariantCandidateMetadata(items) {
+  const targets = items.filter(item => item.candidateProductIds.length && !marketVariantState.candidateMetadata.has(item.printingId));
+  if (!targets.length) return;
+  await Promise.all(targets.map(async item => {
+    try {
+      const data = await api.getYgoMarketVariantCandidateMetadata(item.printingId);
+      marketVariantState.candidateMetadata.set(item.printingId, { fptRarityCanonical: data.fpt_rarity_canonical, candidates: data.candidates || [] });
+    } catch { /* diagnostica opzionale: un fallimento qui non deve bloccare la coda */ }
+  }));
+  render();
+}
+
+async function refreshMarketVariantCandidateMetadata(printingId) {
+  if (marketVariantState.refreshingMetadata.has(printingId)) return;
+  marketVariantState.refreshingMetadata.add(printingId); render();
+  try {
+    // request_ygo_market_variant_candidate_metadata_refresh rispetta da solo
+    // la cache di 7 giorni (force=false di default): questa azione admin
+    // esplicita non forza un rifetch se i metadata sono già recenti.
+    await api.refreshYgoMarketVariantCandidateMetadata([printingId]);
+    const data = await api.getYgoMarketVariantCandidateMetadata(printingId);
+    marketVariantState.candidateMetadata.set(printingId, { fptRarityCanonical: data.fpt_rarity_canonical, candidates: data.candidates || [] });
+  } catch (error) { toast(error.message || 'Aggiornamento metadata non riuscito'); }
+  finally { marketVariantState.refreshingMetadata.delete(printingId); render(); }
 }
 
 function setMarketVariantFilter(key, value) {
@@ -1036,7 +1073,8 @@ function bind() {
   });
   bindMarketVariantPage(document, marketVariantModel(), {
     onSelectCandidate: selectMarketVariantCandidate, onConfirm: confirmMarketVariantSelection,
-    onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter
+    onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter,
+    onRefreshMetadata: refreshMarketVariantCandidateMetadata
   });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);

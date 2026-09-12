@@ -284,6 +284,40 @@ function classifyPriceComparison(legacyPrice:any,exactPrice:any):any{
   else comparisonStatus='different';
   return {comparisonStatus,absoluteDelta,percentageDelta};
 }
+// Copia manuale di parseCardmarketProductTitle()/classifyCandidateMetadataFetchOutcome()/
+// validateCandidateMetadataBatch()/shouldRefreshCandidateMetadata() da
+// market/providers.js (stesso motivo delle altre copie sopra).
+const PRODUCT_TITLE_TRAILING_SUFFIX=/\s*[|–-]\s*Cardmarket\s*$/i;
+function parseCardmarketProductTitle(rawTitle:any):any{
+  const cleaned=String(rawTitle||'').replace(PRODUCT_TITLE_TRAILING_SUFFIX,'').trim();
+  if(!cleaned)return {productName:'',variantNumber:null,rarityRaw:null};
+  const match=cleaned.match(/^(.*?)\s*\(V\.(\d+)\s*-\s*([^()]+)\)\s*$/i);
+  if(!match)return {productName:cleaned,variantNumber:null,rarityRaw:null};
+  return {productName:match[1].trim(),variantNumber:match[2],rarityRaw:match[3].trim()};
+}
+function classifyCandidateMetadataFetchOutcome({httpStatus=null as number|null,threwError=false,titleFound=false,rarityRaw=null as string|null}={}):string{
+  if(threwError)return 'parse_error';
+  if(httpStatus===404)return 'not_found';
+  if(httpStatus===403||httpStatus===429)return 'blocked';
+  if(httpStatus!=null&&httpStatus>=400)return 'blocked';
+  if(!titleFound)return 'parse_error';
+  return rarityRaw?'resolved':'incomplete';
+}
+function validateCandidateMetadataBatch(printingIdsList:string[],productIdsList:string[],{maxPrintings=5,maxProductIds=40}={}):any{
+  const printingCount=new Set((printingIdsList||[]).filter(Boolean)).size;
+  const productCount=new Set((productIdsList||[]).filter(Boolean)).size;
+  if(printingCount===0)return {ok:false,reason:'empty_printing_ids',printingCount,productCount};
+  if(printingCount>maxPrintings)return {ok:false,reason:'too_many_printings',printingCount,productCount};
+  if(productCount>maxProductIds)return {ok:false,reason:'too_many_product_ids',printingCount,productCount};
+  return {ok:true,printingCount,productCount};
+}
+function shouldRefreshCandidateMetadata(lastCheckedAt:any,force=false,maxAgeDays=7):boolean{
+  if(force)return true;
+  if(!lastCheckedAt)return true;
+  const last=new Date(lastCheckedAt).getTime();
+  if(!Number.isFinite(last))return true;
+  return (Date.now()-last)>maxAgeDays*24*60*60*1000;
+}
 // Un solo GET per l'intera tabella alias (~55 righe) per run di sync, mai per
 // printing — la stessa identica tabella scritta dalla migration
 // 20260912110000_ygo_market_variant_registry.sql.
@@ -475,6 +509,14 @@ Deno.serve(async request=>{
   if(marketVariantPriceShadowRunId){
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marketVariantPriceShadowRunId))return json({error:'invalid_market_variant_price_shadow_run_id'},400);
     return json(await runYgoMarketVariantPriceShadow(marketVariantPriceShadowRunId));
+  }
+  // Arricchimento metadata candidati Cardmarket — stesso pattern, stessa
+  // coda. NON uno scraper generale: solo i candidate_product_ids delle
+  // printing passate da request_ygo_market_variant_candidate_metadata_refresh.
+  const marketVariantCandidateMetadataRunId=typeof payload?.marketVariantCandidateMetadataRunId==='string'?payload.marketVariantCandidateMetadataRunId.trim():'';
+  if(marketVariantCandidateMetadataRunId){
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marketVariantCandidateMetadataRunId))return json({error:'invalid_market_variant_candidate_metadata_run_id'},400);
+    return json(await runYgoMarketVariantCandidateMetadataRefresh(marketVariantCandidateMetadataRunId,payload?.force===true));
   }
   const dryTargetPrintingIds=printingIds(payload?.dryTargetPrintingIds);
   const canaryPrintingIds=printingIds(payload?.canaryPrintingIds);
@@ -766,6 +808,113 @@ async function runYgoMarketVariantPriceShadow(runId:string){
   }catch(error:any){
     const message=String(error?.message||error).slice(0,1000);
     console.error('[market-sync] market variant price shadow: run fallita',{runId,error:message});
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'failed',finished_at:new Date().toISOString(),error_message:message},{'Prefer':'return=minimal'}).catch(()=>{});
+    return {ok:false,runId,status:'failed',error:message};
+  }
+}
+
+// Un solo GET a blocchi per sapere quali printing hanno già candidate_product_ids
+// e la loro rarity canonica — mai per printing singola. Colonne diverse da
+// fetchExistingYgoMarketVariants() sopra (qui serve candidate_product_ids,
+// che quella non seleziona): funzione separata invece di allargare quella
+// già usata altrove, per non rischiare di cambiarne il costo/comportamento.
+async function fetchYgoMarketVariantCandidates(printingIds:string[]):Promise<Map<string,any>>{
+  const byId=new Map<string,any>(),unique=[...new Set(printingIds.filter(Boolean))];
+  for(let index=0;index<unique.length;index+=150){
+    const chunk=unique.slice(index,index+150);
+    const page=await restPages(`ygo_market_variants?select=printing_id,rarity_canonical,candidate_product_ids&printing_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.printing_id});
+    for(const row of page.rows)byId.set(String(row.printing_id),row);
+  }
+  return byId;
+}
+
+// Arricchimento metadata dei SOLI candidate_product_ids già in coda di
+// review — mai uno scraper generale. Invocato SOLO da
+// request_ygo_market_variant_candidate_metadata_refresh via net.http_post,
+// mai dal browser. IMPORTANTE: un fetch di prova (WebFetch, fuori da questa
+// function) verso cardmarket.com — sia un idProduct reale sia la semplice
+// home category — è tornato HTTP 403 su entrambi. Questo codice è scritto
+// per gestire correttamente quell'esito (fetch_status='blocked', pannello
+// che continua a funzionare), non per garantire che il fetch funzioni in
+// produzione: non ho modo di verificarlo da questa sessione, e per policy
+// esplicita non tento alcun bypass/headless/proxy se accade di nuovo.
+// Un prodotto alla volta, nessun retry, piccolo delay tra un fetch e il
+// successivo — mai Promise.all, mai un crawler.
+const CANDIDATE_METADATA_FETCH_DELAY_MS=400;
+async function runYgoMarketVariantCandidateMetadataRefresh(runId:string,force:boolean){
+  const runRows=await restPages(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}&select=id,status,printing_ids`,{key:(row:any)=>row.id});
+  const run=runRows.rows[0];
+  if(!run)return {ok:false,runId,error:'canary_run_not_found'};
+  if(run.status!=='pending')return {ok:true,runId,skipped:true,status:run.status,reason:'already_processed'};
+  await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'running',started_at:new Date().toISOString()},{'Prefer':'return=minimal'});
+  try{
+    const printingIdList=printingIds(run.printing_ids);
+    if(!printingIdList.length)throw new Error('printing_ids della run non valido (vuoto, >20, o non tutti UUID)');
+    const variantsByPrinting=await fetchYgoMarketVariantCandidates(printingIdList);
+
+    const productIdSet=new Set<string>();
+    for(const printingId of printingIdList){
+      const variant=variantsByPrinting.get(String(printingId));
+      const ids:string[]=Array.isArray(variant?.candidate_product_ids)?variant.candidate_product_ids:[];
+      for(const id of ids){if(String(id||'').trim())productIdSet.add(String(id).trim());}
+    }
+    const batchCheck=validateCandidateMetadataBatch(printingIdList,[...productIdSet]);
+    const productIdList=[...productIdSet].slice(0,40); // difensivo: la RPC già limita a 5 printing, ma non fidarsi mai solo del client
+
+    const existingMetadata=new Map<string,any>();
+    if(productIdList.length){
+      const page=await restPages(`ygo_market_variant_candidate_metadata?select=cardmarket_product_id,last_checked_at&cardmarket_product_id=in.(${productIdList.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.cardmarket_product_id});
+      for(const row of page.rows)existingMetadata.set(row.cardmarket_product_id,row);
+    }
+    const toFetch=productIdList.filter(id=>shouldRefreshCandidateMetadata(existingMetadata.get(id)?.last_checked_at||null,force));
+
+    const rarityAliasMap=await fetchYgoRarityAliasMap();
+    const metadataRows:any[]=[];
+    const counts:any={fetched:0,skippedCache:productIdList.length-toFetch.length,resolved:0,incomplete:0,notFound:0,blocked:0,parseError:0};
+
+    for(const candidateProductId of toFetch){
+      if(metadataRows.length)await new Promise(resolve=>setTimeout(resolve,CANDIDATE_METADATA_FETCH_DELAY_MS));
+      const productUrl=`https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(candidateProductId)}`;
+      let httpStatus:number|null=null,threwError=false,titleFound=false,rawTitle='',canonicalUrl:string|null=null,fetchErrorMessage:string|null=null;
+      try{
+        const response=await fetch(productUrl,{headers:{'User-Agent':'FPT-Cards-MarketVariantResolver/1.0 (admin-triggered metadata check; not a crawler)'}});
+        httpStatus=response.status;canonicalUrl=response.url||null;
+        if(response.ok){
+          const html=await response.text();
+          const titleMatch=html.match(/<title[^>]*>([^<]*)<\/title>/i);
+          if(titleMatch){titleFound=true;rawTitle=titleMatch[1].trim();}
+        }else{
+          fetchErrorMessage=`HTTP ${httpStatus}`;
+        }
+      }catch(error:any){threwError=true;fetchErrorMessage=String(error?.message||error).slice(0,500);}
+
+      const parsed=titleFound?parseCardmarketProductTitle(rawTitle):{productName:'',variantNumber:null,rarityRaw:null};
+      const rarityCanonical=parsed.rarityRaw?canonicalYgoRarity(parsed.rarityRaw,rarityAliasMap):null;
+      const fetchStatus=classifyCandidateMetadataFetchOutcome({httpStatus,threwError,titleFound,rarityRaw:parsed.rarityRaw});
+      counts.fetched++;
+      if(fetchStatus==='resolved')counts.resolved++;else if(fetchStatus==='incomplete')counts.incomplete++;else if(fetchStatus==='not_found')counts.notFound++;else if(fetchStatus==='blocked')counts.blocked++;else counts.parseError++;
+
+      metadataRows.push({
+        cardmarket_product_id:candidateProductId,
+        product_name:parsed.productName||null,
+        rarity_raw:parsed.rarityRaw,rarity_canonical:rarityCanonical,
+        variant_number:parsed.variantNumber,
+        product_url:productUrl,canonical_url:canonicalUrl,
+        metadata_source:'cardmarket_product_page',
+        metadata_confidence:fetchStatus==='resolved'?0.7:null, // mai 1: è una lettura pagina, non una verifica umana
+        fetch_status:fetchStatus,fetch_error:fetchErrorMessage,
+        raw_metadata:titleFound?{title:rawTitle,url:productUrl}:null,
+        last_checked_at:new Date().toISOString()
+      });
+    }
+    if(metadataRows.length)await rest('ygo_market_variant_candidate_metadata?on_conflict=cardmarket_product_id','POST',metadataRows,{'Prefer':'resolution=merge-duplicates,return=minimal'});
+
+    const summary={...counts,totalCandidates:productIdList.length,batchValidation:batchCheck};
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'succeeded',finished_at:new Date().toISOString(),result:{productIds:productIdList,summary}},{'Prefer':'return=minimal'});
+    return {ok:true,runId,status:'succeeded',summary};
+  }catch(error:any){
+    const message=String(error?.message||error).slice(0,1000);
+    console.error('[market-sync] market variant candidate metadata: run fallita',{runId,error:message});
     await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'failed',finished_at:new Date().toISOString(),error_message:message},{'Prefer':'return=minimal'}).catch(()=>{});
     return {ok:false,runId,status:'failed',error:message};
   }

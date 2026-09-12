@@ -9,8 +9,8 @@ import { icon } from './icons.js';
 const STATUS_LABELS = { ambiguous: 'Ambiguous', conflict: 'Conflict', unresolved: 'Unresolved' };
 
 export function renderMarketVariantPage(model) {
-  const { loading, error, queue, hasMore, selections, filters, coverage } = model;
-  const rows = queue.map(item => marketVariantRow(item, selections.get(item.printingId))).join('');
+  const { loading, error, queue, hasMore, selections, filters, coverage, candidateMetadata, refreshingMetadata } = model;
+  const rows = queue.map(item => marketVariantRow(item, selections.get(item.printingId), candidateMetadata?.get(item.printingId), refreshingMetadata?.has(item.printingId))).join('');
   return `<section class="page-stack admin-page" data-market-variant-page>
     <header class="page-header"><div><span class="eyebrow">Market Variant Resolver</span><h1>Rarity Cardmarket ambigue</h1>
       <p>Stesso set_code, più rarità diverse: il feed Cardmarket non basta a distinguerle da solo. Scegli il prodotto corretto per ciascuna — nessuna scelta automatica.</p></div>
@@ -66,15 +66,36 @@ function usageLabel(item) {
   return parts.length ? parts.join(' · ') : 'Non ancora posseduta da nessuno';
 }
 
-function marketVariantRow(item, selectedProductId) {
+// meta.fetch_status: pending/undefined (mai richiesto) | resolved | incomplete
+// | not_found | blocked | parse_error — vedi market/providers.js:
+// classifyCandidateMetadataFetchOutcome(). Nessuno di questi stati mostra mai
+// una rarity inventata: se non è nota resta "non ancora acquisita"/lo stato
+// del fetch, punto.
+function candidateMetadataLine(productId, meta) {
+  if (!meta || !meta.fetch_status || meta.fetch_status === 'pending') {
+    return `<span class="admin-variant-candidate-id">${esc(productId)}</span><small class="admin-variant-candidate-hint">Rarity: non ancora acquisita</small>`;
+  }
+  if (meta.fetch_status !== 'resolved' && meta.fetch_status !== 'incomplete') {
+    const label = { not_found: 'Prodotto non trovato', blocked: 'Fetch bloccato dal provider', parse_error: 'Pagina non leggibile' }[meta.fetch_status] || meta.fetch_status;
+    return `<span class="admin-variant-candidate-id">${esc(productId)}</span><small class="admin-variant-candidate-hint">${esc(label)}</small>`;
+  }
+  const matchBadge = meta.rarity_match === 'exact_match'
+    ? '<b class="admin-variant-match is-match">MATCH</b>'
+    : meta.rarity_match === 'mismatch' ? '<b class="admin-variant-match is-mismatch">MISMATCH</b>' : '';
+  const detailParts = [meta.rarity_raw || 'Rarity non riconosciuta', meta.variant_number ? `V.${meta.variant_number}` : '', meta.expansion_name || ''].filter(Boolean);
+  return `<span class="admin-variant-candidate-id">${esc(productId)}</span> ${matchBadge}<small>${esc(detailParts.join(' · '))}</small>`;
+}
+
+function marketVariantRow(item, selectedProductId, metadata, isRefreshingMetadata) {
   const candidateIds = item.candidateProductIds || [];
+  const metadataByProduct = new Map((metadata?.candidates || []).map(candidate => [candidate.product_id, candidate]));
   const candidates = candidateIds.map(productId => {
     const isSelected = selectedProductId === productId;
     return `<label class="admin-variant-candidate ${isSelected ? 'is-selected' : ''}">
       <input type="radio" name="variant-candidate-${esc(item.printingId)}" data-variant-candidate
         data-variant-printing-id="${esc(item.printingId)}" data-variant-product-id="${esc(productId)}" ${isSelected ? 'checked' : ''}>
-      <span>${esc(productId)}</span>
-      <a href="https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(productId)}" target="_blank" rel="noopener noreferrer" class="text-action">Vedi ${icon('arrow')}</a>
+      <div class="admin-variant-candidate-info">${candidateMetadataLine(productId, metadataByProduct.get(productId))}</div>
+      <a href="https://www.cardmarket.com/en/YuGiOh/Products/Singles?idProduct=${encodeURIComponent(productId)}" target="_blank" rel="noopener noreferrer" class="text-action">Apri pagina ${icon('arrow')}</a>
     </label>`;
   }).join('');
   return `<article class="admin-variant-card surface" data-admin-variant-card="${esc(item.printingId)}">
@@ -92,6 +113,7 @@ function marketVariantRow(item, selectedProductId) {
     </div>
     <div class="admin-variant-candidates">${candidates || '<p class="empty">Nessun candidato: esegui prima il resolver (canary) su questa printing.</p>'}</div>
     <footer>
+      <button type="button" class="btn secondary" data-variant-refresh-metadata data-variant-printing-id="${esc(item.printingId)}" ${candidateIds.length && !isRefreshingMetadata ? '' : 'disabled'}>${isRefreshingMetadata ? 'Aggiornamento...' : 'Aggiorna metadata candidati'}</button>
       <button type="button" class="btn" data-variant-confirm data-variant-printing-id="${esc(item.printingId)}" ${selectedProductId ? '' : 'disabled'}>Conferma selezionato</button>
     </footer>
   </article>`;
@@ -105,6 +127,8 @@ export function bindMarketVariantPage(root, model, handlers) {
     if (candidate) { handlers.onSelectCandidate(candidate.dataset.variantPrintingId, candidate.dataset.variantProductId); return; }
     const confirmButton = event.target.closest('[data-variant-confirm]');
     if (confirmButton && !confirmButton.disabled) { handlers.onConfirm(confirmButton.dataset.variantPrintingId); return; }
+    const refreshMetadataButton = event.target.closest('[data-variant-refresh-metadata]');
+    if (refreshMetadataButton && !refreshMetadataButton.disabled) { handlers.onRefreshMetadata(refreshMetadataButton.dataset.variantPrintingId); return; }
     const loadMore = event.target.closest('[data-variant-load-more]');
     if (loadMore && !loadMore.disabled) handlers.onLoadMore();
   });
