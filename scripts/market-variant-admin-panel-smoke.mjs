@@ -50,11 +50,14 @@ try {
           { product_id:'555', rarity_raw:'Secret Rare', rarity_canonical:'SECRET_RARE', variant_number:'3', expansion_name:'Rarity Collection II', fetch_status:'resolved', rarity_match:'mismatch' }
         ] }]
       ]),
+      setTemplates:[
+        { setPrefix:'RA01', variantNumber:1, rarityCanonical:'SUPER_RARE', verified:true }
+      ],
       queue:[
-        { printingId:'p-ambiguous', cardName:'Lightning Storm', setCode:'RA01-EN061', setName:'Rarity Collection', rarity:'Super Rare',
+        { printingId:'p-ambiguous', cardName:'Lightning Storm', setCode:'RA01-EN061', setName:'Rarity Collection', rarity:'Super Rare', rarityCanonical:'SUPER_RARE',
           mappingStatus:'ambiguous', resolutionReason:'multiple_candidates_no_rarity_signal',
           candidateProductIds:['111','222','333'], collectionUsage:2, deckUsage:1, loanUsage:0 },
-        { printingId:'p-conflict', cardName:'Garura', setCode:'RA02-EN024', setName:'Rarity Collection II', rarity:'Ultra Rare',
+        { printingId:'p-conflict', cardName:'Garura', setCode:'RA02-EN024', setName:'Rarity Collection II', rarity:'Ultra Rare', rarityCanonical:'ULTRA_RARE',
           mappingStatus:'conflict', resolutionReason:'multiple_provider_expansions',
           candidateProductIds:['444','555'], collectionUsage:0, deckUsage:0, loanUsage:0 }
       ]
@@ -88,6 +91,23 @@ try {
   ])) throw Error('Link Vedi errati: ' + JSON.stringify(structure.ambiguousLinks));
   if (structure.ambiguousTarget !== '_blank') throw Error('Il link Vedi deve aprire in nuova scheda');
   if (!structure.confirmDisabled.every(Boolean)) throw Error('Conferma deve essere disabilitata senza selezione: ' + JSON.stringify(structure.confirmDisabled));
+
+  // 1b) Set template resolver: RA01 Super Rare -> "SET TEMPLATE MATCH" col
+  //     product_id giusto (posizione 1); RA02 Ultra Rare -> nessun template
+  //     per RA02 in questo model, quindi nessun badge/box (mai un falso positivo).
+  const autoMatchState = await evaluate(`(()=>{
+    const ambiguousCard = document.querySelector('[data-admin-variant-card="p-ambiguous"]');
+    const conflictCard = document.querySelector('[data-admin-variant-card="p-conflict"]');
+    const autoMatchBox = ambiguousCard.querySelector('.admin-variant-auto-match');
+    return {
+      hasAutoMatch: !!autoMatchBox,
+      autoMatchText: autoMatchBox ? autoMatchBox.textContent : '',
+      conflictHasAutoMatch: !!conflictCard.querySelector('.admin-variant-auto-match')
+    };
+  })()`);
+  if (!autoMatchState.hasAutoMatch) throw Error('RA01 Super Rare doveva mostrare SET TEMPLATE MATCH: ' + JSON.stringify(autoMatchState));
+  if (!autoMatchState.autoMatchText.includes('RA01') || !autoMatchState.autoMatchText.includes('111') || !autoMatchState.autoMatchText.includes('V.1')) throw Error('Dettaglio SET TEMPLATE MATCH incompleto/errato: ' + JSON.stringify(autoMatchState));
+  if (autoMatchState.conflictHasAutoMatch) throw Error('RA02 non ha un template in questo model: non deve mostrare un match (falso positivo)');
 
   // 2) Selezionare un candidato abilita SOLO il bottone di quella card.
   await evaluate(`document.querySelector('[data-variant-product-id="222"]').click()`);
