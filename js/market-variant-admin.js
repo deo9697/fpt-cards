@@ -17,6 +17,7 @@ export function renderMarketVariantPage(model) {
       <p>Stesso set_code, più rarità diverse: il feed Cardmarket non basta a distinguerle da solo. Scegli il prodotto corretto per ciascuna — nessuna scelta automatica.</p></div>
     </header>
     ${renderExactPricingCoverage(coverage)}
+    ${renderExactPriceShadowSection(model)}
     ${renderMarketVariantFilters(filters)}
     ${error ? `<div class="admin-error surface">${icon('bell')} ${esc(error)}</div>` : ''}
     ${loading && !queue.length ? '<div class="empty">Caricamento coda...</div>' : ''}
@@ -24,6 +25,92 @@ export function renderMarketVariantPage(model) {
     <div class="admin-variant-queue">${rows}</div>
     ${hasMore ? `<div class="admin-load-more"><button type="button" class="btn secondary" data-variant-load-more ${loading ? 'disabled' : ''}>${loading ? 'Caricamento...' : 'Carica altri'}</button></div>` : ''}
   </section>`;
+}
+
+// Micro-feature: lancio manuale di run_ygo_market_variant_price_shadow() su
+// printing già resolved/verified (stessa regola di isExactPriceEligible()),
+// SOLA diagnostica — nessun prezzo live/Market Watch cambia qui, la RPC
+// scrive solo in ygo_market_variant_price_shadow. Sezione separata dalla
+// coda di revisione sopra: quella esclude sempre verified=true, questa
+// mostra ESATTAMENTE l'opposto.
+function renderExactPriceShadowSection(model) {
+  const { exactPriceLoading, exactPriceError, exactPriceHasMore, exactPriceRunning, exactPriceSummary } = model;
+  const exactPriceQueue = model.exactPriceQueue || [];
+  const rows = exactPriceQueue.map(item => exactPriceShadowRow(item, exactPriceRunning)).join('');
+  return `<section class="surface admin-variant-shadow-section">
+    <header><span class="eyebrow">Solo diagnostica — nessun prezzo live cambia</span><h2>Exact Price Shadow</h2>
+      <p>Confronta, per printing già risolte o verificate, il prezzo del prodotto Cardmarket esatto contro quello mostrato oggi in Market Watch. Scrive solo nella shadow table, mai nel pricing live.</p>
+    </header>
+    ${exactPriceSummary ? renderExactPriceShadowSummary(exactPriceSummary) : ''}
+    ${exactPriceError ? `<div class="admin-error surface">${icon('bell')} ${esc(exactPriceError)}</div>` : ''}
+    ${exactPriceLoading && !exactPriceQueue.length ? '<div class="empty">Caricamento elenco...</div>' : ''}
+    ${!exactPriceLoading && !exactPriceQueue.length && !exactPriceError ? '<div class="empty">Nessuna printing resolved/verified con questi filtri.</div>' : ''}
+    <div class="admin-variant-shadow-queue">${rows}</div>
+    ${exactPriceHasMore ? `<div class="admin-load-more"><button type="button" class="btn secondary" data-variant-exact-price-load-more ${exactPriceLoading ? 'disabled' : ''}>${exactPriceLoading ? 'Caricamento...' : 'Carica altre'}</button></div>` : ''}
+  </section>`;
+}
+
+function renderExactPriceShadowSummary(summary) {
+  return `<div class="admin-variant-shadow-summary">
+    <strong>Exact price shadow completato</strong>
+    <dl>
+      <div><dt>Printing elaborate</dt><dd>${summary.printingCount}</dd></div>
+      <div><dt>Exact disponibili</dt><dd>${summary.exactAvailable}</dd></div>
+      <div><dt>Same</dt><dd>${summary.same}</dd></div>
+      <div><dt>Close</dt><dd>${summary.close}</dd></div>
+      <div><dt>Different</dt><dd>${summary.different}</dd></div>
+      <div><dt>Exact mancante</dt><dd>${summary.exactMissing}</dd></div>
+      <div><dt>Legacy mancante</dt><dd>${summary.legacyMissing}</dd></div>
+    </dl>
+  </div>`;
+}
+
+function formatEuro(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? `€${value.toFixed(2)}` : null;
+}
+
+const COMPARISON_STATUS_LABELS = { same: 'SAME', close: 'CLOSE', different: 'DIFFERENT', exact_missing: 'EXACT MANCANTE', legacy_missing: 'LEGACY MANCANTE' };
+
+// Nessun numero inventato: se manca legacy o exact il blocco mostra
+// esplicitamente "non disponibile" invece di un delta/percentuale calcolato
+// su un valore nullo (classifyPriceComparison lato server già garantisce
+// che exact_missing/legacy_missing abbiano precedenza sul calcolo numerico).
+function exactPriceShadowResultBlock(item) {
+  if (!item.comparisonStatus) return '<p class="admin-variant-shadow-hint">Nessun confronto ancora eseguito.</p>';
+  const legacy = formatEuro(item.legacyPrice);
+  const exact = formatEuro(item.exactPrice);
+  const delta = formatEuro(item.absoluteDelta);
+  const deltaPct = typeof item.percentageDelta === 'number' && Number.isFinite(item.percentageDelta) ? `${item.percentageDelta.toFixed(1)}%` : null;
+  const statusLabel = COMPARISON_STATUS_LABELS[item.comparisonStatus] || item.comparisonStatus;
+  return `<dl class="admin-variant-shadow-result">
+    <div><dt>Legacy</dt><dd>${legacy ?? 'non disponibile'}</dd></div>
+    <div><dt>Exact</dt><dd>${exact ?? 'non disponibile'}</dd></div>
+    <div><dt>Delta</dt><dd>${delta ?? '—'}</dd></div>
+    <div><dt>Delta %</dt><dd>${deltaPct ?? '—'}</dd></div>
+    <div><dt>Status</dt><dd><b class="admin-variant-badge is-${esc(item.comparisonStatus)}">${esc(statusLabel)}</b></dd></div>
+  </dl>`;
+}
+
+function exactPriceShadowRow(item, runningSet) {
+  const isRunning = runningSet?.has?.(item.printingId);
+  return `<article class="admin-variant-card surface" data-variant-exact-price-card="${esc(item.printingId)}">
+    <header>
+      <div>
+        <strong>${esc(item.cardName || 'Nome sconosciuto')}</strong>
+        <span>${esc(item.setCode)}${item.setName ? ' · ' + esc(item.setName) : ''}${item.rarity ? ' · ' + esc(item.rarity) : ''}</span>
+      </div>
+      <div class="admin-variant-usage">${icon('collection')} ${esc(usageLabel(item))}</div>
+    </header>
+    <div class="admin-variant-meta">
+      <span class="admin-variant-badge is-${item.verified ? 'verified' : 'resolved'}">${item.verified ? 'Verified' : 'Resolved'}</span>
+      <span class="admin-variant-candidate-id">product_id ${esc(item.cardmarketProductId)}</span>
+      <span class="admin-variant-reason">${esc(item.mappingSource || '')}</span>
+    </div>
+    ${exactPriceShadowResultBlock(item)}
+    <footer>
+      <button type="button" class="btn secondary" data-variant-run-exact-price data-variant-printing-id="${esc(item.printingId)}" ${isRunning ? 'disabled' : ''}>${isRunning ? 'Confronto prezzi in corso…' : 'Confronta prezzo esatto'}</button>
+    </footer>
+  </article>`;
 }
 
 // Fase finale dello shadow pricing — sola diagnostica (js/api.js:
@@ -155,7 +242,11 @@ export function bindMarketVariantPage(root, model, handlers) {
     const refreshMetadataButton = event.target.closest('[data-variant-refresh-metadata]');
     if (refreshMetadataButton && !refreshMetadataButton.disabled) { handlers.onRefreshMetadata(refreshMetadataButton.dataset.variantPrintingId); return; }
     const loadMore = event.target.closest('[data-variant-load-more]');
-    if (loadMore && !loadMore.disabled) handlers.onLoadMore();
+    if (loadMore && !loadMore.disabled) { handlers.onLoadMore(); return; }
+    const runExactPrice = event.target.closest('[data-variant-run-exact-price]');
+    if (runExactPrice && !runExactPrice.disabled) { handlers.onRunExactPriceShadow(runExactPrice.dataset.variantPrintingId); return; }
+    const exactPriceLoadMore = event.target.closest('[data-variant-exact-price-load-more]');
+    if (exactPriceLoadMore && !exactPriceLoadMore.disabled) handlers.onLoadMoreExactPrice();
   });
   page.querySelector('[data-variant-filter-query]')?.addEventListener('input', event => handlers.onFilterChange('query', event.target.value));
   page.querySelector('[data-variant-filter-used-only]')?.addEventListener('change', event => handlers.onFilterChange('usedOnly', event.target.checked));

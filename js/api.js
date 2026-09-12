@@ -143,6 +143,18 @@ export const api = {
       options
     );
   },
+  // Micro-feature pannello: lista SOLA lettura delle printing già eleggibili
+  // per l'exact price shadow (cardmarket_product_id noto e verified oppure
+  // mapping_status='resolved' — stessa regola di isExactPriceEligible()),
+  // con l'ultimo confronto già calcolato se esiste (LEFT JOIN su
+  // ygo_market_variant_price_shadow lato SQL, nessuna seconda tabella qui).
+  // Il lancio vero e proprio del confronto riusa marketVariantExactPriceComparison
+  // sopra: stessa RPC/stesso poller, nessuna nuova Edge Function.
+  async listYgoMarketVariantExactPriceEligible({ limit = 30, offset = 0, query = '', usedOnly = true } = {}) {
+    ensure(); return unwrap(await client.rpc('list_ygo_market_variant_exact_price_eligible', {
+      p_token:token(), p_limit:limit, p_offset:offset, p_query:query || null, p_used_only:usedOnly
+    }));
+  },
   // Arricchimento metadata dei candidate_product_ids in coda di review —
   // sola lettura della cache (getYgoMarketVariantCandidateMetadata) più un
   // trigger esplicito per aggiornarla (refreshYgoMarketVariantCandidateMetadata,

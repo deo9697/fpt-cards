@@ -2589,3 +2589,20 @@ button.market-row:hover { background:#15121d; }
 .admin-variant-coverage-grid > div { display:flex;flex-direction:column;gap:2px; }
 .admin-variant-coverage-grid strong { font-size:1.4rem; }
 .admin-variant-coverage-grid span { color:var(--muted);font-size:.75rem; }
+
+/* Exact Price Shadow — micro-feature: SOLO diagnostica, nessun prezzo live. */
+.admin-variant-shadow-section p { color:var(--muted);font-size:.85rem;margin:4px 0 0; }
+.admin-variant-shadow-queue { display:flex;flex-direction:column;gap:14px;margin-top:12px; }
+.admin-variant-shadow-summary { display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);margin-top:12px; }
+.admin-variant-shadow-summary dl { display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px 14px;margin:0; }
+.admin-variant-shadow-summary dt { color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em; }
+.admin-variant-shadow-summary dd { margin:0;font-size:1.05rem;font-weight:600; }
+.admin-variant-shadow-result { display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:.85rem; }
+.admin-variant-shadow-result dt { color:var(--muted); }
+.admin-variant-shadow-result dd { margin:0;font-family:monospace; }
+.admin-variant-shadow-hint { color:var(--muted);font-size:.8rem;margin:0; }
+.admin-variant-badge.is-verified { border-color:#82ed93;color:#82ed93; }
+.admin-variant-badge.is-resolved { color:var(--muted); }
+.admin-variant-badge.is-same, .admin-variant-badge.is-close { border-color:#82ed93;color:#82ed93; }
+.admin-variant-badge.is-different { border-color:var(--accent);color:var(--accent); }
+.admin-variant-badge.is-exact_missing, .admin-variant-badge.is-legacy_missing { border-color:var(--danger);color:var(--danger); }

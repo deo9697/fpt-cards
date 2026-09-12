@@ -855,16 +855,29 @@ const marketVariantState = {
   // Set template resolver (RA01/RA02): piccola tabella caricata una volta,
   // il client ci gira sopra resolveYgoMarketVariantBySetTemplate() per
   // mostrare "AUTO MATCH AVAILABLE" — mai un'auto-conferma.
-  setTemplates: []
+  setTemplates: [],
+  // Micro-feature Exact Price Shadow: elenco SEPARATO dalla coda di revisione
+  // sopra (quella esclude sempre verified=true) — solo printing già
+  // resolved/verified, stessi filtri query/usedOnly condivisi. exactPriceRunning
+  // traccia le run in corso per-printing (RPC esistente, stesso poller del
+  // canary); exactPriceSummary è il riepilogo dell'ULTIMA run lanciata da qui,
+  // sola UI, mai persistito.
+  exactPriceQueue: [], exactPriceOffset: 0, exactPriceHasMore: false,
+  exactPriceLoading: false, exactPriceError: '',
+  exactPriceRunning: new Set(), exactPriceSummary: null
 };
 const MARKET_VARIANT_PAGE_SIZE = 30;
+const MARKET_VARIANT_EXACT_PRICE_PAGE_SIZE = 20;
 
 function marketVariantModel() {
   return {
     loading: marketVariantState.loading, error: marketVariantState.error, queue: marketVariantState.queue,
     hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters,
     coverage: marketVariantState.coverage, candidateMetadata: marketVariantState.candidateMetadata,
-    refreshingMetadata: marketVariantState.refreshingMetadata, setTemplates: marketVariantState.setTemplates
+    refreshingMetadata: marketVariantState.refreshingMetadata, setTemplates: marketVariantState.setTemplates,
+    exactPriceQueue: marketVariantState.exactPriceQueue, exactPriceLoading: marketVariantState.exactPriceLoading,
+    exactPriceError: marketVariantState.exactPriceError, exactPriceHasMore: marketVariantState.exactPriceHasMore,
+    exactPriceRunning: marketVariantState.exactPriceRunning, exactPriceSummary: marketVariantState.exactPriceSummary
   };
 }
 function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
@@ -899,7 +912,7 @@ async function loadMarketVariantQueue(reset = true) {
   if (state.role !== 'admin') return;
   if (reset) {
     marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear();
-    void loadMarketVariantCoverage(); void loadMarketVariantSetTemplates();
+    void loadMarketVariantCoverage(); void loadMarketVariantSetTemplates(); void loadMarketVariantExactPriceEligible(true);
   }
   marketVariantState.loading = true; marketVariantState.error = ''; render();
   try {
@@ -979,6 +992,78 @@ async function confirmMarketVariantSelection(printingId) {
   } catch (error) { toast(error.message || 'Conferma non riuscita'); }
   finally { marketVariantState.confirming.delete(printingId); render(); }
 }
+
+// Micro-feature Exact Price Shadow — elenco delle printing già eleggibili
+// (cardmarket_product_id noto e verified oppure mapping_status='resolved',
+// list_ygo_market_variant_exact_price_eligible replica isExactPriceEligible()
+// lato SQL) con l'ultimo confronto già calcolato se esiste. Stessi filtri
+// query/usedOnly del resolver sopra, ricaricata insieme a quella coda.
+async function loadMarketVariantExactPriceEligible(reset = true) {
+  if (state.role !== 'admin') return;
+  if (reset) { marketVariantState.exactPriceQueue = []; marketVariantState.exactPriceOffset = 0; }
+  marketVariantState.exactPriceLoading = true; marketVariantState.exactPriceError = ''; render();
+  try {
+    const { query, usedOnly } = marketVariantState.filters;
+    const rows = await api.listYgoMarketVariantExactPriceEligible({ limit:MARKET_VARIANT_EXACT_PRICE_PAGE_SIZE, offset:marketVariantState.exactPriceOffset, query, usedOnly });
+    const mapped = rows.map(row => ({
+      printingId: row.printing_id, cardName: row.card_name, setCode: row.set_code, setName: row.set_name, rarity: row.rarity,
+      mappingStatus: row.mapping_status, mappingSource: row.mapping_source, verified: row.verified,
+      cardmarketProductId: row.cardmarket_product_id,
+      collectionUsage: row.collection_usage, deckUsage: row.deck_usage, loanUsage: row.loan_usage, usageCount: row.usage_count,
+      legacyPrice: row.legacy_price != null ? Number(row.legacy_price) : null,
+      exactPrice: row.exact_price != null ? Number(row.exact_price) : null,
+      priceType: row.price_type,
+      absoluteDelta: row.absolute_delta != null ? Number(row.absolute_delta) : null,
+      percentageDelta: row.percentage_delta != null ? Number(row.percentage_delta) : null,
+      comparisonStatus: row.comparison_status, shadowCapturedAt: row.shadow_captured_at
+    }));
+    marketVariantState.exactPriceQueue = marketVariantState.exactPriceQueue.concat(mapped);
+    marketVariantState.exactPriceOffset += mapped.length;
+    const total = rows[0]?.total_count ?? marketVariantState.exactPriceQueue.length;
+    marketVariantState.exactPriceHasMore = marketVariantState.exactPriceQueue.length < total;
+  } catch (error) { marketVariantState.exactPriceError = error.message || 'Elenco non disponibile'; }
+  finally { marketVariantState.exactPriceLoading = false; render(); }
+}
+
+// Lancia run_ygo_market_variant_price_shadow su UNA SOLA printing (riusa
+// api.marketVariantExactPriceComparison, stessa RPC/poller del canary — nessuna
+// nuova Edge Function). Sola diagnostica: scrive solo in
+// ygo_market_variant_price_shadow, nessun prezzo live/Market Watch/pricing
+// cambia. Un 'exact_missing'/'legacy_missing' è un esito valido del confronto,
+// non un errore — solo un run.status==='failed' o un errore RPC finiscono nel
+// toast.
+async function runMarketVariantExactPriceShadow(printingId) {
+  const item = marketVariantState.exactPriceQueue.find(row => row.printingId === printingId);
+  if (!item || marketVariantState.exactPriceRunning.has(printingId)) return;
+  marketVariantState.exactPriceRunning.add(printingId); render();
+  try {
+    const run = await api.marketVariantExactPriceComparison([printingId]);
+    if (run.timedOut) throw new Error('Confronto prezzo esatto: timeout, riprova');
+    if (run.status === 'failed') throw new Error(run.error_message || 'Confronto prezzo esatto non riuscito');
+    const rows = Array.isArray(run.result?.rows) ? run.result.rows : [];
+    const summary = run.result?.summary || null;
+    const updated = rows.find(row => row.printingId === printingId);
+    if (updated) {
+      Object.assign(item, {
+        legacyPrice: updated.legacyPrice ?? null, exactPrice: updated.exactPrice ?? null,
+        priceType: updated.priceType ?? null, absoluteDelta: updated.absoluteDelta ?? null,
+        percentageDelta: updated.percentageDelta ?? null, comparisonStatus: updated.comparisonStatus ?? null,
+        shadowCapturedAt: new Date().toISOString()
+      });
+    }
+    if (summary) {
+      marketVariantState.exactPriceSummary = {
+        printingCount: rows.length, exactAvailable: rows.filter(row => row.exactPrice != null).length,
+        same: summary.same || 0, close: summary.close || 0, different: summary.different || 0,
+        exactMissing: summary.exact_missing || 0, legacyMissing: summary.legacy_missing || 0
+      };
+    }
+    void loadMarketVariantCoverage();
+  } catch (error) { toast(error.message || 'Confronto prezzo esatto non riuscito'); }
+  finally { marketVariantState.exactPriceRunning.delete(printingId); render(); }
+}
+
+function loadMoreMarketVariantExactPriceEligible() { void loadMarketVariantExactPriceEligible(false); }
 
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
@@ -1098,7 +1183,9 @@ function bind() {
   bindMarketVariantPage(document, marketVariantModel(), {
     onSelectCandidate: selectMarketVariantCandidate, onConfirm: confirmMarketVariantSelection,
     onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter,
-    onRefreshMetadata: refreshMarketVariantCandidateMetadata
+    onRefreshMetadata: refreshMarketVariantCandidateMetadata,
+    onRunExactPriceShadow: runMarketVariantExactPriceShadow,
+    onLoadMoreExactPrice: loadMoreMarketVariantExactPriceEligible
   });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
