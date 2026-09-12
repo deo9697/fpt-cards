@@ -5,12 +5,13 @@
 // dell'admin, sceglie solo tra le opzioni che il resolver ha già trovato.
 import { esc } from './core.js';
 import { icon } from './icons.js';
+import { resolveYgoMarketVariantBySetTemplate } from '../market/providers.js';
 
 const STATUS_LABELS = { ambiguous: 'Ambiguous', conflict: 'Conflict', unresolved: 'Unresolved' };
 
 export function renderMarketVariantPage(model) {
-  const { loading, error, queue, hasMore, selections, filters, coverage, candidateMetadata, refreshingMetadata } = model;
-  const rows = queue.map(item => marketVariantRow(item, selections.get(item.printingId), candidateMetadata?.get(item.printingId), refreshingMetadata?.has(item.printingId))).join('');
+  const { loading, error, queue, hasMore, selections, filters, coverage, candidateMetadata, refreshingMetadata, setTemplates } = model;
+  const rows = queue.map(item => marketVariantRow(item, selections.get(item.printingId), candidateMetadata?.get(item.printingId), refreshingMetadata?.has(item.printingId), setTemplates)).join('');
   return `<section class="page-stack admin-page" data-market-variant-page>
     <header class="page-header"><div><span class="eyebrow">Market Variant Resolver</span><h1>Rarity Cardmarket ambigue</h1>
       <p>Stesso set_code, più rarità diverse: il feed Cardmarket non basta a distinguerle da solo. Scegli il prodotto corretto per ciascuna — nessuna scelta automatica.</p></div>
@@ -86,7 +87,30 @@ function candidateMetadataLine(productId, meta) {
   return `<span class="admin-variant-candidate-id">${esc(productId)}</span> ${matchBadge}<small>${esc(detailParts.join(' · '))}</small>`;
 }
 
-function marketVariantRow(item, selectedProductId, metadata, isRefreshingMetadata) {
+// Resolver deterministico V.n->rarity (RA01/RA02 per ora) applicato lato
+// client con la STESSA funzione pura del server (market/providers.js) —
+// nessuna logica duplicata, solo un suggerimento visivo. NON auto-conferma
+// mai: l'admin deve comunque premere "Conferma selezionato" per persistere
+// qualunque cosa (vedi sezione 17 del task: confirm resta l'unica autorità).
+function autoMatchBlock(item, setTemplates) {
+  const match = resolveYgoMarketVariantBySetTemplate({
+    setCode: item.setCode, rarityCanonical: item.rarityCanonical,
+    candidateProductIds: item.candidateProductIds || [], setTemplates: setTemplates || []
+  });
+  if (!match) return '';
+  return `<div class="admin-variant-auto-match">
+    <span class="admin-variant-badge is-auto-match">SET TEMPLATE MATCH</span>
+    <dl>
+      <div><dt>Set template</dt><dd>${esc(match.setPrefix)}</dd></div>
+      <div><dt>FPT rarity</dt><dd>${esc(item.rarity || item.rarityCanonical || '')}</dd></div>
+      <div><dt>Variant</dt><dd>V.${match.variantNumber}</dd></div>
+      <div><dt>Selected Cardmarket product</dt><dd>${esc(match.productId)}</dd></div>
+      <div><dt>Source</dt><dd>Verified set template</dd></div>
+    </dl>
+  </div>`;
+}
+
+function marketVariantRow(item, selectedProductId, metadata, isRefreshingMetadata, setTemplates) {
   const candidateIds = item.candidateProductIds || [];
   const metadataByProduct = new Map((metadata?.candidates || []).map(candidate => [candidate.product_id, candidate]));
   const candidates = candidateIds.map(productId => {
@@ -111,6 +135,7 @@ function marketVariantRow(item, selectedProductId, metadata, isRefreshingMetadat
       <span>${candidateIds.length} candidat${candidateIds.length === 1 ? 'o' : 'i'}</span>
       ${item.resolutionReason ? `<span class="admin-variant-reason">${esc(item.resolutionReason)}</span>` : ''}
     </div>
+    ${autoMatchBlock(item, setTemplates)}
     <div class="admin-variant-candidates">${candidates || '<p class="empty">Nessun candidato: esegui prima il resolver (canary) su questa printing.</p>'}</div>
     <footer>
       <button type="button" class="btn secondary" data-variant-refresh-metadata data-variant-printing-id="${esc(item.printingId)}" ${candidateIds.length && !isRefreshingMetadata ? '' : 'disabled'}>${isRefreshingMetadata ? 'Aggiornamento...' : 'Aggiorna metadata candidati'}</button>

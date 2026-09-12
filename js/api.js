@@ -118,6 +118,14 @@ export const api = {
       p_token:token(), p_printing_id:printingId, p_cardmarket_product_id:String(cardmarketProductId)
     }));
   },
+  // Resolver deterministico "V.n -> rarity" per set whitelisted (RA01/RA02
+  // per ora). Il client carica la piccola tabella template una volta e ci
+  // gira sopra la STESSA funzione pura resolveYgoMarketVariantBySetTemplate()
+  // usata server-side (market/providers.js) per mostrare "AUTO MATCH
+  // AVAILABLE" — mai un'auto-conferma, solo un suggerimento visivo.
+  async listYgoMarketVariantSetTemplates() {
+    ensure(); return unwrap(await client.rpc('list_ygo_market_variant_set_templates', { p_token:token() }));
+  },
   // Fase finale dello shadow pricing — sola diagnostica, nessun prezzo live
   // cambia. Il report è puro SQL (dati locali); la comparison crea una run
   // che l'Edge Function processa (stesso meccanismo del canary: la RPC

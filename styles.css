@@ -2579,6 +2579,11 @@ button.market-row:hover { background:#15121d; }
 .admin-variant-match.is-match { background:#0b291955;color:#82ed93; }
 .admin-variant-match.is-mismatch { background:#30231133;color:var(--danger); }
 .admin-variant-card footer { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap; }
+.admin-variant-auto-match { display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--accent);border-radius:10px;background:rgba(var(--accent-rgb,238,189,84),.08); }
+.admin-variant-badge.is-auto-match { border-color:var(--accent);color:var(--accent);align-self:flex-start; }
+.admin-variant-auto-match dl { display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:.8rem; }
+.admin-variant-auto-match dt { color:var(--muted); }
+.admin-variant-auto-match dd { margin:0;font-family:monospace; }
 .admin-variant-coverage h2 { margin:2px 0 10px;font-size:1.1rem; }
 .admin-variant-coverage-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px; }
 .admin-variant-coverage-grid > div { display:flex;flex-direction:column;gap:2px; }

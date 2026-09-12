@@ -168,7 +168,7 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
 // disponibile per il prossimo passo (wiring + backfill) senza toccare oggi
 // il comportamento live di Market Watch/del cron dei 15 minuti.
 export const MARKET_VARIANT_STATUS=Object.freeze({UNRESOLVED:'unresolved',RESOLVED:'resolved',AMBIGUOUS:'ambiguous',CONFLICT:'conflict',VERIFIED:'verified'});
-export const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy'});
+export const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy',SET_TEMPLATE:'verified_set_template'});
 
 // Mirror JS di normalize_ygo_rarity_key()/normalize_ygo_rarity() nella
 // migration: stessa identica trasformazione, tenuta manualmente in sync per
@@ -186,9 +186,47 @@ export function canonicalYgoRarity(rawRarity,aliasMap){
   return aliasMap.get(key)||null;
 }
 
-// Precedenza (sezione 8): verified manual > verified registry > resolved
-// registry > exact Cardmarket variant match > legacy fallback. Un fallback
-// legacy non diventa mai verified automaticamente. MAI scegliere il primo
+// Resolver deterministico "V.n -> rarity" per set esplicitamente whitelisted
+// (righe verified=true in ygo_market_variant_set_templates — MAI un pattern
+// tipo startsWith('RA'), il whitelisting emerge solo dai dati). Pura,
+// testabile in isolamento. setTemplates: array di
+// {setPrefix,variantNumber,rarityCanonical,verified} — tutte le righe note,
+// verificate o no: la funzione stessa scarta quelle non verified, non si fida
+// del chiamante per pre-filtrare.
+function extractYgoSetPrefix(setCode){
+  const match=String(setCode||'').trim().toUpperCase().match(/^([A-Z0-9]+)-/);
+  return match?match[1]:'';
+}
+export function resolveYgoMarketVariantBySetTemplate({setCode=null,rarityCanonical=null,candidateProductIds=[],setTemplates=[]}={}){
+  const setPrefix=extractYgoSetPrefix(setCode);
+  if(!setPrefix||!rarityCanonical)return null;
+  const ids=Array.isArray(candidateProductIds)?candidateProductIds:[];
+  if(!ids.length)return null; // candidate array vuoto
+
+  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical);
+  if(matches.length!==1)return null; // template mancante (0) O duplicate/ambiguous (>1) -> mai una scelta
+  const template=matches[0];
+  if(!template.verified)return null; // set non ancora whitelisted per questa rarity
+
+  const variantNumber=Number(template.variantNumber);
+  if(!Number.isInteger(variantNumber)||variantNumber<1)return null;
+  if(ids.length<variantNumber)return null; // candidate array più corto della posizione richiesta
+
+  // Safety check fondamentale: MAI riordinare/ricostruire — si usa
+  // ESATTAMENTE l'ordine già prodotto dal resolver Cardmarket corrente,
+  // indicizzando la posizione (1-based) così come arriva.
+  const productId=ids[variantNumber-1];
+  if(!productId)return null;
+
+  return {productId,variantNumber,setPrefix,rarityCanonical};
+}
+
+// Precedenza (sezione 8, estesa con il set template resolver): verified
+// manual > verified registry > verified set template resolver > exact
+// Cardmarket variant match > legacy fallback. Un fallback legacy non diventa
+// mai verified automaticamente, e nemmeno una risoluzione da set template lo
+// diventa (resta 'resolved', non 'verified' — la verifica umana è un atto
+// distinto, vedi confirm_ygo_market_variant). MAI scegliere il primo
 // risultato quando ci sono più candidati equivalenti: 0 candidati ->
 // unresolved, >1 candidati equivalenti -> ambiguous/conflict.
 //
@@ -201,7 +239,10 @@ export function canonicalYgoRarity(rawRarity,aliasMap){
 //   mapping market_provider_printings esistente (se presente), MAI usato per
 //   sovrascrivere un esito ambiguous/conflict fresco — solo come ultima
 //   spiaggia quando la risoluzione fresca non produce alcun candidato.
-export function resolveYgoMarketVariant({existingVariant=null,cardmarketCandidates=[],rarityCanonical=null,legacyMapping=null,forceRefresh=false}={}){
+//   setCode/setTemplates: input per resolveYgoMarketVariantBySetTemplate
+//   sopra — opzionali, se assenti il passo 3 semplicemente non si applica
+//   (comportamento identico a prima di questa estensione).
+export function resolveYgoMarketVariant({existingVariant=null,cardmarketCandidates=[],rarityCanonical=null,legacyMapping=null,forceRefresh=false,setCode=null,setTemplates=[]}={}){
   if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
     return variantResult({
       mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,
@@ -218,6 +259,15 @@ export function resolveYgoMarketVariant({existingVariant=null,cardmarketCandidat
     });
   }
   const candidates=dedupeVariantCandidates(cardmarketCandidates);
+  const templateMatch=resolveYgoMarketVariantBySetTemplate({setCode,rarityCanonical,candidateProductIds:candidates.map(row=>row.productId),setTemplates});
+  if(templateMatch){
+    const matchedCandidate=candidates.find(row=>row.productId===templateMatch.productId);
+    return variantResult({
+      mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.SET_TEMPLATE,mappingConfidence:1,
+      cardmarketProductId:templateMatch.productId,cardmarketExpansionId:matchedCandidate?.expansionId||null,
+      candidateProductIds:candidates.map(row=>row.productId),verified:false,reason:'verified_set_variant_template'
+    });
+  }
   if(!candidates.length)return legacyFallbackResult(legacyMapping)||variantResult({mappingStatus:MARKET_VARIANT_STATUS.UNRESOLVED,reason:'no_cardmarket_candidates'});
   const exactRarity=rarityCanonical?candidates.filter(row=>row.rarityCanonical===rarityCanonical):[];
   const pool=exactRarity.length?exactRarity:candidates;

@@ -190,7 +190,7 @@ function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolut
 // resolveCardmarketTargets() deve continuare come se non esistesse — vedi il
 // try/catch attorno alla sua unica chiamata più in basso.
 const MARKET_VARIANT_STATUS=Object.freeze({UNRESOLVED:'unresolved',RESOLVED:'resolved',AMBIGUOUS:'ambiguous',CONFLICT:'conflict',VERIFIED:'verified'});
-const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy'});
+const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy',SET_TEMPLATE:'verified_set_template'});
 function normalizeYgoRarityKey(value:any):string|null{
   const key=String(value||'').replace(/['’]/g,'').replace(/[^A-Za-z0-9]+/g,' ').trim().toUpperCase();
   return key||null;
@@ -200,7 +200,30 @@ function canonicalYgoRarity(rawRarity:any,aliasMap:Map<string,string>):string|nu
   if(!key||!aliasMap)return null;
   return aliasMap.get(key)||null;
 }
-function resolveYgoMarketVariant({existingVariant=null as any,cardmarketCandidates=[] as any[],rarityCanonical=null as string|null,legacyMapping=null as any,forceRefresh=false}={}):any{
+// Copia manuale di extractYgoSetPrefix()/resolveYgoMarketVariantBySetTemplate()
+// da market/providers.js (stesso motivo delle altre copie). Whitelisting
+// SOLO dai dati (righe verified=true) — mai un pattern sul prefisso.
+function extractYgoSetPrefix(setCode:any):string{
+  const match=String(setCode||'').trim().toUpperCase().match(/^([A-Z0-9]+)-/);
+  return match?match[1]:'';
+}
+function resolveYgoMarketVariantBySetTemplate({setCode=null as any,rarityCanonical=null as string|null,candidateProductIds=[] as string[],setTemplates=[] as any[]}={}):any{
+  const setPrefix=extractYgoSetPrefix(setCode);
+  if(!setPrefix||!rarityCanonical)return null;
+  const ids=Array.isArray(candidateProductIds)?candidateProductIds:[];
+  if(!ids.length)return null;
+  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical);
+  if(matches.length!==1)return null;
+  const template=matches[0];
+  if(!template.verified)return null;
+  const variantNumber=Number(template.variantNumber);
+  if(!Number.isInteger(variantNumber)||variantNumber<1)return null;
+  if(ids.length<variantNumber)return null;
+  const productId=ids[variantNumber-1];
+  if(!productId)return null;
+  return {productId,variantNumber,setPrefix,rarityCanonical};
+}
+function resolveYgoMarketVariant({existingVariant=null as any,cardmarketCandidates=[] as any[],rarityCanonical=null as string|null,legacyMapping=null as any,forceRefresh=false,setCode=null as any,setTemplates=[] as any[]}={}):any{
   if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
     return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:true,reason:'verified_mapping_preserved'});
   }
@@ -208,6 +231,11 @@ function resolveYgoMarketVariant({existingVariant=null as any,cardmarketCandidat
     return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:false,reason:'resolved_registry_preserved'});
   }
   const candidates=dedupeYgoVariantCandidates(cardmarketCandidates);
+  const templateMatch=resolveYgoMarketVariantBySetTemplate({setCode,rarityCanonical,candidateProductIds:candidates.map(row=>row.productId),setTemplates});
+  if(templateMatch){
+    const matchedCandidate=candidates.find(row=>row.productId===templateMatch.productId);
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.SET_TEMPLATE,mappingConfidence:1,cardmarketProductId:templateMatch.productId,cardmarketExpansionId:matchedCandidate?.expansionId||null,candidateProductIds:candidates.map(row=>row.productId),verified:false,reason:'verified_set_variant_template'});
+  }
   if(!candidates.length)return ygoLegacyFallbackResult(legacyMapping)||ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.UNRESOLVED,reason:'no_cardmarket_candidates'});
   const exactRarity=rarityCanonical?candidates.filter(row=>row.rarityCanonical===rarityCanonical):[];
   const pool=exactRarity.length?exactRarity:candidates;
@@ -324,6 +352,15 @@ function shouldRefreshCandidateMetadata(lastCheckedAt:any,force=false,maxAgeDays
 async function fetchYgoRarityAliasMap():Promise<Map<string,string>>{
   const page=await restPages('ygo_rarity_aliases?select=alias_key,canonical_code',{key:(row:any)=>row.alias_key});
   return new Map(page.rows.map((row:any)=>[row.alias_key,row.canonical_code]));
+}
+// Un solo GET per l'intera tabella (piccola: solo RA01/RA02 per ora) per run
+// di sync, mai per printing. Prende TUTTE le righe, non solo verified=true —
+// resolveYgoMarketVariantBySetTemplate() fa da sola il controllo verified,
+// non si fida del chiamante per pre-filtrare (vedi test "template non
+// verified -> no resolution" in market-variant-set-template-smoke.mjs).
+async function fetchYgoMarketVariantSetTemplates():Promise<any[]>{
+  const page=await restPages('ygo_market_variant_set_templates?select=set_prefix,variant_number,rarity_canonical,verified',{key:(row:any)=>`${row.set_prefix}:${row.variant_number}`});
+  return page.rows.map((row:any)=>({setPrefix:row.set_prefix,variantNumber:row.variant_number,rarityCanonical:row.rarity_canonical,verified:row.verified}));
 }
 // Un solo GET a blocchi (mai per printing) per sapere quali printing hanno
 // già una riga ygo_market_variants — indispensabile per non riscrivere mai
@@ -689,9 +726,10 @@ async function runYgoMarketVariantCanary(runId:string){
     const allPrintings=await withCanonicalCardNames(printingRows,targets);
     await provider.loadCatalog(targets,{internalPrintings:allPrintings});
     const expansionHints=provider.expansionHints;
-    const [rarityAliasMap,existingVariants]=await Promise.all([
+    const [rarityAliasMap,existingVariants,setTemplates]=await Promise.all([
       fetchYgoRarityAliasMap(),
-      fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id)))
+      fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id))),
+      fetchYgoMarketVariantSetTemplates()
     ]);
     const resultRows:any[]=[],shadowRowsToPersist:any[]=[];
     for(const target of targets){
@@ -703,7 +741,7 @@ async function runYgoMarketVariantCanary(runId:string){
         rarityCanonical:canonicalYgoRarity(row.rarity,rarityAliasMap)
       }));
       const existingVariant=existingVariants.get(String(target.printing_id))||null;
-      const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical});
+      const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical,setCode:target.set_code,setTemplates});
       const verifiedPreserved=!shouldPersistMarketVariantShadow(existingVariant);
       if(!verifiedPreserved){
         shadowRowsToPersist.push({
@@ -930,16 +968,17 @@ async function resolveCardmarketTargets(provider:any,targets:any[],internalPrint
   // shadow resolver si disattiva silenziosamente per l'intero run: il
   // resolver legacy sotto (bodies[], l'unico che conta per il prezzo live)
   // non dipende in alcun modo da questo blocco.
-  let shadowRarityAliasMap:Map<string,string>|null=null,shadowExistingVariants:Map<string,any>|null=null;
+  let shadowRarityAliasMap:Map<string,string>|null=null,shadowExistingVariants:Map<string,any>|null=null,shadowSetTemplates:any[]=[];
   if(provider.name==='cardmarket'){
     try{
-      [shadowRarityAliasMap,shadowExistingVariants]=await Promise.all([
+      [shadowRarityAliasMap,shadowExistingVariants,shadowSetTemplates]=await Promise.all([
         fetchYgoRarityAliasMap(),
-        fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id)))
+        fetchExistingYgoMarketVariants(targets.map((target:any)=>String(target.printing_id))),
+        fetchYgoMarketVariantSetTemplates()
       ]);
     }catch(error:any){
       console.error('[market-sync] market variant shadow: setup fallito, run senza shadow',{error:String(error?.message||error)});
-      shadowRarityAliasMap=null;shadowExistingVariants=null;
+      shadowRarityAliasMap=null;shadowExistingVariants=null;shadowSetTemplates=[];
     }
   }
   const shadowDecisions:any[]=[],shadowRowsToPersist:any[]=[];
@@ -958,7 +997,7 @@ async function resolveCardmarketTargets(provider:any,targets:any[],internalPrint
           rarityCanonical:canonicalYgoRarity(row.rarity,shadowRarityAliasMap)
         }));
         const existingVariant=shadowExistingVariants.get(String(target.printing_id))||null;
-        const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical});
+        const decision=resolveYgoMarketVariant({existingVariant,cardmarketCandidates,rarityCanonical,setCode:target.set_code,setTemplates:shadowSetTemplates});
         shadowDecisions.push(decision);
         if(shouldPersistMarketVariantShadow(existingVariant)){
           shadowRowsToPersist.push({

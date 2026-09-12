@@ -851,7 +851,11 @@ const marketVariantState = {
   // sola lettura della cache (mai un fetch Cardmarket automatico al render),
   // popolata una volta per printing visibile in coda; refreshingMetadata
   // traccia solo quali printing hanno un refresh esplicito in corso.
-  candidateMetadata: new Map(), refreshingMetadata: new Set()
+  candidateMetadata: new Map(), refreshingMetadata: new Set(),
+  // Set template resolver (RA01/RA02): piccola tabella caricata una volta,
+  // il client ci gira sopra resolveYgoMarketVariantBySetTemplate() per
+  // mostrare "AUTO MATCH AVAILABLE" — mai un'auto-conferma.
+  setTemplates: []
 };
 const MARKET_VARIANT_PAGE_SIZE = 30;
 
@@ -860,7 +864,7 @@ function marketVariantModel() {
     loading: marketVariantState.loading, error: marketVariantState.error, queue: marketVariantState.queue,
     hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters,
     coverage: marketVariantState.coverage, candidateMetadata: marketVariantState.candidateMetadata,
-    refreshingMetadata: marketVariantState.refreshingMetadata
+    refreshingMetadata: marketVariantState.refreshingMetadata, setTemplates: marketVariantState.setTemplates
   };
 }
 function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
@@ -875,15 +879,35 @@ async function loadMarketVariantCoverage() {
   catch { /* diagnostica opzionale: un fallimento qui non deve bloccare la coda */ }
 }
 
+// Sola lettura, piccola tabella (solo RA01/RA02 per ora) — mai un fetch
+// Cardmarket, mai un'auto-conferma: solo dati per il suggerimento visivo
+// "SET TEMPLATE MATCH" nel pannello.
+async function loadMarketVariantSetTemplates() {
+  if (state.role !== 'admin') return;
+  try {
+    const rows = await api.listYgoMarketVariantSetTemplates();
+    // resolveYgoMarketVariantBySetTemplate() vuole camelCase (stessa forma
+    // usata server-side) — remap dal risultato snake_case della RPC.
+    marketVariantState.setTemplates = rows.map(row => ({
+      setPrefix: row.set_prefix, variantNumber: row.variant_number, rarityCanonical: row.rarity_canonical, verified: row.verified
+    }));
+    render();
+  } catch { /* diagnostica opzionale: un fallimento qui non deve bloccare la coda */ }
+}
+
 async function loadMarketVariantQueue(reset = true) {
   if (state.role !== 'admin') return;
-  if (reset) { marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear(); void loadMarketVariantCoverage(); }
+  if (reset) {
+    marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear();
+    void loadMarketVariantCoverage(); void loadMarketVariantSetTemplates();
+  }
   marketVariantState.loading = true; marketVariantState.error = ''; render();
   try {
     const { query, usedOnly } = marketVariantState.filters;
     const rows = await api.ygoMarketVariantReviewQueue({ limit:MARKET_VARIANT_PAGE_SIZE, offset:marketVariantState.offset, query, usedOnly });
     const mapped = rows.map(row => ({
       printingId: row.printing_id, cardName: row.card_name, setCode: row.set_code, setName: row.set_name, rarity: row.rarity,
+      rarityCanonical: row.rarity_canonical,
       mappingStatus: row.mapping_status, mappingSource: row.mapping_source, mappingConfidence: row.mapping_confidence,
       cardmarketProductId: row.cardmarket_product_id,
       candidateProductIds: Array.isArray(row.candidate_product_ids) ? row.candidate_product_ids : [],
