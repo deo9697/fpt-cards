@@ -4,7 +4,7 @@
 // task Market Variant Registry) — stesso set_code/identity carta, due rarity
 // diverse, MAI lo stesso prodotto Cardmarket/prezzo.
 import assert from 'node:assert/strict';
-import { resolveYgoMarketVariant, canonicalYgoRarity, normalizeYgoRarityKey, MARKET_VARIANT_STATUS, MARKET_VARIANT_SOURCE } from '../market/providers.js';
+import { resolveYgoMarketVariant, canonicalYgoRarity, normalizeYgoRarityKey, shouldPersistMarketVariantShadow, summarizeMarketVariantDecisions, MARKET_VARIANT_STATUS, MARKET_VARIANT_SOURCE } from '../market/providers.js';
 
 // 1) Verified manual mapping vince sempre, anche con candidati freschi diversi.
 {
@@ -158,4 +158,59 @@ import { resolveYgoMarketVariant, canonicalYgoRarity, normalizeYgoRarityKey, MAR
   assert.equal(canonicalYgoRarity('Ultra Rare', aliasMap), null, 'una rarity non in tabella deve restare NULL, mai un guess');
 }
 
-console.log('PASS market variant resolver: precedenza verified>registry>resolver>legacy, 0/>1 candidati, e Rarity Collection (Super Rare vs Quarter Century Secret Rare) mai contaminati tra loro');
+// 10) shouldPersistMarketVariantShadow(): mai riscrivere una riga verified,
+//     sempre persistere tutto il resto (idempotenza + "non sovrascrivere
+//     verified" del wiring shadow, sezione 6/11 del task shadow mode).
+{
+  assert.equal(shouldPersistMarketVariantShadow({ verified: true, cardmarket_product_id: 'P1' }), false);
+  assert.equal(shouldPersistMarketVariantShadow({ verified: false, cardmarket_product_id: 'P1', mapping_status: 'resolved' }), true);
+  assert.equal(shouldPersistMarketVariantShadow(null), true);
+  assert.equal(shouldPersistMarketVariantShadow({ verified: true, cardmarket_product_id: null }), true, 'verified senza un product id non è un mapping reale da proteggere');
+}
+
+// 11) summarizeMarketVariantDecisions(): telemetria di run, solo summary.
+{
+  const summary = summarizeMarketVariantDecisions([
+    { mappingStatus: MARKET_VARIANT_STATUS.VERIFIED }, { mappingStatus: MARKET_VARIANT_STATUS.RESOLVED },
+    { mappingStatus: MARKET_VARIANT_STATUS.AMBIGUOUS }, { mappingStatus: MARKET_VARIANT_STATUS.AMBIGUOUS },
+    { mappingStatus: MARKET_VARIANT_STATUS.CONFLICT }, { mappingStatus: MARKET_VARIANT_STATUS.UNRESOLVED }
+  ]);
+  assert.deepEqual(summary, { processed: 6, verified: 1, resolved: 1, ambiguous: 2, conflict: 1, unresolved: 1, errors: 0 });
+}
+
+// 12) Idempotenza su due run consecutivi: il secondo run, alimentato con la
+//     riga persistita dal primo (non verified), deve restare stabile — non
+//     deve "sdoppiarsi" né oscillare tra stati diversi in assenza di nuovi dati.
+{
+  const candidates = [{ productId: 'P1', expansionId: 'E1' }, { productId: 'P2', expansionId: 'E1' }];
+  const run1 = resolveYgoMarketVariant({ cardmarketCandidates: candidates, rarityCanonical: 'SUPER_RARE' });
+  assert.equal(run1.mappingStatus, MARKET_VARIANT_STATUS.AMBIGUOUS);
+  // Il run 2 riceve come existingVariant esattamente quello che il run 1
+  // avrebbe scritto (mapping_status:'ambiguous', nessun cardmarket_product_id).
+  // 'ambiguous' non è tra gli stati "stabili" preservati (solo 'resolved' lo
+  // è, per costruzione — vedi resolveYgoMarketVariant): il run 2 ricalcola,
+  // ma con lo STESSO input deve produrre lo STESSO risultato, non un altro.
+  const run2 = resolveYgoMarketVariant({
+    existingVariant: { mapping_status: run1.mappingStatus, cardmarket_product_id: run1.cardmarketProductId, verified: false },
+    cardmarketCandidates: candidates, rarityCanonical: 'SUPER_RARE'
+  });
+  assert.deepEqual(run2, run1, 'stesso input, stesso output: nessuna oscillazione tra run consecutivi');
+}
+
+// 13) Rarity Collection realistica: 7 prodotti Cardmarket (RA01..RA05-style),
+//     nessuna rarity nel feed — ambiguous, candidate_product_ids con tutti e
+//     7, MAI scelto per indice/posizione/prezzo (qui i candidati non hanno
+//     nemmeno un prezzo associato: la scelta deve essere strutturalmente
+//     impossibile, non solo "evitata per policy").
+{
+  const sevenCandidates = ['RA-SUP','RA-ULT','RA-SEC','RA-PSE','RA-COL','RA-ULM','RA-QCS'].map(productId => ({ productId, expansionId: 'RARITY-COLLECTION-EXP' }));
+  const superRare = resolveYgoMarketVariant({ cardmarketCandidates: sevenCandidates, rarityCanonical: 'SUPER_RARE' });
+  const quarterCentury = resolveYgoMarketVariant({ cardmarketCandidates: sevenCandidates, rarityCanonical: 'QUARTER_CENTURY_SECRET_RARE' });
+  for (const result of [superRare, quarterCentury]) {
+    assert.equal(result.mappingStatus, MARKET_VARIANT_STATUS.AMBIGUOUS);
+    assert.equal(result.cardmarketProductId, null);
+    assert.deepEqual(result.candidateProductIds.sort(), ['RA-COL','RA-PSE','RA-QCS','RA-SEC','RA-SUP','RA-ULM','RA-ULT']);
+  }
+}
+
+console.log('PASS market variant resolver: precedenza verified>registry>resolver>legacy, 0/>1 candidati, Rarity Collection (Super Rare vs Quarter Century Secret Rare) mai contaminati, idempotenza su run consecutivi, mai una scelta per indice/prezzo su 7 candidati');

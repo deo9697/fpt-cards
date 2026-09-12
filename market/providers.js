@@ -253,6 +253,21 @@ function legacyFallbackResult(legacyMapping){
 function variantResult({mappingStatus,mappingSource=null,mappingConfidence=0,cardmarketProductId=null,cardmarketExpansionId=null,candidateProductIds=[],verified=false,reason}){
   return {mappingStatus,mappingSource,mappingConfidence,cardmarketProductId,cardmarketExpansionId,candidateProductIds,verified,reason};
 }
+// Usate dal wiring shadow in supabase/functions/market-sync/index.ts (copia
+// manuale, stesso motivo di isAuthorizedCardmarketMapping più sotto) per
+// decidere se scrivere una riga e per il summary di fine run — logica pura,
+// testabile qui senza bisogno di Deno.
+export function shouldPersistMarketVariantShadow(existingVariant){
+  // Una riga già verified (manuale o registry) è permanente finché qualcuno
+  // non la corregge esplicitamente: il resolver automatico non la tocca MAI,
+  // nemmeno per riscrivere lo stesso valore (zero write inutili).
+  return !(existingVariant?.verified && existingVariant?.cardmarket_product_id);
+}
+export function summarizeMarketVariantDecisions(decisions){
+  const summary={processed:0,verified:0,resolved:0,ambiguous:0,conflict:0,unresolved:0,errors:0};
+  for(const decision of decisions||[]){summary.processed++;summary[decision.mappingStatus]=(summary[decision.mappingStatus]||0)+1;}
+  return summary;
+}
 function dedupeVariantCandidates(rows){
   const byId=new Map();
   for(const row of rows||[]){
