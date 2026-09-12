@@ -199,16 +199,31 @@ export const api = {
   async ygoArtworkReviewSetPrefixes() {
     ensure(); return unwrap(await client.rpc('list_ygo_artwork_review_set_prefixes', { p_token:token() }));
   },
-  async catalogVerificationQueue(version,{signal}={}) {
-    ensure(); return pagedRpc(client,'list_collection_catalog_verification_queue', {
-      p_token:token(), p_verification_version:version
-    },{signal,key:row=>row.collection_item_id||row.collectionItemId||row.id});
+  // Coda di triage, non un elenco completo: il backfill di massa dei pending
+  // (migliaia di righe) è responsabilità server-side/admin, non del browser
+  // (vedi js/catalog-verification.js). pagedRpc esaurirebbe l'intera coda a
+  // ogni bootstrap — qui serve invece un batch piccolo e limitato dall'RPC
+  // stessa (p_limit, clampato lato server a 50).
+  async catalogVerificationQueue(version,{limit = 20} = {}) {
+    ensure(); return unwrap(await client.rpc('list_collection_catalog_verification_queue', {
+      p_token:token(), p_verification_version:version, p_limit:limit
+    }));
   },
   async repairCollectionCatalogIdentity(item) {
     ensure(); return unwrap(await client.rpc('repair_collection_item_catalog_identity', {
       p_token:token(), p_collection_item_id:item.collectionItemId,
       p_catalog_card_id:String(item.catalogCardId), p_card_name:item.cardName,
       p_image_url:item.imageUrl || '', p_verification_version:item.verificationVersion
+    }));
+  },
+  // Esito persistito quando repair/resolveCard falliscono per una riga della
+  // coda: senza questo la riga resta 'pending' e viene ritentata identica ad
+  // ogni bootstrap futuro (stesso 400 provider/RPC all'infinito). Il backoff
+  // e lo stato terminale 'unresolved' sono calcolati server-side.
+  async recordCatalogVerificationFailure(collectionItemId, version, outcome, error) {
+    ensure(); return unwrap(await client.rpc('record_collection_catalog_verification_attempt', {
+      p_token:token(), p_collection_item_id:collectionItemId, p_verification_version:version,
+      p_outcome:outcome, p_error:error ? String(error).slice(0,500) : null
     }));
   },
   async correctCollectionPrinting(item) {

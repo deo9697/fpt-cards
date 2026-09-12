@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 globalThis.localStorage = { getItem:() => null, setItem:() => {}, removeItem:() => {} };
+// La catena di import arriva a js/api.js, che legge window.FPT_CONFIG al
+// top-level: senza questo shim l'import fallisce fuori da un browser
+// (stesso pattern di decks-milestone-smoke.mjs).
+globalThis.window = { addEventListener:() => {}, FPT_CONFIG:undefined };
 
 const { collectionEditorView, collectionPrintingOptions, isFirstEdition, editionState, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting } = await import('../js/collection.js');
 const { findExactCatalogPrinting, collectionCardWithLocalizedPrintings, localizeSetCode, lookupPrintingBySetCode, normalizeCatalogPrintings, normalizeCatalogRarity, reconcileCatalogCard, setCodeMatchesLanguage } = await import('../js/cards.js');

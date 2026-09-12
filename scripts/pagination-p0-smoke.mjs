@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import {collectPages,pagedRpc,paginationMetrics,POSTGREST_PAGE_SIZE} from '../js/pagination.js';
 
 globalThis.localStorage={getItem(){return null;},setItem(){},removeItem(){}};
+// decks.js -> games/index.js -> games/onepiece/catalog.js importa js/api.js,
+// che legge window.FPT_CONFIG al top-level: senza questo shim l'import
+// fallisce fuori da un browser (stesso pattern di decks-milestone-smoke.mjs).
+globalThis.window={addEventListener:()=>{},FPT_CONFIG:undefined};
 const {deckAvailability}=await import('../js/decks.js');
 
 const rows=(count,prefix='row')=>Array.from({length:count},(_,index)=>({
@@ -133,7 +137,13 @@ assert.equal(marketPayload.items.length,1052,'Market Watch JSON aggregato tronca
 const appSource=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const apiSource=fs.readFileSync(new URL('../js/api.js',import.meta.url),'utf8');
 const swSource=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-for(const rpc of ['list_my_collection','list_team_collection','list_team_loans','list_my_decks_with_boxes','list_collection_catalog_verification_queue'])assert(apiSource.includes(`pagedRpc(client,'${rpc}'`),`${rpc} non paginata`);
+for(const rpc of ['list_my_collection','list_team_collection','list_team_loans','list_my_decks_with_boxes'])assert(apiSource.includes(`pagedRpc(client,'${rpc}'`),`${rpc} non paginata`);
+// list_collection_catalog_verification_queue è una coda di triage, non un
+// elenco completo: pagedRpc la esaurirebbe per intero (migliaia di righe
+// pending) a ogni bootstrap invece di limitarla a un batch piccolo lato
+// server (p_limit) — vedi js/catalog-verification.js.
+assert(!apiSource.includes("pagedRpc(client,'list_collection_catalog_verification_queue'"),'list_collection_catalog_verification_queue non deve piu paginare l\'intera coda');
+assert(/list_collection_catalog_verification_queue',\s*\{[^}]*p_limit/.test(apiSource),'list_collection_catalog_verification_queue deve inviare un p_limit al server');
 assert(appSource.includes('collectionLoadGeneration')&&appSource.includes('AbortController')&&appSource.includes('realtimeSyncSources'),'concorrenza/coalescing Raccolta incompleti');
 assert(swSource.includes("'./js/pagination.js'"),'paginatore assente dalla shell PWA');
 

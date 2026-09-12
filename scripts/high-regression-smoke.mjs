@@ -3,6 +3,11 @@ import fs from 'node:fs';
 
 const local=new Map();
 globalThis.localStorage={getItem:key=>local.get(key)||null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)};
+// decks.js -> games/index.js -> games/onepiece/catalog.js importa js/api.js,
+// che legge window.FPT_CONFIG al top-level: senza questo shim (stesso
+// pattern di scripts/decks-milestone-smoke.mjs) l'import fallisce subito con
+// "window is not defined" fuori da un browser.
+globalThis.window={addEventListener:()=>{},FPT_CONFIG:undefined};
 
 const {deckAvailability,sameDeckCardIdentity}=await import('../js/decks.js');
 const {canonicalCatalogCardId,catalogImageNeedsRepair}=await import('../js/cards.js');

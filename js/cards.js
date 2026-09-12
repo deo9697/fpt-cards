@@ -338,8 +338,11 @@ async function cardsById(id) {
   });
   identityCache.set(value, request);
   const candidates = await request;
-  if (candidates.length) identityCache.set(value, candidates);
-  else identityCache.delete(value);
+  // Un id sconosciuto/legacy per il provider resta un 400 stabile, non un
+  // problema di rete transitorio (vedi backlog pending in card_printings):
+  // cachare anche l'esito negativo evita di ripetere le stesse due richieste
+  // cardinfo.php (IT+EN) per lo stesso id più volte nella stessa sessione.
+  identityCache.set(value, candidates);
   return candidates;
 }
 

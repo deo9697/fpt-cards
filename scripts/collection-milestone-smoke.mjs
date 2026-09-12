@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 globalThis.localStorage = { getItem:() => null, setItem:() => {} };
+// La catena di import arriva a js/api.js, che legge window.FPT_CONFIG al
+// top-level: senza questo shim l'import fallisce fuori da un browser
+// (stesso pattern di decks-milestone-smoke.mjs).
+globalThis.window = { addEventListener:() => {}, FPT_CONFIG:undefined };
 const { collectionView, collectionDetailView } = await import('../js/collection.js');
 
 class CollectionFixture {

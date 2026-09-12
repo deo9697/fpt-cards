@@ -26,6 +26,7 @@
     ,"test:card-detail-background-flicker": "node scripts/card-detail-background-flicker-smoke.mjs"
     ,"test:market-variant-resolver": "node scripts/market-variant-resolver-smoke.mjs"
     ,"test:market-variant-canary-poller": "node scripts/market-variant-canary-poller-smoke.mjs"
+    ,"test:catalog-repair-bootstrap": "node scripts/catalog-repair-bootstrap-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

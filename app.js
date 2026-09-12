@@ -84,7 +84,24 @@ let collectionLoadAbortController = null;
 let loansLoadInFlight = null;
 let catalogRepairRunning = false;
 let catalogRepairQueued = false;
-const catalogRepairAttempted = new Set();
+// loadPrimaryData() non e' "solo bootstrap": login(), start() (sessione
+// ripristinata), watchConnectivity() (ogni evento online/offline reale del
+// browser) e retryCloud() la richiamano tutte nella stessa sessione. Senza
+// questa guardia, ognuna di quelle richieste rifà scheduleCatalogRepairs()
+// da capo: osservato in produzione (2026-09-12) 4 chiamate reali a
+// list_collection_catalog_verification_queue in una singola apertura
+// dell'app, invece di 1 — il browser aveva emesso più eventi 'online' oltre
+// al login stesso. Una sola pianificazione per sessione (resettata al
+// logout), non una per ogni refresh legittimo dei dati.
+let catalogRepairBootstrapped = false;
+// Diagnostica solo in sviluppo (mai in produzione, mai token/segreti): quale
+// riga/RPC/provider ha fallito e con quale errore, per il repair automatico
+// del catalogo (vedi quarantineMismatchedCollectionImages).
+const DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname);
+function logCatalogRepairIssue(event) {
+  if (!DEV) return;
+  console.warn('[catalog-repair]', event.stage, { collectionItemId:event.collectionItemId, game:event.game, error:event.error?.message || event.error?.code || String(event.error || '') });
+}
 const unresolvedCards = new Set();
 const fastScan = new FastScanController({
   api, externalLookup:externalLookupViaRegistry, getCollection:()=>state.collection,
@@ -1328,7 +1345,6 @@ async function loadCollection({ force = false } = {}) {
     };
     syncLoanImagesFromCollection();
     collectionError = '';
-    scheduleCatalogRepairs();
     prefetchCollectionCardTypes();
     return state.collection;
   })();
@@ -1361,9 +1377,25 @@ async function loadPrimaryData() {
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';
   else cloudError = '';
   syncLoanImagesFromCollection();
+  // Una sola pianificazione per l'intera sessione (vedi catalogRepairBootstrapped
+  // sopra): loadPrimaryData() viene richiamata da più punti (login, sessione
+  // ripristinata, ogni evento online/offline, retry manuale) e non deve far
+  // ripartire scheduleCatalogRepairs() a ogni chiamata.
+  if (collectionResult.status === 'fulfilled' && !catalogRepairBootstrapped) {
+    catalogRepairBootstrapped = true;
+    scheduleCatalogRepairs();
+  }
   return loansResult.status === 'rejected' ? loansResult.reason : null;
 }
 
+// enrich_loan_card scrive solo quando card_image è NULL lato server (un
+// prestito già arricchito è immutabile via questa RPC per design): chiamarla
+// per un prestito che ha già un'immagine persistita è garantito essere un
+// no-op, e se la nuova immagine non rispetta il pattern ygoprodeck.com
+// diventa comunque un 400 di validazione per nulla. Il correttivo locale
+// (loan.image/loan.externalId) resta utile per la resa a schermo anche
+// quando non c'è nulla da persistere.
+const YGOPRODECK_IMAGE_PATTERN = /^https:\/\/images\.ygoprodeck\.com\//i;
 function syncLoanImagesFromCollection() {
   const items = [...state.collection.mine, ...state.collection.team];
   const byId = new Map(items.map(item => [String(item.id), item]));
@@ -1372,16 +1404,18 @@ function syncLoanImagesFromCollection() {
     const item = linked || items.find(candidate => candidate.game === loan.game
       && normalizeIdentityName(candidate.cardName) === normalizeIdentityName(loan.cardName));
     if (!item?.imageUrl) return;
+    const persistable = !loan.hasStoredImage;
     const changed = loan.image !== item.imageUrl
       || String(loan.externalId || '') !== String(item.catalogCardId || '');
     loan.image = item.imageUrl;
     loan.externalId = item.catalogCardId || loan.externalId;
-    if (changed && loan.id && loan.externalId) {
+    if (changed && persistable && loan.id && loan.externalId && YGOPRODECK_IMAGE_PATTERN.test(item.imageUrl)) {
+      loan.hasStoredImage = true;
       void api.enrichLoan(loan.id, {
         id:loan.externalId,
         image:item.imageUrl,
         fullImage:item.imageUrl
-      }).catch(() => {});
+      }).catch(error => logCatalogRepairIssue({ stage:'enrich-loan-sync', collectionItemId:loan.id, error }));
     }
   });
 }
@@ -1393,7 +1427,7 @@ function normalizeIdentityName(value) {
 
 async function quarantineMismatchedCollectionImages() {
   const result = await verifyPendingCollectionCatalog({
-    api, resolveCard:resolveStoredCard, attempted:catalogRepairAttempted,
+    api, resolveCard:resolveStoredCard, log:logCatalogRepairIssue,
     onVerified:(row, repaired, card) => {
       const id = row.collection_item_id || row.collectionItemId || row.id;
       const payload = Array.isArray(repaired) ? repaired[0] : repaired;
@@ -1440,7 +1474,9 @@ async function runCatalogRepairs() {
       const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
       if (!editing && page !== 'fastscan') renderRoute();
     }
-  } catch {} finally {
+  } catch (error) {
+    logCatalogRepairIssue({ stage:'catalog-repair-cycle', error });
+  } finally {
     catalogRepairRunning = false;
     if (catalogRepairQueued && state.currentUser) scheduleCatalogRepairs();
   }
@@ -1759,7 +1795,7 @@ async function logout() {
   await fastScan.leave();
   api.unsubscribe();
   await api.logout();
-  state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
+  state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
 }
 
 async function enableNotifications() {
@@ -1829,16 +1865,26 @@ async function fetchCloudLoans() {
     const externalId = l.card_external_id;
     const storedImage = normalizeCardImageUrl(l.card_image);
     const acceptedQuantity = l.accepted_quantity ?? (l.status === 'requested' ? 0 : l.quantity);
-    return { id:l.id, cardName:l.card_name, quantity:l.quantity, requestedQuantity:l.requested_quantity || l.quantity, acceptedQuantity, remainingQuantity:Math.max(acceptedQuantity - (l.returned_quantity || 0), 0), owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:game === 'yugioh' ? (storedImage || canonicalYgoCardImage(externalId)) : storedImage, externalId, collectionItemId:l.collection_item_id || '', game, returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0, requestOrigin:l.request_origin || 'legacy', setCode:l.card_set_code || '', setName:l.card_set_name || '', rarity:l.card_rarity || '', preAgreed:l.pre_agreed || false };
+    return { id:l.id, cardName:l.card_name, quantity:l.quantity, requestedQuantity:l.requested_quantity || l.quantity, acceptedQuantity, remainingQuantity:Math.max(acceptedQuantity - (l.returned_quantity || 0), 0), owner:l.owner_slug, borrower:l.borrower_slug, notes:l.notes, status:l.status, createdAt:l.created_at, returnedAt:l.returned_at, image:game === 'yugioh' ? (storedImage || canonicalYgoCardImage(externalId)) : storedImage,
+      // enrich_loan_card scrive solo quando card_image è NULL lato DB: questo
+      // flag riflette lo storage reale, non il fallback calcolato sopra
+      // (canonicalYgoCardImage), così il repair sa quando la RPC può davvero
+      // avere effetto invece di essere un no-op garantito.
+      hasStoredImage:Boolean(storedImage),
+      externalId, collectionItemId:l.collection_item_id || '', game, returnedQuantity:l.returned_quantity || 0, pendingReturnQuantity:l.pending_return_quantity || 0, requestOrigin:l.request_origin || 'legacy', setCode:l.card_set_code || '', setName:l.card_set_name || '', rarity:l.card_rarity || '', preAgreed:l.pre_agreed || false };
   });
   cloudError = '';
-  scheduleCatalogRepairs();
   void enrichMissingImages();
 }
 
 async function quarantineMismatchedLoanImages() {
+  // Un prestito con card_image già persistita non può essere corretto da
+  // enrich_loan_card (no-op garantito lato RPC, vedi syncLoanImagesFromCollection):
+  // limitare la coda ai soli "dato mancante" evita chiamate scritte che
+  // falliscono per validazione (400) senza alcuna possibilità di successo,
+  // solo perché catalogImageNeedsRepair considera l'immagine "sospetta".
   const candidates = state.loans.filter(loan => loan.game === 'yugioh' && loan.cardName
-    && catalogImageNeedsRepair(loan.externalId, loan.image, loan.game));
+    && !loan.hasStoredImage && catalogImageNeedsRepair(loan.externalId, loan.image, loan.game));
   let changed = false;
   await runLimited(candidates, 4, async loan => {
     const card = await resolveStoredCard({ id:loan.externalId, name:loan.cardName }, loan.game);
@@ -1847,11 +1893,13 @@ async function quarantineMismatchedLoanImages() {
     const idMismatch = String(card.id) !== String(loan.externalId || '');
     const imageMismatch = cardImageMatches(card, loan.image) === false || (!loan.image && correctImage);
     if (!idMismatch && !imageMismatch) return;
+    if (!YGOPRODECK_IMAGE_PATTERN.test(correctImage)) return;
     loan.image = correctImage;
     loan.externalId = String(card.id);
     loan.imageMismatch = true;
+    loan.hasStoredImage = true;
     changed = true;
-    void api.enrichLoan(loan.id, card).catch(() => {});
+    void api.enrichLoan(loan.id, card).catch(error => logCatalogRepairIssue({ stage:'enrich-loan-quarantine', collectionItemId:loan.id, error }));
   });
   return changed;
 }
@@ -2194,7 +2242,7 @@ async function start() {
       startRealtime(); saveState();
     }
     catch (error) {
-      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; saveState(); }
+      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; catalogRepairBootstrapped = false; saveState(); }
       else cloudError = online() ? (error.message || 'Sincronizzazione non riuscita') : '';
     } finally { appLoading = false; }
   }
