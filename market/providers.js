@@ -156,6 +156,113 @@ export function resolveCardmarketPrinting(printing,candidates,options={}){
       providerRarity:providerRarity||null,providerFoil:candidate.foil??null,providerHasSetCode:false,internalSetFamily:setFamilyKey(printing.setCode||printing.set_code),internalCatalogFamilySize:family.length,
       internalRarities,candidateCount:1,acceptedExpansions:[...expansions].sort(),identityBasis:['card_name','provider_expansion_id','unique_provider_product_id','internal_set_family']}};
 }
+// --- Market Variant Registry (PRINTING -> RARITY VARIANT -> PRODOTTO
+// CARDMARKET) — vedi supabase/migrations/20260912110000_ygo_market_variant_registry.sql.
+// Additivo: NON tocca resolveCardmarketPrinting() sopra, compone sul suo
+// output. Non ancora richiamato da syncProvider()/Deno.serve — resta
+// disponibile per il prossimo passo (wiring + backfill) senza toccare oggi
+// il comportamento live di Market Watch/del cron dei 15 minuti.
+export const MARKET_VARIANT_STATUS=Object.freeze({UNRESOLVED:'unresolved',RESOLVED:'resolved',AMBIGUOUS:'ambiguous',CONFLICT:'conflict',VERIFIED:'verified'});
+export const MARKET_VARIANT_SOURCE=Object.freeze({MANUAL:'manual',REGISTRY:'registry',RESOLVER:'resolver',LEGACY:'legacy'});
+
+// Mirror JS di normalize_ygo_rarity_key()/normalize_ygo_rarity() nella
+// migration: stessa identica trasformazione, tenuta manualmente in sync per
+// lo stesso motivo di normalize_ygo_set_code (vedi js/ygo-printing-registry.js)
+// — qui non c'è un client Postgres sincrono disponibile per ogni riga, quindi
+// l'alias_map va caricata una sola volta (select * from ygo_rarity_aliases)
+// e riusata per l'intero batch di un sync run.
+export function normalizeYgoRarityKey(value){
+  const key=String(value||'').replace(/['’]/g,'').replace(/[^A-Za-z0-9]+/g,' ').trim().toUpperCase();
+  return key||null;
+}
+export function canonicalYgoRarity(rawRarity,aliasMap){
+  const key=normalizeYgoRarityKey(rawRarity);
+  if(!key||!aliasMap)return null;
+  return aliasMap.get(key)||null;
+}
+
+// Precedenza (sezione 8): verified manual > verified registry > resolved
+// registry > exact Cardmarket variant match > legacy fallback. Un fallback
+// legacy non diventa mai verified automaticamente. MAI scegliere il primo
+// risultato quando ci sono più candidati equivalenti: 0 candidati ->
+// unresolved, >1 candidati equivalenti -> ambiguous/conflict.
+//
+// existingVariant: riga corrente di ygo_market_variants per questa printing
+//   (o null). cardmarketCandidates: prodotti Cardmarket già filtrati per
+//   nome+espansione da resolveCardmarketPrinting() (il suo campo
+//   `candidates`/`candidate`) — questa funzione NON rifà quel matching, lo
+//   raffina con la rarity canonica. rarityCanonical: risultato di
+//   canonicalYgoRarity() per la rarity di QUESTA printing. legacyMapping:
+//   mapping market_provider_printings esistente (se presente), MAI usato per
+//   sovrascrivere un esito ambiguous/conflict fresco — solo come ultima
+//   spiaggia quando la risoluzione fresca non produce alcun candidato.
+export function resolveYgoMarketVariant({existingVariant=null,cardmarketCandidates=[],rarityCanonical=null,legacyMapping=null,forceRefresh=false}={}){
+  if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
+    return variantResult({
+      mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,
+      mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,
+      mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,
+      candidateProductIds:[],verified:true,reason:'verified_mapping_preserved'
+    });
+  }
+  if(!forceRefresh&&existingVariant?.mapping_status===MARKET_VARIANT_STATUS.RESOLVED&&existingVariant?.cardmarket_product_id){
+    return variantResult({
+      mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,
+      mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,
+      cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:false,reason:'resolved_registry_preserved'
+    });
+  }
+  const candidates=dedupeVariantCandidates(cardmarketCandidates);
+  if(!candidates.length)return legacyFallbackResult(legacyMapping)||variantResult({mappingStatus:MARKET_VARIANT_STATUS.UNRESOLVED,reason:'no_cardmarket_candidates'});
+  const exactRarity=rarityCanonical?candidates.filter(row=>row.rarityCanonical===rarityCanonical):[];
+  const pool=exactRarity.length?exactRarity:candidates;
+  if(pool.length===1){
+    const only=pool[0];
+    return variantResult({
+      mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.RESOLVER,
+      mappingConfidence:exactRarity.length?1:0.6,cardmarketProductId:only.productId,cardmarketExpansionId:only.expansionId,
+      candidateProductIds:candidates.map(row=>row.productId),verified:false,
+      reason:exactRarity.length?'exact_rarity_single_candidate':'single_candidate_no_rarity_signal'
+    });
+  }
+  // >1 candidati equivalenti: MAI il primo. Espansioni diverse tra loro =
+  // conflitto reale (il feed non concorda nemmeno su dove sia il prodotto);
+  // stessa espansione = ambiguous "classico" Rarity Collection (serve una
+  // rarity/verifica per scegliere, non un guess).
+  const distinctExpansions=new Set(pool.map(row=>row.expansionId).filter(Boolean));
+  return variantResult({
+    mappingStatus:distinctExpansions.size>1?MARKET_VARIANT_STATUS.CONFLICT:MARKET_VARIANT_STATUS.AMBIGUOUS,
+    mappingSource:MARKET_VARIANT_SOURCE.RESOLVER,mappingConfidence:0,
+    candidateProductIds:pool.map(row=>row.productId),verified:false,
+    reason:exactRarity.length?'multiple_exact_rarity_candidates':'multiple_candidates_no_rarity_signal'
+  });
+}
+function legacyFallbackResult(legacyMapping){
+  if(!legacyMapping?.cardmarketProductId)return null;
+  const candidateCount=Array.isArray(legacyMapping.candidateProductIds)?legacyMapping.candidateProductIds.length:1;
+  // Un aggregato legacy multi-prodotto (il caso PROVIDER_AGGREGATE odierno,
+  // prezzo minimo tra rarità diverse) resta ambiguous qui — non è mai stato
+  // un match certo, solo l'unico prodotto che il vecchio sistema conosceva.
+  return variantResult({
+    mappingStatus:candidateCount>1?MARKET_VARIANT_STATUS.AMBIGUOUS:MARKET_VARIANT_STATUS.RESOLVED,
+    mappingSource:MARKET_VARIANT_SOURCE.LEGACY,mappingConfidence:candidateCount>1?0:0.4,
+    cardmarketProductId:legacyMapping.cardmarketProductId,cardmarketExpansionId:legacyMapping.cardmarketExpansionId||null,
+    candidateProductIds:legacyMapping.candidateProductIds||[],verified:false,reason:'legacy_fallback_not_verified'
+  });
+}
+function variantResult({mappingStatus,mappingSource=null,mappingConfidence=0,cardmarketProductId=null,cardmarketExpansionId=null,candidateProductIds=[],verified=false,reason}){
+  return {mappingStatus,mappingSource,mappingConfidence,cardmarketProductId,cardmarketExpansionId,candidateProductIds,verified,reason};
+}
+function dedupeVariantCandidates(rows){
+  const byId=new Map();
+  for(const row of rows||[]){
+    const id=String(row.productId||row.providerProductId||row.provider_product_id||'').trim();
+    if(!id||byId.has(id))continue;
+    byId.set(id,{productId:id,expansionId:String(row.expansionId||row.providerExpansionId||row.provider_expansion_id||'')||null,rarityCanonical:row.rarityCanonical||null});
+  }
+  return [...byId.values()];
+}
+
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}
 export function normalizeMarketRarity(value){const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 export function isAuthorizedCardmarketMapping(mapping){if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}

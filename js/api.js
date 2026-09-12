@@ -77,6 +77,15 @@ export const api = {
   async confirmMarketPriceAnomaly(snapshotId) {
     ensure(); return unwrap(await client.rpc('confirm_market_price_anomaly', { p_token:token(),p_snapshot_id:snapshotId }));
   },
+  // Report locale (nessuna chiamata Cardmarket) per il Market Variant
+  // Registry: quante printing condividono set_code con rarità diverse,
+  // quante collection item ricadono in un gruppo multi-rarity, ecc. Solo
+  // admin (vedi ygo_market_variant_backfill_report). Nessuna UI ancora —
+  // pensata per essere chiamata da console/uno script finché non serve un
+  // pannello dedicato.
+  async marketVariantBackfillReport(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('ygo_market_variant_backfill_report', { p_token:token(),p_game:game }));
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },

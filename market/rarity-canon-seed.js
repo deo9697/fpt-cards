@@ -1,0 +1,52 @@
+// Stessa identica lista alias -> codice canonico della migration
+// supabase/migrations/20260912110000_ygo_market_variant_registry.sql
+// (tabella ygo_rarity_aliases). Tenuta qui SOLO per gli script Node di
+// analisi offline (dry-run del resolver) che non hanno un client Postgres
+// riga-per-riga a disposizione — non è importata dall'Edge Function, non fa
+// parte del live wiring. Se cambi la migration, aggiorna anche questa lista.
+export const RARITY_ALIAS_SEED = [
+  ['Common', 'COMMON'], ['New', 'COMMON'], ['Reprint', 'COMMON'],
+  ['Rare', 'RARE'],
+  ['Super Rare', 'SUPER_RARE'], ['SR', 'SUPER_RARE'],
+  ['Ultra Rare', 'ULTRA_RARE'], ['UR', 'ULTRA_RARE'],
+  ['Ultra Rare (Pharaoh\'s Rare)', 'ULTRA_RARE_PHARAOHS_RARE'],
+  ['Secret Rare', 'SECRET_RARE'], ['SE', 'SECRET_RARE'], ['SCR', 'SECRET_RARE'],
+  ['Extra Secret Rare', 'EXTRA_SECRET_RARE'],
+  ['20th Secret Rare', '20TH_SECRET_RARE'],
+  ['20th Anniversary Secret Rare', '20TH_SECRET_RARE'],
+  ['Prismatic Secret Rare', 'PRISMATIC_SECRET_RARE'],
+  ['Gold Secret Rare', 'GOLD_SECRET_RARE'],
+  ['Platinum Secret Rare', 'PLATINUM_SECRET_RARE'],
+  ['Quarter Century Secret Rare', 'QUARTER_CENTURY_SECRET_RARE'],
+  ['Quarter Century', 'QUARTER_CENTURY_SECRET_RARE'], ['QCSR', 'QUARTER_CENTURY_SECRET_RARE'], ['QCSE', 'QUARTER_CENTURY_SECRET_RARE'],
+  ['Collector\'s Rare', 'COLLECTORS_RARE'], ['CR', 'COLLECTORS_RARE'],
+  ['Prismatic Collector\'s Rare', 'PRISMATIC_COLLECTORS_RARE'],
+  ['Ultimate Rare', 'ULTIMATE_RARE'], ['UTR', 'ULTIMATE_RARE'], ['UL', 'ULTIMATE_RARE'],
+  ['Prismatic Ultimate Rare', 'PRISMATIC_ULTIMATE_RARE'],
+  ['Ghost Rare', 'GHOST_RARE'],
+  ['Ghost/Gold Rare', 'GHOST_GOLD_RARE'],
+  ['Starlight Rare', 'STARLIGHT_RARE'],
+  ['Gold Rare', 'GOLD_RARE'],
+  ['Premium Gold Rare', 'PREMIUM_GOLD_RARE'],
+  ['Platinum Rare', 'PLATINUM_RARE'],
+  ['Mosaic Rare', 'MOSAIC_RARE'],
+  ['Shatterfoil Rare', 'SHATTERFOIL_RARE'],
+  ['Starfoil Rare', 'STARFOIL_RARE'],
+  ['Holographic Rare', 'HOLOGRAPHIC_RARE'],
+  ['Parallel Rare', 'PARALLEL_RARE'],
+  ['Normal Parallel Rare', 'NORMAL_PARALLEL_RARE'],
+  ['Super Parallel Rare', 'SUPER_PARALLEL_RARE'],
+  ['Ultra Parallel Rare', 'ULTRA_PARALLEL_RARE'],
+  ['Duel Terminal Normal Parallel Rare', 'DUEL_TERMINAL_NORMAL_PARALLEL_RARE'],
+  ['Duel Terminal Rare Parallel Rare', 'DUEL_TERMINAL_RARE_PARALLEL_RARE'],
+  ['Duel Terminal Super Parallel Rare', 'DUEL_TERMINAL_SUPER_PARALLEL_RARE'],
+  ['Duel Terminal Ultra Parallel Rare', 'DUEL_TERMINAL_ULTRA_PARALLEL_RARE'],
+  ['Millennium Rare', 'MILLENNIUM_RARE'],
+  ['Millennium Super Rare', 'MILLENNIUM_SUPER_RARE'],
+  ['Millennium Ultra Rare', 'MILLENNIUM_ULTRA_RARE'],
+  ['Millennium Secret Rare', 'MILLENNIUM_SECRET_RARE'],
+  ['Millennium Gold Rare', 'MILLENNIUM_GOLD_RARE'],
+  ['Short Print', 'SHORT_PRINT'],
+  ['Super Short Print', 'SUPER_SHORT_PRINT'],
+  ['Ultra Short Print', 'ULTRA_SHORT_PRINT']
+];
