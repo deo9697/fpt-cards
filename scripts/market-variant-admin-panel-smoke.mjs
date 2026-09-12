@@ -53,6 +53,8 @@ try {
       setTemplates:[
         { setPrefix:'RA01', variantNumber:1, rarityCanonical:'SUPER_RARE', verified:true }
       ],
+      exactPriceQueue: [], exactPriceLoading:false, exactPriceError:'', exactPriceHasMore:false,
+      exactPriceRunning: new Set(), exactPriceSummary: null,
       queue:[
         { printingId:'p-ambiguous', cardName:'Lightning Storm', setCode:'RA01-EN061', setName:'Rarity Collection', rarity:'Super Rare', rarityCanonical:'SUPER_RARE',
           mappingStatus:'ambiguous', resolutionReason:'multiple_candidates_no_rarity_signal',
@@ -68,7 +70,9 @@ try {
       onConfirm: printingId => window.__calls.push(['confirm', printingId]),
       onLoadMore: () => window.__calls.push(['loadMore']),
       onFilterChange: (key, value) => window.__calls.push(['filter', key, value]),
-      onRefreshMetadata: printingId => window.__calls.push(['refreshMetadata', printingId])
+      onRefreshMetadata: printingId => window.__calls.push(['refreshMetadata', printingId]),
+      onRunExactPriceShadow: printingId => window.__calls.push(['runExactPrice', printingId]),
+      onLoadMoreExactPrice: () => window.__calls.push(['loadMoreExactPrice'])
     });
     window.__render();
   })()`);
