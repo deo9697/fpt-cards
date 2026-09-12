@@ -29,6 +29,13 @@ const SUPPORTED_RARITIES=new Map([
   ['new','Common'],['reprint','Common']
 ]);
 
+// Chiavi grezze del Price Guide Cardmarket per tipo di prezzo — hoisted fuori
+// da getCurrentPrice() (che fa Math.min tra PIÙ product id, il caso
+// aggregate) così exactPriceForProduct() sotto (UN SOLO product id, mai
+// Math.min) può riusare esattamente la stessa mappa senza duplicarla.
+const CARDMARKET_PRICE_TYPE_FIELDS={low:['low','Low Price','LOW'],trend:['trend','Trend Price','TREND'],average:['avg','Avg. Sell Price','AVG'],avg1:['avg1','AVG1'],avg7:['avg7','AVG7'],avg30:['avg30','AVG30'],
+  foil_low:['low-foil','Foil Low','LOWFOIL'],foil_trend:['trend-foil','Foil Trend','TRENDFOIL'],foil_average:['avg-foil','Foil Sell','SELLFOIL'],foil_avg1:['avg1-foil','Foil AVG1'],foil_avg7:['avg7-foil','Foil AVG7'],foil_avg30:['avg30-foil','Foil AVG30']};
+
 export class PriceProvider {
   constructor({name,fetchImpl=globalThis.fetch}={}){this.name=name;this.fetch=fetchImpl;}
   async resolvePrinting(){throw new Error('resolvePrinting() non implementato');}
@@ -107,9 +114,7 @@ export class CardmarketPriceGuideProvider extends PriceProvider {
   async getCurrentPrice(mapping){
     if(!this.loaded)await this.load([mapping]);const ids=mappingProductIds(mapping),rows=ids.map(id=>this.prices.get(id)).filter(Boolean);
     if(!rows.length)return {provider:this.name,status:'unavailable',prices:[],availableQuantity:null,sampleSize:0};
-    const definitions={low:['low','Low Price','LOW'],trend:['trend','Trend Price','TREND'],average:['avg','Avg. Sell Price','AVG'],avg1:['avg1','AVG1'],avg7:['avg7','AVG7'],avg30:['avg30','AVG30'],
-      foil_low:['low-foil','Foil Low','LOWFOIL'],foil_trend:['trend-foil','Foil Trend','TRENDFOIL'],foil_average:['avg-foil','Foil Sell','SELLFOIL'],foil_avg1:['avg1-foil','Foil AVG1'],foil_avg7:['avg7-foil','Foil AVG7'],foil_avg30:['avg30-foil','Foil AVG30']};
-    const prices=[];for(const [type,keys] of Object.entries(definitions)){const values=rows.map(row=>numberFrom(row,keys)).filter(value=>value!=null);if(values.length)prices.push({type,value:Math.min(...values)});}
+    const prices=[];for(const [type,keys] of Object.entries(CARDMARKET_PRICE_TYPE_FIELDS)){const values=rows.map(row=>numberFrom(row,keys)).filter(value=>value!=null);if(values.length)prices.push({type,value:Math.min(...values)});}
     return {provider:this.name,status:prices.length?'available':'unavailable',currency:'EUR',prices,availableQuantity:null,sampleSize:null,
       conditionReference:ids.length>1?`Price Guide Cardmarket · minimo tra ${ids.length} prodotti`:'Price Guide Cardmarket',capturedAt:new Date().toISOString(),sourceUpdatedAt:this.sourceUpdatedAt};
   }
@@ -276,6 +281,58 @@ function dedupeVariantCandidates(rows){
     byId.set(id,{productId:id,expansionId:String(row.expansionId||row.providerExpansionId||row.provider_expansion_id||'')||null,rarityCanonical:row.rarityCanonical||null});
   }
   return [...byId.values()];
+}
+
+// --- Exact Price Shadow (fase finale dello shadow pricing) -----------------
+// Confronta legacy_price (già in market_price_snapshots, calcolato con
+// Math.min tra CANDIDATI multipli quando il mapping è un aggregato) con
+// exact_price (UN SOLO cardmarket_product_id da ygo_market_variants, MAI un
+// Math.min). Additivo: non tocca resolveCardmarketPrinting/getCurrentPrice
+// sopra, non scrive prezzi live.
+
+// Stessa priorità di market_reference_type() lato DB (cardmarket 'trend' >
+// 'average'/'avg7' > 'low'/'lowest') ma applicata a UN SOLO raw row del
+// Price Guide — mai un Math.min tra prodotti diversi, a differenza di
+// getCurrentPrice() sopra che è pensato apposta per il caso aggregate.
+const EXACT_PRICE_TYPE_PRIORITY=['trend','average','avg7','low','lowest'];
+export function exactPriceForProduct(pricesByProductId,productId){
+  const key=String(productId||'').trim();
+  if(!key)return null;
+  const row=pricesByProductId?.get?.(key);
+  if(!row)return null;
+  for(const type of EXACT_PRICE_TYPE_PRIORITY){
+    const fields=CARDMARKET_PRICE_TYPE_FIELDS[type]||(type==='lowest'?CARDMARKET_PRICE_TYPE_FIELDS.low:null);
+    if(!fields)continue;
+    const value=numberFrom(row,fields);
+    if(value!=null)return {type,value,currency:'EUR'};
+  }
+  return null;
+}
+
+// Una printing è eleggibile per exact pricing SOLO se ha un cardmarket_product_id
+// noto E quel mapping è o verificato a mano o già risolto in automatico dallo
+// shadow resolver — mai ambiguous/conflict/unresolved (lì exact_price resta
+// sempre null, candidate_product_ids non è mai usato come fallback).
+export function isExactPriceEligible(variant){
+  if(!variant?.cardmarket_product_id)return false;
+  return Boolean(variant.verified)||variant.mapping_status==='resolved';
+}
+
+// Soglie conservative concordate: <1 centesimo = same, <5% = close, il resto
+// = different. exact_missing/legacy_missing hanno precedenza su qualunque
+// calcolo numerico (non ha senso una percentuale senza uno dei due lati).
+export function classifyPriceComparison(legacyPrice,exactPrice){
+  const legacy=typeof legacyPrice==='number'&&Number.isFinite(legacyPrice)?legacyPrice:null;
+  const exact=typeof exactPrice==='number'&&Number.isFinite(exactPrice)?exactPrice:null;
+  if(exact==null)return {comparisonStatus:'exact_missing',absoluteDelta:null,percentageDelta:null};
+  if(legacy==null)return {comparisonStatus:'legacy_missing',absoluteDelta:null,percentageDelta:null};
+  const absoluteDelta=Math.round((exact-legacy)*10000)/10000;
+  const percentageDelta=legacy!==0?Math.round((absoluteDelta/legacy)*10000)/100:null;
+  let comparisonStatus;
+  if(Math.abs(absoluteDelta)<0.01)comparisonStatus='same';
+  else if(percentageDelta!=null&&Math.abs(percentageDelta)<5)comparisonStatus='close';
+  else comparisonStatus='different';
+  return {comparisonStatus,absoluteDelta,percentageDelta};
 }
 
 export function normalizeMappingStatus(value){return RESOLUTION_STATES.has(value)?value:'unresolved';}

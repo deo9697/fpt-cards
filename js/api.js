@@ -118,6 +118,23 @@ export const api = {
       p_token:token(), p_printing_id:printingId, p_cardmarket_product_id:String(cardmarketProductId)
     }));
   },
+  // Fase finale dello shadow pricing — sola diagnostica, nessun prezzo live
+  // cambia. Il report è puro SQL (dati locali); la comparison crea una run
+  // che l'Edge Function processa (stesso meccanismo del canary: la RPC
+  // stessa scatena market-sync via net.http_post, il secret non passa mai
+  // da qui) e fa polling del risultato con lo stesso poller del canary.
+  async marketVariantExactPriceReport(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('ygo_market_variant_exact_price_report', { p_token:token(),p_game:game }));
+  },
+  async marketVariantExactPriceComparison(printingIds, options = {}) {
+    ensure();
+    const created = unwrap(await client.rpc('run_ygo_market_variant_price_shadow', { p_token:token(),p_printing_ids:printingIds }));
+    return pollMarketVariantCanaryRun(
+      async runId => unwrap(await client.rpc('get_ygo_market_variant_canary_run', { p_token:token(),p_run_id:runId })),
+      created.run_id,
+      options
+    );
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },

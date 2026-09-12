@@ -243,6 +243,47 @@ function summarizeMarketVariantDecisions(decisions:any[]):any{
   for(const decision of decisions||[]){summary.processed++;summary[decision.mappingStatus]=(summary[decision.mappingStatus]||0)+1;}
   return summary;
 }
+// --- Exact Price Shadow: copia manuale di exactPriceForProduct()/
+// isExactPriceEligible()/classifyPriceComparison() da market/providers.js
+// (stesso motivo delle altre copie sopra). MAI un Math.min tra prodotti —
+// getCurrentPrice() sopra resta l'unico posto con quella logica, per il
+// prezzo legacy/aggregate; qui si legge SEMPRE un solo cardmarket_product_id.
+// Stessa mappa di chiavi grezze già inline dentro getCurrentPrice() sopra
+// (impossibile condividerla tra i due file per il vincolo del bundler): se
+// la cambi lì, cambiala anche qui.
+const CARDMARKET_PRICE_TYPE_FIELDS:Record<string,string[]>={low:['low','Low Price','LOW'],trend:['trend','Trend Price','TREND'],average:['avg','Avg. Sell Price','AVG'],avg1:['avg1','AVG1'],avg7:['avg7','AVG7'],avg30:['avg30','AVG30'],
+  foil_low:['low-foil','Foil Low','LOWFOIL'],foil_trend:['trend-foil','Foil Trend','TRENDFOIL'],foil_average:['avg-foil','Foil Sell','SELLFOIL'],foil_avg1:['avg1-foil','Foil AVG1'],foil_avg7:['avg7-foil','Foil AVG7'],foil_avg30:['avg30-foil','Foil AVG30']};
+const EXACT_PRICE_TYPE_PRIORITY=['trend','average','avg7','low','lowest'];
+function exactPriceForProduct(pricesByProductId:Map<string,any>,productId:any):any{
+  const key=String(productId||'').trim();
+  if(!key)return null;
+  const row=pricesByProductId?.get?.(key);
+  if(!row)return null;
+  for(const type of EXACT_PRICE_TYPE_PRIORITY){
+    const fields=CARDMARKET_PRICE_TYPE_FIELDS[type]||(type==='lowest'?CARDMARKET_PRICE_TYPE_FIELDS.low:null);
+    if(!fields)continue;
+    const value=numberFrom(row,fields);
+    if(value!=null)return {type,value,currency:'EUR'};
+  }
+  return null;
+}
+function isExactPriceEligible(variant:any):boolean{
+  if(!variant?.cardmarket_product_id)return false;
+  return Boolean(variant.verified)||variant.mapping_status==='resolved';
+}
+function classifyPriceComparison(legacyPrice:any,exactPrice:any):any{
+  const legacy=typeof legacyPrice==='number'&&Number.isFinite(legacyPrice)?legacyPrice:null;
+  const exact=typeof exactPrice==='number'&&Number.isFinite(exactPrice)?exactPrice:null;
+  if(exact==null)return {comparisonStatus:'exact_missing',absoluteDelta:null,percentageDelta:null};
+  if(legacy==null)return {comparisonStatus:'legacy_missing',absoluteDelta:null,percentageDelta:null};
+  const absoluteDelta=Math.round((exact-legacy)*10000)/10000;
+  const percentageDelta=legacy!==0?Math.round((absoluteDelta/legacy)*10000)/100:null;
+  let comparisonStatus:string;
+  if(Math.abs(absoluteDelta)<0.01)comparisonStatus='same';
+  else if(percentageDelta!=null&&Math.abs(percentageDelta)<5)comparisonStatus='close';
+  else comparisonStatus='different';
+  return {comparisonStatus,absoluteDelta,percentageDelta};
+}
 // Un solo GET per l'intera tabella alias (~55 righe) per run di sync, mai per
 // printing — la stessa identica tabella scritta dalla migration
 // 20260912110000_ygo_market_variant_registry.sql.
@@ -425,6 +466,15 @@ Deno.serve(async request=>{
   if(marketVariantCanaryRunId){
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marketVariantCanaryRunId))return json({error:'invalid_market_variant_canary_run_id'},400);
     return json(await runYgoMarketVariantCanary(marketVariantCanaryRunId));
+  }
+  // Fase finale dello shadow pricing — stesso identico pattern del canary
+  // sopra (run_ygo_market_variant_price_shadow via net.http_post, mai dal
+  // browser). Legge la stessa coda ygo_market_variant_canary_runs (generica,
+  // non serve una seconda tabella), ma processa un genere diverso di run.
+  const marketVariantPriceShadowRunId=typeof payload?.marketVariantPriceShadowRunId==='string'?payload.marketVariantPriceShadowRunId.trim():'';
+  if(marketVariantPriceShadowRunId){
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marketVariantPriceShadowRunId))return json({error:'invalid_market_variant_price_shadow_run_id'},400);
+    return json(await runYgoMarketVariantPriceShadow(marketVariantPriceShadowRunId));
   }
   const dryTargetPrintingIds=printingIds(payload?.dryTargetPrintingIds);
   const canaryPrintingIds=printingIds(payload?.canaryPrintingIds);
@@ -642,6 +692,83 @@ async function runYgoMarketVariantCanary(runId:string){
 async function listCardPrintingsByIds(ids:string[]){
   const result=await restPages(`card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&id=in.(${ids.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
   return result.rows;
+}
+
+// Fase finale dello shadow pricing: confronta legacy_price (già in
+// market_price_snapshots, via ygo_market_variant_legacy_reference_prices —
+// stessa selezione di list_market_watch_owned_page, sola lettura) con
+// exact_price (il SOLO cardmarket_product_id verificato/risolto per quella
+// printing, mai un Math.min tra candidati). Come il canary: invocato SOLO da
+// run_ygo_market_variant_price_shadow via net.http_post, mai dal browser.
+// Più leggero del canary: non serve loadCatalog() (l'identità del prodotto è
+// già nota), solo loadPrices() UNA volta per l'intero batch di product_id
+// eleggibili. Scrive SOLO ygo_market_variant_price_shadow (diagnostica) + il
+// risultato nella riga della run — mai market_provider_printings/
+// market_price_snapshots/market_price_events/market_watch_items/
+// collection_items/decks/loans.
+async function runYgoMarketVariantPriceShadow(runId:string){
+  const runRows=await restPages(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}&select=id,status,printing_ids`,{key:(row:any)=>row.id});
+  const run=runRows.rows[0];
+  if(!run)return {ok:false,runId,error:'canary_run_not_found'};
+  if(run.status!=='pending')return {ok:true,runId,skipped:true,status:run.status,reason:'already_processed'};
+  await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'running',started_at:new Date().toISOString()},{'Prefer':'return=minimal'});
+  try{
+    const ids=printingIds(run.printing_ids);
+    if(!ids.length)throw new Error('printing_ids della run non valido (vuoto, >20, o non tutti UUID)');
+    const printingRows=await listCardPrintingsByIds(ids);
+    if(!printingRows.length)throw new Error('nessuna printing Yu-Gi-Oh! valida trovata per questi id');
+    const variantsByPrinting=await fetchExistingYgoMarketVariants(ids);
+    const eligiblePrintings=printingRows.filter((row:any)=>isExactPriceEligible(variantsByPrinting.get(String(row.id))||null));
+
+    const provider=(new CardmarketPriceGuideProvider({catalogUrl:Deno.env.get('CARDMARKET_PRODUCT_CATALOG_URL')||'',priceGuideUrl:Deno.env.get('CARDMARKET_PRICE_GUIDE_URL')||''}));
+    if(eligiblePrintings.length){
+      if(provider.getPriceMetadata().status==='unavailable')throw new Error('provider cardmarket non disponibile (secret/feed mancanti)');
+      // Un solo batch: un provider_product_id univoco per printing eleggibile,
+      // MAI più id per lo stesso target (niente candidateProductIds qui) —
+      // loadPrices() farà un solo fetch dell'intero Price Guide, filtrato a
+      // questi soli product_id (stesso meccanismo del canary/dryTarget).
+      const syntheticTargets=eligiblePrintings.map((row:any)=>({resolution_status:'manual',provider_product_id:variantsByPrinting.get(String(row.id)).cardmarket_product_id}));
+      await provider.loadPrices(syntheticTargets);
+    }
+
+    const legacyRows=await rpc('ygo_market_variant_legacy_reference_prices',{p_printing_ids:ids});
+    const legacyByPrinting=new Map((legacyRows||[]).map((row:any)=>[String(row.printing_id),row]));
+
+    const resultRows:any[]=[],shadowRowsToPersist:any[]=[];
+    for(const printingRow of printingRows){
+      const variant=variantsByPrinting.get(String(printingRow.id))||null;
+      const eligible=isExactPriceEligible(variant);
+      const legacyRow=legacyByPrinting.get(String(printingRow.id))||null;
+      const legacyPrice=legacyRow&&legacyRow.normalized_price!=null?Number(legacyRow.normalized_price):null;
+      const exactEntry=eligible?exactPriceForProduct(provider.prices,variant.cardmarket_product_id):null;
+      const exactPrice=exactEntry?exactEntry.value:null;
+      const {comparisonStatus,absoluteDelta,percentageDelta}=classifyPriceComparison(legacyPrice,exactPrice);
+      resultRows.push({
+        printingId:printingRow.id,cardName:printingRow.card_name,setCode:printingRow.set_code,rarity:printingRow.rarity,
+        mappingStatus:variant?.mapping_status||'unresolved',mappingSource:variant?.mapping_source||null,verified:Boolean(variant?.verified),
+        cardmarketProductId:variant?.cardmarket_product_id||null,
+        legacyPrice,exactPrice,priceType:exactEntry?.type||null,absoluteDelta,percentageDelta,comparisonStatus
+      });
+      if(eligible&&variant?.cardmarket_product_id){
+        shadowRowsToPersist.push({
+          printing_id:printingRow.id,cardmarket_product_id:variant.cardmarket_product_id,
+          legacy_price:legacyPrice,exact_price:exactPrice,price_type:exactEntry?.type||null,
+          absolute_delta:absoluteDelta,percentage_delta:percentageDelta,comparison_status:comparisonStatus,
+          mapping_status:variant.mapping_status,mapping_source:variant.mapping_source,verified:Boolean(variant.verified)
+        });
+      }
+    }
+    if(shadowRowsToPersist.length)await rest('ygo_market_variant_price_shadow?on_conflict=printing_id','POST',shadowRowsToPersist,{'Prefer':'resolution=merge-duplicates,return=minimal'});
+
+    const summary=resultRows.reduce((counts:any,row:any)=>{counts[row.comparisonStatus]=(counts[row.comparisonStatus]||0)+1;return counts;},{same:0,close:0,different:0,legacy_missing:0,exact_missing:0});
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'succeeded',finished_at:new Date().toISOString(),result:{rows:resultRows,summary}},{'Prefer':'return=minimal'});
+    return {ok:true,runId,status:'succeeded',rows:resultRows.length};
+  }catch(error:any){
+    const message=String(error?.message||error).slice(0,1000);
+    console.error('[market-sync] market variant price shadow: run fallita',{runId,error:message});
+    await rest(`ygo_market_variant_canary_runs?id=eq.${encodeURIComponent(runId)}`,'PATCH',{status:'failed',finished_at:new Date().toISOString(),error_message:message},{'Prefer':'return=minimal'}).catch(()=>{});
+    return {ok:false,runId,status:'failed',error:message};
+  }
 }
 
 async function resolveCardmarketTargets(provider:any,targets:any[],internalPrintings:any[]){

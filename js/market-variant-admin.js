@@ -9,18 +9,42 @@ import { icon } from './icons.js';
 const STATUS_LABELS = { ambiguous: 'Ambiguous', conflict: 'Conflict', unresolved: 'Unresolved' };
 
 export function renderMarketVariantPage(model) {
-  const { loading, error, queue, hasMore, selections, filters } = model;
+  const { loading, error, queue, hasMore, selections, filters, coverage } = model;
   const rows = queue.map(item => marketVariantRow(item, selections.get(item.printingId))).join('');
   return `<section class="page-stack admin-page" data-market-variant-page>
     <header class="page-header"><div><span class="eyebrow">Market Variant Resolver</span><h1>Rarity Cardmarket ambigue</h1>
       <p>Stesso set_code, più rarità diverse: il feed Cardmarket non basta a distinguerle da solo. Scegli il prodotto corretto per ciascuna — nessuna scelta automatica.</p></div>
     </header>
+    ${renderExactPricingCoverage(coverage)}
     ${renderMarketVariantFilters(filters)}
     ${error ? `<div class="admin-error surface">${icon('bell')} ${esc(error)}</div>` : ''}
     ${loading && !queue.length ? '<div class="empty">Caricamento coda...</div>' : ''}
     ${!loading && !queue.length && !error ? '<div class="empty">Nessuna market variant da revisionare con questi filtri.</div>' : ''}
     <div class="admin-variant-queue">${rows}</div>
     ${hasMore ? `<div class="admin-load-more"><button type="button" class="btn secondary" data-variant-load-more ${loading ? 'disabled' : ''}>${loading ? 'Caricamento...' : 'Carica altri'}</button></div>` : ''}
+  </section>`;
+}
+
+// Fase finale dello shadow pricing — sola diagnostica (js/api.js:
+// marketVariantExactPriceReport). "different"/"still ambiguous" sono la
+// stessa scala del report SQL: diff.different arriva dall'ultima
+// run_ygo_market_variant_price_shadow eseguita (0 finché nessuna è ancora
+// girata, non un placeholder), registry.ambiguous+conflict dal registry
+// corrente. Non mostra MAI un prezzo — nessun cambiamento a Market Watch.
+function renderExactPricingCoverage(coverage) {
+  if (!coverage) return '';
+  const { total_used_printings, registry, exact_price_coverage, coverage_pct, diff } = coverage;
+  const stillAmbiguous = (registry?.ambiguous || 0) + (registry?.conflict || 0);
+  return `<section class="surface admin-variant-coverage">
+    <header><span class="eyebrow">Fase finale shadow pricing</span><h2>Exact Pricing Coverage</h2></header>
+    <div class="admin-variant-coverage-grid">
+      <div><strong>${total_used_printings}</strong><span>Used printings</span></div>
+      <div><strong>${exact_price_coverage.eligible_exact}</strong><span>Exact eligible</span></div>
+      <div><strong>${exact_price_coverage.exact_price_available}</strong><span>Exact price available</span></div>
+      <div><strong>${coverage_pct.all_used}%</strong><span>Coverage</span></div>
+      <div><strong>${diff.different}</strong><span>Different from legacy</span></div>
+      <div><strong>${stillAmbiguous}</strong><span>Still ambiguous/conflict</span></div>
+    </div>
   </section>`;
 }
 

@@ -845,21 +845,33 @@ async function loadMyArtworkHistory() {
 const marketVariantState = {
   loading: false, error: '', queue: [], offset: 0, hasMore: false,
   selections: new Map(), confirming: new Set(),
-  filters: { query: '', usedOnly: true }
+  filters: { query: '', usedOnly: true },
+  coverage: null
 };
 const MARKET_VARIANT_PAGE_SIZE = 30;
 
 function marketVariantModel() {
   return {
     loading: marketVariantState.loading, error: marketVariantState.error, queue: marketVariantState.queue,
-    hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters
+    hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters,
+    coverage: marketVariantState.coverage
   };
 }
 function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
 
+// Report di sola diagnostica (fase finale dello shadow pricing, vedi
+// 20260912180000_ygo_market_variant_exact_price_shadow.sql) — non incide sul
+// prezzo mostrato in Market Watch, solo sul pannello admin. Caricato una
+// volta all'apertura pagina, non ripaginato/ricaricato ad ogni filtro.
+async function loadMarketVariantCoverage() {
+  if (state.role !== 'admin') return;
+  try { marketVariantState.coverage = await api.marketVariantExactPriceReport(); render(); }
+  catch { /* diagnostica opzionale: un fallimento qui non deve bloccare la coda */ }
+}
+
 async function loadMarketVariantQueue(reset = true) {
   if (state.role !== 'admin') return;
-  if (reset) { marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear(); }
+  if (reset) { marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear(); void loadMarketVariantCoverage(); }
   marketVariantState.loading = true; marketVariantState.error = ''; render();
   try {
     const { query, usedOnly } = marketVariantState.filters;

@@ -2573,3 +2573,8 @@ button.market-row:hover { background:#15121d; }
 .admin-variant-candidate span { font-family:monospace;flex:1; }
 .admin-variant-candidate.is-selected { border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--accent-rgb,238,189,84),.35); }
 .admin-variant-card footer { display:flex;justify-content:flex-end; }
+.admin-variant-coverage h2 { margin:2px 0 10px;font-size:1.1rem; }
+.admin-variant-coverage-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px; }
+.admin-variant-coverage-grid > div { display:flex;flex-direction:column;gap:2px; }
+.admin-variant-coverage-grid strong { font-size:1.4rem; }
+.admin-variant-coverage-grid span { color:var(--muted);font-size:.75rem; }
