@@ -672,7 +672,13 @@ function loanDetailSheetView(l) {
     : `<div class="request-response"><label>Quantità da accettare<input type="number" min="1" max="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" value="${Math.min(l.requestedQuantity, available ?? l.requestedQuantity)}" data-accept-qty="${l.id}"></label><button class="btn small" data-action="accept-request" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject-request" data-id="${l.id}">Rifiuta</button></div>`;
   if (l.status === 'reserved' && incoming) buttons = `<button class="btn small" data-action="activate" data-id="${l.id}">Conferma ricezione</button>`;
   if (l.status === 'pending' && !outgoing) buttons = `<button class="btn small" data-action="accept" data-id="${l.id}">Accetta</button><button class="btn secondary danger small" data-action="reject" data-id="${l.id}">Rifiuta</button>`;
-  if (l.status === 'active' && !outgoing) buttons = `<div class="partial-return"><input type="number" min="1" max="${remaining}" value="${remaining}" data-return-qty="${l.id}" aria-label="Quantità da restituire"><button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button></div>`;
+  // value="1" (non "${remaining}"): un prestito da più copie si restituisce
+  // quasi sempre un pezzo alla volta (le carte fisiche tornano una a una).
+  // Precompilare con l'INTERA quantità rimanente induceva a restituire tutto
+  // per sbaglio — bastava premere "Restituisci" senza toccare il numero,
+  // la RPC lo accettava (era comunque <= max) e il prestito si chiudeva
+  // per intero invece che del solo pezzo effettivamente reso.
+  if (l.status === 'active' && !outgoing) buttons = `<div class="partial-return"><input type="number" min="1" max="${remaining}" value="1" data-return-qty="${l.id}" aria-label="Quantità da restituire"><button class="btn secondary small" data-action="return" data-id="${l.id}">Restituisci</button></div>`;
   if (l.status === 'return_pending' && outgoing) buttons = `<button class="btn small" data-action="confirm-return" data-id="${l.id}">Conferma ${l.pendingReturnQuantity || remaining} pz</button>`;
   if (isAdmin && !buttons) buttons = `<button class="btn secondary danger small" data-action="admin-delete" data-id="${l.id}">Elimina</button>`;
   const printing = [l.setCode,l.setName,l.rarity].filter(Boolean).join(' · ');
