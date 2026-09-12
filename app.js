@@ -1,5 +1,6 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
 import {renderAdminPage, bindAdminPage} from './js/admin.js';
+import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-variant-admin.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
@@ -28,7 +29,7 @@ import { DAILY_MISSIONS_META } from './js/missions.js';
 function searchCards(query, game = 'yugioh') { return getGameAdapter(game).searchCards(query); }
 function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(name); }
 
-const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats','admin']);
+const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 let guestShare;
 const displayedXpProgress = new Map();
@@ -154,6 +155,7 @@ function dispatchPageEnterRefresh(previous, next) {
   if (next === 'decks') void loadDecks().then(() => renderRoute());
   if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); });
   if (next === 'admin' && canManageArtwork()) void loadAdminArtworkQueue(true);
+  if (next === 'market-variants' && state.role === 'admin') void loadMarketVariantQueue(true);
 }
 
 function animateXpFill() {
@@ -435,6 +437,7 @@ function pageContent() {
   if (page === 'requests') return requestsView();
   if (page === 'settings') return settingsView();
   if (page === 'admin') return adminView();
+  if (page === 'market-variants') return marketVariantView();
   if (page === 'more') return moreView();
   return dashboardView(state, state.game, marketWatch.dashboardState());
 }
@@ -494,6 +497,7 @@ function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   if (canManageArtwork()) links.push(['admin','card','Artwork Resolver','Printing multi-artwork da revisionare']);
+  if (state.role === 'admin') links.push(['market-variants','chart','Market Variant Resolver','Rarity Cardmarket ambigue da revisionare']);
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
 }
 
@@ -826,6 +830,77 @@ async function loadMyArtworkHistory() {
   } catch (error) { toast(error.message || 'Storico non disponibile'); }
   finally { adminArtworkState.historyLoading = false; render(); }
 }
+
+// Market Variant Resolver: stessa filosofia di adminArtworkState (coda di
+// lavoro non persistita, ricaricata a ogni apertura pagina). Solo admin —
+// le RPC (20260912170000_ygo_market_variant_review_resolver.sql) sono
+// role='admin' puro, nessun capability-equivalente al curator artwork
+// esiste ancora per i market variant.
+const marketVariantState = {
+  loading: false, error: '', queue: [], offset: 0, hasMore: false,
+  selections: new Map(), confirming: new Set(),
+  filters: { query: '', usedOnly: true }
+};
+const MARKET_VARIANT_PAGE_SIZE = 30;
+
+function marketVariantModel() {
+  return {
+    loading: marketVariantState.loading, error: marketVariantState.error, queue: marketVariantState.queue,
+    hasMore: marketVariantState.hasMore, selections: marketVariantState.selections, filters: marketVariantState.filters
+  };
+}
+function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
+
+async function loadMarketVariantQueue(reset = true) {
+  if (state.role !== 'admin') return;
+  if (reset) { marketVariantState.queue = []; marketVariantState.offset = 0; marketVariantState.selections.clear(); }
+  marketVariantState.loading = true; marketVariantState.error = ''; render();
+  try {
+    const { query, usedOnly } = marketVariantState.filters;
+    const rows = await api.ygoMarketVariantReviewQueue({ limit:MARKET_VARIANT_PAGE_SIZE, offset:marketVariantState.offset, query, usedOnly });
+    const mapped = rows.map(row => ({
+      printingId: row.printing_id, cardName: row.card_name, setCode: row.set_code, setName: row.set_name, rarity: row.rarity,
+      mappingStatus: row.mapping_status, mappingSource: row.mapping_source, mappingConfidence: row.mapping_confidence,
+      cardmarketProductId: row.cardmarket_product_id,
+      candidateProductIds: Array.isArray(row.candidate_product_ids) ? row.candidate_product_ids : [],
+      resolutionReason: row.resolution_reason, verified: row.verified,
+      collectionUsage: row.collection_usage, deckUsage: row.deck_usage, loanUsage: row.loan_usage, usageCount: row.usage_count
+    }));
+    marketVariantState.queue = marketVariantState.queue.concat(mapped);
+    marketVariantState.offset += mapped.length;
+    const total = rows[0]?.total_count ?? marketVariantState.queue.length;
+    marketVariantState.hasMore = marketVariantState.queue.length < total;
+  } catch (error) { marketVariantState.error = error.message || 'Coda non disponibile'; }
+  finally { marketVariantState.loading = false; render(); }
+}
+
+function setMarketVariantFilter(key, value) {
+  marketVariantState.filters[key] = value;
+  void loadMarketVariantQueue(true);
+}
+
+function selectMarketVariantCandidate(printingId, productId) {
+  marketVariantState.selections.set(printingId, productId);
+  render();
+}
+
+async function confirmMarketVariantSelection(printingId) {
+  const productId = marketVariantState.selections.get(printingId);
+  const item = marketVariantState.queue.find(row => row.printingId === printingId);
+  if (!productId || !item || marketVariantState.confirming.has(printingId)) return;
+  marketVariantState.confirming.add(printingId); render();
+  try {
+    // Nessun optimistic success: la riga resta in coda finché la RPC non
+    // conferma di aver persistito (stesso pattern di confirmAdminArtworkSelection).
+    await api.confirmYgoMarketVariant(printingId, productId);
+    marketVariantState.queue = marketVariantState.queue.filter(row => row.printingId !== printingId);
+    marketVariantState.selections.delete(printingId);
+    toast(`Market variant confermata per ${item.setCode} · ${item.rarity}`);
+    render();
+  } catch (error) { toast(error.message || 'Conferma non riuscita'); }
+  finally { marketVariantState.confirming.delete(printingId); render(); }
+}
+
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#member')?.addEventListener('change', event => {
@@ -940,6 +1015,10 @@ function bind() {
     onSelectCandidate: selectAdminArtworkCandidate, onConfirm: confirmAdminArtworkSelection,
     onLoadMore: () => loadAdminArtworkQueue(false), onFilterChange: setAdminArtworkFilter,
     onViewHistory: loadMyArtworkHistory, onViewQueue: () => { adminArtworkState.view = 'queue'; render(); }
+  });
+  bindMarketVariantPage(document, marketVariantModel(), {
+    onSelectCandidate: selectMarketVariantCandidate, onConfirm: confirmMarketVariantSelection,
+    onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter
   });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);

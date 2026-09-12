@@ -2551,3 +2551,25 @@ button.market-row:hover { background:#15121d; }
   .admin-artwork-candidates { grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); }
   .admin-filters-row { flex-direction:column;align-items:stretch; }
 }
+/* Market Variant Resolver: stessa ossatura di .admin-artwork-*, candidati
+   sono id prodotto Cardmarket testuali (con link esterno) invece di
+   immagini, quindi una lista invece di una griglia. */
+.admin-variant-queue { display:flex;flex-direction:column;gap:14px; }
+.admin-variant-card { display:flex;flex-direction:column;gap:10px;padding:16px; }
+.admin-variant-card > header { display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap; }
+.admin-variant-card > header > div:first-child { display:flex;flex-direction:column;gap:2px; }
+.admin-variant-card > header strong { font-size:1.05rem; }
+.admin-variant-card > header span { color:var(--muted);font-size:.85rem; }
+.admin-variant-usage { display:flex;align-items:center;gap:6px;color:var(--muted);font-size:.8rem;white-space:nowrap; }
+.admin-variant-meta { display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.8rem;flex-wrap:wrap; }
+.admin-variant-badge { display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;border:1px solid var(--line);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em; }
+.admin-variant-badge.is-ambiguous { border-color:var(--accent);color:var(--accent); }
+.admin-variant-badge.is-conflict { border-color:var(--danger);color:var(--danger); }
+.admin-variant-badge.is-unresolved { color:var(--muted); }
+.admin-variant-reason { font-family:monospace;font-size:.72rem;opacity:.8; }
+.admin-variant-candidates { display:flex;flex-direction:column;gap:8px; }
+.admin-variant-candidate { display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);cursor:pointer; }
+.admin-variant-candidate input { accent-color:var(--accent); }
+.admin-variant-candidate span { font-family:monospace;flex:1; }
+.admin-variant-candidate.is-selected { border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--accent-rgb,238,189,84),.35); }
+.admin-variant-card footer { display:flex;justify-content:flex-end; }

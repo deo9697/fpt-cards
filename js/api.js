@@ -103,6 +103,21 @@ export const api = {
   async getMarketVariantCanaryRun(runId) {
     ensure(); return unwrap(await client.rpc('get_ygo_market_variant_canary_run', { p_token:token(),p_run_id:runId }));
   },
+  // Pannello admin di risoluzione manuale — stesso pattern di
+  // ygoArtworkReviewQueue/confirmYgoPrintingArtwork: la queue è sola lettura,
+  // la conferma accetta solo l'id scelto tra i candidate_product_ids già
+  // noti (mai valori liberi), tutto il resto è derivato server-side.
+  async ygoMarketVariantReviewQueue({ limit = 50, offset = 0, statuses = null, setPrefix = '', query = '', usedOnly = true } = {}) {
+    ensure(); return unwrap(await client.rpc('list_ygo_market_variant_review_queue', {
+      p_token:token(), p_limit:limit, p_offset:offset, p_statuses:statuses,
+      p_set_prefix:setPrefix || null, p_query:query || null, p_used_only:usedOnly
+    }));
+  },
+  async confirmYgoMarketVariant(printingId, cardmarketProductId) {
+    ensure(); return unwrap(await client.rpc('confirm_ygo_market_variant', {
+      p_token:token(), p_printing_id:printingId, p_cardmarket_product_id:String(cardmarketProductId)
+    }));
+  },
   async lookupPrintings(setCode, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_set_code', { p_token:token(),p_game:game,p_set_code:setCode }));
   },
