@@ -24,7 +24,7 @@ export const DECK_IMAGE_HEIGHT = 1350;
 // vivono in `sections`; main/extra/side restano come viste di comodo sulle
 // SOLE chiavi realmente presenti in quel gioco (mai un dato perso: ogni
 // carta finisce sempre in `sections`, main/extra/side sono solo un alias).
-export function normalizeDeckForImage(deck, { ownerName = '' } = {}) {
+export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {} } = {}) {
   const game = deck?.game || 'yugioh';
   const adapter = getGameAdapter(game);
   const sectionKeys = adapter.sections || ['main'];
@@ -39,10 +39,17 @@ export function normalizeDeckForImage(deck, { ownerName = '' } = {}) {
     const quantity = Math.max(1, Number(card.quantity) || 1);
     const existing = bucket.get(id);
     if (existing) existing.quantity += quantity;
-    else bucket.set(id, { catalogCardId: id, cardName: card.cardName || '', imageUrl: card.imageUrl || card.croppedImageUrl || '', quantity });
+    else bucket.set(id, { catalogCardId: id, cardName: card.cardName || '', imageUrl: card.imageUrl || card.croppedImageUrl || '', cardType:cardTypes[card.catalogCardId] || cardTypes[id] || card.cardType || card.type || '', quantity });
   }
 
   const sections = sectionKeys.map(key => ({ key, label: labels[key] || key, cards: [...(buckets.get(key)?.values() || [])] }));
+  if (game === 'yugioh') {
+    const rank = card => {
+      const type = String(card.cardType || '').toLowerCase();
+      return type.includes('monster') ? 0 : type.includes('spell') ? 1 : type.includes('trap') ? 2 : 3;
+    };
+    for (const section of sections) section.cards.sort((a,b) => rank(a)-rank(b));
+  }
   const sectionByKey = key => sections.find(section => section.key === key)?.cards || [];
 
   const signatureSource = resolveDeckSignature(deck);
@@ -88,35 +95,34 @@ export function resolveImageAccent(theme) {
 // sezioni non entrano nell'altezza disponibile. Testabile senza un canvas
 // reale: produce solo coordinate numeriche.
 const PADDING = 56;
-const HEADER_HEIGHT = 214;
-const FOOTER_HEIGHT = 56;
+const HEADER_HEIGHT = 194;
+const FOOTER_HEIGHT = 40;
 const SECTION_TITLE_HEIGHT = 34;
-const SECTION_GAP = 26;
-const GRID_COLUMNS = 8;
-const BASE_CELL_GAP = 14;
+const SECTION_GAP = 20;
+
+const BASE_CELL_GAP = 10;
 const CELL_ASPECT = 1.46;
 
 export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT } = {}) {
   const contentX = PADDING;
   const contentWidth = width - PADDING * 2;
-  const baseCellWidth = (contentWidth - (GRID_COLUMNS - 1) * BASE_CELL_GAP) / GRID_COLUMNS;
-  const baseCellHeight = baseCellWidth * CELL_ASPECT;
-
   const nonEmpty = model.sections.filter(section => section.cards.length > 0);
-  const rowsFor = section => Math.ceil(section.cards.length / GRID_COLUMNS);
-  const blockHeightAt = (section, cellH, gap) => SECTION_TITLE_HEIGHT + rowsFor(section) * cellH + Math.max(0, rowsFor(section) - 1) * gap;
-
-  const neededAtBase = nonEmpty.reduce((sum, section) => sum + blockHeightAt(section, baseCellHeight, BASE_CELL_GAP), 0)
-    + Math.max(0, nonEmpty.length - 1) * SECTION_GAP;
-
   const availableHeight = height - PADDING - HEADER_HEIGHT - FOOTER_HEIGHT - PADDING;
   const fixedHeight = nonEmpty.length * SECTION_TITLE_HEIGHT + Math.max(0, nonEmpty.length - 1) * SECTION_GAP;
-  const scale = neededAtBase > availableHeight ? Math.max(0, (availableHeight - fixedHeight) / (neededAtBase - fixedHeight)) : 1;
-
-  const cellWidth = baseCellWidth * scale;
-  const cellHeight = baseCellHeight * scale;
-  const cellGap = BASE_CELL_GAP * scale;
-  const gridX = contentX + (contentWidth - GRID_COLUMNS * cellWidth - (GRID_COLUMNS - 1) * cellGap) / 2;
+  let best;
+  // Choose the grid that gives the largest complete cards, not a fixed 8 columns.
+  for (let columns=4; columns<=12; columns++) {
+    const baseWidth = (contentWidth-(columns-1)*BASE_CELL_GAP)/columns;
+    const rows = nonEmpty.reduce((n,section)=>n+Math.ceil(section.cards.length/columns),0);
+    const scalableHeight = rows*baseWidth*CELL_ASPECT + Math.max(0,rows-nonEmpty.length)*BASE_CELL_GAP;
+    const scale = scalableHeight ? Math.min(1,Math.max(0,(availableHeight-fixedHeight)/scalableHeight)) : 1;
+    const candidate = {columns,cellWidth:baseWidth*scale,cellGap:BASE_CELL_GAP*scale};
+    if (!best || candidate.cellWidth>best.cellWidth) best=candidate;
+  }
+  const {columns,cellWidth,cellGap}=best;
+  const cellHeight=cellWidth*CELL_ASPECT;
+  const rowsFor = section => Math.ceil(section.cards.length/columns);
+  const gridX = contentX + (contentWidth-columns*cellWidth-(columns-1)*cellGap)/2;
 
   let cursorY = PADDING + HEADER_HEIGHT;
   const sections = [];
@@ -124,8 +130,8 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
     const titleY = cursorY;
     const gridY = titleY + SECTION_TITLE_HEIGHT;
     const cards = section.cards.map((card, cardIndex) => {
-      const col = cardIndex % GRID_COLUMNS;
-      const row = Math.floor(cardIndex / GRID_COLUMNS);
+      const col = cardIndex % columns;
+      const row = Math.floor(cardIndex / columns);
       return { ...card, x: gridX + col * (cellWidth + cellGap), y: gridY + row * (cellHeight + cellGap), w: cellWidth, h: cellHeight };
     });
     sections.push({ key: section.key, label: section.label, totalQuantity: sectionTotalQuantity(section.cards), titleX: gridX, titleY, cards });
@@ -487,8 +493,8 @@ function prepareCanvasTarget(canvas) {
 // si appoggia al loader progressivo, ma attende SEMPRE il preload completo
 // prima di disegnare — nessun placeholder visibile a chi chiama questa
 // funzione, a differenza di renderDeckImagePreview qui sotto.
-export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
-  const model = normalizeDeckForImage(deck, { ownerName });
+export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
+  const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
   const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
   const layout = computeDeckImageLayout(model);
   // Il pool progressivo libera uno slot dopo previewTimeoutMs anche se il
@@ -512,10 +518,10 @@ export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', pr
 // La promise `ready` nel valore di ritorno permette comunque a chi chiama
 // di sapere quando il preload è terminato, se serve.
 export function renderDeckImagePreview(deck, {
-  mode = 'clean', ownerName = '', proxyUrl = '', cache = createDeckImageCache(), canvas,
+  mode = 'clean', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas,
   concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS, onProgress
 } = {}) {
-  const model = normalizeDeckForImage(deck, { ownerName });
+  const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
   const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
   const layout = computeDeckImageLayout(model);
   const target = prepareCanvasTarget(canvas);

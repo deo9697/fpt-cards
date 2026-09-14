@@ -390,7 +390,7 @@ export class DeckController {
     try {
       const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
       const { model, layout, ready } = renderDeckImagePreview(deck, {
-        mode: this.imageExportMode, ownerName, proxyUrl: '/api/card-image-proxy',
+        mode: this.imageExportMode, ownerName, cardTypes:this.cardTypes, proxyUrl: '/api/card-image-proxy',
         cache: this.imageExportCache, canvas,
         onProgress: unlockControls
       });
@@ -407,15 +407,17 @@ export class DeckController {
     }
   }
   async downloadImageExport() {
-    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
     try {
+      await this.resolveCardTypes(this.active());
+      const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
       const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
       downloadDeckImageBlob(blob, this.active()?.name || 'mazzo');
     } catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
   }
   async shareImageExport() {
-    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
     try {
+      await this.resolveCardTypes(this.active());
+      const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
       const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
       const deckName = this.active()?.name || 'mazzo';
       if (canShareDeckImageBlob(blob, deckName)) await shareDeckImageBlob(blob, deckName, { title: deckName });
@@ -677,18 +679,23 @@ export class DeckController {
   setSort(value) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sortOptionsFor(deck?.game).some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
   cycleSort() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); const options = sortOptionsFor(deck?.game); const index = options.findIndex(option => option.value === this.cardSort); this.setSort(options[(index + 1) % options.length].value); }
   async resolveCardTypes(deck) {
-    if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds || this.typesLoading) return;
+    if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds) return;
+    if (this.cardTypesRequest) return this.cardTypesRequest;
     const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardTypes));
     if (!ids.length) return;
     this.typesLoading = true;
+    this.cardTypesRequest = (async () => {
     try {
       const resolved = await this.cardTypesByIds(ids, deck.game);
       for (const id of ids) this.cardTypes[id] = coarseCardType(resolved[id] || '');
       writeTypeCache(this.cardTypes);
     } finally {
       this.typesLoading = false;
+      this.cardTypesRequest = null;
       this.onRender();
     }
+    })();
+    return this.cardTypesRequest;
   }
   // Costo One Piece per l'ordinamento "Costo" (default del Main): stesso
   // ruolo di resolveCardTypes, ma la fonte è l'adapter di gioco

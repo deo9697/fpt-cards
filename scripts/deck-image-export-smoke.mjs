@@ -17,6 +17,25 @@ function ygoDeck(cards, overrides = {}) {
   return { name: 'Blue-Eyes Control', ownerSlug: 'daniele', game: 'yugioh', format: 'TCG Avanzato', deckTheme: 'arcane-purple', signatureCardId: null, cards, ...overrides };
 }
 
+{
+  const cards = [
+    {catalogCardId:'11111',section:'main',cardType:'Trap Card',quantity:1},
+    {catalogCardId:'22222',section:'main',cardType:'Effect Monster',quantity:2},
+    {catalogCardId:'33333',section:'main',quantity:1},
+    {catalogCardId:'44444',section:'main',cardType:'Fusion Monster',quantity:1},
+    {catalogCardId:'55555',section:'side',cardType:'Trap Card',quantity:1},
+    {catalogCardId:'66666',section:'side',cardType:'Spell Card',quantity:1}
+  ];
+  const before = JSON.stringify(cards);
+  const model = normalizeDeckForImage(ygoDeck(cards),{cardTypes:{33333:'spell'}});
+  assert.deepEqual(model.main.map(card=>card.catalogCardId),['22222','44444','33333','11111']);
+  assert.deepEqual(model.side.map(card=>card.catalogCardId),['66666','55555']);
+  assert.equal(JSON.stringify(cards),before,'Export must not reorder the saved deck');
+  const compact = computeDeckImageLayout(normalizeDeckForImage(ygoDeck(cards.slice(0,4))));
+  assert(compact.sections[0].cards[0].w > 200, 'Small decks should use larger cards instead of eight fixed columns');
+  assert.deepEqual(normalizeDeckForImage(ygoDeck(cards,{game:'onepiece'})).main.map(card=>card.catalogCardId),['11111','22222','33333','44444']);
+}
+
 // --- Normalizzazione ------------------------------------------------------
 {
   const deck = ygoDeck([
