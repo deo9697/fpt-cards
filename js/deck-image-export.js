@@ -141,37 +141,86 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
 
 // --- Preload immagini (progressivo) --------------------------------------
 // Cache per-sessione passabile dal chiamante così più export/preview
-// consecutivi sulla STESSA istanza di controller non riscaricano mai lo
-// stesso artwork ({images}: url->Image|null già risolto, mai ritentato;
+// consecutivi sulla STESSA istanza di controller non riscaricano mai
+// l'artwork già risolto con successo:
+// {images}: url->HTMLImageElement SOLO per un caricamento riuscito davvero
+//   (mai null: un fallimento non finisce mai qui, altrimenti diventerebbe un
+//   "successo" permanente e nessun retry sarebbe più possibile — bug reale
+//   corretto qui, la causa esatta dei placeholder permanenti in produzione).
 // {inFlight}: url->Promise del caricamento REALE ancora in corso, usata sia
-// per deduplicare richieste concorrenti alla stessa URL sia da
-// waitForPendingDeckImages() a export-time). Un fallimento o un timeout non
-// blocca mai l'intero export: sempre un fallback a placeholder.
-export function createDeckImageCache() { return { images: new Map(), inFlight: new Map() }; }
+//   per deduplicare richieste concorrenti alla stessa URL sia da
+//   waitForPendingDeckImages() a export-time.
+// {failures}: url->{count, reason} per i soli fallimenti, con un budget di
+//   retry limitato (DEFAULT_MAX_ATTEMPTS) — mai un loop infinito, mai più di
+//   maxAttempts fetch reali per URL nella vita della cache.
+export function createDeckImageCache() { return { images: new Map(), inFlight: new Map(), failures: new Map() }; }
 
 export const DEFAULT_PREVIEW_CONCURRENCY = 8;
 export const DEFAULT_PREVIEW_TIMEOUT_MS = 2500;
 export const DEFAULT_EXPORT_TIMEOUT_MS = 6000;
-
-// Caricamento REALE, senza alcun timeout interno: risolve solo quando
-// l'immagine carica o fallisce davvero (mai un abbandono anticipato qui —
-// quello è responsabilità di raceWithTimeout più sotto, che NON annulla
-// questa promise, la lascia proseguire in background per un eventuale
-// upgrade tardivo del placeholder).
-function loadImageReal(url) {
-  return new Promise(resolve => {
-    if (!url) { resolve(null); return; }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
+export const DEFAULT_MAX_ATTEMPTS = 2;
 
 function resolveAssetUrl(url, proxyUrl) {
   if (!url) return '';
   return proxyUrl ? `${proxyUrl}${proxyUrl.includes('?') ? '&' : '?'}url=${encodeURIComponent(url)}` : url;
+}
+
+// Log sintetico SOLO in ambienti di sviluppo (localhost/127.0.0.1 o
+// window.FPT_CONFIG.debug esplicito), mai in produzione: nessun dato
+// sensibile, solo URL pubbliche di artwork e lo stato HTTP osservato.
+function isDevEnvironment() {
+  try { return typeof window !== 'undefined' && (window.FPT_CONFIG?.debug === true || ['localhost', '127.0.0.1'].includes(window.location?.hostname)); }
+  catch { return false; }
+}
+function logArtworkFailure(diagnostic, attempt, maxAttempts) {
+  if (!isDevEnvironment()) return;
+  console.warn('[deck-image-export] artwork non caricato', { ...diagnostic, attempt, maxAttempts });
+}
+
+// Carica un blob già scaricato in un <img>, aspettando la decodifica
+// completa (decode(), quando disponibile) PRIMA di revocare l'Object URL:
+// una volta decodificato il bitmap resta valido per tutti i disegni futuri
+// del canvas, l'Object URL non serve più. Se decode() non è disponibile
+// (ambiente senza supporto) ricade su onload/onerror.
+async function decodeImageFromBlob(blob) {
+  const objectUrl = URL.createObjectURL(blob);
+  const img = new Image();
+  img.src = objectUrl;
+  try {
+    if (typeof img.decode === 'function') await img.decode();
+    else await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('decode-error')); });
+    return img;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+// Caricamento REALE tramite fetch osservabile (mai un <img src> "cieco"
+// puntato direttamente sul proxy): questo è l'unico modo per distinguere
+// davvero un successo da uno stato HTTP/rete specifico (403 whitelist, 404
+// carta assente, 502 upstream irraggiungibile, content-type non-immagine,
+// errore di rete) invece di un generico onerror senza alcuna informazione.
+// Non lancia mai: un fallimento risolve sempre a {image:null, diagnostic}.
+async function loadArtwork(originalUrl, proxyUrl) {
+  const resolvedUrl = resolveAssetUrl(originalUrl, proxyUrl);
+  const diagnostic = { originalUrl, resolvedUrl, status: null, contentType: null, reason: '' };
+  if (!originalUrl) { diagnostic.reason = 'no-url'; return { image: null, diagnostic }; }
+
+  let response;
+  try { response = await fetch(resolvedUrl); }
+  catch { diagnostic.reason = 'network-error'; return { image: null, diagnostic }; }
+
+  diagnostic.status = response.status;
+  diagnostic.contentType = response.headers.get('content-type') || '';
+  if (!response.ok) { diagnostic.reason = `http-${response.status}`; return { image: null, diagnostic }; }
+  if (!diagnostic.contentType.startsWith('image/')) { diagnostic.reason = 'not-an-image'; return { image: null, diagnostic }; }
+
+  let blob;
+  try { blob = await response.blob(); }
+  catch { diagnostic.reason = 'blob-error'; return { image: null, diagnostic }; }
+
+  try { return { image: await decodeImageFromBlob(blob), diagnostic }; }
+  catch { diagnostic.reason = 'decode-error'; return { image: null, diagnostic }; }
 }
 
 // Non rigetta e non annulla `promise`: si limita a "dare per persa
@@ -196,40 +245,65 @@ export function resolveDeckImageUrls(model) {
   return urls;
 }
 
+function isRetryExhausted(cache, url, maxAttempts) {
+  const entry = cache.failures.get(url);
+  return !!entry && entry.count >= maxAttempts;
+}
+
 // Coda con concorrenza limitata (6-8 richieste attive, mai tutte insieme):
 // ogni worker processa un URL alla volta, con un timeout BREVE (previewTimeoutMs)
 // che libera lo slot per il prossimo URL in coda senza mai annullare il
 // caricamento reale — se questo arriva più tardi (dopo che il worker è già
 // passato oltre), il .then agganciato all'avvio dell'immagine scrive
 // comunque in cache.images e richiama onImageSettled (redraw incrementale,
-// "upgrade tardivo" da placeholder ad artwork reale). Un URL già in
-// cache.images (successo O fallimento definitivo) non viene mai ritentato.
-export async function preloadDeckImagesProgressively(model, {
-  proxyUrl = '', cache = createDeckImageCache(),
-  concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS,
-  onImageSettled
-} = {}) {
-  const queue = resolveDeckImageUrls(model).filter(url => !cache.images.has(url));
-  const effectiveConcurrency = Math.max(1, Math.min(concurrency, queue.length || 1));
-
+// "upgrade tardivo" da placeholder ad artwork reale). Un successo non viene
+// mai ripetuto; un fallimento con budget di retry residuo viene rimesso in
+// coda (via retryQueue) per un secondo tentativo nella stessa chiamata.
+async function runDeckImagePool(urls, { proxyUrl, cache, concurrency, previewTimeoutMs, maxAttempts, onImageSettled, retryQueue }) {
+  const queue = urls.slice();
   async function worker() {
     while (queue.length) {
       const url = queue.shift();
       if (cache.images.has(url)) continue; // risolta nel frattempo da un altro worker/upgrade tardivo
       let realPromise = cache.inFlight.get(url);
       if (!realPromise) {
-        realPromise = loadImageReal(resolveAssetUrl(url, proxyUrl));
+        realPromise = loadArtwork(url, proxyUrl);
         cache.inFlight.set(url, realPromise);
-        realPromise.then(image => {
+        realPromise.then(({ image, diagnostic }) => {
           cache.inFlight.delete(url);
-          cache.images.set(url, image);
-          onImageSettled?.(url, image);
+          if (image) {
+            cache.images.set(url, image);
+            cache.failures.delete(url); // un successo azzera lo storico di fallimenti precedenti
+          } else {
+            const count = (cache.failures.get(url)?.count || 0) + 1;
+            cache.failures.set(url, { count, reason: diagnostic.reason });
+            logArtworkFailure(diagnostic, count, maxAttempts);
+            if (count < maxAttempts) retryQueue?.push(url);
+          }
+          onImageSettled?.(url, image, diagnostic);
         });
       }
       await raceWithTimeout(realPromise, previewTimeoutMs); // libera lo slot indipendentemente dall'esito
     }
   }
+  const effectiveConcurrency = Math.max(1, Math.min(concurrency, queue.length || 1));
   await Promise.all(Array.from({ length: effectiveConcurrency }, worker));
+}
+
+export async function preloadDeckImagesProgressively(model, {
+  proxyUrl = '', cache = createDeckImageCache(),
+  concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS,
+  maxAttempts = DEFAULT_MAX_ATTEMPTS, onImageSettled
+} = {}) {
+  const urls = resolveDeckImageUrls(model).filter(url => !cache.images.has(url) && !isRetryExhausted(cache, url, maxAttempts));
+  const retryQueue = [];
+  await runDeckImagePool(urls, { proxyUrl, cache, concurrency, previewTimeoutMs, maxAttempts, onImageSettled, retryQueue });
+  // Una sola ondata di retry per chiamata (budget di default: 1 tentativo +
+  // 1 retry = DEFAULT_MAX_ATTEMPTS): mai un terzo giro qui, mai un loop
+  // interno illimitato. Un ulteriore tentativo, se il budget lo permette
+  // ancora, avviene solo su una successiva invocazione esplicita (nuova
+  // apertura preview, cambio modalità), MAI spam automatico.
+  if (retryQueue.length) await runDeckImagePool(retryQueue, { proxyUrl, cache, concurrency, previewTimeoutMs, maxAttempts, onImageSettled });
   return cache;
 }
 

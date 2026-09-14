@@ -1,53 +1,85 @@
 // Decklist Image Generator — caricamento progressivo (logica pura, nessun
 // browser/canvas reale necessario: un <canvas> fittizio con lo stesso
 // contratto usato da drawDeckImage/exportDeckImageBlob è sufficiente).
-// Verifica qui, in modo deterministico (timer controllati, mai una vera
-// rete/Image): il limite di concorrenza 6-8, il riuso della cache di
-// sessione (mai un ri-fetch di un URL già risolto), il timeout breve per
-// immagine durante la preview con fallback a placeholder e successivo
-// "upgrade tardivo" quando il caricamento reale arriva più tardi, il tetto
-// globale ragionevole per l'export finale, e — la prova richiesta
-// esplicitamente — che renderDeckImagePreview disegna il primo frame PRIMA
-// che una qualunque immagine abbia avuto la possibilità di risolversi.
-// Il comportamento con artwork reali/CORS/canvas vero resta coperto da
-// scripts/deck-image-export-browser-smoke.mjs (Chrome reale via CDP), che
-// aggiunge anche una prova equivalente con Image reali e One Piece via UI.
+//
+// Copre in modo deterministico (fetch/Image fittizi, mai una vera rete):
+// - la pipeline fetch osservabile (status/content-type/blob/decode) al posto
+//   di un <img src> "cieco" puntato direttamente sul proxy;
+// - la cache a 3 mappe (images/inFlight/failures): un fallimento non deve
+//   MAI diventare un "successo" permanente (bug reale corretto in questo
+//   fix — prima un null veniva scritto in cache.images e la condizione
+//   `!cache.images.has(url)` bloccava ogni retry per il resto della
+//   sessione);
+// - il budget di retry limitato (mai un loop infinito, mai spam);
+// - il limite di concorrenza 6-8, il timeout breve con upgrade tardivo, il
+//   tetto globale export, e la prova che la preview appare prima del
+//   preload completo — già verificati prima del fix e qui riconfermati sul
+//   nuovo loader.
+// Il comportamento con Image/canvas veri, un mock deterministico del proxy
+// e la UI reale resta coperto da scripts/deck-image-export-browser-smoke.mjs
+// (Chrome reale via CDP).
 import assert from 'node:assert/strict';
 globalThis.window ??= { addEventListener: () => {}, FPT_CONFIG: undefined };
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const {
   createDeckImageCache, resolveDeckImageUrls, preloadDeckImagesProgressively, waitForPendingDeckImages,
-  renderDeckImage, renderDeckImagePreview, exportDeckImageBlob, normalizeDeckForImage
+  renderDeckImage, renderDeckImagePreview, exportDeckImageBlob, normalizeDeckForImage,
+  DEFAULT_MAX_ATTEMPTS
 } = await import('../js/deck-image-export.js');
 
 function ygoDeck(cards, overrides = {}) {
   return { name: 'Progressive Test', game: 'yugioh', format: '', deckTheme: 'arcane-purple', signatureCardId: null, cards, ...overrides };
 }
+// catalogCardId volutamente NON puramente numerico: preferredDeckArtwork()
+// (js/deck-box.js, riusata e mai duplicata) forza un URL ygoprodeck per id
+// puramente numerici, ignorando l'imageUrl fornito — qui serve invece
+// controllare l'URL esatto per instradare i mock di fetch.
 function card(id, section, imageUrl) { return { catalogCardId: id, cardName: id, section, quantity: 1, imageUrl }; }
 
-// Image fittizia con timing/esito controllabili per URL, per non dipendere
-// mai da rete/canvas reali. onload/onerror vengono assegnati dal chiamante
-// (loadImageReal) PRIMA di impostare .src, quindi è sempre sicuro schedulare
-// la risoluzione dal setter di src.
-function installFakeImage({ configs = new Map(), activity = { active: 0, max: 0, started: 0 } } = {}) {
-  const original = globalThis.Image;
+// --- Mock della rete: fetch (proxy/HTTP) + Image (decodifica dal blob) ----
+// loadArtwork() fa: fetch(resolvedUrl) -> ok/status/content-type -> blob()
+// -> URL.createObjectURL -> new Image().src = objectUrl -> decode(). Ogni
+// stadio è quindi mockabile separatamente e in modo deterministico, mai
+// legato a una vera rete/canvas.
+function installFakeNetwork({ responses = new Map(), activity = { active: 0, max: 0 }, calls = [] } = {}) {
+  const originalFetch = globalThis.fetch;
+  const originalImage = globalThis.Image;
+  const originalCreate = globalThis.URL.createObjectURL;
+  const originalRevoke = globalThis.URL.revokeObjectURL;
+  const revoked = [];
+
+  globalThis.fetch = async url => {
+    const key = String(url);
+    calls.push(key);
+    const cfg = responses.get(key) ?? responses.get('*') ?? { status: 200, contentType: 'image/jpeg' };
+    if (cfg.neverResolves) return new Promise(() => {}); // straggler che non risponde mai
+    activity.active++; activity.max = Math.max(activity.max, activity.active);
+    try {
+      if (cfg.networkError) throw new Error('rete non raggiungibile');
+      await new Promise(resolve => setTimeout(resolve, cfg.delayMs ?? 5));
+      return {
+        ok: cfg.status >= 200 && cfg.status < 300, status: cfg.status,
+        headers: { get: name => (String(name).toLowerCase() === 'content-type' ? (cfg.contentType ?? null) : null) },
+        blob: async () => {
+          if (cfg.blobError) throw new Error('blob non leggibile');
+          return { __decodeFail: !!cfg.decodeFail };
+        }
+      };
+    } finally { activity.active--; }
+  };
   class FakeImage {
-    constructor() { this.width = 300; this.height = 400; this.crossOrigin = null; }
-    set src(url) {
-      this._src = url;
-      const cfg = configs.get(url) || {};
-      activity.started++; activity.active++; activity.max = Math.max(activity.max, activity.active);
-      if (cfg.never) return; // non risolve mai, per testare il tetto globale dell'export
-      setTimeout(() => {
-        activity.active--;
-        if (cfg.fail) this.onerror?.();
-        else this.onload?.();
-      }, cfg.delayMs ?? 5);
-    }
+    constructor() { this.width = 300; this.height = 400; }
+    set src(url) { this._src = url; setTimeout(() => { if (url === 'blob:decode-fail') this.onerror?.(); else this.onload?.(); }, 1); }
     get src() { return this._src; }
   }
   globalThis.Image = FakeImage;
-  return { activity, restore: () => { globalThis.Image = original; } };
+  globalThis.URL.createObjectURL = blob => (blob?.__decodeFail ? 'blob:decode-fail' : `blob:ok-${Math.random().toString(36).slice(2)}`);
+  globalThis.URL.revokeObjectURL = url => { revoked.push(url); };
+
+  return {
+    activity, calls, revoked,
+    restore: () => { globalThis.fetch = originalFetch; globalThis.Image = originalImage; globalThis.URL.createObjectURL = originalCreate; globalThis.URL.revokeObjectURL = originalRevoke; }
+  };
 }
 
 function fakeCanvas() {
@@ -65,10 +97,6 @@ function fakeCanvas() {
 
 // --- resolveDeckImageUrls: dedup su tutte le sezioni + signature ----------
 {
-  // catalogCardId volutamente NON puramente numerico: preferredDeckArtwork()
-  // (js/deck-box.js, riusata e mai duplicata) forza un URL ygoprodeck per id
-  // puramente numerici, ignorando l'imageUrl fornito — qui serve invece
-  // controllare l'URL esatto per verificare il dedup.
   const deck = ygoDeck([card('c1', 'main', 'a.png'), card('c2', 'main', 'b.png'), card('c3', 'extra', 'a.png'), card('c4', 'side', '')], { signatureCardId: 'c2' });
   const model = normalizeDeckForImage(deck);
   const urls = resolveDeckImageUrls(model);
@@ -76,39 +104,142 @@ function fakeCanvas() {
   console.log('PASS resolveDeckImageUrls: dedup corretto su sezioni multiple + signature card, mai un fetch duplicato programmato');
 }
 
-// --- Limite di concorrenza: mai più di N caricamenti reali attivi insieme ---
+// --- HTTP: ogni stato osservabile porta all'esito corretto -----------------
+{
+  const scenarios = [
+    ['200 image/jpeg', { status: 200, contentType: 'image/jpeg' }, true],
+    ['200 image/png', { status: 200, contentType: 'image/png' }, true],
+    ['403 whitelist', { status: 403, contentType: 'application/json' }, false],
+    ['404 carta assente', { status: 404, contentType: 'application/json' }, false],
+    ['502 upstream irraggiungibile', { status: 502, contentType: 'application/json' }, false],
+    ['content-type non immagine', { status: 200, contentType: 'text/html' }, false],
+    ['errore di rete', { networkError: true }, false]
+  ];
+  for (const [label, cfg, expectSuccess] of scenarios) {
+    const url = `http-${label}.png`;
+    const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
+    const cache = createDeckImageCache();
+    const responses = new Map([[url, cfg]]);
+    const { restore } = installFakeNetwork({ responses });
+    let diagnostic = null;
+    try {
+      await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000, maxAttempts: 1, onImageSettled: (_u, _img, d) => { diagnostic = d; } });
+      if (expectSuccess) assert.notEqual(cache.images.get(url), undefined, `${label}: doveva risolvere con successo`);
+      else {
+        assert.equal(cache.images.has(url), false, `${label}: non deve mai essere un successo`);
+        assert(diagnostic && diagnostic.reason, `${label}: deve produrre una diagnostica con una reason`);
+      }
+    } finally { restore(); }
+  }
+  console.log('PASS matrice HTTP: 200 image/jpeg e image/png renderizzati; 403/404/502/content-type non-immagine/errore di rete tutti placeholder con diagnostica, mai un crash');
+}
+
+// --- Limite di concorrenza: mai più di N fetch reali attivi insieme -------
 {
   const cards = Array.from({ length: 20 }, (_, i) => card(`u${i}`, 'main', `img-${i}.png`));
   const model = normalizeDeckForImage(ygoDeck(cards));
-  const { activity, restore } = installFakeImage({ configs: new Map(cards.map(c => [c.imageUrl, { delayMs: 25 }])) });
+  const responses = new Map(cards.map(c => [c.imageUrl, { status: 200, contentType: 'image/jpeg', delayMs: 25 }]));
+  const { activity, calls, restore } = installFakeNetwork({ responses });
   try {
     const cache = createDeckImageCache();
     await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 5000 });
     assert.equal(activity.max, 6, `non deve mai superare la concorrenza richiesta (osservato massimo: ${activity.max})`);
-    assert.equal(activity.started, 20, 'tutte le 20 immagini uniche devono essere state richieste, nessuna saltata');
+    assert.equal(calls.length, 20, 'tutte le 20 immagini uniche devono essere state richieste, nessuna saltata');
     assert.equal(cache.images.size, 20);
     assert.equal(cache.inFlight.size, 0, 'a preload concluso non deve restare nulla in cache.inFlight');
   } finally { restore(); }
-  console.log('PASS concorrenza limitata: mai più di 6 caricamenti reali attivi contemporaneamente su 20 URL uniche, tutte comunque risolte');
+  console.log('PASS concorrenza limitata: mai più di 6 fetch reali attivi contemporaneamente su 20 URL uniche, tutte comunque risolte');
 }
 
-// --- Cache di sessione: un URL già risolto non viene MAI ri-richiesto -----
+// --- Composizione URL: passando per proxyUrl, fetch chiama il PROXY con ---
+// ?url=<originale>, mai l'artwork originale direttamente (questo è ciò che
+// rende il caricamento osservabile passando davvero da
+// api/card-image-proxy.js in produzione).
+{
+  const originalUrl = 'https://images.ygoprodeck.com/images/cards_cropped/89631139.jpg';
+  const model = normalizeDeckForImage(ygoDeck([card('leader', 'main', originalUrl)]));
+  const expectedResolved = `/api/card-image-proxy?url=${encodeURIComponent(originalUrl)}`;
+  const responses = new Map([[expectedResolved, { status: 200, contentType: 'image/jpeg' }]]);
+  const { calls, restore } = installFakeNetwork({ responses });
+  try {
+    const cache = createDeckImageCache();
+    await preloadDeckImagesProgressively(model, { cache, proxyUrl: '/api/card-image-proxy', concurrency: 6, previewTimeoutMs: 2000 });
+    assert.deepEqual(calls, [expectedResolved], 'fetch deve chiamare il proxy con ?url=<originale>, mai l\'host originale direttamente dal browser');
+    assert.notEqual(cache.images.get(originalUrl), undefined, 'la cache resta indicizzata per URL ORIGINALE, non per URL risolta del proxy');
+  } finally { restore(); }
+  console.log('PASS composizione URL proxy: fetch chiama sempre /api/card-image-proxy?url=..., cache indicizzata per URL originale');
+}
+
+// --- Cache di sessione: un successo non viene MAI ri-richiesto -----------
 {
   const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', 'cached.png')]));
   const cache = createDeckImageCache();
   {
-    const { restore } = installFakeImage({ configs: new Map([['cached.png', { delayMs: 5 }]]) });
+    const { restore } = installFakeNetwork({ responses: new Map([['cached.png', { status: 200, contentType: 'image/jpeg' }]]) });
     try { await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000 }); } finally { restore(); }
   }
   assert.notEqual(cache.images.get('cached.png'), undefined);
-  let refetches = 0;
-  const { restore } = installFakeImage(); // qualunque `new Image()` qui sotto sarebbe un ri-fetch indebito
-  const originalImage = globalThis.Image;
-  globalThis.Image = class { constructor() { refetches++; } set src(_v) {} };
+  const { calls, restore } = installFakeNetwork({ responses: new Map([['cached.png', { status: 200, contentType: 'image/jpeg' }]]) });
   try { await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000 }); }
-  finally { globalThis.Image = originalImage; restore(); }
-  assert.equal(refetches, 0, 'un URL già presente in cache.images non deve mai generare un nuovo new Image()');
+  finally { restore(); }
+  assert.equal(calls.length, 0, 'un URL già presente in cache.images non deve mai generare un nuovo fetch');
   console.log('PASS cache di sessione: un secondo preload sullo stesso URL non ri-richiede mai l\'artwork già risolto');
+}
+
+// --- Il bug corretto: un fallimento NON deve mai diventare un successo ---
+// permanente. Prima del fix, `cache.images.set(url, null)` seguito dal
+// filtro `!cache.images.has(url)` rendeva impossibile ogni retry per il
+// resto della sessione, anche per un errore chiaramente transitorio.
+{
+  const url = 'once-broken.png';
+  const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
+  const cache = createDeckImageCache();
+  const { restore } = installFakeNetwork({ responses: new Map([[url, { status: 502, contentType: 'application/json' }]]) });
+  try { await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000, maxAttempts: 1 }); }
+  finally { restore(); }
+  assert.equal(cache.images.has(url), false, 'un fallimento non deve MAI comparire in cache.images (né come null né in altra forma)');
+  assert.equal(cache.failures.get(url)?.reason, 'http-502');
+  console.log('PASS bug corretto: un fallimento resta SOLO in cache.failures, mai scritto in cache.images come falso successo');
+}
+
+// --- Retry: un fallimento transitorio viene ritentato entro la stessa -----
+// chiamata (budget di default = 2 tentativi) e può trasformarsi in successo.
+{
+  const url = 'flaky.png';
+  const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
+  const cache = createDeckImageCache();
+  let attempt = 0;
+  const originalFetch = globalThis.fetch;
+  const { restore } = installFakeNetwork({ responses: new Map([[url, { status: 200, contentType: 'image/jpeg' }]]) });
+  // Il primo tentativo fallisce con un errore di rete, il secondo (retry) va a buon fine.
+  const wrapped = globalThis.fetch;
+  globalThis.fetch = async u => { attempt++; if (attempt === 1) throw new Error('rete instabile'); return wrapped(u); };
+  try {
+    await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000, maxAttempts: DEFAULT_MAX_ATTEMPTS });
+    assert.equal(attempt, 2, 'il retry deve avvenire entro la stessa chiamata dopo il primo fallimento transitorio');
+    assert.notEqual(cache.images.get(url), undefined, 'il secondo tentativo riuscito deve risolvere l\'artwork');
+    assert.equal(cache.failures.has(url), false, 'un successo successivo deve azzerare lo storico di fallimenti');
+  } finally { globalThis.fetch = originalFetch; restore(); }
+  console.log('PASS retry: un fallimento transitorio viene ritentato automaticamente entro la stessa chiamata e può risolversi con successo');
+}
+
+// --- Esaurimento del budget di retry: mai un loop infinito, mai spam -----
+{
+  const url = 'always-broken.png';
+  const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
+  const cache = createDeckImageCache();
+  const { calls, restore } = installFakeNetwork({ responses: new Map([[url, { status: 404, contentType: 'application/json' }]]) });
+  try {
+    await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000, maxAttempts: 2 });
+    assert.equal(calls.length, 2, 'con maxAttempts=2 devono avvenire esattamente 2 fetch reali (1 iniziale + 1 retry), mai di più nella stessa chiamata');
+    assert.equal(cache.failures.get(url)?.count, 2);
+    assert.equal(cache.images.has(url), false);
+
+    // Una chiamata successiva (es. riapertura preview) NON deve ritentare oltre il budget già esaurito.
+    await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000, maxAttempts: 2 });
+    assert.equal(calls.length, 2, 'con il budget di retry già esaurito, una successiva invocazione non deve generare altri fetch: mai spam');
+  } finally { restore(); }
+  console.log('PASS esaurimento retry: al massimo maxAttempts fetch reali per URL nella vita della cache, mai un loop infinito o spam su una card sempre rotta');
 }
 
 // --- Timeout breve in preview: placeholder subito, poi upgrade tardivo ----
@@ -117,7 +248,7 @@ function fakeCanvas() {
   const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
   const cache = createDeckImageCache();
   const settled = [];
-  const { restore } = installFakeImage({ configs: new Map([[url, { delayMs: 300 }]]) });
+  const { restore } = installFakeNetwork({ responses: new Map([[url, { status: 200, contentType: 'image/jpeg', delayMs: 300 }]]) });
   try {
     await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 30, onImageSettled: (u, img) => settled.push([u, img]) });
     assert.equal(cache.images.has(url), false, 'entro il timeout breve di preview il caricamento reale (300ms) non può essere già finito: deve restare un placeholder');
@@ -132,25 +263,12 @@ function fakeCanvas() {
   console.log('PASS timeout breve di preview: placeholder immediato per un artwork lento, upgrade automatico non appena il caricamento reale arriva (mai perso, mai bloccante)');
 }
 
-// --- Artwork fallito: placeholder permanente, mai un errore/throw --------
-{
-  const url = 'broken.png';
-  const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
-  const cache = createDeckImageCache();
-  const { restore } = installFakeImage({ configs: new Map([[url, { fail: true, delayMs: 5 }]]) });
-  try {
-    await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 2000 });
-    assert.equal(cache.images.get(url), null, 'un artwork fallito risolve a null (placeholder), mai un throw che blocchi l\'intero export');
-  } finally { restore(); }
-  console.log('PASS artwork fallito: null in cache (placeholder), nessuna eccezione propagata');
-}
-
-// --- Tetto globale export: mai bloccato all\'infinito da uno straggler ----
+// --- Tetto globale export: mai bloccato all'infinito da uno straggler ----
 {
   const url = 'never.png';
   const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
   const cache = createDeckImageCache();
-  const { restore } = installFakeImage({ configs: new Map([[url, { never: true }]]) });
+  const { restore } = installFakeNetwork({ responses: new Map([[url, { neverResolves: true }]]) });
   try {
     await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 10 });
     assert.equal(cache.inFlight.has(url), true);
@@ -168,7 +286,7 @@ function fakeCanvas() {
   const url = 'export-slow.png';
   const model = normalizeDeckForImage(ygoDeck([card('c1', 'main', url)]));
   const cache = createDeckImageCache();
-  const { restore } = installFakeImage({ configs: new Map([[url, { delayMs: 60 }]]) });
+  const { restore } = installFakeNetwork({ responses: new Map([[url, { status: 200, contentType: 'image/jpeg', delayMs: 60 }]]) });
   try {
     await preloadDeckImagesProgressively(model, { cache, concurrency: 6, previewTimeoutMs: 10 }); // lascia lo straggler pendente
     assert.equal(cache.inFlight.has(url), true);
@@ -190,44 +308,47 @@ function fakeCanvas() {
   console.log('PASS exportDeckImageBlob: firma a un argomento (nessun cache/model/layout) resta valida, comportamento invariato');
 }
 
-// --- renderDeckImage (bloccante): contratto esterno invariato -------------
+// --- renderDeckImage (bloccante): contratto esterno invariato, alcune -----
+// carte fallite non impediscono alle altre di apparire.
 {
-  const model = ygoDeck([card('c1', 'main', 'blocking.png')]);
-  const { restore } = installFakeImage({ configs: new Map([['blocking.png', { delayMs: 10 }]]) });
+  const deck = ygoDeck([card('c1', 'main', 'blocking-ok.png'), card('c2', 'main', 'blocking-broken.png')]);
+  const responses = new Map([['blocking-ok.png', { status: 200, contentType: 'image/jpeg', delayMs: 10 }], ['blocking-broken.png', { status: 404, contentType: 'application/json' }]]);
+  const { restore } = installFakeNetwork({ responses });
   try {
     const { canvas, calls } = fakeCanvas();
-    const result = await renderDeckImage(model, { canvas });
+    const result = await renderDeckImage(deck, { canvas });
     assert.equal(result.mode, 'clean');
     assert(calls.clearRect >= 1, 'deve comunque disegnare almeno un frame');
   } finally { restore(); }
-  console.log('PASS renderDeckImage: resta pienamente bloccante (un solo frame finale, preload atteso), contratto esterno invariato per i chiamanti esistenti');
+  console.log('PASS renderDeckImage: resta pienamente bloccante (un solo frame finale, preload atteso), una carta fallita non impedisce il completamento');
 }
 
 // --- renderDeckImagePreview: la PROVA richiesta esplicitamente -----------
 // Il primo frame deve essere disegnato in modo SINCRONO, prima che una
-// qualunque immagine reale abbia anche solo la possibilità di risolversi
-// (nessun timer/microtask può essere scattato tra la chiamata e il return).
+// qualunque immagine reale abbia anche solo la possibilità di risolversi, e
+// un artwork fallito non deve impedire agli altri di apparire.
 {
-  const url = 'preview-proof.png';
-  const model = ygoDeck([card('c1', 'main', url)]);
-  const { activity, restore } = installFakeImage({ configs: new Map([[url, { delayMs: 40 }]]) });
+  const okUrl = 'preview-ok.png', brokenUrl = 'preview-broken.png';
+  const deck = ygoDeck([card('c1', 'main', okUrl), card('c2', 'main', brokenUrl)]);
+  const responses = new Map([[okUrl, { status: 200, contentType: 'image/jpeg', delayMs: 40 }], [brokenUrl, { status: 403, contentType: 'application/json', delayMs: 40 }]]);
+  const { activity, restore } = installFakeNetwork({ responses });
   try {
     const { canvas, calls } = fakeCanvas();
-    const result = renderDeckImagePreview(model, { canvas, previewTimeoutMs: 1000, concurrency: 6 });
+    const result = renderDeckImagePreview(deck, { canvas, previewTimeoutMs: 1000, concurrency: 6 });
     // Punto di osservazione SINCRONO, immediatamente dopo la chiamata: nessun
-    // await è ancora avvenuto in questo test, quindi nessun timer del fake
-    // Image (delayMs:40) può essere scattato — la preview è quindi
+    // await è ancora avvenuto in questo test, quindi nessun fetch fittizio
+    // (delayMs:40) può essersi già risolto — la preview è quindi
     // dimostrabilmente comparsa PRIMA del completamento di qualunque immagine.
     assert(calls.clearRect >= 1, 'il primo frame (con placeholder) deve essere disegnato in modo sincrono, senza attendere il preload');
-    assert.equal(activity.active, 1, 'il caricamento reale deve essere stato avviato ma non ancora concluso al momento del primo frame');
-    assert.equal(result.cache.images.has(url), false, 'nessuna immagine può già essere risolta al ritorno sincrono della funzione');
+    assert.equal(result.cache.images.has(okUrl), false, 'nessuna immagine può già essere risolta al ritorno sincrono della funzione');
 
     const clearRectAfterFirstFrame = calls.clearRect;
     await result.ready;
     assert(calls.clearRect > clearRectAfterFirstFrame, 'deve avvenire un secondo redraw incrementale dopo che l\'artwork è arrivato');
-    assert.notEqual(result.cache.images.get(url), undefined);
+    assert.notEqual(result.cache.images.get(okUrl), undefined, 'l\'artwork valido deve risolvere');
+    assert.equal(result.cache.images.has(brokenUrl), false, 'l\'artwork rotto (403) non deve mai diventare un falso successo');
   } finally { restore(); }
-  console.log('PASS renderDeckImagePreview: primo frame disegnato in modo sincrono con placeholder PRIMA che qualunque immagine sia risolta, poi redraw incrementale automatico');
+  console.log('PASS renderDeckImagePreview: primo frame disegnato in modo sincrono con placeholder PRIMA che qualunque immagine sia risolta, poi redraw incrementale; una carta fallita non blocca le altre');
 }
 
 // --- One Piece: stessa pipeline progressiva, adapter leader/main/don -----
@@ -235,19 +356,25 @@ function fakeCanvas() {
 // 'yugioh'` da nessuna parte in questo modulo).
 {
   const deck = { name: 'Luffy Rush', game: 'onepiece', format: '', deckTheme: null, signatureCardId: null, cards: [
-    card('OP01-001', 'leader', 'leader.png'), card('OP01-016', 'main', 'main.png'), card('don-1', 'don', '')
+    card('OP01-001', 'leader', 'https://optcgapi.com/media/static/Card_Images/OP01-001.jpg'),
+    card('OP01-016', 'main', 'https://optcgapi.com/media/static/Card_Images/OP01-016.jpg'),
+    card('don-1', 'don', '')
   ] };
-  const { restore } = installFakeImage({ configs: new Map([['leader.png', { delayMs: 15 }], ['main.png', { delayMs: 5 }]]) });
+  const responses = new Map([
+    ['https://optcgapi.com/media/static/Card_Images/OP01-001.jpg', { status: 200, contentType: 'image/jpeg', delayMs: 15 }],
+    ['https://optcgapi.com/media/static/Card_Images/OP01-016.jpg', { status: 200, contentType: 'image/jpeg', delayMs: 5 }]
+  ]);
+  const { restore } = installFakeNetwork({ responses });
   try {
     const { canvas, calls } = fakeCanvas();
     const { ready, model, cache } = renderDeckImagePreview(deck, { canvas, previewTimeoutMs: 1000, concurrency: 6 });
     assert.equal(model.sections.map(s => s.key).join(','), 'leader,main,don', 'la pipeline progressiva deve riusare le sezioni reali dell\'adapter One Piece, non main/extra/side');
     await ready;
-    assert.notEqual(cache.images.get('leader.png'), undefined);
-    assert.notEqual(cache.images.get('main.png'), undefined);
+    assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-001.jpg'), undefined);
+    assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-016.jpg'), undefined);
     assert(calls.clearRect >= 1);
   } finally { restore(); }
-  console.log('PASS One Piece: caricamento progressivo funziona identico su leader/main/don, riusando gli stessi adapter senza branching duplicato');
+  console.log('PASS One Piece: caricamento progressivo (fetch osservabile) funziona identico su leader/main/don, riusando gli stessi adapter senza branching duplicato');
 }
 
-console.log('PASS deck-image-export caricamento progressivo: concorrenza limitata, cache di sessione mai ri-fetchata, timeout breve con upgrade tardivo, tetto globale export, preview sincrona prima del preload, retrocompatibilità, One Piece incluso');
+console.log('PASS deck-image-export caricamento progressivo: pipeline fetch osservabile, cache a 3 mappe senza falsi successi, retry con budget limitato, concorrenza limitata, timeout breve con upgrade tardivo, tetto globale export, preview sincrona prima del preload, retrocompatibilità, One Piece incluso');

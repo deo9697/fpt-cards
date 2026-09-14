@@ -173,32 +173,34 @@ try {
 
   // --- 5) Preview progressiva reale: appare SUBITO con placeholder (senza
   // aspettare il preload), poi si aggiorna incrementale man mano che ogni
-  // artwork arriva. Un artwork "lento" viene simulato ritardando SOLO
-  // l'assegnazione reale di img.src per gli URL marcati (nessuna rete/server
-  // modificati: image/canvas/Image restano quelli veri del browser). ---
+  // artwork arriva. Il caricamento reale ora passa da fetch() (pipeline
+  // osservabile: status/content-type/blob/decode, non più un <img src>
+  // "cieco"), quindi qui si intercetta window.fetch — non più window.Image —
+  // per un artwork "lento" (risposta reale ritardata di proposito) e uno
+  // "rotto" (una vera Response 404, un mock deterministico del proxy senza
+  // toccare alcun file server/rete reale). L'artwork "lento" risolve con i
+  // byte VERI di /icon-192.png: dimostra che l'immagine finita sul canvas
+  // non è un placeholder ma è davvero passata dalla pipeline fetch. ---
   const progressiveResult = await evaluate(`(async()=>{
     const {renderDeckImagePreview, waitForPendingDeckImages} = await import('/js/deck-image-export.js');
-    const RealImage = window.Image;
-    const nativeSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
-    window.Image = function() {
-      const img = new RealImage();
-      Object.defineProperty(img, 'src', {
-        configurable: true,
-        get() { return nativeSrc.get.call(img); },
-        set(url) {
-          const apply = () => nativeSrc.set.call(img, url);
-          if (String(url).includes('slow-marker')) setTimeout(apply, 500);
-          else apply();
-        }
-      });
-      return img;
+    const originalFetch = window.fetch;
+    const fetchCalls = [];
+    window.fetch = async (input, init) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url.includes('slow-marker')) { await new Promise(r => setTimeout(r, 500)); return originalFetch('/icon-192.png', init); }
+      if (url.includes('broken-marker')) return new Response(new Blob([JSON.stringify({message:'non trovato'})], {type:'application/json'}), {status: 404});
+      return originalFetch(input, init);
     };
+    let drawImageCalls = 0;
+    const originalDrawImage = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function(...args) { drawImageCalls++; return originalDrawImage.apply(this, args); };
     const deck = {
       name: 'Progressive Test', game: 'yugioh', deckTheme: 'arcane-purple', signatureCardId: null,
       cards: [
         { catalogCardId: 'fast-1', cardName: 'Veloce', section: 'main', quantity: 1, imageUrl: '/icon-192.png' },
         { catalogCardId: 'slow-1', cardName: 'Lenta', section: 'main', quantity: 1, imageUrl: '/icon-192.png?slow-marker=1' },
-        { catalogCardId: 'broken-1', cardName: 'Rotta', section: 'main', quantity: 1, imageUrl: '/nonexistent-slow-marker-404.png' }
+        { catalogCardId: 'broken-1', cardName: 'Rotta', section: 'main', quantity: 1, imageUrl: '/artwork-404.png?broken-marker=1' }
       ]
     };
     const canvas = document.createElement('canvas');
@@ -206,32 +208,43 @@ try {
     const { cache, ready } = renderDeckImagePreview(deck, { mode: 'clean', canvas, previewTimeoutMs: 150, concurrency: 6, onProgress: () => { progressCount++; } });
     // Osservazione SINCRONA, immediatamente dopo la chiamata: l'artwork lento
     // (ritardo artificiale 500ms) e quello rotto (richiede comunque un
-    // round-trip di rete) non possono essere già risolti — la preview è
-    // dunque comparsa PRIMA del completamento di qualunque immagine.
+    // round-trip di rete/fetch) non possono essere già risolti — la preview
+    // è dunque comparsa PRIMA del completamento di qualunque immagine.
     const immediatelyAfterCall = {
       slowResolved: cache.images.has('/icon-192.png?slow-marker=1'),
-      brokenResolved: cache.images.has('/nonexistent-slow-marker-404.png'),
-      inFlightCount: cache.inFlight.size
+      brokenResolved: cache.images.has('/artwork-404.png?broken-marker=1'),
+      inFlightCount: cache.inFlight.size,
+      drawImageCallsSoFar: drawImageCalls
     };
     await ready; // preview conclusa entro il timeout breve: il lento resta pendente
     const rightAfterReady = { slowStillPending: cache.inFlight.has('/icon-192.png?slow-marker=1') };
     await waitForPendingDeckImages(cache, { timeoutMs: 2000 }); // atteso SOLO a scopo di verifica dell'upgrade tardivo
+    const slowImage = cache.images.get('/icon-192.png?slow-marker=1');
     const afterWaitPending = {
       fastResolved: cache.images.get('/icon-192.png') != null,
-      slowResolved: cache.images.get('/icon-192.png?slow-marker=1') != null,
-      brokenResolved: cache.images.get('/nonexistent-slow-marker-404.png'),
-      progressCount
+      slowResolved: slowImage != null,
+      slowImageHasRealPixels: !!(slowImage && slowImage.naturalWidth > 0),
+      brokenResolved: cache.images.has('/artwork-404.png?broken-marker=1'),
+      brokenReason: cache.failures.get('/artwork-404.png?broken-marker=1')?.reason || null,
+      progressCount,
+      drawImageCallsAfterUpgrade: drawImageCalls,
+      slowWentThroughFetch: fetchCalls.some(u => u.includes('slow-marker'))
     };
-    window.Image = RealImage;
+    window.fetch = originalFetch;
+    CanvasRenderingContext2D.prototype.drawImage = originalDrawImage;
     return { immediatelyAfterCall, rightAfterReady, afterWaitPending };
   })()`);
   if (progressiveResult.immediatelyAfterCall.slowResolved || progressiveResult.immediatelyAfterCall.brokenResolved) throw Error('Un artwork lento/rotto risulta già risolto in modo sincrono, impossibile: ' + JSON.stringify(progressiveResult));
   if (progressiveResult.immediatelyAfterCall.inFlightCount !== 3) throw Error('Tutti e 3 gli artwork devono essere ancora in volo subito dopo la chiamata sincrona: ' + JSON.stringify(progressiveResult));
   if (!progressiveResult.rightAfterReady.slowStillPending) throw Error('Il timeout breve di preview deve lasciare l\'artwork lento pendente, non attenderlo: ' + JSON.stringify(progressiveResult));
   if (!progressiveResult.afterWaitPending.fastResolved || !progressiveResult.afterWaitPending.slowResolved) throw Error('Dopo aver atteso i soli pendenti, sia l\'artwork veloce che quello lento (upgrade tardivo) devono essere risolti: ' + JSON.stringify(progressiveResult));
-  if (progressiveResult.afterWaitPending.brokenResolved !== null) throw Error('Un artwork rotto deve restare un placeholder (null), mai bloccare nulla: ' + JSON.stringify(progressiveResult));
+  if (!progressiveResult.afterWaitPending.slowImageHasRealPixels) throw Error('L\'artwork lento risolto deve essere un\'immagine reale decodificata (naturalWidth>0), non un placeholder: ' + JSON.stringify(progressiveResult));
+  if (!progressiveResult.afterWaitPending.slowWentThroughFetch) throw Error('L\'artwork lento deve essere passato realmente dalla pipeline fetch, non da un <img src> cieco: ' + JSON.stringify(progressiveResult));
+  if (progressiveResult.afterWaitPending.brokenResolved) throw Error('Un artwork rotto (404) non deve mai diventare un falso successo in cache.images: ' + JSON.stringify(progressiveResult));
+  if (progressiveResult.afterWaitPending.brokenReason !== 'http-404') throw Error('Un 404 deve produrre una diagnostica precisa (http-404), non un fallimento opaco: ' + JSON.stringify(progressiveResult));
   if (progressiveResult.afterWaitPending.progressCount < 2) throw Error('onProgress deve scattare per ogni artwork risolto, incluso l\'upgrade tardivo di quello lento: ' + JSON.stringify(progressiveResult));
-  console.log('PASS preview progressiva (browser reale): il canvas parte subito con placeholder (nessun artwork ancora risolto alla chiamata sincrona), il lento resta un placeholder entro il timeout breve, poi si aggiorna da solo (upgrade tardivo) senza mai bloccare per quello rotto');
+  if (progressiveResult.afterWaitPending.drawImageCallsAfterUpgrade <= progressiveResult.immediatelyAfterCall.drawImageCallsSoFar) throw Error('Il redraw incrementale deve effettivamente disegnare l\'artwork arrivato in ritardo sul canvas (drawImage): ' + JSON.stringify(progressiveResult));
+  console.log('PASS preview progressiva (browser reale): il canvas parte subito con placeholder (nessun artwork ancora risolto alla chiamata sincrona), il lento (byte reali via fetch, mai un <img src> cieco) resta un placeholder entro il timeout breve poi si aggiorna da solo con pixel reali disegnati sul canvas, il 404 produce una diagnostica precisa e non blocca nulla');
 
   // --- 6) One Piece end-to-end tramite la UI reale del DeckController:
   // stesso bottone "Genera immagine", stesse sezioni leader/main/don
