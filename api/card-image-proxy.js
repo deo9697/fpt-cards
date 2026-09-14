@@ -84,7 +84,7 @@ async function readBodyWithLimit(response, maxBytes) {
   return Buffer.concat(chunks);
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Metodo non consentito' });
 
   const raw = req.query?.url;

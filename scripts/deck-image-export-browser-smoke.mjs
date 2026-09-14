@@ -286,6 +286,23 @@ try {
 
   if ((await evaluate('window.__consoleErrors')).length) throw Error('Browser errors: ' + JSON.stringify(await evaluate('window.__consoleErrors')));
   console.log('PASS deck-image-export (browser reale): rendering/export/artwork/Web Share/UI/preview progressiva/One Piece completa senza errori console');
+  // Exercise local assets WITH production proxy configured and export immediately
+  // while a serial worker still has cards queued.
+  const regression=await evaluate(`(async()=>{
+    const {renderDeckImagePreview,exportDeckImageBlob,createDeckImageCache}=await import('/js/deck-image-export.js');
+    const cache=createDeckImageCache();
+    const cards=Array.from({length:30},(_,i)=>({catalogCardId:String(90000000+i),cardName:'Carta '+(i+1),section:i<18?'main':i<24?'extra':'side',quantity:i<18?2:1,imageUrl:'/assets/fpt-card-hero.png?export='+i}));
+    const result=renderDeckImagePreview({name:'FPT ? Tournament Deck',game:'yugioh',format:'TCG Avanzato',cards},{ownerName:'FPT Cards',proxyUrl:'/api/card-image-proxy',cache,concurrency:1});
+    const blob=await exportDeckImageBlob(result.canvas,{...result,cache});
+    window.__exportCanvas=result.canvas;
+    return {loaded:cache.images.size,failed:cache.failures.size,size:blob.size};
+  })()`);
+  if(regression.loaded!==30||regression.failed||!regression.size)throw Error('Queued/local artwork export regression: '+JSON.stringify(regression));
+  const png=await evaluate('__exportCanvas.toDataURL("image/png").split(",")[1]');
+  const screenshot=path.join(tmpdir(),'fpt-deck-export-preview.png');
+  await (await import('node:fs/promises')).writeFile(screenshot,Buffer.from(png,'base64'));
+  console.log('PASS local artwork bypasses proxy; immediate export waits for all 30 queued images. Preview: '+screenshot);
+
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

@@ -35,7 +35,7 @@ function ygoDeck(cards, overrides = {}) {
   assert.equal(model.main.length, 2, '3 copie di Ash Blossom devono collassare in UNA riga, non tre');
   const ash = model.main.find(c => c.catalogCardId === '1');
   assert.equal(ash.quantity, 3, 'la quantità aggregata deve sommare le 3 righe originali');
-  assert.equal(ash.imageUrl.includes('cards_cropped/1.jpg'), true, 'deve riusare preferredDeckArtwork(), mai un URL costruito a mano');
+  assert.equal(ash.imageUrl, 'https://images.ygoprodeck.com/images/cards/1.jpg', 'export preserves complete card URL');
   assert.equal(model.extra.length, 1); assert.equal(model.extra[0].quantity, 2);
   assert.equal(model.side.length, 1); assert.equal(model.side[0].quantity, 3);
   assert.equal(model.signatureCard.catalogCardId, '2', 'la signature card deve riusare resolveDeckSignature(), non un lookup separato');

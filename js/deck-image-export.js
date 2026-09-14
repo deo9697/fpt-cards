@@ -1,7 +1,7 @@
 // Decklist Image Generator — indipendente dalla UI del Deck Builder (nessun
 // import da decks.js, nessuna dipendenza dal DOM del deck editor). Riusa la
 // canonicalizzazione carte/identity già esistente (canonicalCatalogCardId,
-// preferredDeckArtwork, resolveDeckSignature, l'adapter sezioni/etichette
+// resolveDeckSignature, l'adapter sezioni/etichette
 // per gioco) invece di reinventarla.
 //
 // Pipeline: normalizeDeckForImage() -> computeDeckImageLayout() (puro, solo
@@ -39,7 +39,7 @@ export function normalizeDeckForImage(deck, { ownerName = '' } = {}) {
     const quantity = Math.max(1, Number(card.quantity) || 1);
     const existing = bucket.get(id);
     if (existing) existing.quantity += quantity;
-    else bucket.set(id, { catalogCardId: id, cardName: card.cardName || '', imageUrl: preferredDeckArtwork(card) || card.imageUrl || '', quantity });
+    else bucket.set(id, { catalogCardId: id, cardName: card.cardName || '', imageUrl: card.imageUrl || card.croppedImageUrl || '', quantity });
   }
 
   const sections = sectionKeys.map(key => ({ key, label: labels[key] || key, cards: [...(buckets.get(key)?.values() || [])] }));
@@ -49,7 +49,7 @@ export function normalizeDeckForImage(deck, { ownerName = '' } = {}) {
   const signatureCard = signatureSource ? {
     catalogCardId: canonicalCatalogCardId(signatureSource.catalogCardId, game) || String(signatureSource.catalogCardId || ''),
     cardName: signatureSource.cardName || '',
-    imageUrl: preferredDeckArtwork(signatureSource) || signatureSource.imageUrl || ''
+    imageUrl: signatureSource.imageUrl || signatureSource.croppedImageUrl || ''
   } : null;
 
   return {
@@ -94,7 +94,7 @@ const SECTION_TITLE_HEIGHT = 34;
 const SECTION_GAP = 26;
 const GRID_COLUMNS = 8;
 const BASE_CELL_GAP = 14;
-const CELL_ASPECT = 1.3; // altezza = larghezza * CELL_ASPECT
+const CELL_ASPECT = 1.46;
 
 export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT } = {}) {
   const contentX = PADDING;
@@ -110,11 +110,13 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
     + Math.max(0, nonEmpty.length - 1) * SECTION_GAP;
 
   const availableHeight = height - PADDING - HEADER_HEIGHT - FOOTER_HEIGHT - PADDING;
-  const scale = neededAtBase > availableHeight && neededAtBase > 0 ? availableHeight / neededAtBase : 1;
+  const fixedHeight = nonEmpty.length * SECTION_TITLE_HEIGHT + Math.max(0, nonEmpty.length - 1) * SECTION_GAP;
+  const scale = neededAtBase > availableHeight ? Math.max(0, (availableHeight - fixedHeight) / (neededAtBase - fixedHeight)) : 1;
 
   const cellWidth = baseCellWidth * scale;
   const cellHeight = baseCellHeight * scale;
   const cellGap = BASE_CELL_GAP * scale;
+  const gridX = contentX + (contentWidth - GRID_COLUMNS * cellWidth - (GRID_COLUMNS - 1) * cellGap) / 2;
 
   let cursorY = PADDING + HEADER_HEIGHT;
   const sections = [];
@@ -124,9 +126,9 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
     const cards = section.cards.map((card, cardIndex) => {
       const col = cardIndex % GRID_COLUMNS;
       const row = Math.floor(cardIndex / GRID_COLUMNS);
-      return { ...card, x: contentX + col * (cellWidth + cellGap), y: gridY + row * (cellHeight + cellGap), w: cellWidth, h: cellHeight };
+      return { ...card, x: gridX + col * (cellWidth + cellGap), y: gridY + row * (cellHeight + cellGap), w: cellWidth, h: cellHeight };
     });
-    sections.push({ key: section.key, label: section.label, totalQuantity: sectionTotalQuantity(section.cards), titleX: contentX, titleY, cards });
+    sections.push({ key: section.key, label: section.label, totalQuantity: sectionTotalQuantity(section.cards), titleX: gridX, titleY, cards });
     cursorY = gridY + rowsFor(section) * cellHeight + Math.max(0, rowsFor(section) - 1) * cellGap;
     if (index < nonEmpty.length - 1) cursorY += SECTION_GAP;
   });
@@ -162,6 +164,10 @@ export const DEFAULT_MAX_ATTEMPTS = 2;
 
 function resolveAssetUrl(url, proxyUrl) {
   if (!url) return '';
+  // Local artwork and blob URLs are already canvas-safe; the remote proxy
+  // only accepts absolute URLs on its allowlist.
+  if (!/^https?:\/\//i.test(url)) return url;
+  if (typeof location !== 'undefined' && new URL(url).origin === location.origin) return url;
   return proxyUrl ? `${proxyUrl}${proxyUrl.includes('?') ? '&' : '?'}url=${encodeURIComponent(url)}` : url;
 }
 
@@ -207,7 +213,7 @@ async function loadArtwork(originalUrl, proxyUrl) {
   if (!originalUrl) { diagnostic.reason = 'no-url'; return { image: null, diagnostic }; }
 
   let response;
-  try { response = await fetch(resolvedUrl); }
+  try { response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(12000) }); }
   catch { diagnostic.reason = 'network-error'; return { image: null, diagnostic }; }
 
   diagnostic.status = response.status;
@@ -373,6 +379,8 @@ export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#0c0a10';
   ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = accent;
+  ctx.fillRect(padding, 26, width - padding * 2, 3);
 
   if (useSignature) {
     const bg = images.get(model.signatureCard.imageUrl);
@@ -398,18 +406,18 @@ export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '600 22px "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(model.owner, headerX + layout.header.width, y + 24);
+    ctx.fillText(truncateToWidth(ctx, model.owner, layout.header.width * 0.6), headerX + layout.header.width, y + 24);
   }
-  y += 56;
+  y += 78;
   ctx.fillStyle = '#ffffff';
-  ctx.font = '800 52px "Segoe UI", sans-serif';
+  ctx.font = '800 48px "Segoe UI", sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(truncateToWidth(ctx, model.name, layout.header.width), headerX, y);
   y += 40;
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
   ctx.font = '500 24px "Segoe UI", sans-serif';
   const subtitle = [GAME_LABELS[model.game] || model.game, model.format].filter(Boolean).join(' · ');
-  ctx.fillText(subtitle, headerX, y);
+  ctx.fillText(truncateToWidth(ctx, subtitle, layout.header.width), headerX, y);
   y += 24;
   ctx.strokeStyle = 'rgba(255,255,255,0.16)';
   ctx.lineWidth = 2;
@@ -417,6 +425,9 @@ export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
   ctx.moveTo(headerX, y);
   ctx.lineTo(headerX + layout.header.width, y);
   ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.font = '600 19px "Segoe UI", sans-serif';
+  ctx.fillText(model.sections.map(section => `${sectionTotalQuantity(section.cards)} ${section.label}`).join('   /   '), headerX, y + 36);
 
   // Sezioni
   for (const section of layout.sections) {
@@ -429,8 +440,20 @@ export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
       roundedRect(ctx, card.x, card.y, card.w, card.h, 8);
       ctx.save();
       ctx.clip();
-      if (image) drawCoverImage(ctx, image, card.x, card.y, card.w, card.h);
-      else drawPlaceholder(ctx, card.x, card.y, card.w, card.h);
+      if (image) {
+        ctx.fillStyle = '#090b12';
+        ctx.fillRect(card.x, card.y, card.w, card.h);
+        const scale = Math.min(card.w / image.width, card.h / image.height);
+        const w = image.width * scale, h = image.height * scale;
+        ctx.drawImage(image, card.x + (card.w-w)/2, card.y + (card.h-h)/2, w, h);
+      }
+      else {
+        drawPlaceholder(ctx, card.x, card.y, card.w, card.h);
+        ctx.fillStyle = '#c4bacf';
+        ctx.font = `500 ${Math.max(9,card.w * 0.11)}px "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(truncateToWidth(ctx, card.cardName || 'Immagine assente', card.w - 10), card.x + card.w/2, card.y + card.h/2);
+      }
       ctx.restore();
       drawQuantityBadge(ctx, card.quantity, card.x, card.y, card.w, card.h, accent);
     }
@@ -505,12 +528,15 @@ export function renderDeckImagePreview(deck, {
     proxyUrl, cache, concurrency, previewTimeoutMs,
     onImageSettled: (url, image) => { redraw(); onProgress?.(url, image); }
   }).then(() => { redraw(); });
+  cache.ready = ready;
 
   return { canvas: target, model, layout, mode: effectiveMode, cache, ready };
 }
 
 export function exportDeckImageBlob(canvas, { cache, model, layout, mode, exportTimeoutMs = DEFAULT_EXPORT_TIMEOUT_MS } = {}) {
   return (async () => {
+    // inFlight alone omits URLs still waiting in the worker queue.
+    if (cache?.ready) await raceWithTimeout(cache.ready, Math.max(exportTimeoutMs, 30000));
     if (cache?.inFlight?.size) {
       await waitForPendingDeckImages(cache, { timeoutMs: exportTimeoutMs });
       if (model && layout) drawDeckImage(canvas.getContext('2d'), model, layout, cache.images, mode);

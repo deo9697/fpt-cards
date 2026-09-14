@@ -6,24 +6,8 @@
 // Nessuna rete reale: fetch globale stubbato per ogni scenario, cosi' il
 // test è deterministico e non dipende da ygoprodeck.com/optcgapi.com.
 import assert from 'node:assert/strict';
-import Module from 'node:module';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-// api/card-image-proxy.js è deliberatamente CommonJS (module.exports, stesso
-// stile già usato da api/push-public-key.js ecc. per Vercel) mentre questo
-// repo ha "type":"module" nel package.json — createRequire() qui fallirebbe
-// (Node tenta l'interop require(esm) su un .js con quel package.json e va a
-// sbattere contro "module is not defined"). Si compila il sorgente come CJS
-// esplicito con l'API Module di basso livello, senza toccare né rinominare
-// il file di produzione.
-const proxyPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'api', 'card-image-proxy.js');
-const proxyModule = new Module(proxyPath);
-proxyModule.filename = proxyPath;
-proxyModule.paths = Module._nodeModulePaths(path.dirname(proxyPath));
-proxyModule._compile(readFileSync(proxyPath, 'utf8'), proxyPath);
-const handler = proxyModule.exports;
+import handler from '../api/card-image-proxy.js';
+assert.equal(typeof handler, 'function', 'Proxy must expose a real ESM default handler');
 
 function fakeRes() {
   const res = { statusCode: 200, headers: {}, body: null, json: null };
