@@ -1,6 +1,7 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
 import {renderAdminPage, bindAdminPage} from './js/admin.js';
 import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-variant-admin.js';
+import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
@@ -864,10 +865,18 @@ const marketVariantState = {
   // sola UI, mai persistito.
   exactPriceQueue: [], exactPriceOffset: 0, exactPriceHasMore: false,
   exactPriceLoading: false, exactPriceError: '',
-  exactPriceRunning: new Set(), exactPriceSummary: null
+  exactPriceRunning: new Set(), exactPriceSummary: null,
+  // Backfill mirato RA01/RA02 in uso: DISCOVER (sola lettura) -> preview con
+  // expected_action calcolato client-side -> BACKFILL (l'admin preme un
+  // secondo bottone separato) che riusa il canary esistente a batch di 20.
+  // Mai un discovery+write nello stesso click, mai nulla al caricamento pagina.
+  backfillDiscovered: false, backfillLoading: false, backfillError: '',
+  backfillCandidates: [], backfillRunning: false, backfillReport: null
 };
 const MARKET_VARIANT_PAGE_SIZE = 30;
 const MARKET_VARIANT_EXACT_PRICE_PAGE_SIZE = 20;
+const MARKET_VARIANT_BACKFILL_SET_PREFIXES = ['RA01', 'RA02'];
+const MARKET_VARIANT_BACKFILL_BATCH_SIZE = 20;
 
 function marketVariantModel() {
   return {
@@ -877,7 +886,10 @@ function marketVariantModel() {
     refreshingMetadata: marketVariantState.refreshingMetadata, setTemplates: marketVariantState.setTemplates,
     exactPriceQueue: marketVariantState.exactPriceQueue, exactPriceLoading: marketVariantState.exactPriceLoading,
     exactPriceError: marketVariantState.exactPriceError, exactPriceHasMore: marketVariantState.exactPriceHasMore,
-    exactPriceRunning: marketVariantState.exactPriceRunning, exactPriceSummary: marketVariantState.exactPriceSummary
+    exactPriceRunning: marketVariantState.exactPriceRunning, exactPriceSummary: marketVariantState.exactPriceSummary,
+    backfillDiscovered: marketVariantState.backfillDiscovered, backfillLoading: marketVariantState.backfillLoading,
+    backfillError: marketVariantState.backfillError, backfillCandidates: marketVariantState.backfillCandidates,
+    backfillRunning: marketVariantState.backfillRunning, backfillReport: marketVariantState.backfillReport
   };
 }
 function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
@@ -1065,6 +1077,82 @@ async function runMarketVariantExactPriceShadow(printingId) {
 
 function loadMoreMarketVariantExactPriceEligible() { void loadMarketVariantExactPriceEligible(false); }
 
+// Backfill mirato RA01/RA02 in uso — DISCOVER: sola lettura
+// (list_ygo_market_variant_backfill_candidates), mai chiamata al
+// caricamento pagina, solo su richiesta esplicita ("Analizza printing in
+// uso"). expected_action è calcolato qui, client-side, con la STESSA
+// funzione pura del resolver (classifyYgoMarketVariantBackfillAction ->
+// resolveYgoMarketVariantBySetTemplate) — nessuna chiamata Cardmarket in
+// questa fase, solo dati già noti.
+async function discoverMarketVariantBackfillCandidates() {
+  if (state.role !== 'admin' || marketVariantState.backfillLoading) return;
+  marketVariantState.backfillLoading = true; marketVariantState.backfillError = '';
+  marketVariantState.backfillReport = null; render();
+  try {
+    const rows = await api.listYgoMarketVariantBackfillCandidates({ setPrefixes: MARKET_VARIANT_BACKFILL_SET_PREFIXES, usedOnly: true, limit: 100 });
+    marketVariantState.backfillCandidates = rows.map(row => {
+      const candidateProductIds = Array.isArray(row.candidate_product_ids) ? row.candidate_product_ids : [];
+      const expectedAction = classifyYgoMarketVariantBackfillAction({
+        registryExists: row.registry_exists, mappingStatus: row.mapping_status, mappingSource: row.mapping_source,
+        verified: false, candidateProductIds, rarityCanonical: row.rarity_canonical, setCode: row.set_code,
+        setTemplates: marketVariantState.setTemplates
+      });
+      // Solo per la colonna "Template match" della preview: stessa funzione
+      // pura del resolver, un secondo giro non ricalcola nulla di diverso da
+      // classifyYgoMarketVariantBackfillAction sopra, serve solo il dettaglio
+      // (variant number) da mostrare all'admin prima del backfill vero.
+      const templateMatch = expectedAction === 'resolve_set_template'
+        ? resolveYgoMarketVariantBySetTemplate({ setCode: row.set_code, rarityCanonical: row.rarity_canonical, candidateProductIds, setTemplates: marketVariantState.setTemplates })
+        : null;
+      return {
+        printingId: row.printing_id, cardName: row.card_name, setCode: row.set_code, rarity: row.rarity,
+        rarityCanonical: row.rarity_canonical,
+        collectionUsage: row.collection_usage, deckUsage: row.deck_usage, loanUsage: row.loan_usage,
+        marketWatchUsage: row.market_watch_usage, usageCount: row.usage_count,
+        registryExists: row.registry_exists, mappingStatus: row.mapping_status, mappingSource: row.mapping_source,
+        cardmarketProductId: row.cardmarket_product_id, candidateProductIds, expectedAction, templateMatch
+      };
+    });
+    marketVariantState.backfillDiscovered = true;
+  } catch (error) { marketVariantState.backfillError = error.message || 'Discovery non riuscita'; }
+  finally { marketVariantState.backfillLoading = false; render(); }
+}
+
+// BACKFILL: bottone separato, esplicito, dopo che l'admin ha visto la
+// preview (mai discovery+write nello stesso click). Riusa
+// api.marketVariantCanary già esistente (stesso resolver Cardmarket, stessa
+// Edge Function, stesso upsert su ygo_market_variants con la sua
+// shouldPersistMarketVariantShadow) a batch di 20 — nessun mega batch,
+// nessun secondo resolver. Nessuna scrittura di pricing/Market Watch: il
+// canary scrive solo ygo_market_variants, mai altro.
+async function runMarketVariantBackfill() {
+  if (state.role !== 'admin' || marketVariantState.backfillRunning) return;
+  const ids = marketVariantState.backfillCandidates.map(row => row.printingId);
+  if (!ids.length) return;
+  marketVariantState.backfillRunning = true; marketVariantState.error = ''; render();
+  const allRows = []; let errorCount = 0;
+  try {
+    for (let index = 0; index < ids.length; index += MARKET_VARIANT_BACKFILL_BATCH_SIZE) {
+      const batch = ids.slice(index, index + MARKET_VARIANT_BACKFILL_BATCH_SIZE);
+      try {
+        const run = await api.marketVariantCanary(batch);
+        if (run.timedOut || run.status === 'failed') { errorCount += batch.length; continue; }
+        if (Array.isArray(run.result?.rows)) allRows.push(...run.result.rows);
+      } catch { errorCount += batch.length; }
+    }
+    const report = summarizeYgoMarketVariantBackfillRun(allRows);
+    report.errors = errorCount;
+    marketVariantState.backfillReport = report;
+    // Nessun cambiamento di pricing qui: solo un refresh delle sezioni
+    // diagnostiche già esistenti, così l'admin vede subito le nuove printing
+    // resolved/verified eleggibili per l'Exact Price Shadow (mai lanciato
+    // automaticamente — resta un bottone separato).
+    void loadMarketVariantCoverage();
+    void loadMarketVariantExactPriceEligible(true);
+  } catch (error) { toast(error.message || 'Backfill non riuscito'); }
+  finally { marketVariantState.backfillRunning = false; render(); }
+}
+
 function bind() {
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#member')?.addEventListener('change', event => {
@@ -1185,7 +1273,9 @@ function bind() {
     onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter,
     onRefreshMetadata: refreshMarketVariantCandidateMetadata,
     onRunExactPriceShadow: runMarketVariantExactPriceShadow,
-    onLoadMoreExactPrice: loadMoreMarketVariantExactPriceEligible
+    onLoadMoreExactPrice: loadMoreMarketVariantExactPriceEligible,
+    onDiscoverBackfill: discoverMarketVariantBackfillCandidates,
+    onRunBackfill: runMarketVariantBackfill
   });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);

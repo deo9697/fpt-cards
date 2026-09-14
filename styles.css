@@ -2606,3 +2606,11 @@ button.market-row:hover { background:#15121d; }
 .admin-variant-badge.is-same, .admin-variant-badge.is-close { border-color:#82ed93;color:#82ed93; }
 .admin-variant-badge.is-different { border-color:var(--accent);color:var(--accent); }
 .admin-variant-badge.is-exact_missing, .admin-variant-badge.is-legacy_missing { border-color:var(--danger);color:var(--danger); }
+
+/* Backfill RA01/RA02 in uso — DISCOVER (sola lettura) poi BACKFILL separato. */
+.admin-variant-backfill-section p { color:var(--muted);font-size:.85rem;margin:4px 0 0; }
+.admin-variant-backfill-actions { display:flex;gap:10px;flex-wrap:wrap;margin-top:12px; }
+.admin-variant-backfill-table-wrap { overflow-x:auto;margin-top:12px; }
+.admin-variant-backfill-table { width:100%;border-collapse:collapse;font-size:.82rem;white-space:nowrap; }
+.admin-variant-backfill-table th, .admin-variant-backfill-table td { padding:6px 10px;border-bottom:1px solid var(--line);text-align:left; }
+.admin-variant-backfill-table th { color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em; }

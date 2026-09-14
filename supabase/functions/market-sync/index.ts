@@ -224,11 +224,16 @@ function resolveYgoMarketVariantBySetTemplate({setCode=null as any,rarityCanonic
   return {productId,variantNumber,setPrefix,rarityCanonical};
 }
 function resolveYgoMarketVariant({existingVariant=null as any,cardmarketCandidates=[] as any[],rarityCanonical=null as string|null,legacyMapping=null as any,forceRefresh=false,setCode=null as any,setTemplates=[] as any[]}={}):any{
+  // Mai [] qui: un rerun del canary su una printing già verified/resolved
+  // deve riprendere candidate_product_ids già persistiti, non svuotarli
+  // (l'upsert scrive una riga intera — vedi market/providers.js per il
+  // dettaglio del bug di idempotenza trovato durante il backfill RA01/RA02).
+  const preservedCandidateIds=Array.isArray(existingVariant?.candidate_product_ids)?existingVariant.candidate_product_ids:[];
   if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
-    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:true,reason:'verified_mapping_preserved'});
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:preservedCandidateIds,verified:true,reason:'verified_mapping_preserved'});
   }
   if(!forceRefresh&&existingVariant?.mapping_status===MARKET_VARIANT_STATUS.RESOLVED&&existingVariant?.cardmarket_product_id){
-    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:false,reason:'resolved_registry_preserved'});
+    return ygoMarketVariantResult({mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:preservedCandidateIds,verified:false,reason:'resolved_registry_preserved'});
   }
   const candidates=dedupeYgoVariantCandidates(cardmarketCandidates);
   const templateMatch=resolveYgoMarketVariantBySetTemplate({setCode,rarityCanonical,candidateProductIds:candidates.map(row=>row.productId),setTemplates});
@@ -369,7 +374,10 @@ async function fetchExistingYgoMarketVariants(printingIds:string[]):Promise<Map<
   const byId=new Map<string,any>(),unique=[...new Set(printingIds.filter(Boolean))];
   for(let index=0;index<unique.length;index+=150){
     const chunk=unique.slice(index,index+150);
-    const page=await restPages(`ygo_market_variants?select=printing_id,mapping_status,mapping_source,mapping_confidence,cardmarket_product_id,cardmarket_expansion_id,verified&printing_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.printing_id});
+    // candidate_product_ids incluso apposta: resolveYgoMarketVariant() lo
+    // riprende quando preserva un mapping già verified/resolved (vedi sopra),
+    // senza questa colonna il fix di idempotenza non avrebbe nulla da leggere.
+    const page=await restPages(`ygo_market_variants?select=printing_id,mapping_status,mapping_source,mapping_confidence,cardmarket_product_id,cardmarket_expansion_id,candidate_product_ids,verified&printing_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.printing_id});
     for(const row of page.rows)byId.set(String(row.printing_id),row);
   }
   return byId;

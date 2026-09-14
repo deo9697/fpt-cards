@@ -16,6 +16,7 @@ export function renderMarketVariantPage(model) {
     <header class="page-header"><div><span class="eyebrow">Market Variant Resolver</span><h1>Rarity Cardmarket ambigue</h1>
       <p>Stesso set_code, più rarità diverse: il feed Cardmarket non basta a distinguerle da solo. Scegli il prodotto corretto per ciascuna — nessuna scelta automatica.</p></div>
     </header>
+    ${renderBackfillSection(model)}
     ${renderExactPricingCoverage(coverage)}
     ${renderExactPriceShadowSection(model)}
     ${renderMarketVariantFilters(filters)}
@@ -25,6 +26,81 @@ export function renderMarketVariantPage(model) {
     <div class="admin-variant-queue">${rows}</div>
     ${hasMore ? `<div class="admin-load-more"><button type="button" class="btn secondary" data-variant-load-more ${loading ? 'disabled' : ''}>${loading ? 'Caricamento...' : 'Carica altri'}</button></div>` : ''}
   </section>`;
+}
+
+// Backfill mirato RA01/RA02 in uso: DISCOVER (sola lettura, mai al
+// caricamento pagina — solo su "Analizza printing in uso") -> preview con
+// expected_action -> BACKFILL (bottone separato, "Esegui backfill shadow")
+// che riusa il canary esistente. Mai discovery+write nello stesso click.
+const BACKFILL_ACTION_LABELS = {
+  skip_already_resolved: 'Già risolta', resolve_set_template: 'Set template', run_resolver: 'Da analizzare', remain_ambiguous: 'Resta ambigua'
+};
+
+function renderBackfillSection(model) {
+  const { backfillDiscovered, backfillLoading, backfillError, backfillCandidates, backfillRunning, backfillReport } = model;
+  const candidates = backfillCandidates || [];
+  const counts = {
+    total: candidates.length,
+    alreadyResolved: candidates.filter(row => row.expectedAction === 'skip_already_resolved').length,
+    runResolver: candidates.filter(row => row.expectedAction === 'run_resolver').length,
+    ambiguous: candidates.filter(row => row.expectedAction === 'remain_ambiguous').length,
+    templateResolvable: candidates.filter(row => row.expectedAction === 'resolve_set_template').length
+  };
+  return `<section class="surface admin-variant-backfill-section">
+    <header><span class="eyebrow">Solo diagnostica — nessuna scrittura fino al backfill</span><h2>Backfill RA01 / RA02 in uso</h2>
+      <p>Trova le printing RA01/RA02 realmente possedute/usate senza ancora una mappatura utile, le fa passare nel resolver esistente e applica il set template quando deterministico. Resta tutto in shadow.</p>
+    </header>
+    <div class="admin-variant-backfill-actions">
+      <button type="button" class="btn secondary" data-variant-backfill-discover ${backfillLoading ? 'disabled' : ''}>${backfillLoading ? 'Analisi in corso...' : 'Analizza printing in uso'}</button>
+      ${backfillDiscovered && candidates.length ? `<button type="button" class="btn" data-variant-backfill-run ${backfillRunning ? 'disabled' : ''}>${backfillRunning ? 'Backfill in corso...' : 'Esegui backfill shadow'}</button>` : ''}
+    </div>
+    ${backfillError ? `<div class="admin-error surface">${icon('bell')} ${esc(backfillError)}</div>` : ''}
+    ${backfillDiscovered ? `<div class="admin-variant-shadow-summary">
+      <dl>
+        <div><dt>Printing usate trovate</dt><dd>${counts.total}</dd></div>
+        <div><dt>Già risolte</dt><dd>${counts.alreadyResolved}</dd></div>
+        <div><dt>Da analizzare</dt><dd>${counts.runResolver}</dd></div>
+        <div><dt>Ambigue</dt><dd>${counts.ambiguous}</dd></div>
+        <div><dt>Template-resolvable</dt><dd>${counts.templateResolvable}</dd></div>
+      </dl>
+    </div>` : ''}
+    ${backfillReport ? renderBackfillReport(backfillReport) : ''}
+    ${backfillDiscovered && candidates.length ? renderBackfillPreviewTable(candidates) : ''}
+    ${backfillDiscovered && !candidates.length && !backfillError ? '<div class="empty">Nessuna printing RA01/RA02 in uso senza mappatura utile.</div>' : ''}
+  </section>`;
+}
+
+function renderBackfillReport(report) {
+  return `<div class="admin-variant-shadow-summary">
+    <strong>Backfill shadow completato</strong>
+    <dl>
+      <div><dt>Processed</dt><dd>${report.processed}</dd></div>
+      <div><dt>Already resolved</dt><dd>${report.already_resolved}</dd></div>
+      <div><dt>Set template</dt><dd>${report.resolved_set_template}</dd></div>
+      <div><dt>Resolved other</dt><dd>${report.resolved_other}</dd></div>
+      <div><dt>Ambiguous</dt><dd>${report.ambiguous}</dd></div>
+      <div><dt>Conflict</dt><dd>${report.conflict}</dd></div>
+      <div><dt>Unresolved</dt><dd>${report.unresolved}</dd></div>
+      <div><dt>Errors</dt><dd>${report.errors}</dd></div>
+    </dl>
+  </div>`;
+}
+
+function renderBackfillPreviewTable(candidates) {
+  const rows = candidates.map(item => `<tr>
+    <td>${esc(item.cardName || '')}</td>
+    <td>${esc(item.setCode || '')}</td>
+    <td>${esc(item.rarity || '')}</td>
+    <td>${item.usageCount}</td>
+    <td>${esc(item.registryExists ? (item.mappingStatus || '') : 'Nessuna riga')}</td>
+    <td>${item.templateMatch ? `Sì (V.${item.templateMatch.variantNumber})` : (BACKFILL_ACTION_LABELS[item.expectedAction] || item.expectedAction)}</td>
+  </tr>`).join('');
+  return `<div class="admin-variant-backfill-table-wrap">
+    <table class="admin-variant-backfill-table">
+      <thead><tr><th>Card</th><th>Set</th><th>Rarity</th><th>Usage</th><th>Registry status</th><th>Template match</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
 }
 
 // Micro-feature: lancio manuale di run_ygo_market_variant_price_shadow() su
@@ -246,7 +322,11 @@ export function bindMarketVariantPage(root, model, handlers) {
     const runExactPrice = event.target.closest('[data-variant-run-exact-price]');
     if (runExactPrice && !runExactPrice.disabled) { handlers.onRunExactPriceShadow(runExactPrice.dataset.variantPrintingId); return; }
     const exactPriceLoadMore = event.target.closest('[data-variant-exact-price-load-more]');
-    if (exactPriceLoadMore && !exactPriceLoadMore.disabled) handlers.onLoadMoreExactPrice();
+    if (exactPriceLoadMore && !exactPriceLoadMore.disabled) { handlers.onLoadMoreExactPrice(); return; }
+    const discoverBackfill = event.target.closest('[data-variant-backfill-discover]');
+    if (discoverBackfill && !discoverBackfill.disabled) { handlers.onDiscoverBackfill(); return; }
+    const runBackfill = event.target.closest('[data-variant-backfill-run]');
+    if (runBackfill && !runBackfill.disabled) handlers.onRunBackfill();
   });
   page.querySelector('[data-variant-filter-query]')?.addEventListener('input', event => handlers.onFilterChange('query', event.target.value));
   page.querySelector('[data-variant-filter-used-only]')?.addEventListener('change', event => handlers.onFilterChange('usedOnly', event.target.checked));

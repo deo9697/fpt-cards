@@ -155,6 +155,17 @@ export const api = {
       p_token:token(), p_limit:limit, p_offset:offset, p_query:query || null, p_used_only:usedOnly
     }));
   },
+  // Backfill mirato RA01/RA02 in uso — discovery SOLA LETTURA (nessuna
+  // scrittura qui). La whitelist dei set_prefix emerge server-side dai
+  // template verified=true, mai da un pattern lato client. Il backfill vero
+  // e proprio (dopo che l'admin ha visto la preview) riusa marketVariantCanary
+  // già esistente sopra: stesso resolver, stessa Edge Function, nessun
+  // duplicato.
+  async listYgoMarketVariantBackfillCandidates({ setPrefixes = ['RA01', 'RA02'], usedOnly = true, limit = 100 } = {}) {
+    ensure(); return unwrap(await client.rpc('list_ygo_market_variant_backfill_candidates', {
+      p_token:token(), p_set_prefixes:setPrefixes, p_used_only:usedOnly, p_limit:limit
+    }));
+  },
   // Arricchimento metadata dei candidate_product_ids in coda di review —
   // sola lettura della cache (getYgoMarketVariantCandidateMetadata) più un
   // trigger esplicito per aggiornarla (refreshYgoMarketVariantCandidateMetadata,

@@ -243,19 +243,28 @@ export function resolveYgoMarketVariantBySetTemplate({setCode=null,rarityCanonic
 //   sopra — opzionali, se assenti il passo 3 semplicemente non si applica
 //   (comportamento identico a prima di questa estensione).
 export function resolveYgoMarketVariant({existingVariant=null,cardmarketCandidates=[],rarityCanonical=null,legacyMapping=null,forceRefresh=false,setCode=null,setTemplates=[]}={}){
+  // candidateProductIds qui riprende SEMPRE quello già persistito
+  // (existingVariant.candidate_product_ids), mai []: un rerun del canary su
+  // una printing già verified/resolved non deve mai svuotare l'array salvato
+  // in precedenza — l'upsert scrive una riga intera (POST +
+  // resolution=merge-duplicates), quindi un [] qui diventerebbe un [] reale
+  // in ygo_market_variants alla prossima persist (bug di idempotenza
+  // trovato durante il backfill mirato RA01/RA02, mai osservato prima
+  // perché nessun run precedente rieseguiva il canary su righe già risolte).
+  const preservedCandidateIds=Array.isArray(existingVariant?.candidate_product_ids)?existingVariant.candidate_product_ids:[];
   if(existingVariant?.verified&&existingVariant?.cardmarket_product_id){
     return variantResult({
       mappingStatus:MARKET_VARIANT_STATUS.VERIFIED,
       mappingSource:existingVariant.mapping_source===MARKET_VARIANT_SOURCE.MANUAL?MARKET_VARIANT_SOURCE.MANUAL:MARKET_VARIANT_SOURCE.REGISTRY,
       mappingConfidence:1,cardmarketProductId:existingVariant.cardmarket_product_id,cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,
-      candidateProductIds:[],verified:true,reason:'verified_mapping_preserved'
+      candidateProductIds:preservedCandidateIds,verified:true,reason:'verified_mapping_preserved'
     });
   }
   if(!forceRefresh&&existingVariant?.mapping_status===MARKET_VARIANT_STATUS.RESOLVED&&existingVariant?.cardmarket_product_id){
     return variantResult({
       mappingStatus:MARKET_VARIANT_STATUS.RESOLVED,mappingSource:MARKET_VARIANT_SOURCE.REGISTRY,
       mappingConfidence:existingVariant.mapping_confidence??0.8,cardmarketProductId:existingVariant.cardmarket_product_id,
-      cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:[],verified:false,reason:'resolved_registry_preserved'
+      cardmarketExpansionId:existingVariant.cardmarket_expansion_id||null,candidateProductIds:preservedCandidateIds,verified:false,reason:'resolved_registry_preserved'
     });
   }
   const candidates=dedupeVariantCandidates(cardmarketCandidates);
@@ -322,6 +331,50 @@ export function summarizeMarketVariantDecisions(decisions){
   const summary={processed:0,verified:0,resolved:0,ambiguous:0,conflict:0,unresolved:0,errors:0};
   for(const decision of decisions||[]){summary.processed++;summary[decision.mappingStatus]=(summary[decision.mappingStatus]||0)+1;}
   return summary;
+}
+
+// --- Backfill mirato (RA01/RA02 in uso) -------------------------------------
+// Preview PRIMA di qualunque write: per ogni riga trovata da
+// list_ygo_market_variant_backfill_candidates (sola lettura), stabilisce cosa
+// il backfill farebbe SENZA eseguire alcuna chiamata Cardmarket — usa solo
+// dati già noti (candidate_product_ids già persistiti, se la riga è
+// ambiguous/conflict) più lo stesso resolveYgoMarketVariantBySetTemplate()
+// del resolver — mai un secondo resolver, mai un guess.
+//
+// 'skip_already_resolved' è difensivo: la discovery RPC esclude già
+// resolved/verified, ma una riga può diventarlo tra la discovery e il click
+// su "Esegui backfill" (un altro admin la conferma, o un batch precedente
+// nella STESSA run l'ha già risolta) — mai un doppio lavoro/sovrascrittura.
+export function classifyYgoMarketVariantBackfillAction({registryExists=false,mappingStatus=null,mappingSource=null,verified=false,candidateProductIds=[],rarityCanonical=null,setCode=null,setTemplates=[]}={}){
+  if(verified||mappingSource==='manual'||mappingStatus==='resolved')return 'skip_already_resolved';
+  const ids=Array.isArray(candidateProductIds)?candidateProductIds:[];
+  if(ids.length){
+    const match=resolveYgoMarketVariantBySetTemplate({setCode,rarityCanonical,candidateProductIds:ids,setTemplates});
+    return match?'resolve_set_template':'remain_ambiguous';
+  }
+  return 'run_resolver'; // nessun candidato noto ancora: serve il resolver/canary per scoprirli
+}
+
+// Aggrega i resultRows del canary esistente (stessa forma di
+// runYgoMarketVariantCanary in supabase/functions/market-sync/index.ts:
+// {resolution_reason, shadow_status, verified_preserved, ...}) nel report
+// finale richiesto per il backfill. Nessuna nuova RPC di lettura del
+// risultato: il canary è già la fonte di verità, questa funzione pura si
+// limita a ricontare quello che ha già fatto.
+export function summarizeYgoMarketVariantBackfillRun(rows){
+  const report={processed:0,already_resolved:0,resolved_set_template:0,resolved_other:0,ambiguous:0,conflict:0,unresolved:0,errors:0,changed:[]};
+  for(const row of rows||[]){
+    report.processed++;
+    if(row.resolution_reason==='verified_mapping_preserved'||row.resolution_reason==='resolved_registry_preserved'){
+      report.already_resolved++; continue; // niente è cambiato per questa riga
+    }
+    if(row.resolution_reason==='verified_set_variant_template'){report.resolved_set_template++;report.changed.push(row);continue;}
+    if(row.shadow_status==='resolved'){report.resolved_other++;report.changed.push(row);continue;}
+    if(row.shadow_status==='ambiguous'){report.ambiguous++;report.changed.push(row);continue;}
+    if(row.shadow_status==='conflict'){report.conflict++;report.changed.push(row);continue;}
+    report.unresolved++;report.changed.push(row);
+  }
+  return report;
 }
 function dedupeVariantCandidates(rows){
   const byId=new Map();
