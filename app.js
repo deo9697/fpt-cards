@@ -1,4 +1,5 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
+import { collectionSearchAliases, enrichCollectionAliases } from './js/collection-search.js';
 import {renderAdminPage, bindAdminPage} from './js/admin.js';
 import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-variant-admin.js';
 import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
@@ -1294,13 +1295,17 @@ function installCollectionControls() {
   root.addEventListener('input', event => {
     if (!event.target.matches('[data-collection-query]')) return;
     collectionFilters.query = event.target.value;
+    // Typing must never start decorative type lookups for newly filtered tiles.
+    collectionTypeObserver?.disconnect();
+    clearTimeout(collectionTypeTimer);
+    visibleTypeQueue.clear();
     collectionVisibleCount = COLLECTION_PAGE_SIZE;
     // Filtering+sorting+re-rendering the whole grid on every keystroke was
     // visibly janky on a large collection — debounce both paths the same way
     // instead of only the (rarer) first-render path.
     clearTimeout(collectionSearchTimer);
     collectionSearchTimer = setTimeout(() => {
-      if (document.querySelector('[data-collection-results]')) refreshCollectionResults();
+      if (document.querySelector('[data-collection-results]')) refreshCollectionResults(false);
       else {
         render();
         const field = document.querySelector('[data-collection-query]');
@@ -1361,11 +1366,11 @@ function installCollectionControls() {
   });
 }
 
-function refreshCollectionResults() {
+function refreshCollectionResults(prefetchTypes = true) {
   const results = document.querySelector('[data-collection-results]');
   if (!results) return;
   results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
-  observeCollectionTypes();
+  if (prefetchTypes) observeCollectionTypes();
   results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   results.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => {
     if (!online()) return toast('Torna online per modificare la raccolta');
@@ -1591,7 +1596,7 @@ function observeCollectionTypes() {
   clearTimeout(collectionTypeTimer);
   visibleTypeQueue.clear();
   const tiles = document.querySelectorAll('[data-collection-item]');
-  if (!tiles.length) return;
+  if (!tiles.length || collectionFilters.query.trim()) return;
   if (!backgroundsWarmed) {
     backgroundsWarmed = true;
     for (const type of ['Spell Card','Trap Card','Fusion Monster']) {
@@ -1672,6 +1677,7 @@ function ensureCardTypeForDetail(id) {
 function mapCollectionItem(item) {
   const storedImage = normalizeCardImageUrl(item.image_url);
   return {
+    searchAliases:collectionSearchAliases(item),
     id:item.id, printingId:item.printing_id, ownerSlug:item.owner_slug,
     ownerName:item.owner_name, game:item.game, catalogCardId:item.catalog_card_id,
     cardName:item.card_name, setCode:item.set_code || '', setName:item.set_name || '',
@@ -1714,11 +1720,11 @@ async function loadCollection({ force = false } = {}) {
   const request=(async()=>{
     const [mine, team] = await Promise.all([api.myCollection({signal:controller.signal}), api.teamCollection({signal:controller.signal})]);
     if(generation!==collectionLoadGeneration)return state.collection;
-    state.collection = {
+    state.collection = enrichCollectionAliases({
       mine:(mine || []).map(mapCollectionItem),
       team:(team || []).map(mapCollectionItem),
       syncedAt:new Date().toISOString()
-    };
+    });
     syncLoanImagesFromCollection();
     collectionError = '';
 

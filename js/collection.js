@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { deckNamesForCollectionItem } from './decks.js';
 import { getGameAdapter } from './games/index.js';
 import { backgroundForCardType } from './cards.js';
+import { normalizeCollectionSearch, matchesCollectionQuery } from './collection-search.js';
 
 const STATUS_CHIPS = [
   { value:'all', label:'Tutte' },
@@ -59,7 +60,8 @@ function computeCollectionItems(collection, filters, game) {
   const team = (collection.team || []).filter(item => item.game === game);
   const source = filters.scope === 'mine' ? mine : groupTeamItems(team);
   const facetDefs = getGameAdapter(game).collectionFilters || [];
-  return { source, all: sortItems(source.filter(item => matches(item, filters, facetDefs)), filters.sort) };
+  const query = normalizeCollectionSearch(filters.query);
+  return { source, all: sortItems(source.filter(item => matches(item, filters, facetDefs, query)), filters.sort) };
 }
 
 // Filtri dichiarati dall'adapter di gioco (Color/Set/Rarity/Cost/Power/... per
@@ -314,10 +316,8 @@ function groupTeamItems(items) {
   return [...groups.values()];
 }
 
-function matches(item, filters, facetDefs = []) {
-  const needle = filters.query.trim().toLowerCase();
-  const text = [item.cardName,item.setCode,item.setName,item.rarity].join(' ').toLowerCase();
-  const queryOk = !needle || text.includes(needle);
+function matches(item, filters, facetDefs = [], query = normalizeCollectionSearch(filters.query)) {
+  const queryOk = matchesCollectionQuery(item, query);
   const ownerOk = filters.owner === 'all' || item.ownerSlug === filters.owner || item.items?.some(entry => entry.ownerSlug === filters.owner);
   const committed = item.quantityLoaned + item.quantityReserved;
   const statusOk = filters.status === 'all'

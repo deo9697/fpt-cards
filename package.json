@@ -38,6 +38,7 @@
     ,"test:market-loading": "node scripts/market-watch-loading-smoke.mjs"
     ,"test:market-owned-page-query": "node scripts/market-watch-owned-page-query-smoke.mjs"
     ,"test:market-summary-perf": "node scripts/market-watch-summary-perf-smoke.mjs"
+    ,"test:market-current-price-layer": "node scripts/market-watch-current-price-layer-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

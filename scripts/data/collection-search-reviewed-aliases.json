@@ -1,0 +1,10 @@
+[
+  {
+    "game": "yugioh",
+    "catalogCardId": "44265115",
+    "expectedEnglishName": "Brain Controller",
+    "aliases": ["Controlla Cervello"],
+    "source": "Nome italiano fornito nella richiesta FPT; ID e ALIN-EN033 verificati su YGOPRODeck EN",
+    "reviewedAt": "2026-09-14"
+  }
+]
