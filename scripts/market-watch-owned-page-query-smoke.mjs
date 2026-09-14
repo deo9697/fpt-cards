@@ -155,12 +155,18 @@ function distinctOnBestPerProvider(rows){
   return [...best.values()];
 }
 function referencePriceByPrinting(rows){
-  const best=new Map();
+  // Tiene la RIGA vincente (serve .provider/.priceType per il confronto al
+  // giro successivo) e ne estrae il prezzo solo alla fine — un Map<id,price>
+  // popolato subito renderebbe `current.provider` undefined dal secondo
+  // candidato in poi per lo stesso printing_id (bug trovato e corretto
+  // durante market-watch-summary-perf-smoke.mjs, che ha un'asserzione
+  // assoluta sulla precedenza e l'ha fatto emergere).
+  const bestRow=new Map();
   for(const row of rows){
-    const current=best.get(row.printingId);
-    if(!current||referenceType(row.provider,row.priceType)<referenceType(current.provider,current.priceType))best.set(row.printingId,row.price);
+    const current=bestRow.get(row.printingId);
+    if(!current||referenceType(row.provider,row.priceType)<referenceType(current.provider,current.priceType))bestRow.set(row.printingId,row);
   }
-  return best;
+  return new Map([...bestRow].map(([id,row])=>[id,row.price]));
 }
 function historyAtOrBefore(rows,cutoffMs){
   const best=new Map();
@@ -327,5 +333,8 @@ console.log('PASS list_market_watch_owned_page: stesso total/stessa pagina/stess
   assert.equal(newDisplay.get('p8').referencePrice,null);
   assert.equal(newDisplay.get('p11').referencePrice,null);
   assert.equal(newDisplay.get('p11').price24h,99);
-  console.log('PASS casi limite (valuta non-EUR, active senza derived, derived senza active) identici tra le due strategie');
+  // Precedenza assoluta (non solo "uguale tra vecchia e nuova strategia"):
+  // p5 ha cardtrader/reference=7 e cardmarket/low=6, cardtrader deve vincere.
+  assert.equal(reference.get('p5'),7,'cardtrader/reference (priorità 2) deve vincere su cardmarket/low (priorità 4), non un valore arbitrario');
+  console.log('PASS casi limite (valuta non-EUR, active senza derived, derived senza active) identici tra le due strategie, precedenza cardtrader/reference confermata in modo assoluto');
 }
