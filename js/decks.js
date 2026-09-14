@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deckThemeOptions, normalizeDeckBoxTemplate, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
 import { getGameAdapter } from './games/index.js';
-import { renderDeckImage, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
+import { renderDeckImagePreview, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
 
 // Chiavi di DECK_BOX_TEMPLATES che richiedono uno sblocco (js/cosmetics.js,
 // deckbox_<key>) invece di essere sempre disponibili — vedi isDeckBoxUnlocked().
@@ -60,6 +60,10 @@ export class DeckController {
     // per accorgersi quando onRender() lo ricrea (innerHTML replace) e
     // servirebbe un ridisegno — mai un dato di stato del mazzo.
     this.imageExportOpen = false; this.imageExportMode = 'clean'; this.imageExportBusy = false; this.imageExportError = ''; this.imageExportCanvas = null;
+    // model/layout dell'ultima preview disegnata: servono a exportDeckImageBlob
+    // per un eventuale ultimo redraw dopo aver atteso le immagini ancora
+    // pendenti, senza ricalcolare nulla (mai una seconda normalizzazione).
+    this.imageExportModel = null; this.imageExportLayout = null;
     this.imageExportCache = createDeckImageCache();
     // Scelta prestatore + "già concordato" per riga di carta mancante: transiente,
     // non fa parte dello stato del mazzo, si azzera quando il pannello si chiude.
@@ -351,10 +355,11 @@ export class DeckController {
   openImageExport() {
     if (!this.active()) return;
     this.imageExportOpen = true; this.imageExportMode = 'clean'; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
+    this.imageExportModel = null; this.imageExportLayout = null;
     this.moreMenuOpen = false;
     this.onRender();
   }
-  closeImageExport() { this.imageExportOpen = false; this.imageExportCanvas = null; this.onRender(); }
+  closeImageExport() { this.imageExportOpen = false; this.imageExportCanvas = null; this.imageExportModel = null; this.imageExportLayout = null; this.onRender(); }
   setImageExportMode(mode) {
     if (mode === this.imageExportMode || this.imageExportBusy) return;
     this.imageExportMode = mode; this.imageExportBusy = true; this.imageExportError = '';
@@ -362,36 +367,57 @@ export class DeckController {
   }
   // Disegna nel <canvas> già montato SENZA un secondo onRender() al
   // successo: onRender() sostituisce l'innerHTML e ricreerebbe il canvas,
-  // cancellando i pixel appena disegnati. Il loading overlay viene quindi
-  // nascosto via DOM diretto (stesso principio di refreshBoardSection() in
-  // js/market-watch.js: aggiornamento mirato, mai un render pieno per un
-  // contenuto costoso da ricostruire). bind() richiama questo metodo ogni
-  // volta che il riferimento al canvas cambia (riaperture/cambio modalità).
-  async drawImageExportPreview() {
+  // cancellando i pixel appena disegnati. renderDeckImagePreview disegna il
+  // primo frame (con placeholder per l'artwork non ancora in cache) in modo
+  // SINCRONO prima ancora di tornare: la preview non aspetta mai il preload
+  // completo. Il loading overlay e lo sblocco dei pulsanti Scarica/Condividi
+  // vengono quindi applicati subito via DOM diretto (stesso principio di
+  // refreshBoardSection() in js/market-watch.js: aggiornamento mirato, mai
+  // un render pieno per un contenuto costoso da ricostruire) — il preload
+  // prosegue in background e ridisegna via onProgress ad ogni artwork
+  // risolto, incluse le risoluzioni tardive di richieste andate in timeout.
+  // bind() richiama questo metodo ogni volta che il riferimento al canvas
+  // cambia (riaperture/cambio modalità).
+  drawImageExportPreview() {
     const deck = this.active(); if (!deck) return;
     const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
     this.imageExportCanvas = canvas;
-    try {
-      const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
-      await renderDeckImage(deck, { mode: this.imageExportMode, ownerName, proxyUrl: '/api/card-image-proxy', cache: this.imageExportCache, canvas });
-    } catch (error) {
-      this.imageExportError = error?.message || 'Generazione immagine non riuscita';
-    } finally {
-      this.imageExportBusy = false;
+    const unlockControls = () => {
       const overlay = document.querySelector('[data-deck-image-loading]');
       if (overlay) overlay.hidden = true;
-      if (this.imageExportError) this.onRender();
+      document.querySelectorAll('[data-deck-image-download],[data-deck-image-share]').forEach(button => { button.disabled = false; });
+    };
+    try {
+      const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
+      const { model, layout, ready } = renderDeckImagePreview(deck, {
+        mode: this.imageExportMode, ownerName, proxyUrl: '/api/card-image-proxy',
+        cache: this.imageExportCache, canvas,
+        onProgress: unlockControls
+      });
+      this.imageExportModel = model;
+      this.imageExportLayout = layout;
+      ready.catch(() => {}); // ogni fallimento per-immagine è già un placeholder, mai un throw qui
+    } catch (error) {
+      this.imageExportError = error?.message || 'Generazione immagine non riuscita';
+      this.onRender();
+      return;
+    } finally {
+      this.imageExportBusy = false;
+      unlockControls();
     }
   }
   async downloadImageExport() {
-    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas || this.imageExportBusy) return;
-    try { downloadDeckImageBlob(await exportDeckImageBlob(canvas), this.active()?.name || 'mazzo'); }
-    catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
+    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
+    try {
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
+      downloadDeckImageBlob(blob, this.active()?.name || 'mazzo');
+    } catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
   }
   async shareImageExport() {
-    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas || this.imageExportBusy) return;
+    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
     try {
-      const blob = await exportDeckImageBlob(canvas), deckName = this.active()?.name || 'mazzo';
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
+      const deckName = this.active()?.name || 'mazzo';
       if (canShareDeckImageBlob(blob, deckName)) await shareDeckImageBlob(blob, deckName, { title: deckName });
       else downloadDeckImageBlob(blob, deckName);
     } catch (error) { if (error?.name !== 'AbortError') this.onToast?.(error?.message || 'Condivisione non riuscita'); }
@@ -448,7 +474,7 @@ export class DeckController {
     // mentre la modale è aperta) — mai un rebuild dei dati del mazzo.
     if (this.imageExportOpen) {
       const canvas = root.querySelector('[data-deck-image-canvas]');
-      if (canvas && canvas !== this.imageExportCanvas) void this.drawImageExportPreview();
+      if (canvas && canvas !== this.imageExportCanvas) this.drawImageExportPreview();
     }
     root.querySelectorAll('[data-deck-cover-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.coverPickerOpen = false; this.onRender(); }));
     root.querySelectorAll('[data-deck-cover-card]').forEach(button => button.addEventListener('click', () => this.chooseCover(button.dataset.deckCoverCard)));

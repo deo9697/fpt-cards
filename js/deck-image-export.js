@@ -6,8 +6,10 @@
 //
 // Pipeline: normalizeDeckForImage() -> computeDeckImageLayout() (puro, solo
 // numeri: nessun overflow per costruzione, testabile senza un canvas reale)
-// -> preloadDeckImageAssets() -> drawDeckImage() su un canvas 1080x1350 reale
-// -> exportDeckImageBlob()/downloadDeckImageBlob()/shareDeckImageBlob().
+// -> preloadDeckImagesProgressively() (concorrenza limitata, redraw
+// incrementale via renderDeckImagePreview) o renderDeckImage() (bloccante,
+// un solo draw finale) -> exportDeckImageBlob()/downloadDeckImageBlob()/
+// shareDeckImageBlob().
 import { canonicalCatalogCardId } from './cards.js';
 import { preferredDeckArtwork, resolveDeckSignature, DECK_THEMES, normalizeDeckTheme } from './deck-box.js';
 import { getGameAdapter } from './games/index.js';
@@ -137,24 +139,32 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
   };
 }
 
-// --- Preload immagini ----------------------------------------------------
-// Cache per-sessione (Map url->Image) passabile dal chiamante così più
-// export/preview consecutivi sulla STESSA istanza di controller non
-// riscaricano mai lo stesso artwork. Un timeout per immagine e un fallback
-// a null (mai un throw): una card senza artwork non deve mai bloccare
-// l'intero export.
-export function createDeckImageCache() { return new Map(); }
+// --- Preload immagini (progressivo) --------------------------------------
+// Cache per-sessione passabile dal chiamante così più export/preview
+// consecutivi sulla STESSA istanza di controller non riscaricano mai lo
+// stesso artwork ({images}: url->Image|null già risolto, mai ritentato;
+// {inFlight}: url->Promise del caricamento REALE ancora in corso, usata sia
+// per deduplicare richieste concorrenti alla stessa URL sia da
+// waitForPendingDeckImages() a export-time). Un fallimento o un timeout non
+// blocca mai l'intero export: sempre un fallback a placeholder.
+export function createDeckImageCache() { return { images: new Map(), inFlight: new Map() }; }
 
-function loadImage(url, { timeoutMs = 8000 } = {}) {
+export const DEFAULT_PREVIEW_CONCURRENCY = 8;
+export const DEFAULT_PREVIEW_TIMEOUT_MS = 2500;
+export const DEFAULT_EXPORT_TIMEOUT_MS = 6000;
+
+// Caricamento REALE, senza alcun timeout interno: risolve solo quando
+// l'immagine carica o fallisce davvero (mai un abbandono anticipato qui —
+// quello è responsabilità di raceWithTimeout più sotto, che NON annulla
+// questa promise, la lascia proseguire in background per un eventuale
+// upgrade tardivo del placeholder).
+function loadImageReal(url) {
   return new Promise(resolve => {
     if (!url) { resolve(null); return; }
     const img = new Image();
-    let settled = false;
-    const finish = value => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
-    const timer = setTimeout(() => finish(null), timeoutMs);
     img.crossOrigin = 'anonymous';
-    img.onload = () => finish(img);
-    img.onerror = () => finish(null);
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
     img.src = url;
   });
 }
@@ -164,16 +174,73 @@ function resolveAssetUrl(url, proxyUrl) {
   return proxyUrl ? `${proxyUrl}${proxyUrl.includes('?') ? '&' : '?'}url=${encodeURIComponent(url)}` : url;
 }
 
-export async function preloadDeckImageAssets(model, { proxyUrl = '', timeoutMs = 8000, cache = createDeckImageCache() } = {}) {
-  const urls = new Set();
-  for (const section of model.sections) for (const card of section.cards) if (card.imageUrl) urls.add(card.imageUrl);
-  if (model.signatureCard?.imageUrl) urls.add(model.signatureCard.imageUrl);
+// Non rigetta e non annulla `promise`: si limita a "dare per persa
+// l'attesa" dopo timeoutMs, restituendo un segnale distinto ({timedOut:true})
+// così il chiamante può liberare uno slot di concorrenza o proseguire con un
+// placeholder SENZA smettere di ascoltare l'esito reale, che potrà ancora
+// arrivare più tardi.
+function raceWithTimeout(promise, timeoutMs) {
+  return new Promise(resolve => {
+    let settled = false;
+    const timer = setTimeout(() => { if (!settled) { settled = true; resolve({ timedOut: true }); } }, timeoutMs);
+    promise.then(value => { if (!settled) { settled = true; clearTimeout(timer); resolve({ timedOut: false, value }); } });
+  });
+}
 
-  await Promise.all([...urls].filter(url => !cache.has(url)).map(async url => {
-    const image = await loadImage(resolveAssetUrl(url, proxyUrl), { timeoutMs });
-    cache.set(url, image);
-  }));
+export function resolveDeckImageUrls(model) {
+  const seen = new Set();
+  const urls = [];
+  const add = url => { if (url && !seen.has(url)) { seen.add(url); urls.push(url); } };
+  for (const section of model.sections) for (const card of section.cards) add(card.imageUrl);
+  add(model.signatureCard?.imageUrl);
+  return urls;
+}
+
+// Coda con concorrenza limitata (6-8 richieste attive, mai tutte insieme):
+// ogni worker processa un URL alla volta, con un timeout BREVE (previewTimeoutMs)
+// che libera lo slot per il prossimo URL in coda senza mai annullare il
+// caricamento reale — se questo arriva più tardi (dopo che il worker è già
+// passato oltre), il .then agganciato all'avvio dell'immagine scrive
+// comunque in cache.images e richiama onImageSettled (redraw incrementale,
+// "upgrade tardivo" da placeholder ad artwork reale). Un URL già in
+// cache.images (successo O fallimento definitivo) non viene mai ritentato.
+export async function preloadDeckImagesProgressively(model, {
+  proxyUrl = '', cache = createDeckImageCache(),
+  concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS,
+  onImageSettled
+} = {}) {
+  const queue = resolveDeckImageUrls(model).filter(url => !cache.images.has(url));
+  const effectiveConcurrency = Math.max(1, Math.min(concurrency, queue.length || 1));
+
+  async function worker() {
+    while (queue.length) {
+      const url = queue.shift();
+      if (cache.images.has(url)) continue; // risolta nel frattempo da un altro worker/upgrade tardivo
+      let realPromise = cache.inFlight.get(url);
+      if (!realPromise) {
+        realPromise = loadImageReal(resolveAssetUrl(url, proxyUrl));
+        cache.inFlight.set(url, realPromise);
+        realPromise.then(image => {
+          cache.inFlight.delete(url);
+          cache.images.set(url, image);
+          onImageSettled?.(url, image);
+        });
+      }
+      await raceWithTimeout(realPromise, previewTimeoutMs); // libera lo slot indipendentemente dall'esito
+    }
+  }
+  await Promise.all(Array.from({ length: effectiveConcurrency }, worker));
   return cache;
+}
+
+// Usata SOLO a export-time: aspetta le sole richieste ancora realmente
+// pendenti (cache.inFlight — quelle già risolte non vengono toccate) fino a
+// un tetto globale ragionevole, poi restituisce il controllo comunque
+// (mai un throw): il chiamante procede con un ultimo redraw e l'export,
+// placeholder per chi non ce l'ha fatta in tempo.
+export async function waitForPendingDeckImages(cache, { timeoutMs = DEFAULT_EXPORT_TIMEOUT_MS } = {}) {
+  if (!cache.inFlight.size) return;
+  await raceWithTimeout(Promise.allSettled([...cache.inFlight.values()]), timeoutMs);
 }
 
 // --- Disegno ---------------------------------------------------------
@@ -310,24 +377,74 @@ function truncateToWidth(ctx, text, maxWidth) {
 }
 
 // --- Orchestrazione / export ---------------------------------------------
-export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', proxyUrl = '', cache, canvas } = {}) {
-  const model = normalizeDeckForImage(deck, { ownerName });
-  const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
-  const layout = computeDeckImageLayout(model);
-  const images = await preloadDeckImageAssets(model, { proxyUrl, cache });
+function prepareCanvasTarget(canvas) {
   const target = canvas || (typeof document !== 'undefined' ? document.createElement('canvas') : null);
   if (!target) throw new Error('Canvas non disponibile in questo ambiente');
   target.width = DECK_IMAGE_WIDTH;
   target.height = DECK_IMAGE_HEIGHT;
+  return target;
+}
+
+// Contratto esterno invariato (fully blocking, un solo draw finale): usata
+// dagli export/download esistenti e dai test già presenti. Internamente ora
+// si appoggia al loader progressivo, ma attende SEMPRE il preload completo
+// prima di disegnare — nessun placeholder visibile a chi chiama questa
+// funzione, a differenza di renderDeckImagePreview qui sotto.
+export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
+  const model = normalizeDeckForImage(deck, { ownerName });
+  const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
+  const layout = computeDeckImageLayout(model);
+  // Il pool progressivo libera uno slot dopo previewTimeoutMs anche se il
+  // caricamento reale non è ancora finito (per definizione, serve alla
+  // concorrenza). Qui però il contratto è bloccante: dopo il pool si
+  // aspettano ancora le eventuali richieste rimaste in cache.inFlight,
+  // entro un tetto ragionevole, prima di disegnare una sola volta.
+  await preloadDeckImagesProgressively(model, { proxyUrl, cache, concurrency: DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs: DEFAULT_PREVIEW_TIMEOUT_MS });
+  await waitForPendingDeckImages(cache, { timeoutMs: DEFAULT_EXPORT_TIMEOUT_MS });
+  const target = prepareCanvasTarget(canvas);
   const ctx = target.getContext('2d');
-  drawDeckImage(ctx, model, layout, images, effectiveMode);
+  drawDeckImage(ctx, model, layout, cache.images, effectiveMode);
   return { canvas: target, model, layout, mode: effectiveMode };
 }
 
-export function exportDeckImageBlob(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Generazione PNG non riuscita'))), 'image/png');
-  });
+// Percorso non bloccante per la preview UI: disegna SUBITO (sincrono, con
+// quel che è già in cache — placeholder per tutto il resto), poi avvia il
+// preload progressivo IN BACKGROUND (senza mai attenderlo qui) e ridisegna
+// via onImageSettled ogni volta che un artwork arriva, incluse le eventuali
+// risoluzioni tardive di richieste andate in timeout durante la preview.
+// La promise `ready` nel valore di ritorno permette comunque a chi chiama
+// di sapere quando il preload è terminato, se serve.
+export function renderDeckImagePreview(deck, {
+  mode = 'clean', ownerName = '', proxyUrl = '', cache = createDeckImageCache(), canvas,
+  concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS, onProgress
+} = {}) {
+  const model = normalizeDeckForImage(deck, { ownerName });
+  const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
+  const layout = computeDeckImageLayout(model);
+  const target = prepareCanvasTarget(canvas);
+  const ctx = target.getContext('2d');
+
+  const redraw = () => drawDeckImage(ctx, model, layout, cache.images, effectiveMode);
+  redraw(); // primo frame immediato, con placeholder per ogni artwork non ancora in cache
+
+  const ready = preloadDeckImagesProgressively(model, {
+    proxyUrl, cache, concurrency, previewTimeoutMs,
+    onImageSettled: (url, image) => { redraw(); onProgress?.(url, image); }
+  }).then(() => { redraw(); });
+
+  return { canvas: target, model, layout, mode: effectiveMode, cache, ready };
+}
+
+export function exportDeckImageBlob(canvas, { cache, model, layout, mode, exportTimeoutMs = DEFAULT_EXPORT_TIMEOUT_MS } = {}) {
+  return (async () => {
+    if (cache?.inFlight?.size) {
+      await waitForPendingDeckImages(cache, { timeoutMs: exportTimeoutMs });
+      if (model && layout) drawDeckImage(canvas.getContext('2d'), model, layout, cache.images, mode);
+    }
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Generazione PNG non riuscita'))), 'image/png');
+    });
+  })();
 }
 
 export function sanitizeDeckFileNamePart(name) {

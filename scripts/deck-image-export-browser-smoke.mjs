@@ -171,8 +171,108 @@ try {
   if (!shareUiResult.shareCalled || shareUiResult.downloadClicked) throw Error('Con Web Share supportato deve condividere, mai scaricare: ' + JSON.stringify(shareUiResult));
   console.log('PASS bottone condividi: con Web Share supportato chiama navigator.share, non il download');
 
+  // --- 5) Preview progressiva reale: appare SUBITO con placeholder (senza
+  // aspettare il preload), poi si aggiorna incrementale man mano che ogni
+  // artwork arriva. Un artwork "lento" viene simulato ritardando SOLO
+  // l'assegnazione reale di img.src per gli URL marcati (nessuna rete/server
+  // modificati: image/canvas/Image restano quelli veri del browser). ---
+  const progressiveResult = await evaluate(`(async()=>{
+    const {renderDeckImagePreview, waitForPendingDeckImages} = await import('/js/deck-image-export.js');
+    const RealImage = window.Image;
+    const nativeSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+    window.Image = function() {
+      const img = new RealImage();
+      Object.defineProperty(img, 'src', {
+        configurable: true,
+        get() { return nativeSrc.get.call(img); },
+        set(url) {
+          const apply = () => nativeSrc.set.call(img, url);
+          if (String(url).includes('slow-marker')) setTimeout(apply, 500);
+          else apply();
+        }
+      });
+      return img;
+    };
+    const deck = {
+      name: 'Progressive Test', game: 'yugioh', deckTheme: 'arcane-purple', signatureCardId: null,
+      cards: [
+        { catalogCardId: 'fast-1', cardName: 'Veloce', section: 'main', quantity: 1, imageUrl: '/icon-192.png' },
+        { catalogCardId: 'slow-1', cardName: 'Lenta', section: 'main', quantity: 1, imageUrl: '/icon-192.png?slow-marker=1' },
+        { catalogCardId: 'broken-1', cardName: 'Rotta', section: 'main', quantity: 1, imageUrl: '/nonexistent-slow-marker-404.png' }
+      ]
+    };
+    const canvas = document.createElement('canvas');
+    let progressCount = 0;
+    const { cache, ready } = renderDeckImagePreview(deck, { mode: 'clean', canvas, previewTimeoutMs: 150, concurrency: 6, onProgress: () => { progressCount++; } });
+    // Osservazione SINCRONA, immediatamente dopo la chiamata: l'artwork lento
+    // (ritardo artificiale 500ms) e quello rotto (richiede comunque un
+    // round-trip di rete) non possono essere già risolti — la preview è
+    // dunque comparsa PRIMA del completamento di qualunque immagine.
+    const immediatelyAfterCall = {
+      slowResolved: cache.images.has('/icon-192.png?slow-marker=1'),
+      brokenResolved: cache.images.has('/nonexistent-slow-marker-404.png'),
+      inFlightCount: cache.inFlight.size
+    };
+    await ready; // preview conclusa entro il timeout breve: il lento resta pendente
+    const rightAfterReady = { slowStillPending: cache.inFlight.has('/icon-192.png?slow-marker=1') };
+    await waitForPendingDeckImages(cache, { timeoutMs: 2000 }); // atteso SOLO a scopo di verifica dell'upgrade tardivo
+    const afterWaitPending = {
+      fastResolved: cache.images.get('/icon-192.png') != null,
+      slowResolved: cache.images.get('/icon-192.png?slow-marker=1') != null,
+      brokenResolved: cache.images.get('/nonexistent-slow-marker-404.png'),
+      progressCount
+    };
+    window.Image = RealImage;
+    return { immediatelyAfterCall, rightAfterReady, afterWaitPending };
+  })()`);
+  if (progressiveResult.immediatelyAfterCall.slowResolved || progressiveResult.immediatelyAfterCall.brokenResolved) throw Error('Un artwork lento/rotto risulta già risolto in modo sincrono, impossibile: ' + JSON.stringify(progressiveResult));
+  if (progressiveResult.immediatelyAfterCall.inFlightCount !== 3) throw Error('Tutti e 3 gli artwork devono essere ancora in volo subito dopo la chiamata sincrona: ' + JSON.stringify(progressiveResult));
+  if (!progressiveResult.rightAfterReady.slowStillPending) throw Error('Il timeout breve di preview deve lasciare l\'artwork lento pendente, non attenderlo: ' + JSON.stringify(progressiveResult));
+  if (!progressiveResult.afterWaitPending.fastResolved || !progressiveResult.afterWaitPending.slowResolved) throw Error('Dopo aver atteso i soli pendenti, sia l\'artwork veloce che quello lento (upgrade tardivo) devono essere risolti: ' + JSON.stringify(progressiveResult));
+  if (progressiveResult.afterWaitPending.brokenResolved !== null) throw Error('Un artwork rotto deve restare un placeholder (null), mai bloccare nulla: ' + JSON.stringify(progressiveResult));
+  if (progressiveResult.afterWaitPending.progressCount < 2) throw Error('onProgress deve scattare per ogni artwork risolto, incluso l\'upgrade tardivo di quello lento: ' + JSON.stringify(progressiveResult));
+  console.log('PASS preview progressiva (browser reale): il canvas parte subito con placeholder (nessun artwork ancora risolto alla chiamata sincrona), il lento resta un placeholder entro il timeout breve, poi si aggiorna da solo (upgrade tardivo) senza mai bloccare per quello rotto');
+
+  // --- 6) One Piece end-to-end tramite la UI reale del DeckController:
+  // stesso bottone "Genera immagine", stesse sezioni leader/main/don
+  // dell'adapter One Piece, nessuna esclusione hardcoded per deck.game. ---
+  const opUiResult = await evaluate(`(async()=>{
+    const {DeckController} = await import('/js/decks.js');
+    const deck = {
+      id:'op1', persisted:true, ownerSlug:'daniele', name:'One Piece UI Test', format:'', game:'onepiece', deckTheme:'arcane-purple', deckBoxTemplate:'procedural', signatureCardId:null,
+      cards:[
+        {catalogCardId:'OP01-001', cardName:'Monkey.D.Luffy', section:'leader', quantity:1, imageUrl:'/icon-192.png'},
+        {catalogCardId:'OP01-016', cardName:'Roronoa Zoro', section:'main', quantity:4, imageUrl:'/icon-192.png'},
+        {catalogCardId:'don-1', cardName:'DON!!', section:'don', quantity:10, imageUrl:''}
+      ]
+    };
+    const controller = new DeckController({
+      api:{}, getState:() => ({decks:[deck], game:'onepiece', currentUser:'daniele'}),
+      onRender:() => { document.querySelector('#app').innerHTML = controller.view(); controller.bind(document); },
+      onToast:() => {}
+    });
+    controller.activeId = 'op1'; controller.screen = 'detail';
+    document.querySelector('#app').innerHTML = controller.view(); controller.bind(document);
+    controller.toggleMoreMenu();
+    const hasButton = !!document.querySelector('[data-deck-image-open]');
+    document.querySelector('[data-deck-image-open]')?.click();
+    await new Promise(r => setTimeout(r, 400));
+    const canvas = document.querySelector('[data-deck-image-canvas]');
+    let clicked = false, downloadName = '';
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function(){ clicked = true; downloadName = this.download; };
+    await controller.downloadImageExport();
+    HTMLAnchorElement.prototype.click = originalClick;
+    return { hasButton, hasCanvas: !!canvas, width: canvas?.width, height: canvas?.height, clicked, downloadName, busy: controller.imageExportBusy };
+  })()`);
+  if (!opUiResult.hasButton) throw Error('Bottone "Genera immagine" assente per un mazzo One Piece: non deve esistere alcuna esclusione su deck.game: ' + JSON.stringify(opUiResult));
+  if (!opUiResult.hasCanvas || opUiResult.width !== 1080 || opUiResult.height !== 1350) throw Error('Canvas 1080x1350 non montato per un mazzo One Piece: ' + JSON.stringify(opUiResult));
+  if (!opUiResult.clicked || opUiResult.downloadName !== 'fpt-deck-one-piece-ui-test.png') throw Error('Download non riuscito per un mazzo One Piece: ' + JSON.stringify(opUiResult));
+  if (opUiResult.busy) throw Error('Lo stato busy deve tornare a false dopo il primo frame sincrono: ' + JSON.stringify(opUiResult));
+  console.log('PASS One Piece end-to-end (browser reale, UI completa): bottone "Genera immagine" disponibile, canvas 1080x1350 con sezioni leader/main/don, download funzionante — nessun branching hardcoded YGO-only');
+
   if ((await evaluate('window.__consoleErrors')).length) throw Error('Browser errors: ' + JSON.stringify(await evaluate('window.__consoleErrors')));
-  console.log('PASS deck-image-export (browser reale): rendering/export/artwork/Web Share/UI completa senza errori console');
+  console.log('PASS deck-image-export (browser reale): rendering/export/artwork/Web Share/UI/preview progressiva/One Piece completa senza errori console');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();
