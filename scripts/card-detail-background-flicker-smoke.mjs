@@ -49,13 +49,13 @@ try {
   await evaluate(`__render('Spell Card',true)`);
   const spell = await evaluate(`(()=>{const s=document.querySelector('.inventory-art-stage');return {hasPendingClass:s.classList.contains('is-type-pending'),style:s.getAttribute('style')||''}})()`);
   if (spell.hasPendingClass) throw Error('Classe is-type-pending ancora presente con tipo risolto');
-  if (!spell.style.includes('spell_background.png')) throw Error('Sfondo Spell non applicato immediatamente: ' + spell.style);
+  if (!spell.style.includes('spell_background.webp')) throw Error('Sfondo Spell non applicato immediatamente: ' + spell.style);
 
   // 3. Cambio rapido Spell -> Trap (entrambi già noti): mai un frame con lo sfondo precedente.
   await evaluate(`__render('Trap Card',true)`);
   const trap = await evaluate(`(()=>{const s=document.querySelector('.inventory-art-stage');return {style:s.getAttribute('style')||''}})()`);
-  if (trap.style.includes('spell_background.png')) throw Error('Sfondo Spell residuo dopo passaggio a Trap');
-  if (!trap.style.includes('trap_backgroud.png')) throw Error('Sfondo Trap non applicato: ' + trap.style);
+  if (trap.style.includes('spell_background.webp')) throw Error('Sfondo Spell residuo dopo passaggio a Trap');
+  if (!trap.style.includes('trap_backgroud.webp')) throw Error('Sfondo Trap non applicato: ' + trap.style);
 
   // 4. Fusion con tipo noto ma non ancora "pronto" per un'altra carta: nessun sfondo Trap/Spell residuo.
   await evaluate(`__render('',false)`);

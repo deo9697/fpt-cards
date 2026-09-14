@@ -98,35 +98,52 @@ export async function findCard(name, game = 'yugioh') {
     || null;
 }
 
+const typeRequests = new Map();
+const typeCacheKey = 'fpt-card-types-v1';
+let savedTypes = {};
+try { savedTypes = JSON.parse(localStorage.getItem(typeCacheKey) || '{}'); } catch {}
+if (!savedTypes || typeof savedTypes !== 'object' || Array.isArray(savedTypes)) savedTypes = {};
+
 export async function cardTypesByIds(ids, game = 'yugioh') {
   if (game !== 'yugioh') return {};
   const unique = [...new Set((ids || []).map(id => String(id).trim()).filter(id => /^\d{5,10}$/.test(id)))];
   if (!unique.length) return {};
-  // A grande raccolta condivisa può passare centinaia di id in un colpo solo
-  // (sfondo per tipo in griglia): un solo fetch con tutti gli id nell'URL
-  // rischierebbe i limiti di lunghezza URL lato server. A blocchi di 40,
-  // in parallelo — stesso risultato, nessun rischio, nessun cambio per i
-  // chiamanti esistenti (Mazzi ne passa sempre pochi, resta un solo blocco).
+  // Cache shared by detail and decks; batch only missing types and reuse in-flight lookups.
+  const now = Date.now();
+  const missing = unique.filter(id => !typeRequests.has(id) && !(savedTypes[id]?.type && now - savedTypes[id].at < 30 * 86400000));
   const CHUNK = 40;
   const chunks = [];
-  for (let index = 0; index < unique.length; index += CHUNK) chunks.push(unique.slice(index, index + CHUNK));
-  const results = await Promise.all(chunks.map(async chunk => {
-    try {
-      const response = await fetch(`${ENDPOINT}?id=${chunk.join(',')}`);
-      if (!response.ok) return {};
-      const rows = (await response.json()).data || [];
-      const map = {};
-      for (const row of rows) map[String(row.id)] = row.type || '';
-      return map;
-    } catch { return {}; }
+  for (let index = 0; index < missing.length; index += CHUNK) chunks.push(missing.slice(index, index + CHUNK));
+  for (const chunk of chunks) {
+    const request = (async () => {
+      try {
+        const response = await fetch(`${ENDPOINT}?id=${chunk.join(',')}`, { signal: AbortSignal.timeout(6000) });
+        if (!response.ok) return {};
+        const rows = (await response.json()).data || [];
+        const map = {};
+        for (const row of rows) {
+          if (typeof row.type !== 'string' || !row.type) continue;
+          map[String(row.id)] = row.type;
+          savedTypes[String(row.id)] = { type: row.type, at: Date.now() };
+        }
+        try { localStorage.setItem(typeCacheKey, JSON.stringify(savedTypes)); } catch {}
+        return map;
+      } catch { return {}; }
+    })();
+    for (const id of chunk) typeRequests.set(id, request);
+    void request.finally(() => { for (const id of chunk) typeRequests.delete(id); });
+  }
+  const results = await Promise.all(unique.map(async id => {
+    if (typeRequests.has(id)) return typeRequests.get(id);
+    return savedTypes[id]?.type ? { [id]: savedTypes[id].type } : {};
   }));
   return Object.assign({}, ...results);
 }
 
 const CARD_TYPE_BACKGROUNDS = [
-  { match: 'fusion', image: 'assets/background/fusion_monster_backgroudn.png' },
-  { match: 'spell', image: 'assets/background/spell_background.png' },
-  { match: 'trap', image: 'assets/background/trap_backgroud.png' }
+  { match: 'fusion', image: 'assets/background/fusion_monster_backgroudn.webp' },
+  { match: 'spell', image: 'assets/background/spell_background.webp' },
+  { match: 'trap', image: 'assets/background/trap_backgroud.webp' }
 ];
 // Solo i 3 tipi per cui esiste davvero un asset: tutto il resto (mostri
 // normali/effetto/synchro/xyz/link/rituali, One Piece) non deve avere uno

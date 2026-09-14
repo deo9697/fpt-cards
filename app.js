@@ -4,7 +4,7 @@ import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-varian
 import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { findCardById, cardTypesByIds, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
+import { findCardById, cardTypesByIds, backgroundForCardType, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
 import { externalLookupViaRegistry } from './js/ygo-printing-registry.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
@@ -407,12 +407,12 @@ async function equipCosmeticAndRefresh(type, id) {
 
 function bindProgressionHeader(root) {
   root.querySelector('[data-open-progression]')?.addEventListener('click', () => { progressionDrawerOpen = true; render(); });
-  root.querySelectorAll('[data-close-progression]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; progressionDrawerOpen = false; render(); }));
+  root.querySelectorAll('[data-close-progression]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); progressionDrawerOpen = false; render(); }));
   root.querySelectorAll('[data-open-avatar]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = true; render(); }));
-  root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; avatarPanelOpen = false; render(); }));
+  root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); avatarPanelOpen = false; render(); }));
   root.querySelectorAll('[data-avatar-goto]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = false; navigate(button.dataset.avatarGoto); }));
   root.querySelectorAll('[data-open-customize]').forEach(button => button.addEventListener('click', () => { profileCustomizeOpen = true; render(); }));
-  root.querySelectorAll('[data-close-customize]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; profileCustomizeOpen = false; render(); }));
+  root.querySelectorAll('[data-close-customize]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); profileCustomizeOpen = false; render(); }));
   root.querySelectorAll('[data-customize-tab]').forEach(button => button.addEventListener('click', () => { profileCustomizeTab = button.dataset.customizeTab; render(); }));
   root.querySelector('[data-equip-title]')?.addEventListener('change', event => void equipCosmeticAndRefresh('title', event.target.value));
   root.querySelectorAll('[data-equip-avatar]').forEach(button => button.addEventListener('click', () => void equipCosmeticAndRefresh('avatar', button.dataset.equipAvatar)));
@@ -1181,7 +1181,7 @@ function bind() {
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
   document.querySelectorAll('[data-collection-share]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per condividere la raccolta'); void openCollectionShareModal(); }));
-  document.querySelectorAll('[data-close-collection-share]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionShareModal = false; render(); }));
+  document.querySelectorAll('[data-close-collection-share]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); collectionShareModal = false; render(); }));
   document.querySelector('[data-generate-share]')?.addEventListener('click', () => void generateCollectionShareLink());
   document.querySelector('[data-regenerate-share]')?.addEventListener('click', () => void generateCollectionShareLink());
   document.querySelector('[data-revoke-share]')?.addEventListener('click', () => void revokeCollectionShareLink());
@@ -1196,11 +1196,12 @@ function bind() {
     catch (error) { toast(error.message || 'Operazione non riuscita'); }
   }));
   document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
+  observeCollectionTypes();
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   if (page === 'collection') observeCollectionSentinel();
-  document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; closeCollectionDetail(); }));
-  document.querySelectorAll('[data-close-collection-editor]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionEditor = null; collectionSearchResults = []; render(); }));
-  document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; collectionLoanRequest = null; render(); }));
+  document.querySelectorAll('[data-close-collection-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); closeCollectionDetail(); }));
+  document.querySelectorAll('[data-close-collection-editor]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); collectionEditor = null; collectionSearchResults = []; render(); }));
+  document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); collectionLoanRequest = null; render(); }));
   document.querySelectorAll('[data-collection-edit]').forEach(button => button.addEventListener('click', () => openCollectionEditor(button.dataset.collectionEdit)));
   document.querySelectorAll('[data-collection-delete]').forEach(button => button.addEventListener('click', () => deleteCollectionItem(button.dataset.collectionDelete)));
   document.querySelectorAll('[data-market-watch-add]').forEach(button => button.addEventListener('click', async () => { try { await api.setMarketWatchItem(button.dataset.marketWatchAdd,true); await marketWatch.load(); toast('Printing aggiunta alla Watchlist'); } catch (error) { toast(error.message||'Watchlist non disponibile'); } }));
@@ -1238,7 +1239,7 @@ function bind() {
   document.querySelector('#collection-request-form')?.addEventListener('submit', submitCollectionLoanRequest);
   document.querySelector('#retry-collection')?.addEventListener('click', retryCollection);
   document.querySelectorAll('[data-card-key]').forEach(button => button.addEventListener('click', () => { selectedCardKey = button.dataset.cardKey; render(); }));
-  document.querySelectorAll('[data-close-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedCardKey = ''; render(); }));
+  document.querySelectorAll('[data-close-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); selectedCardKey = ''; render(); }));
   document.querySelectorAll('[data-member-shortcut]').forEach(b => b.addEventListener('click', () => { loanFilters.member = b.dataset.memberShortcut; page = 'loans'; render(); }));
   document.querySelector('#loan-form')?.addEventListener('submit', createLoan);
   document.querySelector('#card-name')?.addEventListener('input', onCardSearch);
@@ -1258,7 +1259,7 @@ function bind() {
   document.querySelector('#clear-filters')?.addEventListener('click', () => { loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' }; refreshLoanRows(true); });
   document.querySelector('#loan-filters-toggle')?.addEventListener('click', () => { loanFiltersExpanded = !loanFiltersExpanded; render(); });
   document.querySelectorAll('[data-loan-open]').forEach(button => button.addEventListener('click', () => { selectedLoanId = button.dataset.loanOpen; render(); }));
-  document.querySelectorAll('[data-close-loan-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; selectedLoanId = ''; render(); }));
+  document.querySelectorAll('[data-close-loan-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); selectedLoanId = ''; render(); }));
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
@@ -1364,6 +1365,7 @@ function refreshCollectionResults() {
   const results = document.querySelector('[data-collection-results]');
   if (!results) return;
   results.innerHTML = collectionResultsView(state.collection, collectionFilters, state.game, online(), collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
+  observeCollectionTypes();
   results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   results.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => {
     if (!online()) return toast('Torna online per modificare la raccolta');
@@ -1574,58 +1576,96 @@ function openCollectionDetail(id) {
 }
 function closeCollectionDetail() {
   if (!selectedCollectionItem) return;
-  if (history.state && history.state.collectionDetail === selectedCollectionItem) {
-    history.back();
-  } else {
-    selectedCollectionItem = '';
-    render();
+  const ownsEntry = history.state?.collectionDetail === selectedCollectionItem;
+  selectedCollectionItem = '';
+  render();
+  if (ownsEntry) history.back();
+}
+// Resolve only cards entering the viewport, before their detail is opened.
+let collectionTypeObserver;
+let collectionTypeTimer;
+const visibleTypeQueue = new Set();
+let backgroundsWarmed = false;
+function observeCollectionTypes() {
+  collectionTypeObserver?.disconnect();
+  clearTimeout(collectionTypeTimer);
+  visibleTypeQueue.clear();
+  const tiles = document.querySelectorAll('[data-collection-item]');
+  if (!tiles.length) return;
+  if (!backgroundsWarmed) {
+    backgroundsWarmed = true;
+    for (const type of ['Spell Card','Trap Card','Fusion Monster']) {
+      const image = new Image();
+      image.src = backgroundForCardType(type);
+      image.decode().catch(() => {});
+    }
   }
+  collectionTypeObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      collectionTypeObserver.unobserve(entry.target);
+      const id = entry.target.dataset.collectionItem;
+      const item = collectionFilters.scope === 'team'
+        ? (state.collection.team || []).find(row => row.printingId === id)
+        : (state.collection.mine || []).find(row => row.id === id);
+      if (item?.game === 'yugioh' && item.catalogCardId && !item.cardType
+          && !cardTypeCache.has(String(item.catalogCardId)) && !cardTypeInFlight.has(String(item.catalogCardId))) {
+        visibleTypeQueue.add(String(item.catalogCardId));
+      }
+    }
+    if (!visibleTypeQueue.size) return;
+    clearTimeout(collectionTypeTimer);
+    collectionTypeTimer = setTimeout(async () => {
+      const ids = [...visibleTypeQueue];
+      visibleTypeQueue.clear();
+      ids.forEach(id => cardTypeInFlight.add(id));
+      try {
+        const types = await cardTypesByIds(ids);
+        ids.forEach(id => cardTypeCache.set(id, types[id] || ''));
+        updateDetailBackground();
+      } finally { ids.forEach(id => cardTypeInFlight.delete(id)); }
+    }, 80);
+  });
+  tiles.forEach(tile => collectionTypeObserver.observe(tile));
+}
+function updateDetailBackground() {
+  if (!selectedCollectionItem) return;
+  const stage = document.querySelector('.inventory-detail .inventory-art-stage');
+  if (!stage) return;
+  const type = cardTypeForDetail(selectedCollectionItem);
+  if (!cardTypeReadyForDetail(selectedCollectionItem)) return;
+  stage.classList.remove('is-type-pending');
+  const background = backgroundForCardType(type);
+  stage.style.background = background
+    ? `linear-gradient(#090d1722,#090d1755) center/cover, url('${background}') center/cover` : '';
 }
 function cardTypeForDetail(id) {
-  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
-  return item?.catalogCardId ? cardTypeCache.get(String(item.catalogCardId)) || '' : '';
+  const item = collectionFilters.scope === 'team'
+    ? (state.collection.team || []).find(entry => entry.printingId === id)
+    : (state.collection.mine || []).find(entry => entry.id === id);
+  return item?.cardType || (item?.catalogCardId ? cardTypeCache.get(String(item.catalogCardId)) || '' : '');
 }
 // Sfondo pronto solo quando non serve un tipo YGOPRODeck (One Piece, o carta
 // senza catalogCardId) oppure quando il tipo è già in cache: evita di mostrare
 // per errore lo sfondo di default mentre il fetch del tipo è ancora in corso.
 function cardTypeReadyForDetail(id) {
-  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
-  if (!item || item.game !== 'yugioh' || !item.catalogCardId) return true;
+  const item = collectionFilters.scope === 'team'
+    ? (state.collection.team || []).find(entry => entry.printingId === id)
+    : (state.collection.mine || []).find(entry => entry.id === id);
+  if (!item || item.cardType || item.game !== 'yugioh' || !item.catalogCardId) return true;
   return cardTypeCache.has(String(item.catalogCardId));
 }
-// Pre-carica in background il tipo di TUTTE le carte Yu-Gi-Oh! della
-// raccolta (mine+team) appena questa viene sincronizzata, invece di aspettare
-// che l'utente apra un dettaglio: così, quando lo apre, il tipo è quasi
-// sempre già in cache e cardTypeReadyForDetail torna true da subito — niente
-// più stato "is-type-pending" visibile nel caso comune. cardTypesByIds
-// raggruppa già gli id a blocchi di 40, pensata apposta per centinaia di id
-// in un colpo solo (vedi js/cards.js). Fire-and-forget: non deve rallentare
-// loadCollection, e ids già in cache/in-flight vengono filtrati per non
-// duplicare richieste tra sync successivi.
-function prefetchCollectionCardTypes() {
-  const items = [...(state.collection.mine || []), ...(state.collection.team || [])];
-  const ids = [...new Set(items.filter(item => item.game === 'yugioh' && item.catalogCardId).map(item => String(item.catalogCardId)))]
-    .filter(id => !cardTypeCache.has(id) && !cardTypeInFlight.has(id));
-  if (!ids.length) return;
-  ids.forEach(id => cardTypeInFlight.add(id));
-  cardTypesByIds(ids, 'yugioh').then(map => {
-    ids.forEach(id => cardTypeCache.set(id, map[id] || ''));
-    render();
-  }).finally(() => ids.forEach(id => cardTypeInFlight.delete(id)));
-}
-// Sfondo del dettaglio per tipo (magia/trappola/mostro fusione): nessun dato
-// di raccolta porta già il tipo YGOPRODeck, va risolto al volo la prima
-// volta che si apre quella carta e messo in cache (mai per One Piece) — resta
-// come rete di sicurezza per una carta appena aggiunta/non ancora pre-caricata.
 function ensureCardTypeForDetail(id) {
-  const item = [...(state.collection.mine || []), ...(state.collection.team || [])].find(entry => entry.id === id);
-  if (!item || item.game !== 'yugioh' || !item.catalogCardId) return;
+  const item = collectionFilters.scope === 'team'
+    ? (state.collection.team || []).find(entry => entry.printingId === id)
+    : (state.collection.mine || []).find(entry => entry.id === id);
+  if (!item || item.cardType || item.game !== 'yugioh' || !item.catalogCardId) return;
   const key = String(item.catalogCardId);
-  if (cardTypeCache.has(key) || cardTypeInFlight.has(key)) return;
+  if (cardTypeCache.get(key) || cardTypeInFlight.has(key)) return;
   cardTypeInFlight.add(key);
   cardTypesByIds([key], 'yugioh').then(map => {
     cardTypeCache.set(key, map[key] || '');
-    if (selectedCollectionItem === id) render();
+    if (selectedCollectionItem === id) updateDetailBackground();
   }).finally(() => cardTypeInFlight.delete(key));
 }
 
@@ -1681,7 +1721,7 @@ async function loadCollection({ force = false } = {}) {
     };
     syncLoanImagesFromCollection();
     collectionError = '';
-    prefetchCollectionCardTypes();
+
     return state.collection;
   })();
   collectionLoadInFlight=request;

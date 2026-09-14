@@ -41,17 +41,16 @@ try {
   // e diagnosticata prima di introdurre questo harness).
   await send('Page.navigate', { url: 'http://localhost:8080/scripts/fixtures/collection-share-harness.html' });
   await delay(500);
-  await evaluate(`window.__consoleErrors = []; window.addEventListener('error', e => window.__consoleErrors.push(String(e.message)));`);
-  // Sfondo per tipo (spell/trap/fusion): cardTypesByIds() chiama davvero
-  // YGOPRODeck (nessun token, nessun passaggio da api) — qui lo intercettiamo
-  // per restare deterministici e senza rete reale, stesso principio del resto
-  // del test (api.getCollectionShare è già mockata).
+  await evaluate(`document.head.insertAdjacentHTML('afterbegin','<base href="/">'); window.__consoleErrors = []; window.addEventListener('error', e => window.__consoleErrors.push(String(e.message)));`);
+  // Track any accidental decorative catalog request from the guest grid.
   await evaluate(`(()=>{
+    window.__typeFetches = 0;
     const types = {11111:'Normal Monster', 22222:'Spell Card', 33333:'Trap Card', 44444:'Fusion Monster'};
     const originalFetch = window.fetch.bind(window);
     window.fetch = (url, ...rest) => {
       const parsed = new URL(url, location.href);
       if (parsed.hostname === 'db.ygoprodeck.com' && parsed.pathname.endsWith('cardinfo.php')) {
+        window.__typeFetches++;
         const ids = (parsed.searchParams.get('id') || '').split(',').filter(Boolean);
         const data = ids.map(id => ({ id: Number(id), type: types[Number(id)] || '' }));
         return Promise.resolve({ ok: true, json: async () => ({ data }) });
@@ -100,21 +99,12 @@ try {
   if (!grid.p2) throw new Error('La stampa con disponibilità 0 deve risultare esaurita e non selezionabile');
   if (grid.p1Badge !== 'x2') throw new Error(`Badge quantità disponibile errato per p1: ${grid.p1Badge}`);
 
-  // 2b) Sfondo per tipo carta: risolto in modo asincrono dopo il render
-  // iniziale (fire-and-forget, non blocca la griglia), poi applicato via
-  // refreshGrid(). p1=Normal Monster (nessuno sfondo, non è uno dei 3 tipi
-  // con asset), p2=Spell, p3=Trap, p4=Fusion.
-  await delay(300);
-  const typeBackgrounds = await evaluate(`({
-    p1: document.querySelector('[data-share-toggle="p1"] .share-guest-art')?.getAttribute('style') || '',
-    p2: document.querySelector('[data-share-toggle="p2"] .share-guest-art')?.getAttribute('style') || '',
-    p3: document.querySelector('[data-share-toggle="p3"] .share-guest-art')?.getAttribute('style') || '',
-    p4: document.querySelector('[data-share-toggle="p4"] .share-guest-art')?.getAttribute('style') || ''
-  })`);
-  if (typeBackgrounds.p1.includes('assets/background/')) throw new Error(`p1 (Normal Monster) non deve avere uno sfondo per tipo: ${typeBackgrounds.p1}`);
-  if (!typeBackgrounds.p2.includes('spell_background.png')) throw new Error(`p2 (Spell Card) sfondo mancante/errato: ${typeBackgrounds.p2}`);
-  if (!typeBackgrounds.p3.includes('trap_backgroud.png')) throw new Error(`p3 (Trap Card) sfondo mancante/errato: ${typeBackgrounds.p3}`);
-  if (!typeBackgrounds.p4.includes('fusion_monster_backgroudn.png')) throw new Error(`p4 (Fusion Monster) sfondo mancante/errato: ${typeBackgrounds.p4}`);
+  // All card types fill the same art box, with no catalog/background requests.
+  await evaluate(`document.querySelectorAll('.share-guest-art').forEach(el=>{if(!el.querySelector('img'))el.insertAdjacentHTML('afterbegin','<img src="icon-192.png" alt="fixture">')})`);
+  await evaluate(`Promise.all([...document.querySelectorAll('.share-guest-art img')].map(img=>{img.loading='eager';return img.decode()}))`);
+  const sizing=await evaluate(`[...document.querySelectorAll('.share-guest-art')].map(el=>{const img=el.querySelector('img');return {width:img.getBoundingClientRect().width/el.clientWidth,height:img.getBoundingClientRect().height/el.clientHeight}})`);
+  if(sizing.length!==4||sizing.some(size=>Math.abs(size.width-1)>0.02||Math.abs(size.height-1)>0.02))throw Error('Unequal card sizing: '+JSON.stringify(sizing));
+  if(await evaluate('window.__typeFetches'))throw Error('Guest grid fetched decorative card types');
 
   // 3) Ricerca per alternateName (Blue-Eyes -> p1) e per nome italiano (Tuning -> p4, stesso esempio del commento RPC)
   await evaluate(`window.__share.search('Blue-Eyes')`); await delay(250);
@@ -231,7 +221,12 @@ try {
   const routed = await evaluate(`({share:!!document.querySelector('.share-guest-shell'),modal:!!document.querySelector('.share-review-modal'),selected:document.querySelector('.share-guest-selection-text')?.textContent,errors:__consoleErrors})`);
   if (!routed.share || routed.modal || !routed.selected?.includes('1') || routed.errors.length) throw new Error('Real app router/sync overwrites shared collection: '+JSON.stringify(routed));
 
-  console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · sfondo per tipo carta (spell/trap/fusion) risolto async senza bloccare la griglia · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
+  // A close-button click must consume only the overlay history entry.
+  await evaluate(`window.__backCalls=0;window.__realBack=history.back.bind(history);history.back=()=>{window.__backCalls++;window.__realBack()};document.querySelector('[data-share-review-open]').click();document.querySelector('.share-review-modal .detail-close').click();`);
+  await delay(150);
+  const closed=await evaluate(`({calls:__backCalls,share:!!document.querySelector('.share-guest-shell'),modal:!!document.querySelector('.share-review-modal'),selected:document.querySelector('.share-guest-selection-text')?.textContent})`);
+  if(closed.calls!==1||!closed.share||closed.modal||!closed.selected?.includes('1'))throw Error('X navigated away or lost draft: '+JSON.stringify(closed));
+  console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · dimensioni uniformi e nessuna richiesta per sfondi in griglia · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

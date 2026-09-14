@@ -512,7 +512,7 @@ export class StatsController {
     root.querySelector('[data-chart-period]')?.addEventListener('change', event => this.setChartPeriod(event.currentTarget.value));
     root.querySelector('[data-mine-decks-toggle]')?.addEventListener('click', () => this.toggleMineDecks());
     root.querySelector('[data-mine-matches-toggle]')?.addEventListener('click', () => this.toggleMineMatches());
-    root.querySelectorAll('[data-match-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDialog(); }));
+    root.querySelectorAll('[data-match-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.closeMatchDialog(); }));
     root.querySelector('[data-match-deck]')?.addEventListener('change', event => this.setMatchDeck(event.currentTarget.value));
     root.querySelectorAll('[data-match-result]').forEach(button => button.addEventListener('click', () => this.setMatchResult(button.dataset.matchResult)));
     root.querySelectorAll('[data-opponent-mode]').forEach(button => button.addEventListener('click', () => this.setOpponentMode(button.dataset.opponentMode)));
@@ -527,7 +527,7 @@ export class StatsController {
     root.querySelector('[data-match-went-first]')?.addEventListener('change', event => this.toggleMatchWentFirst(event.currentTarget.checked));
     root.querySelector('[data-match-submit]')?.addEventListener('click', () => void this.registerMatch());
     root.querySelectorAll('[data-stats-match-open]').forEach(button => button.addEventListener('click', () => this.openMatchDetail(button.dataset.statsMatchOpen)));
-    root.querySelectorAll('[data-match-detail-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeMatchDetail(); }));
+    root.querySelectorAll('[data-match-detail-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.closeMatchDetail(); }));
   }
 }
 

@@ -354,14 +354,14 @@ export class DeckController {
     root.querySelector('[data-deck-name]')?.addEventListener('input', event => { const deck = this.active(); if (deck) { deck.name = event.target.value; this.markDirty(deck); } });
     root.querySelector('select[data-deck-theme]')?.addEventListener('change', event => { const deck = this.active(); if (!deck) return; deck.deckTheme = event.target.value; this.markDirty(deck); this.onRender(); });
     root.querySelector('[data-deck-cover-open]')?.addEventListener('click', () => { this.coverPickerOpen = true; this.moreMenuOpen = false; this.onRender(); });
-    root.querySelectorAll('[data-deck-cover-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.coverPickerOpen = false; this.onRender(); }));
+    root.querySelectorAll('[data-deck-cover-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.coverPickerOpen = false; this.onRender(); }));
     root.querySelectorAll('[data-deck-cover-card]').forEach(button => button.addEventListener('click', () => this.chooseCover(button.dataset.deckCoverCard)));
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
     root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
-    root.querySelector('[data-deck-search-close]')?.addEventListener('click', () => { if (history.state?.deckSearch) history.back(); else { this.closeSearch(); this.onRender(); } });
+    root.querySelector('[data-deck-search-close]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (!this.searchOpen) return; const ownsEntry = history.state?.deckSearch; this.closeSearch(); this.onRender(); if (ownsEntry) history.back(); });
     root.querySelectorAll('[data-deck-printing]').forEach(button => button.addEventListener('click', () => void this.openPrintingPicker(button.dataset.deckPrinting, button.dataset.deckPrintingSection)));
-    root.querySelectorAll('[data-deck-printing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.printingPicker = null; this.onRender(); }));
+    root.querySelectorAll('[data-deck-printing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.printingPicker = null; this.onRender(); }));
     root.querySelectorAll('[data-deck-printing-option]').forEach(button => button.addEventListener('click', () => void this.choosePrinting(button.dataset.deckPrintingOption)));
     root.querySelectorAll('[data-deck-request]').forEach(button => button.addEventListener('click', () => void this.request(button.dataset.deckRequest)));
     root.querySelector('[data-deck-request-all]')?.addEventListener('click', () => void this.requestAll());
@@ -369,12 +369,12 @@ export class DeckController {
     root.querySelectorAll('[data-deck-pre-agreed]').forEach(checkbox => checkbox.addEventListener('change', () => this.setMissingRowChoice(checkbox.dataset.deckPreAgreed, { preAgreed: checkbox.checked })));
     root.querySelectorAll('[data-deck-import]').forEach(button => button.addEventListener('click', () => { if (!this.active()) this.create(false); this.importOpen = true; this.moreMenuOpen = false; this.onRender(); }));
     root.querySelector('[data-deck-import-new]')?.addEventListener('click', () => { this.create(false); this.importOpen = true; this.onRender(); });
-    root.querySelectorAll('[data-deck-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.importOpen = false; this.onRender(); }));
+    root.querySelectorAll('[data-deck-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.importOpen = false; this.onRender(); }));
     root.querySelector('[data-deck-file]')?.addEventListener('change', async event => { const text = await event.target.files?.[0]?.text(); const field = root.querySelector('[data-deck-import-text]'); if (field && text != null) field.value = text; });
     root.querySelector('[data-deck-import-run]')?.addEventListener('click', () => void this.importText(root.querySelector('[data-deck-import-text]')?.value || ''));
     root.querySelectorAll('[data-deck-optcg-import]').forEach(button => button.addEventListener('click', () => { if (!this.active()) this.create(false); this.optcgImportResult = null; this.optcgImportOpen = true; this.moreMenuOpen = false; this.onRender(); }));
     root.querySelector('[data-deck-optcg-import-new]')?.addEventListener('click', () => { this.create(false); this.optcgImportResult = null; this.optcgImportOpen = true; this.onRender(); });
-    root.querySelectorAll('[data-deck-optcg-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.optcgImportOpen = false; this.optcgImportResult = null; this.onRender(); }));
+    root.querySelectorAll('[data-deck-optcg-import-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.optcgImportOpen = false; this.optcgImportResult = null; this.onRender(); }));
     root.querySelector('[data-deck-optcg-import-run]')?.addEventListener('click', () => void this.importOptcgList(root.querySelector('[data-deck-optcg-import-text]')?.value || ''));
     root.querySelectorAll('[data-deck-optcg-export]').forEach(button => button.addEventListener('click', () => { this.moreMenuOpen = false; this.onRender(); void this.copyOptcgExport(); }));
     root.querySelectorAll('[data-deck-section]').forEach(button => button.addEventListener('click', () => this.setSection(button.dataset.deckSection)));
@@ -387,9 +387,9 @@ export class DeckController {
     root.querySelectorAll('[data-deck-sheet-move]').forEach(button => button.addEventListener('click', () => this.moveSelectedCard(button.dataset.deckSheetMove)));
     root.querySelector('[data-deck-sheet-remove]')?.addEventListener('click', () => this.removeSelectedCard());
     root.querySelectorAll('[data-deck-missing-open]').forEach(button => button.addEventListener('click', () => this.toggleMissingPanel(true)));
-    root.querySelectorAll('[data-deck-missing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.toggleMissingPanel(false); }));
+    root.querySelectorAll('[data-deck-missing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.toggleMissingPanel(false); }));
     root.querySelector('[data-deck-more]')?.addEventListener('click', () => this.toggleMoreMenu());
-    root.querySelectorAll('[data-deck-more-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.moreMenuOpen = false; this.onRender(); }));
+    root.querySelectorAll('[data-deck-more-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.moreMenuOpen = false; this.onRender(); }));
     // Drag&drop solo nel proprio editor (mai sul mazzo di un compagno in
     // sola lettura) e solo quando l'ordinamento "Manuale" è attivo.
     if (this.screen === 'detail' && this.cardSort === 'manual') {

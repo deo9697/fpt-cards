@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+
+const storage = new Map();
+globalThis.localStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+let requests = 0;
+let fail = false;
+globalThis.fetch = async url => {
+  requests++;
+  await new Promise(resolve => setTimeout(resolve, 10));
+  if (fail) throw new Error('offline');
+  const ids = new URL(url).searchParams.get('id').split(',');
+  return { ok: true, json: async () => ({ data: ids.map(id => ({ id, type: 'Spell Card' })) }) };
+};
+const { cardTypesByIds } = await import('../js/cards.js');
+const [first, concurrent] = await Promise.all([cardTypesByIds(['11111','22222']), cardTypesByIds(['11111'])]);
+assert.equal(first['22222'], 'Spell Card');
+assert.equal(concurrent['11111'], 'Spell Card');
+assert.equal(requests, 1, 'Concurrent lookups share a request');
+await cardTypesByIds(['11111']);
+assert.equal(requests, 1, 'Repeat lookup is cached');
+const reloaded = await import('../js/cards.js?reload');
+await reloaded.cardTypesByIds(['11111']);
+assert.equal(requests, 1, 'Cache survives a module/page reload');
+fail = true;
+assert.deepEqual(await cardTypesByIds(['33333']), {});
+fail = false;
+assert.equal((await cardTypesByIds(['33333']))['33333'], 'Spell Card', 'Network failures can be retried');
+const before = requests;
+assert.deepEqual(await cardTypesByIds(['11111'], 'onepiece'), {});
+assert.deepEqual(await cardTypesByIds(['invalid']), {});
+assert.equal(requests, before, 'No requests for another game or invalid IDs');
+console.log('PASS card type cache: deduplication, persistence, retry, game isolation');

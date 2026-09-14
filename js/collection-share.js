@@ -1,6 +1,5 @@
 import { esc, GAMES } from './core.js';
 import { icon } from './icons.js';
-import { cardTypesByIds, backgroundForCardType } from './cards.js';
 
 const PAGE_SIZE = 60;
 const SORT_OPTIONS = [
@@ -67,8 +66,6 @@ export class CollectionShareController {
     // Tipo YGOPRODeck per catalogCardId (Spell/Trap/Fusion/...), solo per lo
     // sfondo per tipo dietro l'immagine di ogni tile — nessun dato di
     // get_collection_share lo porta già con sé, va risolto al volo.
-    this.cardTypes = new Map();
-    this.cardTypesInFlight = new Set();
     this.draftKey = `fpt-share-draft:${shareId}`;
     try {
       const draft = JSON.parse(sessionStorage.getItem(this.draftKey) || 'null');
@@ -155,6 +152,7 @@ export class CollectionShareController {
     this.reviewing = true; this._focusName = !this.requesterName.trim(); this.onRender?.();
   }
   closeReview() {
+    if (!this.reviewing) return;
     this.reviewing = false;
     if (history.state?.collectionShareReview === this.shareId) history.back();
     this.onRender?.();
@@ -278,39 +276,18 @@ export class CollectionShareController {
     // <img> ad ogni tasto premuto o filtro cambiato — "Mostra altre" carica
     // altre PAGE_SIZE senza mai buttare giù 500+ immagini insieme.
     const shown = items.slice(0, this.visibleCount);
-    void this.ensureCardTypesForVisible(shown);
     const grid = `<div class="share-guest-grid">${shown.map(item => this.itemTile(item)).join('')}</div>`;
     const showMore = items.length > this.visibleCount
       ? `<button type="button" class="btn secondary share-guest-more" data-share-show-more>Mostra altre (${items.length - this.visibleCount})</button>` : '';
     return `${filterBar}${resultCount}${grid}${showMore}`;
-  }
-  // Chiamata a "fire and forget" da gridContent(): risolve solo i tipi delle
-  // tile ATTUALMENTE visibili (mai tutta la raccolta in un colpo, stesso
-  // principio del tetto PAGE_SIZE) e poi aggiorna solo la griglia — non
-  // blocca il render sincrono, le tile mostrano subito lo sfondo neutro e
-  // si aggiornano appena il tipo arriva.
-  async ensureCardTypesForVisible(items) {
-    if (this.data?.game !== 'yugioh') return;
-    const ids = [...new Set(items.map(item => String(item.catalogCardId || '')).filter(Boolean))]
-      .filter(id => !this.cardTypes.has(id) && !this.cardTypesInFlight.has(id));
-    if (!ids.length) return;
-    ids.forEach(id => this.cardTypesInFlight.add(id));
-    try {
-      const resolved = await cardTypesByIds(ids, 'yugioh');
-      for (const id of ids) this.cardTypes.set(id, resolved[id] || '');
-    } finally {
-      ids.forEach(id => this.cardTypesInFlight.delete(id));
-      this.refreshGrid();
-    }
   }
   itemTile(item) {
     const quantity = this.selected.get(item.printingId) || 0;
     const available = availableQuantity(item);
     const exhausted = available <= 0;
     const meta = [item.edition, item.condition, item.language ? languageShort(item.language) : ''].filter(Boolean).join(' · ');
-    const typeBackground = this.data.game === 'yugioh' ? backgroundForCardType(this.cardTypes.get(String(item.catalogCardId || ''))) : '';
     return `<button type="button" class="share-guest-tile ${quantity ? 'selected' : ''} ${exhausted ? 'exhausted' : ''}" data-share-toggle="${esc(item.printingId)}" ${exhausted ? 'disabled' : ''}>
-      <span class="share-guest-art${typeBackground ? ' has-type-background' : ''}"${typeBackground ? ` style="background:radial-gradient(circle, #301742, #0c0e15 70%) center/cover, url('${esc(typeBackground)}') center/contain no-repeat"` : ''}>
+      <span class="share-guest-art">
         ${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}" loading="lazy">` : icon('card')}
         <b class="share-guest-qty">${exhausted ? 'Esaurita' : `x${available}`}</b>
         <i class="share-guest-select ${quantity ? 'on' : ''}">${quantity ? (quantity > 1 ? `${quantity}×` : icon('check')) : icon('plus')}</i>
@@ -387,7 +364,7 @@ export class CollectionShareController {
     root.querySelector('[data-share-query]')?.addEventListener('input', event => this.search(event.target.value));
     root.querySelector('[data-share-advanced]')?.addEventListener('click', () => document.querySelector('[data-share-filters]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
     root.querySelector('[data-share-review-open]')?.addEventListener('click', () => this.openReview());
-    root.querySelectorAll('[data-share-review-close]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; this.closeReview(); }));
+    root.querySelectorAll('[data-share-review-close]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.closeReview(); }));
     root.querySelectorAll('[data-share-qty]').forEach(input => input.addEventListener('change', () => this.setQuantity(input.dataset.shareQty, Number(input.value))));
     root.querySelectorAll('[data-share-remove]').forEach(button => button.addEventListener('click', () => this.setQuantity(button.dataset.shareRemove, 0)));
     // Il pulsante "Conferma invio" deve abilitarsi mentre si digita il nome,

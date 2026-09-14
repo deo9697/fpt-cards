@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v200';
+const CACHE = 'fpt-cards-v203';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -45,7 +45,9 @@ self.addEventListener('fetch', event => {
     } else event.respondWith(fetch(event.request));
     return;
   }
-  const isMedia = MEDIA_FILES.some(file => url.pathname.endsWith(file.slice(1)));
+  // Cache backgrounds on first use, without downloading every variant at install.
+  const isTypeBackground = /\/assets\/background\/(?:spell_background|trap_backgroud|fusion_monster_backgroudn)\.(?:png|webp)$/.test(url.pathname);
+  const isMedia = isTypeBackground || MEDIA_FILES.some(file => url.pathname.endsWith(file.slice(1)));
   if (isMedia) {
     event.respondWith(caches.open(MEDIA_CACHE).then(async cache => {
       const hit = await cache.match(event.request); if (hit) return hit;
