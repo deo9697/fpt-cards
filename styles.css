@@ -1,4 +1,24 @@
 @font-face { font-family: 'Manrope FPT'; src: url('./assets/fonts/manrope-latin-variable.woff2') format('woff2-variations'); font-style: normal; font-weight: 200 800; font-display: swap; }
+.app-launch { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; justify-content:center; align-items:center; overflow:hidden; background:#050711; color:#f7f4eb; pointer-events:none; opacity:1; transition:opacity .4s ease; }
+.app-launch.is-ready { opacity:0; }
+.app-launch-panorama { position:relative; isolation:isolate; width:100%; height:min(64vh,580px); min-height:220px; display:grid; place-items:center; overflow:hidden; background:radial-gradient(ellipse at center,#45215c55,transparent 65%),linear-gradient(90deg,#050711,#171025,#050711); }
+.app-launch-panorama::before,.app-launch-panorama::after { content:''; position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,#c996ed99,transparent); z-index:2; }
+.app-launch-panorama::before { top:0; }
+.app-launch-panorama::after { bottom:0; }
+.app-launch-halo { position:absolute; width:min(110vw,1100px); height:85%; border-radius:50%; background:radial-gradient(ellipse,#b667f025,transparent 65%); animation:launch-breathe 2.8s ease-in-out infinite alternate; }
+.app-launch-art { position:relative; z-index:1; width:auto; height:100%; max-width:96vw; object-fit:contain; mask-image:linear-gradient(0deg,transparent,#000 7%,#000 93%,transparent); animation:launch-reveal .7s ease-out both; }
+.app-launch-sweep { position:absolute; z-index:2; inset:0; width:25%; background:linear-gradient(100deg,transparent,#ddb8ff0d,transparent); transform:translateX(-120%) skewX(-15deg); animation:launch-sweep 2.6s ease-in-out infinite; }
+.app-launch-caption { padding:28px 20px max(24px,env(safe-area-inset-bottom)); text-align:center; font-family:system-ui,sans-serif; }
+.app-launch-caption span { font-size:11px; letter-spacing:.28em; color:#eacb91; }
+.app-launch-caption p { font-size:14px; color:#b5a9c5; margin:12px 0 20px; }
+.app-launch-track { width:180px; height:3px; margin:auto; overflow:hidden; border-radius:3px; background:#231a34; }
+.app-launch-track i { display:block; height:100%; width:45%; border-radius:inherit; background:linear-gradient(90deg,#8145d6,#e3b0ff); animation:launch-progress 1.4s ease-in-out infinite; }
+@keyframes launch-reveal { from { opacity:0; transform:scale(.97); } to { opacity:1; transform:scale(1); } }
+@keyframes launch-breathe { to { transform:scale(1.12); opacity:.5; } }
+@keyframes launch-sweep { to { transform:translateX(520%) skewX(-15deg); } }
+@keyframes launch-progress { from { transform:translateX(-110%); } to { transform:translateX(330%); } }
+@media (orientation:landscape) and (max-height:500px) { .app-launch-panorama { height:72vh; min-height:0; } .app-launch-caption { padding:10px; } .app-launch-caption p { margin:5px 0 8px; } }
+@media (prefers-reduced-motion:reduce) { .app-launch,.app-launch * { animation:none!important; transition:none!important; } .app-launch-track i { width:100%; } }
 @font-face { font-family: 'Cinzel FPT'; src: url('./assets/fonts/cinzel-latin-variable.woff2') format('woff2-variations'); font-style: normal; font-weight: 400 900; font-display: swap; }
 
 :root {

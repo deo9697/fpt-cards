@@ -14,6 +14,16 @@
   <title>F.P.T Cards</title>
 </head>
 <body>
+  <div id="app-launch" class="app-launch" role="status" aria-label="Avvio F.P.T. Cards">
+    <div class="app-launch-panorama" aria-hidden="true">
+      <div class="app-launch-halo"></div>
+      <img class="app-launch-art" src="icon-512.png" alt="" fetchpriority="high" width="512" height="512">
+      <div class="app-launch-sweep"></div>
+    </div>
+    <div class="app-launch-caption"><span>IL TUO TEAM. LE TUE CARTE.</span><p>Prepariamo il tuo spazio</p><div class="app-launch-track" aria-hidden="true"><i></i></div></div>
+  </div>
+  <script src="js/app-launch.js"></script>
+  <noscript><style>.app-launch { display:none; }</style></noscript>
   <div id="app"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
