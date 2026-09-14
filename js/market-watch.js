@@ -33,14 +33,31 @@ export class MarketWatchController {
     this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
     this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
     this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
+    // extra/summary e owned_page ora partono in parallelo (P0 performance:
+    // owned_page, il più lento, non deve più aspettare gli altri due prima
+    // di partire) e possono quindi fallire/riuscire in ordine imprevedibile
+    // — this.error resta il campo unico letto dalla UI, ma è la fusione di
+    // due esiti tracciati separatamente (vedi syncError()) così il
+    // successo dell'uno non può mai cancellare l'errore genuino dell'altro,
+    // qualunque sia l'ordine di arrivo.
+    this.extraSummaryError='';this.ownedPageError='';
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
+  // this.error è la fusione di due esiti tracciati separatamente
+  // (extraSummaryError/ownedPageError): owned_page ha sempre l'ultima
+  // parola quando ha un errore proprio (è la lista principale, il pezzo più
+  // lento/più probabile a fallire), altrimenti si vede l'errore di
+  // extra/summary. Serve perché ora le due richieste corrono in parallelo e
+  // possono risolversi in ordine qualunque: senza questa fusione, un
+  // successo dell'una potrebbe cancellare un errore genuino dell'altra solo
+  // perché è arrivato dopo.
+  syncError(){this.error=this.ownedPageError||this.extraSummaryError||'';}
   async load(){
     const game=this.getGame();
     if(this.loadInFlight&&this.loadGame===game)return this.loadInFlight;
     const generation=this.loadGeneration=(this.loadGeneration||0)+1;
     const current=()=>this.loadGeneration===generation&&this.getGame()===game;
-    this.loadGame=game;this.loading=true;this.error='';this.confirmQueue=[];this.confirmQueueLoaded=false;
+    this.loadGame=game;this.loading=true;this.error='';this.extraSummaryError='';this.ownedPageError='';this.confirmQueue=[];this.confirmQueueLoaded=false;
     let extrasReady=false,movers=[],anomalies=[];
     // Accessory panels must not hold up the main card list.
     void Promise.all([
@@ -52,6 +69,22 @@ export class MarketWatchController {
       this.extra.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
       this.refreshAfterLoad();void this.loadFeaturedHistories();
     });
+    // P0 performance: owned_page (~2s, la più lenta e quella che l'utente
+    // aspetta per vedere la propria Raccolta) parte SUBITO, in parallelo a
+    // extra/summary — non più dopo, come prima di questo fix. Ha già il
+    // proprio generation guard (ownedPageGeneration) indipendente da
+    // questo, e silent=false così si aggiorna sul DOM (refreshBoardSection)
+    // appena pronta, senza aspettare extra/summary. Trade-off accettato: un
+    // cambio gioco fulmineo (prima che QUALUNQUE rete risponda) ora avvia
+    // comunque la fetch owned_page del gioco vecchio invece di saltarla del
+    // tutto (come faceva la versione sequenziale, che arrivava a
+    // loadOwnedPage solo dopo aver già scoperto lo stale-check su
+    // extra/summary) — una singola richiesta owned_page in più nel raro
+    // caso di doppio cambio gioco istantaneo, a fronte di ~1s in meno ad
+    // ogni apertura normale. Il risultato finale resta comunque sempre
+    // corretto: ownedPageGeneration scarta la risposta stale qualunque sia
+    // l'ordine di arrivo.
+    const ownedPromise=this.loadOwnedPage({reset:true});
     const request=(async()=>{
       try{
         const [extraPayload,summaryPayload]=await Promise.all([this.api.marketWatchExtra(game),this.api.marketWatchSummary(game)]);
@@ -59,12 +92,16 @@ export class MarketWatchController {
         this.extra={...mapExtraPayload(extraPayload),featuredMovers:mapDashboardMovers(movers)};
         this.summary=mapSummaryPayload(summaryPayload);
         if(this.summary.lastSync&&this.summary.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=this.summary.lastSync;}
-        this.error='';
-      }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
-      if(current())await this.loadOwnedPage({reset:true,silent:true});
+        this.extraSummaryError='';
+      }catch(error){if(current())this.extraSummaryError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
+      // Aggiorna subito hero/valore portafoglio appena extra/summary sono
+      // pronti, senza aspettare owned_page (stesso principio inverso della
+      // riga sopra: ogni pezzo si mostra appena pronto, non tutti insieme).
+      if(current()){this.syncError();this.refreshAfterLoad();}
     })();
-    this.loadInFlight=request;
-    try{return await request;}finally{if(this.loadInFlight===request){this.loadInFlight=null;if(current()){this.loading=false;this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}}
+    const combined=Promise.all([request,ownedPromise]).then(()=>{});
+    this.loadInFlight=combined;
+    try{return await combined;}finally{if(this.loadInFlight===combined){this.loadInFlight=null;if(current()){this.loading=false;this.syncError();this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}}
   }
   // Sola tab Raccolta: reset=true ricomincia da zero (cambio tab/ordina/
   // ricerca/gioco, o il load() iniziale — compreso il refresh periodico di
@@ -72,9 +109,10 @@ export class MarketWatchController {
   // accoda la pagina successiva a quella già in memoria — "Mostra altre" ora
   // è una VERA richiesta di rete con offset più alto, non più uno slice
   // locale di un array già interamente scaricato. silent=true salta il
-  // refresh della UI qui (load() lo fa già a fine giro, per non ridisegnare
-  // due volte). Nota: reset NON svuota subito ownedPage — lo sostituisce solo
-  // a richiesta riuscita, altrimenti un refresh di sfondo fallito (timeout,
+  // refresh della UI qui (usato da nessun chiamante oggi — load() ora vuole
+  // il refresh immediato appena owned_page è pronta, non più a fine giro).
+  // Nota: reset NON svuota subito ownedPage — lo sostituisce solo a
+  // richiesta riuscita, altrimenti un refresh di sfondo fallito (timeout,
   // rete) cancellerebbe una lista già popolata al posto di lasciarla com'era.
   async loadOwnedPage({reset=false,silent=false}={}){
     const game=this.getGame();
@@ -95,9 +133,9 @@ export class MarketWatchController {
       if(!current())return;
       const mapped=mapOwnedPagePayload(payload);
       this.ownedPage={items:reset?mapped.items:[...this.ownedPage.items,...mapped.items],total:mapped.total,limit:ROW_BATCH_SIZE,offset};
-      this.error='';
-    }catch(error){if(current())this.error=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');}
-    finally{if(current()){this.ownedLoading=false;if(!silent)this.refreshBoardSection();}}
+      this.ownedPageError='';
+    }catch(error){if(current())this.ownedPageError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');}
+    finally{if(current()){this.ownedLoading=false;this.syncError();if(!silent)this.refreshBoardSection();}}
   }
   // load() ora gira anche mentre l'utente è già fermo su Market Watch (apertura
   // pagina + fallback periodico, vedi app.js), non solo al boot: un onRender()
