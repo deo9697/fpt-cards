@@ -1224,6 +1224,17 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .deck-more-actions { display:grid;gap:8px;margin-top:6px; }
 .deck-more-actions .btn { justify-content:flex-start;gap:10px; }
 .deck-more-actions .btn.danger { border-color:#4a1f2b;color:var(--danger); }
+
+/* Decklist Image Generator — mobile-first: il canvas resta SEMPRE 1080x1350
+   reali (mai renderizzato a risoluzione inferiore), scalato solo via CSS. */
+.deck-image-export { display:flex;flex-direction:column;gap:14px; }
+.deck-image-preview { position:relative;width:100%;max-width:340px;margin:0 auto;aspect-ratio:1080/1350;border-radius:12px;overflow:hidden;background:#0c0a10;border:1px solid var(--line); }
+.deck-image-preview canvas { display:block;width:100%;height:100%; }
+.deck-image-loading { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(12,10,16,0.75);color:rgba(255,255,255,0.85);font-size:.85rem; }
+.deck-image-modes { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+.deck-image-modes .btn.active { border-color:var(--accent);color:var(--accent); }
+.deck-image-actions { display:grid;gap:8px; }
+.deck-image-actions .btn { justify-content:center; }
 .card-detail.deck-missing-panel { display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(24px,env(safe-area-inset-bottom)); }
 .deck-missing-panel h2 { flex:none;color:#87eb61; }
 .deck-missing-readonly-note { flex:none;margin:4px 0 0;color:var(--muted);font-size:.68rem; }

@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deckThemeOptions, normalizeDeckBoxTemplate, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
 import { getGameAdapter } from './games/index.js';
+import { renderDeckImage, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
 
 // Chiavi di DECK_BOX_TEMPLATES che richiedono uno sblocco (js/cosmetics.js,
 // deckbox_<key>) invece di essere sempre disponibili — vedi isDeckBoxUnlocked().
@@ -52,6 +53,14 @@ export class DeckController {
     this.optcgImportOpen = false; this.optcgImportBusy = false; this.optcgImportResult = null;
     this.scope = 'mine'; this.teamDecksAll = []; this.teamDetailId = ''; this.teamLoadInFlight = null; this.teamError = ''; this.teamLoaded = false; this.teamMemberFilter = '';
     this.activeSection = 'main'; this.cardTypeFilter = 'all'; this.cardSort = 'type'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false;
+    // Decklist Image Generator: stato solo-UI, mai persistito col mazzo.
+    // imageExportCache vive per l'intera sessione del controller (non per
+    // singola apertura) così più export consecutivi non riscaricano mai lo
+    // stesso artwork. imageExportCanvas traccia l'elemento <canvas> montato
+    // per accorgersi quando onRender() lo ricrea (innerHTML replace) e
+    // servirebbe un ridisegno — mai un dato di stato del mazzo.
+    this.imageExportOpen = false; this.imageExportMode = 'clean'; this.imageExportBusy = false; this.imageExportError = ''; this.imageExportCanvas = null;
+    this.imageExportCache = createDeckImageCache();
     // Scelta prestatore + "già concordato" per riga di carta mancante: transiente,
     // non fa parte dello stato del mazzo, si azzera quando il pannello si chiude.
     this.missingRowChoices = new Map();
@@ -78,7 +87,7 @@ export class DeckController {
   async load() { if (this.loadInFlight) return this.loadInFlight; const request = (async () => { let remote = [], failure = null; try { remote = (await this.api.decks() || []).map(mapDeck); } catch (error) { failure = error; remote = this.state.decks || []; } const local = readDrafts().filter(deck => deck.ownerSlug === this.state.currentUser), merged = new Map(remote.map(deck => [deck.id, deck])); for (const draft of local) if (draft.dirty || !draft.persisted) merged.set(draft.id, draft); this.state.decks = [...merged.values()]; await this.refreshTcgBanlist(); if (!this.decks.some(deck => deck.id === this.activeId)) this.activeId = this.decks[0]?.id || ''; if (!this.decks.some(deck => deck.id === this.previewId)) this.previewId = this.activeId; if (failure) throw failure; return this.state.decks; })(); this.loadInFlight = request; try { return await request; } finally { if (this.loadInFlight === request) this.loadInFlight = null; } }
   async loadTeam() { if (this.teamLoadInFlight) return this.teamLoadInFlight; const request = (async () => { try { this.teamDecksAll = (await this.api.teamDecks() || []).map(mapTeamDeck); this.teamError = ''; } catch (error) { this.teamError = error.message || 'Mazzi del team non disponibili'; } finally { this.teamLoaded = true; } return this.teamDecksAll; })(); this.teamLoadInFlight = request; try { return await request; } finally { if (this.teamLoadInFlight === request) this.teamLoadInFlight = null; } }
   async refreshTcgBanlist() { if (!this.tcgBanlistStatuses || !(this.state.decks || []).some(deck => deck.game === 'yugioh')) return; const statuses = await this.tcgBanlistStatuses(); if (!statuses) return; for (const deck of this.state.decks || []) { if (deck.game !== 'yugioh') continue; for (const card of deck.cards || []) card.banTcg = statuses[String(card.catalogCardId)] || ''; } }
-  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.optcgImportOpen ? this.optcgImportView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}</section>`; }
+  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.optcgImportOpen ? this.optcgImportView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}${this.imageExportOpen && deck ? this.imageExportView(deck) : ''}</section>`; }
   galleryView() {
     const scope = this.scope, mineCount = this.decks.length, teamCount = this.teamDecks.length;
     const tabs = `<div class="tabs" role="tablist" aria-label="Ambito mazzi"><button type="button" data-deck-scope="mine" class="${scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${scope === 'mine'}">I miei mazzi <span>${mineCount}</span></button><button type="button" data-deck-scope="team" class="${scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${scope === 'team'}">Mazzi del team <span>${teamCount}</span></button></div>`;
@@ -308,10 +317,84 @@ export class DeckController {
       <div class="deck-more-actions">
         <button type="button" class="btn secondary" data-deck-cover-open>${icon('deck')} Personalizza Deck Box</button>
         <button type="button" class="btn secondary" data-deck-new>${icon('plus')} Nuovo mazzo</button>
+        <button type="button" class="btn secondary" data-deck-image-open>${icon('camera')} Genera immagine</button>
         ${deck.game === 'onepiece' ? `<button type="button" class="btn secondary" data-deck-optcg-import>${icon('logout')} Importa da OPTCGSim</button><button type="button" class="btn secondary" data-deck-optcg-export>${icon('share')} Copia per OPTCGSim</button>` : `<button type="button" class="btn secondary" data-deck-import>${icon('logout')} Importa lista / YDK</button>`}
         <button type="button" class="btn secondary danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}>${icon('trash')} Elimina mazzo</button>
       </div>
     </aside></div>`;
+  }
+  // Decklist Image Generator — modale dedicata, indipendente dall'editor
+  // del mazzo (renderDeckImage/js/deck-image-export.js non sa nulla di
+  // DeckController). Il canvas resta SEMPRE 1080x1350 reali (requisito
+  // esplicito: mai renderizzare a risoluzione inferiore su mobile), scalato
+  // solo via CSS (styles.css .deck-image-preview canvas).
+  imageExportView(deck) {
+    const canShareSignature = Boolean(resolveDeckSignature(deck)?.imageUrl);
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-image-close><aside class="card-detail deck-image-export" role="dialog" aria-modal="true" aria-label="Genera immagine mazzo">
+      <button class="detail-close" data-deck-image-close aria-label="Chiudi">×</button>
+      <span class="eyebrow">Condividi</span><h2>Genera immagine</h2>
+      <div class="deck-image-preview">
+        <canvas data-deck-image-canvas width="${DECK_IMAGE_WIDTH}" height="${DECK_IMAGE_HEIGHT}"></canvas>
+        <div class="deck-image-loading" data-deck-image-loading ${this.imageExportBusy ? '' : 'hidden'}><span class="loading-spinner"></span> Generazione…</div>
+      </div>
+      ${this.imageExportError ? `<div class="connection-banner error">${esc(this.imageExportError)}</div>` : ''}
+      <div class="deck-image-modes" role="group" aria-label="Tema immagine">
+        <button type="button" class="btn secondary ${this.imageExportMode === 'clean' ? 'active' : ''}" data-deck-image-mode="clean">Clean</button>
+        <button type="button" class="btn secondary ${this.imageExportMode === 'signature' ? 'active' : ''}" data-deck-image-mode="signature">Signature${canShareSignature ? '' : ' (fallback Clean)'}</button>
+      </div>
+      <div class="deck-image-actions">
+        <button type="button" class="btn wide" data-deck-image-download ${this.imageExportBusy ? 'disabled' : ''}>Scarica PNG</button>
+        <button type="button" class="btn secondary wide" data-deck-image-share ${this.imageExportBusy ? 'disabled' : ''}>${icon('share')} Condividi</button>
+      </div>
+    </aside></div>`;
+  }
+  openImageExport() {
+    if (!this.active()) return;
+    this.imageExportOpen = true; this.imageExportMode = 'clean'; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
+    this.moreMenuOpen = false;
+    this.onRender();
+  }
+  closeImageExport() { this.imageExportOpen = false; this.imageExportCanvas = null; this.onRender(); }
+  setImageExportMode(mode) {
+    if (mode === this.imageExportMode || this.imageExportBusy) return;
+    this.imageExportMode = mode; this.imageExportBusy = true; this.imageExportError = '';
+    this.onRender();
+  }
+  // Disegna nel <canvas> già montato SENZA un secondo onRender() al
+  // successo: onRender() sostituisce l'innerHTML e ricreerebbe il canvas,
+  // cancellando i pixel appena disegnati. Il loading overlay viene quindi
+  // nascosto via DOM diretto (stesso principio di refreshBoardSection() in
+  // js/market-watch.js: aggiornamento mirato, mai un render pieno per un
+  // contenuto costoso da ricostruire). bind() richiama questo metodo ogni
+  // volta che il riferimento al canvas cambia (riaperture/cambio modalità).
+  async drawImageExportPreview() {
+    const deck = this.active(); if (!deck) return;
+    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
+    this.imageExportCanvas = canvas;
+    try {
+      const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
+      await renderDeckImage(deck, { mode: this.imageExportMode, ownerName, proxyUrl: '/api/card-image-proxy', cache: this.imageExportCache, canvas });
+    } catch (error) {
+      this.imageExportError = error?.message || 'Generazione immagine non riuscita';
+    } finally {
+      this.imageExportBusy = false;
+      const overlay = document.querySelector('[data-deck-image-loading]');
+      if (overlay) overlay.hidden = true;
+      if (this.imageExportError) this.onRender();
+    }
+  }
+  async downloadImageExport() {
+    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas || this.imageExportBusy) return;
+    try { downloadDeckImageBlob(await exportDeckImageBlob(canvas), this.active()?.name || 'mazzo'); }
+    catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
+  }
+  async shareImageExport() {
+    const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas || this.imageExportBusy) return;
+    try {
+      const blob = await exportDeckImageBlob(canvas), deckName = this.active()?.name || 'mazzo';
+      if (canShareDeckImageBlob(blob, deckName)) await shareDeckImageBlob(blob, deckName, { title: deckName });
+      else downloadDeckImageBlob(blob, deckName);
+    } catch (error) { if (error?.name !== 'AbortError') this.onToast?.(error?.message || 'Condivisione non riuscita'); }
   }
   optcgImportView() {
     const result = this.optcgImportResult;
@@ -354,6 +437,19 @@ export class DeckController {
     root.querySelector('[data-deck-name]')?.addEventListener('input', event => { const deck = this.active(); if (deck) { deck.name = event.target.value; this.markDirty(deck); } });
     root.querySelector('select[data-deck-theme]')?.addEventListener('change', event => { const deck = this.active(); if (!deck) return; deck.deckTheme = event.target.value; this.markDirty(deck); this.onRender(); });
     root.querySelector('[data-deck-cover-open]')?.addEventListener('click', () => { this.coverPickerOpen = true; this.moreMenuOpen = false; this.onRender(); });
+    root.querySelector('[data-deck-image-open]')?.addEventListener('click', () => this.openImageExport());
+    root.querySelectorAll('[data-deck-image-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeImageExport(); }));
+    root.querySelectorAll('[data-deck-image-mode]').forEach(button => button.addEventListener('click', () => this.setImageExportMode(button.dataset.deckImageMode)));
+    root.querySelector('[data-deck-image-download]')?.addEventListener('click', () => void this.downloadImageExport());
+    root.querySelector('[data-deck-image-share]')?.addEventListener('click', () => void this.shareImageExport());
+    // Il canvas viene ricreato ad ogni onRender() (innerHTML replace): un
+    // riferimento diverso da quello tracciato significa che va ridisegnato
+    // (apertura, cambio Clean/Signature, o un render esterno non correlato
+    // mentre la modale è aperta) — mai un rebuild dei dati del mazzo.
+    if (this.imageExportOpen) {
+      const canvas = root.querySelector('[data-deck-image-canvas]');
+      if (canvas && canvas !== this.imageExportCanvas) void this.drawImageExportPreview();
+    }
     root.querySelectorAll('[data-deck-cover-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.coverPickerOpen = false; this.onRender(); }));
     root.querySelectorAll('[data-deck-cover-card]').forEach(button => button.addEventListener('click', () => this.chooseCover(button.dataset.deckCoverCard)));
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));

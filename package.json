@@ -40,6 +40,8 @@
     ,"test:market-summary-perf": "node scripts/market-watch-summary-perf-smoke.mjs"
     ,"test:market-current-price-layer": "node scripts/market-watch-current-price-layer-smoke.mjs"
     ,"test:market-current-price-cutover": "node scripts/market-watch-current-price-cutover-smoke.mjs"
+    ,"test:deck-image-export": "node scripts/deck-image-export-smoke.mjs"
+    ,"test:deck-image-export-browser": "node scripts/deck-image-export-browser-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
