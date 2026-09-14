@@ -33,6 +33,8 @@
     ,"test:market-variant-set-template": "node scripts/market-variant-set-template-smoke.mjs"
     ,"test:market-variant-mapping-source-check": "node scripts/market-variant-mapping-source-check-smoke.mjs"
     ,"test:market-variant-exact-price-shadow-panel": "node scripts/market-variant-exact-price-shadow-panel-smoke.mjs"
+    ,"test:market-variant-backfill": "node scripts/market-variant-backfill-smoke.mjs"
+    ,"test:market-variant-backfill-panel": "node scripts/market-variant-backfill-panel-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

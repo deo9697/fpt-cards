@@ -34,6 +34,26 @@ import { resolveYgoMarketVariant, canonicalYgoRarity, normalizeYgoRarityKey, sho
   assert.equal(forced.mappingSource, MARKET_VARIANT_SOURCE.RESOLVER);
 }
 
+// 2b) Bug di idempotenza trovato durante il backfill mirato RA01/RA02 (una
+//     printing già resolved/verified rieseguita dal canary NON deve mai
+//     svuotare candidate_product_ids — l'upsert scrive una riga intera,
+//     quindi un [] qui diventerebbe un [] reale in ygo_market_variants).
+//     Copre sia il ramo 'resolved' preservato sia quello 'verified'.
+{
+  const resolvedWithCandidates = { mapping_status: 'resolved', cardmarket_product_id: 'P-REGISTRY', candidate_product_ids: ['P-REGISTRY', 'P-OTHER'] };
+  const preserved = resolveYgoMarketVariant({ existingVariant: resolvedWithCandidates, cardmarketCandidates: [{ productId: 'P-NEW', expansionId: 'E1' }], rarityCanonical: 'SUPER_RARE' });
+  assert.deepEqual(preserved.candidateProductIds, ['P-REGISTRY', 'P-OTHER'], 'rerun su riga resolved non deve svuotare candidate_product_ids già persistiti');
+
+  const verifiedWithCandidates = { verified: true, cardmarket_product_id: 'P-MANUAL', mapping_source: 'manual', candidate_product_ids: ['P-MANUAL', 'P-OTHER'] };
+  const verifiedPreserved = resolveYgoMarketVariant({ existingVariant: verifiedWithCandidates, cardmarketCandidates: [{ productId: 'P-NEW', expansionId: 'E1' }], rarityCanonical: 'SUPER_RARE' });
+  assert.deepEqual(verifiedPreserved.candidateProductIds, ['P-MANUAL', 'P-OTHER'], 'rerun su riga verified non deve svuotare candidate_product_ids già persistiti');
+
+  // Nessun existingVariant.candidate_product_ids noto -> [] resta corretto
+  // (mai un array inventato), non un cambio di comportamento.
+  const withoutCandidates = resolveYgoMarketVariant({ existingVariant: { mapping_status: 'resolved', cardmarket_product_id: 'P-REGISTRY' }, cardmarketCandidates: [], rarityCanonical: 'SUPER_RARE' });
+  assert.deepEqual(withoutCandidates.candidateProductIds, []);
+}
+
 // 3) Zero candidati (e nessun legacy) -> unresolved, mai un prezzo arbitrario.
 {
   const result = resolveYgoMarketVariant({ cardmarketCandidates: [], rarityCanonical: 'SUPER_RARE' });
