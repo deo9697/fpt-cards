@@ -109,10 +109,18 @@ function featuredPanel(market) {
   '</section>';
 }
 function heroSlide(item, index, history) {
-  const artwork = moverArtwork(item), change = Number(item.positiveChange);
+  const candidates = moverArtworkCandidates(item), change = Number(item.positiveChange);
   const previous = Number.isFinite(item.price24h) ? item.price24h : (Number.isFinite(item.baselinePrice) ? item.baselinePrice : null);
+  // Il placeholder esiste sempre nel markup (solo nascosto via [hidden] se
+  // c'è un candidato) così bindHeroArtworkFallback() può scoprirlo senza
+  // toccare l'innerHTML durante un evento error — vedi styles.css per la
+  // regola [hidden] che vince su .market-featured-art-placeholder{display:grid}.
+  const placeholder = '<span class="market-featured-art market-featured-art-placeholder"'+(candidates.length?' hidden':'')+'>'+icon('card')+'</span>';
+  const art = candidates.length
+    ? '<img class="market-featured-art" data-art-fallback="'+esc(JSON.stringify(candidates.slice(1)))+'" src="'+esc(candidates[0])+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">'+placeholder
+    : placeholder;
   return '<button type="button" class="market-featured-slide" data-page="market" data-featured-slide="'+index+'" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
-    (artwork ? '<img class="market-featured-art" src="'+esc(artwork)+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">' : '<span class="market-featured-art market-featured-art-placeholder">'+icon('card')+'</span>')+
+    art+
     '<span class="market-featured-scrim" aria-hidden="true"></span>'+
     '<span class="market-featured-copy">'+
       '<span class="market-featured-badge">In salita &#183; '+changePercent(change)+'</span>'+
@@ -148,6 +156,7 @@ export function bindDashboardCarousel(root=document) {
   const track=root.querySelector('[data-featured-track]');
   if(!track||track.dataset.bound)return;
   track.dataset.bound='true';
+  bindHeroArtworkFallback(track);
   const slides=[...track.querySelectorAll('.market-featured-slide')];
   if(slides.length<2)return;
   const dots=[...root.querySelectorAll('[data-featured-dot]')];
@@ -163,15 +172,49 @@ export function bindDashboardCarousel(root=document) {
   track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'){event.preventDefault();goTo(currentIndex()+1);}else if(event.key==='ArrowLeft'){event.preventDefault();goTo(currentIndex()-1);}});
   update();
 }
-// Preferire il crop per Yu-Gi-Oh! (mai la carta intera nell'hero): un URL
-// già in forma images/cards/<id>.jpg diventa cards_cropped/<id>.jpg, un
-// catalogCardId puramente numerico forza direttamente l'URL cropped
-// (stessa regola già usata altrove nel modulo, qui riusata senza
-// duplicarne la logica in forma diversa). Altrimenti (es. One Piece, che
-// non ha una variante "cropped") resta l'URL affidabile già nei dati;
-// se manca del tutto, mostrare un placeholder è responsabilità di chi
-// chiama questa funzione (mai un <img src=""> rotto).
-function moverArtwork(item){const source=String(item.imageUrl||'');if(/\/images\/cards\/\d+\.jpg(?:\?|$)/i.test(source))return source.replace(/\/images\/cards\//i,'/images/cards_cropped/');const id=String(item.catalogCardId||'');return /^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:source;}
+// Priorità artwork per Yu-Gi-Oh! (fix 2026-09-15: nel DB reale ~2798/2994
+// printing hanno già un image_url YGOResources, artwork-only e senza bisogno
+// di crop — la versione precedente lo ignorava ogni volta che catalogCardId
+// era numerico, cioè quasi sempre, forzando YGOPRODeck sulla stragrande
+// maggioranza delle carte):
+//   1) YGOResources (artworks-*.ygoresources.com) già presente: usato diretto.
+//   2) imageUrl già in /images/cards_cropped/ (qualunque origine l'abbia
+//      prodotto): usato diretto.
+//   3) YGOPRODeck "carta intera" (/images/cards/<id>.jpg): mai nell'hero,
+//      trasformato nel crop.
+//   4) catalogCardId numerico: SOLO fallback finale se non c'è nessun
+//      artwork affidabile sopra (era la sorgente primaria, ora è l'ultima).
+// Ogni candidato ha al massimo UN fallback (mai un secondo tentativo dopo
+// quello): per un ygoprodeck diretto, il fallback è la stessa immagine via
+// /api/card-image-proxy (fetch server-side con cache 7gg, utile se l'hotlink
+// diretto fallisce); YGOResources non passa dal proxy — la whitelist server
+// non lo include e il browser la mostra già senza problemi diretto.
+// bindHeroArtworkFallback() consuma questa lista in ordine sull'evento
+// error dell'<img>; se anche l'ultimo candidato fallisce, resta il
+// placeholder FPT già nel markup — mai un <img> rotto o uno spazio vuoto.
+function moverArtworkCandidates(item){
+  const source=String(item.imageUrl||''), id=String(item.catalogCardId||'');
+  const idFallback=/^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:'';
+  const proxied=url=>'/api/card-image-proxy?url='+encodeURIComponent(url);
+  if(/artworks-[^/]*\.ygoresources\.com/i.test(source))return idFallback?[source,idFallback]:[source];
+  if(/\/images\/cards_cropped\//i.test(source))return /images\.ygoprodeck\.com/i.test(source)?[source,proxied(source)]:[source];
+  if(/\/images\/cards\/\d+\.jpg(?:\?|$)/i.test(source)){const cropped=source.replace(/\/images\/cards\//i,'/images/cards_cropped/');return[cropped,proxied(cropped)];}
+  if(idFallback)return[idFallback,proxied(idFallback)];
+  return source?[source]:[];
+}
+// Consuma un candidato alla volta sull'evento error dell'<img>: al massimo
+// un fallback per sorgente (data-art-fallback parte già con un solo
+// elemento al più), poi resta il placeholder già presente nel markup.
+// Nessun retry infinito: la lista si accorcia e non si ricrea mai.
+function bindHeroArtworkFallback(track){
+  for(const img of track.querySelectorAll('.market-featured-art[data-art-fallback]')){
+    img.addEventListener('error',()=>{
+      let remaining=[];try{remaining=JSON.parse(img.dataset.artFallback||'[]');}catch{remaining=[];}
+      if(remaining.length){const next=remaining.shift();img.dataset.artFallback=JSON.stringify(remaining);img.src=next;return;}
+      img.hidden=true;const placeholder=img.nextElementSibling;if(placeholder)placeholder.hidden=false;
+    });
+  }
+}
 function marketMoney(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
 
 function loanOverview(loans, attention) {

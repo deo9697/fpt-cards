@@ -91,7 +91,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1100, deviceScaleFactor: 1, mobile: true });
   await evaluate(`document.querySelector('.market-movers-panel').scrollIntoView();`);
   const artCheck = await evaluate(`(async()=>{
-    const imgs = [...document.querySelectorAll('.market-featured-art')];
+    const imgs = [...document.querySelectorAll('img.market-featured-art')];
     await Promise.all(imgs.map(img => { img.loading='eager'; return img.decode(); }));
     return {count: imgs.length, allDecoded: imgs.every(img => img.naturalWidth > 0), objectFit: getComputedStyle(imgs[0]).objectFit};
   })()`);
@@ -147,6 +147,71 @@ try {
   })()`);
   if (!emptyResult.hasEmpty || emptyResult.hasSlide) throw Error('Stato vuoto del pannello senza movers positivi non valido: ' + JSON.stringify(emptyResult));
   console.log('PASS nessun mover positivo: stato vuoto elegante del pannello');
+
+  // --- Priorità artwork (fix 2026-09-15): YGOResources già presente > già
+  // cropped > YGOPRODeck full->cropped > catalogCardId (SOLO fallback finale,
+  // prima era la sorgente primaria e ignorava un imageUrl YGOResources valido).
+  const priorityResult = await evaluate(`(async()=>{
+    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const state = {currentUser:'daniele', loans:[]};
+    const items = [
+      {printingId:'pri-yr', catalogCardId:'111111', cardName:'YGOResources Card', imageUrl:'https://artworks-abc123.ygoresources.com/foo/bar.jpg', referencePrice:12, price24h:10, sources:['owned']},
+      {printingId:'pri-full', catalogCardId:'222222', cardName:'Full Card', imageUrl:'https://images.ygoprodeck.com/images/cards/222222.jpg', referencePrice:11, price24h:10, sources:['owned']},
+      {printingId:'pri-id', catalogCardId:'333333', cardName:'Solo ID Card', imageUrl:'', referencePrice:10.5, price24h:10, sources:['owned']}
+    ];
+    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    bindDashboardCarousel();
+    return [...document.querySelectorAll('img.market-featured-art')].map(img => ({src: img.getAttribute('src'), fallback: JSON.parse(img.dataset.artFallback||'[]')}));
+  })()`);
+  if (priorityResult[0].src !== 'https://artworks-abc123.ygoresources.com/foo/bar.jpg') throw Error('YGOResources deve avere priorità sul catalogCardId numerico: ' + JSON.stringify(priorityResult[0]));
+  if (priorityResult[0].fallback.length !== 1 || !priorityResult[0].fallback[0].includes('cards_cropped/111111.jpg')) throw Error('Il fallback di un artwork YGOResources deve essere il catalogCardId cropped: ' + JSON.stringify(priorityResult[0]));
+  if (priorityResult[1].src !== 'https://images.ygoprodeck.com/images/cards_cropped/222222.jpg') throw Error('Una card intera YGOPRODeck deve diventare cropped: ' + JSON.stringify(priorityResult[1]));
+  if (!priorityResult[1].fallback[0]?.startsWith('/api/card-image-proxy?url=')) throw Error('Il fallback di un cropped YGOPRODeck deve passare dal proxy: ' + JSON.stringify(priorityResult[1]));
+  if (priorityResult[2].src !== 'https://images.ygoprodeck.com/images/cards_cropped/333333.jpg') throw Error('Senza imageUrl affidabile, catalogCardId deve restare l\'unico fallback disponibile: ' + JSON.stringify(priorityResult[2]));
+  console.log('PASS priorità artwork: YGOResources > già cropped > full->cropped > catalogCardId (solo fallback finale)');
+
+  // --- Fallback su errore immagine: primary -> fallback -> placeholder FPT,
+  // mai un loop su errori ripetuti (data-art-fallback si accorcia e basta).
+  const fallbackResult = await evaluate(`(async()=>{
+    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const state = {currentUser:'daniele', loans:[]};
+    const items = [{printingId:'fb1', catalogCardId:'444444', cardName:'Fallback Card', imageUrl:'https://images.ygoprodeck.com/images/cards/444444.jpg', referencePrice:9, price24h:8, sources:['owned']}];
+    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    bindDashboardCarousel();
+    const img = document.querySelector('img.market-featured-art'), placeholder = img.nextElementSibling;
+    const initial = {fallbackLen: JSON.parse(img.dataset.artFallback).length, imgHidden: img.hidden, placeholderHidden: placeholder.hidden};
+    img.dispatchEvent(new Event('error'));
+    const afterFirstError = {src: img.getAttribute('src'), fallbackLen: JSON.parse(img.dataset.artFallback).length, imgHidden: img.hidden};
+    img.dispatchEvent(new Event('error'));
+    const afterSecondError = {imgHidden: img.hidden, placeholderHidden: placeholder.hidden};
+    img.dispatchEvent(new Event('error'));
+    const afterThirdError = {imgHidden: img.hidden, placeholderHidden: placeholder.hidden};
+    return {initial, afterFirstError, afterSecondError, afterThirdError};
+  })()`);
+  if (fallbackResult.initial.fallbackLen !== 1 || fallbackResult.initial.imgHidden || !fallbackResult.initial.placeholderHidden) throw Error('Stato iniziale del fallback non valido: ' + JSON.stringify(fallbackResult.initial));
+  if (!fallbackResult.afterFirstError.src.includes('card-image-proxy') || fallbackResult.afterFirstError.fallbackLen !== 0 || fallbackResult.afterFirstError.imgHidden) throw Error('Il primo errore deve passare al fallback (proxy), non nascondere subito l\'immagine: ' + JSON.stringify(fallbackResult.afterFirstError));
+  if (!fallbackResult.afterSecondError.imgHidden || fallbackResult.afterSecondError.placeholderHidden) throw Error('Il secondo errore (fallback esaurito) deve mostrare il placeholder FPT: ' + JSON.stringify(fallbackResult.afterSecondError));
+  if (fallbackResult.afterThirdError.imgHidden !== fallbackResult.afterSecondError.imgHidden || fallbackResult.afterThirdError.placeholderHidden !== fallbackResult.afterSecondError.placeholderHidden) throw Error('Un errore successivo al placeholder non deve alterare più nulla (nessun loop): ' + JSON.stringify(fallbackResult.afterThirdError));
+  console.log('PASS fallback errore immagine: primary -> fallback (proxy) -> placeholder FPT, nessun loop su errori successivi');
+
+  // --- Nessuna nuova query/RPC: selezione artwork e fallback restano
+  // puramente client-side sui dati già caricati (niente fetch() diretto;
+  // il caricamento dell'<img> è una risorsa nativa del browser, non fetch()).
+  const fetchSpyCalls = await evaluate(`(async()=>{
+    let calls = 0; const originalFetch = window.fetch;
+    window.fetch = (...args) => { calls++; return originalFetch(...args); };
+    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const state = {currentUser:'daniele', loans:[]};
+    const items = [{printingId:'nf1', catalogCardId:'555555', cardName:'No Fetch Card', imageUrl:'https://images.ygoprodeck.com/images/cards/555555.jpg', referencePrice:9, price24h:8, sources:['owned']}];
+    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    bindDashboardCarousel();
+    const img = document.querySelector('img.market-featured-art');
+    img.dispatchEvent(new Event('error')); img.dispatchEvent(new Event('error'));
+    window.fetch = originalFetch;
+    return calls;
+  })()`);
+  if (fetchSpyCalls !== 0) throw Error('La selezione/fallback artwork non deve mai chiamare fetch() direttamente: chiamate osservate = ' + fetchSpyCalls);
+  console.log('PASS nessuna nuova query/RPC: selezione artwork e fallback restano puramente client-side');
 
   // Ripristina la vista iniziale per lo screenshot finale.
   await evaluate(`window.__renderDashboard()`);
