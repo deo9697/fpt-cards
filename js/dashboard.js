@@ -74,23 +74,33 @@ function featuredPanel(market) {
     const message = market.trendsError ? 'Apri Market Watch per riprovare il caricamento.' : market.trendsLoading ? 'Controlliamo le carte della tua raccolta.' : 'Servono prezzi recenti e una media a 7 giorni. Le carte stabili non entrano in classifica.';
     return '<section class="surface duel-panel featured-card-panel featured-empty">'+heading+'<div class="inline-empty">'+icon('chart')+'<div><strong>'+title+'</strong><span>'+message+'</span></div></div></section>';
   }
+  const movers=[...upMovers,...downMovers];
   return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
-    '<p class="market-movers-context">Prezzo indicativo Cardmarket rispetto alla media degli ultimi 7 giorni.</p><div class="market-movers-lists">'+
-    moverGroup('In salita','up',upMovers,'Nessuna carta in crescita al momento.',market)+
-    moverGroup('In discesa','down',downMovers,'Nessuna variazione negativa al momento.',market)+
-    '</div><p class="market-movers-footnote">Solo carte possedute · Fino a 3 per classifica · Prezzi indicativi</p></section>';
+    '<p class="market-movers-context">Top 3 in salita e in discesa rispetto alla media a 7 giorni.</p>'+
+    '<div class="market-art-carousel" tabindex="0" aria-label="Carte in evidenza: scorri orizzontalmente">'+movers.map((item,index)=>moverRow(item,index,market,movers.length)).join('')+'</div>'+
+    '<div class="market-carousel-controls"><button type="button" data-mover-step="-1" aria-label="Carta precedente">&#8592;</button><span data-mover-position aria-live="polite">1 / '+movers.length+'</span><button type="button" data-mover-step="1" aria-label="Carta successiva">&#8594;</button></div></section>';
 }
-function moverGroup(label, direction, movers, emptyText, market) {
-  return '<section class="market-movers-group '+direction+'" aria-label="'+label+'"><h3><span>'+(direction==='up'?'↗':'↘')+' '+label+'</span><small>TOP 3</small></h3>'+(movers.length ? '<div class="market-art-carousel" tabindex="0" aria-label="'+label+': scorri per vedere le carte">'+movers.map((item,index)=>moverRow(item,index,market)).join('')+'</div><p class="market-swipe-hint">'+(movers.length>1?'Scorri per vedere le altre carte →':'Una carta in evidenza')+'</p>' : '<p class="market-movers-group-empty">'+esc(emptyText)+'</p>')+'</section>';
+export function bindDashboardCarousel(root=document) {
+  const track=root.querySelector('.market-art-carousel');
+  if(!track||track.dataset.bound)return;
+  track.dataset.bound='true';
+  const cards=[...track.querySelectorAll('.market-art-card')],controls=root.querySelectorAll('[data-mover-step]'),position=root.querySelector('[data-mover-position]');
+  const index=()=>Math.round(track.scrollLeft/(cards[0].getBoundingClientRect().width+12));
+  const update=()=>{const i=index();if(position)position.textContent=(i+1)+' / '+cards.length;controls.forEach(button=>button.disabled=Number(button.dataset.moverStep)<0?i===0:i>=cards.length-1);};
+  const move=step=>{const i=Math.max(0,Math.min(cards.length-1,index()+step));track.scrollTo({left:i*(cards[0].getBoundingClientRect().width+12),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
+  controls.forEach(button=>button.onclick=()=>move(Number(button.dataset.moverStep)));
+  track.addEventListener('scroll',update,{passive:true});
+  track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();move(event.key==='ArrowRight'?1:-1);}});
+  update();
 }
-function moverRow(item, index, market) {
+function moverRow(item, index, market, total) {
   const source = String(item.imageUrl||'');
   const artwork = source.replace(/\/images\/cards\/(\d+\.jpg)/i,'/images/cards_cropped/$1'), change = item.positiveChange;
   const metadata = [item.setCode, item.rarity].filter(Boolean).join(' · ');
   const history = market.featuredHistory?.get?.(item.printingId)||[];
-  return '<button class="market-art-card" data-page="market" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
+  return '<button class="market-art-card '+(change>0?'up':'down')+'" data-page="market" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
     (artwork ? '<img class="market-art-background" src="'+esc(artwork)+'" alt="" loading="lazy" decoding="async">' : '<span class="market-art-placeholder">'+icon('card')+'</span>')+
-    '<span class="market-art-copy"><span class="market-art-rank">'+(index+1)+' / 3</span><strong class="market-art-name">'+esc(item.cardName)+'</strong><small>'+esc(metadata)+'</small></span>'+
+    '<span class="market-art-copy"><span class="market-art-rank">'+(change>0?'In salita':'In discesa')+' &#183; '+(index+1)+' / '+total+'</span><strong class="market-art-name">'+esc(item.cardName)+'</strong><small>'+esc(metadata)+'</small></span>'+
     '<span class="market-art-bottom"><span class="market-art-price"><b>'+marketMoney(item.referencePrice)+'</b><span class="'+tone(change)+'">'+(change>0?'↗ ':'↘ ')+changePercent(change)+'<small>vs media 7g</small></span></span>'+
     moverHistoryChart(history)+
     (Number.isFinite(item.baselinePrice)?'<small class="market-mover-row-history">Media 7g '+marketMoney(item.baselinePrice)+'</small>':'')+'</span></button>';

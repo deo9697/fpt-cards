@@ -10,7 +10,7 @@ import { externalLookupViaRegistry } from './js/ygo-printing-registry.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { icon } from './js/icons.js';
-import { dashboardView } from './js/dashboard.js';
+import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
@@ -1155,6 +1155,7 @@ async function runMarketVariantBackfill() {
 }
 
 function bind() {
+  bindDashboardCarousel();
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#member')?.addEventListener('change', event => {
     loginDraft.member = event.currentTarget.value;

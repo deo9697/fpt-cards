@@ -633,6 +633,10 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .featured-empty > .btn { align-self: center; }
 .market-movers-panel { min-height: 330px; background: radial-gradient(ellipse at top left,#793bc51a,transparent 65%),var(--surface,#11101b); }
 .market-art-carousel { display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:thin; scrollbar-color:#9765c6 #100d19; border-radius:16px; }
+.market-carousel-controls { display:flex; align-items:center; justify-content:center; gap:20px; margin-top:12px; color:var(--muted); font-size:.75rem; }
+.market-carousel-controls button { width:44px; height:40px; border:1px solid #9765c655; border-radius:10px; background:#251634; color:#eee1ff; cursor:pointer; font-size:1.2rem; }
+.market-carousel-controls button:disabled { opacity:.3; cursor:default; }
+.market-carousel-controls button:focus-visible { outline:2px solid #c794ff; outline-offset:2px; }
 .market-art-card { position:relative; isolation:isolate; flex:0 0 100%; min-width:0; height:390px; overflow:hidden; scroll-snap-align:start; border:1px solid #b99cd13d; border-radius:16px; background:#161124; color:#fff; padding:20px; text-align:left; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; }
 .market-art-background { position:absolute; inset:0; z-index:-2; width:100%; height:100%; object-fit:cover; object-position:center 35%; }
 .market-art-card::before { content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,#060710b8 0%,#06071012 37%,#060710a8 58%,#060710f5 100%); }

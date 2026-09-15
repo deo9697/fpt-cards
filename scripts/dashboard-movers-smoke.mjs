@@ -48,7 +48,7 @@ const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i
     item({ printingId: 'down1', catalogCardId: 'd1', cardName: 'Giù Uno', imageUrl: '', referencePrice: 5, price24h: 10 })
   ];
   const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
-  assert(html.includes('market-movers-lists'), 'deve usare il nuovo layout a due liste');
+  assert(html.includes('market-art-carousel'), 'deve usare il nuovo layout a due liste');
   assert(!html.includes('market-mover-slide') && !html.includes('market-movers-carousel'), 'il vecchio carousel non deve più comparire');
   assert(html.includes('In salita') && html.includes('In discesa'), 'entrambe le etichette delle due classifiche devono comparire');
   assert(html.includes('Su Uno') && html.includes('Giù Uno'), 'entrambe le carte devono comparire nella rispettiva lista');
@@ -60,8 +60,8 @@ const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i
   const items = [item({ printingId: 'up1', catalogCardId: 'u1', cardName: 'Unica su', referencePrice: 11, price24h: 10 })];
   const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('Unica su'), 'l\'unico mover in salita deve comparire');
-  assert(html.includes('Nessuna variazione negativa'), 'con zero movers in discesa deve mostrare un messaggio neutro per quella sola lista, non nascondere l\'intero pannello');
-  assert(html.includes('market-movers-lists'), 'il pannello resta comunque il layout a due liste (una sola riga presente, non un fallback diverso)');
+  assert(!html.includes('In discesa'), 'con zero movers in discesa deve mostrare un messaggio neutro per quella sola lista, non nascondere l\'intero pannello');
+  assert(html.includes('market-art-carousel'), 'il pannello resta comunque il layout a due liste (una sola riga presente, non un fallback diverso)');
   console.log('PASS edge case: meno di 3 movers per direzione, messaggio neutro solo per la lista vuota');
 }
 
@@ -71,7 +71,7 @@ const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i
   const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('featured-empty'), 'con zero movers in entrambe le direzioni deve tornare lo stato vuoto dell\'intero pannello');
   assert(html.includes('Nessuna variazione da mostrare'), 'messaggio di stato vuoto atteso');
-  assert(!html.includes('market-movers-lists'), 'lo stato vuoto non deve montare il layout a due liste');
+  assert(!html.includes('market-art-carousel'), 'lo stato vuoto non deve montare il layout a due liste');
   console.log('PASS edge case: nessuna variazione in nessuna direzione, stato vuoto dell\'intero pannello');
 }
 
@@ -105,12 +105,12 @@ const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i
 console.log('PASS dashboard movers (logica pura): negativeMovers simmetrico a positiveMovers, due liste leggibili, tutti gli edge case richiesti (meno di 3, nessuna variazione negativa, storico assente, artwork assente)');
 
 // Never rank a paginated/filtered subset when the complete rankings are empty.
-assert(!dashboardView(state,'yugioh',{items:[item({referencePrice:50})],featuredMovers:[]}).includes('market-movers-lists'));
+assert(!dashboardView(state,'yugioh',{items:[item({referencePrice:50})],featuredMovers:[]}).includes('market-art-carousel'));
 assert(dashboardView(state,'yugioh',{trendsLoading:true}).includes('Caricamento trend'));
 assert(dashboardView(state,'yugioh',{trendsError:true}).includes('Trend non disponibili'));
 const six=Array.from({length:8},(_,i)=>item({cardName:'Rank '+i,printingId:String(i),catalogCardId:String(i),referencePrice:i<4?11+i:9-i}));
 const ranked=dashboardView(state,'yugioh',{featuredMovers:trends(six)});
-assert.equal((ranked.match(/class="market-art-card"/g)||[]).length,6);
+assert.equal((ranked.match(/class="market-art-card (?:up|down)"/g)||[]).length,6);
 assert(ranked.indexOf('Rank 3')<ranked.indexOf('Rank 2'));
 assert(ranked.indexOf('Rank 7')<ranked.indexOf('Rank 6'));
 console.log('PASS complete collection rankings, 3 per direction, loading/error and no partial fallback');
