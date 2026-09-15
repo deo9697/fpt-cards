@@ -195,6 +195,12 @@ export const api = {
   async lookupPrintingsByCatalogId(catalogCardId, game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('lookup_card_printings_by_catalog_id', { p_token:token(),p_game:game,p_catalog_card_id:catalogCardId }));
   },
+  // Fast Scan Step B: indice locale compatto (nessuna immagine) di TUTTE le
+  // printing di un gioco, paginato per id, per risolvere un set code già
+  // catalogato senza RPC ad ogni scatto — vedi js/fast-scan-catalog-cache.js.
+  async listCatalogPrintingsIndex(game = 'yugioh', afterId = null, limit = 1000) {
+    ensure(); return unwrap(await client.rpc('list_catalog_printings_index', { p_token:token(),p_game:game,p_after_id:afterId,p_limit:limit }));
+  },
   async saveCollectionBatch(items) {
     ensure(); return unwrap(await client.rpc('save_collection_batch', { p_token:token(),p_items:items }));
   },

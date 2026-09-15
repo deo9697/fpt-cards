@@ -4,17 +4,37 @@ import { normalizeSetCode, extractSetCodeCandidates, setCodeCandidates, classify
 import { isFirstEdition } from './collection.js';
 import { FastScanCamera, preprocessCodeImage } from './fast-scan-camera.js';
 import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-storage.js';
+import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
 import { resolveStoredCard } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
+const TELEMETRY_WINDOW=100;
+function now(){return typeof performance!=='undefined'?performance.now():Date.now();}
+function mean(values){return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:0;}
+function percentile(values,ratio){if(!values.length)return 0;const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.floor(sorted.length*ratio))];}
+function esitoFromOutcome(outcome){if(!outcome)return 'NOT_FOUND';if(outcome.decision==='EXACT_UNIQUE')return 'EXACT';if(outcome.decision==='NEAR_UNIQUE')return 'NEAR';if(outcome.status==='not_found')return 'NOT_FOUND';return 'REVIEW';}
+// Finestra scorrevole di telemetria locale (solo ?debugScan=1, mai inviata a
+// Supabase): serve a misurare dove va davvero il tempo prima di ottimizzare
+// alla cieca — vedi la roadmap Fast Scan performance del 2026-09-15.
+class ScanTelemetry{
+  constructor(){this.samples=[];}
+  record(sample){this.samples.push(sample);if(this.samples.length>TELEMETRY_WINDOW)this.samples.shift();}
+  summary(){
+    const n=this.samples.length;if(!n)return null;
+    const totals=this.samples.map(sample=>sample.cycleTotalMs);
+    const fallbackCount=this.samples.filter(sample=>sample.fallbackUsed).length;
+    const externalCount=this.samples.filter(sample=>sample.externalLookupMs>0).length;
+    return {count:n,meanMs:mean(totals),p50Ms:percentile(totals,.5),p95Ms:percentile(totals,.95),fallbackRate:fallbackCount/n,externalRate:externalCount/n};
+  }
+}
 
 export class FastScanController {
   constructor({api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute,camera,paddleOcr}={}) {
     Object.assign(this,{api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute});
     this.camera=camera||new FastScanCamera();this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
-    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';
+    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';this.telemetry=new ScanTelemetry();this.cycleTelemetry=null;this.lastCycleDecision=null;this.catalogIndex=new Map();this.pendingCodes=new Set();
     this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.backgroundStopTimer=0; this.backgroundCameraStopped=false; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
     if(this.debugMode)this.camera.onDiagnostic=(event,payload)=>this.debugTrace(`camera:${event}`,payload);
     this.visibilityHandler=()=>void this.handleVisibilityChange(); document.addEventListener('visibilitychange',this.visibilityHandler);
@@ -28,7 +48,7 @@ export class FastScanController {
   async restore(){const snapshot=await loadScanSession();if(snapshot&&(snapshot.scanned||snapshot.total||snapshot.review?.length)){this.buffer=new ScanSessionBuffer(snapshot);this.sync=snapshot.sync||null;this.hasRecovery=true;if(this.sync?.status==='syncing')this.sync={...this.sync,status:'pending'};this.onRender?.();}}
   view(){return this.phase==='review'?this.reviewView():this.phase==='scanning'?this.scannerView():this.setupView();}
   setupView(){const s=this.buffer.settings||defaultScanSettings();return `<section class="page-stack fast-scan-page fast-scan-setup"><header class="page-header split"><div><span class="eyebrow">Scanner</span><h1>Fast Scan</h1><p>Prepara la sessione, poi la fotocamera diventerà il centro dell’esperienza.</p></div><button class="btn secondary" data-scan-setup-back>Torna alla Raccolta</button></header>${this.hasRecovery?`<div class="resume-scan surface"><div>${icon('collection')}<span><strong>Hai una sessione Fast Scan non salvata</strong><small>${this.buffer.scanned} scansioni · ${this.buffer.entries.size} printing · ${this.buffer.review.length} da verificare</small></span></div><div class="actions"><button class="btn" data-scan-resume-session>Riprendi scansione</button><button class="btn secondary" data-scan-recovery-review>Vai alla review</button><button class="btn secondary danger" data-scan-discard>Scarta</button></div></div>`:''}<form id="fast-scan-settings" class="surface scan-settings"><div><span class="eyebrow">Impostazioni sessione</span><h2>Prepara lo scanner</h2></div><div class="scan-settings-grid"><label>Gioco<select id="scan-game"><option value="yugioh">Yu-Gi-Oh!</option></select></label><label>Lingua predefinita<select id="scan-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value=>`<option ${value===s.language?'selected':''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="scan-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value=>`<option ${value===s.condition?'selected':''}>${value}</option>`).join('')}</select></label><label>Edizione<input id="scan-edition" maxlength="100" value="${esc(s.edition||'')}" placeholder="Non specificata"></label></div><div class="scan-toggles">${toggle('scan-auto','Auto-add high confidence',s.autoAdd)}${toggle('scan-vibration','Vibrazione',s.vibration)}${toggle('scan-sound','Suono',s.sound)}</div><div class="scan-start-actions"><button class="btn" type="submit">${icon('search')} Avvia scansione</button><button class="btn secondary" type="button" data-scan-manual-start>Inserimento manuale</button></div></form></section>`;}
-  scannerView(){return `<section class="fast-scan-live ${this.cameraError?'manual-camera':''}"><video id="fast-scan-video" autoplay muted playsinline></video><div class="live-scan-shade"></div><header class="live-scan-header"><button class="live-icon-button" data-scan-back aria-label="Indietro">${icon('arrow')}</button><div><small>Scanner</small><strong>Fast Scan</strong></div><span class="live-header-spacer" aria-hidden="true"></span></header>${this.cameraError?`<div class="live-camera-error"><span>${icon('bell')}</span><strong>${esc(this.cameraError)}</strong><small>Puoi continuare tramite inserimento manuale.</small></div>`:''}<div class="live-roi-label">Allinea il codice</div><div class="live-roi" aria-label="Area di lettura codice"><i></i><span></span></div>${this.debugMode?'<aside class="live-crop-debug" aria-live="polite"><strong>Crop OCR esatto</strong><canvas data-scan-debug-crop></canvas><small data-scan-debug-geometry>In attesa dello scatto</small></aside>':''}<div class="live-ocr-state"><strong data-scan-status>${esc(this.status)}</strong></div><div class="live-detection" data-scan-detection aria-live="assertive"></div><footer class="live-scan-bottom"><div class="live-scan-content"><div class="live-last" data-scan-last>${this.last?`✓ <b>${esc(this.last.setCode)}</b> · +1`:'Nessun codice rilevato'}</div><div class="live-session-stats"><span><b data-scan-total-number>${this.buffer.scanned}</b> scan</span><i>·</i><span><b data-scan-distinct>${this.buffer.entries.size}</b> printing</span><i>·</i><span><b data-scan-review>${this.buffer.review.length}</b> review</span></div><button type="button" class="live-capture" data-scan-capture ${this.snapshotInFlight?'disabled':''}>${icon('camera')}<span>${this.snapshotInFlight?'Elaborazione…':'Scatta e analizza'}</span></button><div class="live-controls"><button data-scan-manual-open>${icon('card')}<span>Manuale</span></button><button data-scan-torch ${this.camera.torchSupported?'':'disabled'}>${icon('flash')}<span>Flash</span></button><button data-scan-switch-camera ${this.devices.length>1?'':'disabled'}>${icon('camera')}<span>Camera</span></button></div></div></footer>${this.exitSheetView()}${this.manualSheetView()}</section>`;}
+  scannerView(){return `<section class="fast-scan-live ${this.cameraError?'manual-camera':''}"><video id="fast-scan-video" autoplay muted playsinline></video><div class="live-scan-shade"></div><header class="live-scan-header"><button class="live-icon-button" data-scan-back aria-label="Indietro">${icon('arrow')}</button><div><small>Scanner</small><strong>Fast Scan</strong></div><span class="live-header-spacer" aria-hidden="true"></span></header>${this.cameraError?`<div class="live-camera-error"><span>${icon('bell')}</span><strong>${esc(this.cameraError)}</strong><small>Puoi continuare tramite inserimento manuale.</small></div>`:''}<div class="live-roi-label">Allinea il codice</div><div class="live-roi" aria-label="Area di lettura codice"><i></i><span></span></div>${this.debugMode?'<aside class="live-crop-debug" aria-live="polite"><strong>Crop OCR esatto</strong><canvas data-scan-debug-crop></canvas><small data-scan-debug-geometry>In attesa dello scatto</small><small data-scan-debug-stats>In attesa di scan misurati</small></aside>':''}<div class="live-ocr-state"><strong data-scan-status>${esc(this.status)}</strong></div><div class="live-detection" data-scan-detection aria-live="assertive"></div><footer class="live-scan-bottom"><div class="live-scan-content"><div class="live-last" data-scan-last>${this.last?`✓ <b>${esc(this.last.setCode)}</b> · +1`:'Nessun codice rilevato'}</div><div class="live-session-stats"><span><b data-scan-total-number>${this.buffer.scanned}</b> scan</span><i>·</i><span><b data-scan-distinct>${this.buffer.entries.size}</b> printing</span><i>·</i><span><b data-scan-review>${this.buffer.review.length}</b> review</span></div><button type="button" class="live-capture" data-scan-capture ${this.snapshotInFlight?'disabled':''}>${icon('camera')}<span>${this.snapshotInFlight?'Elaborazione…':'Scatta e analizza'}</span></button><div class="live-controls"><button data-scan-manual-open>${icon('card')}<span>Manuale</span></button><button data-scan-torch ${this.camera.torchSupported?'':'disabled'}>${icon('flash')}<span>Flash</span></button><button data-scan-switch-camera ${this.devices.length>1?'':'disabled'}>${icon('camera')}<span>Camera</span></button></div></div></footer>${this.exitSheetView()}${this.manualSheetView()}</section>`;}
   exitSheetView(){return `<div class="scan-sheet-backdrop hidden" data-scan-exit-sheet><section class="scan-bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="scan-exit-title"><span class="sheet-handle"></span><small>Sessione Fast Scan</small><h2 id="scan-exit-title">Hai finito?</h2><p>Vediamo cos’hai raccolto allora?</p><div class="sheet-session-summary"><b>${this.buffer.scanned} carte scansionate</b><span>${this.buffer.entries.size} printing · ${this.buffer.review.length} da verificare</span></div><button class="btn" data-scan-confirm-review>Sì, mostrami</button><button class="btn secondary" data-scan-cancel-exit>No, continua a scansionare</button><button class="sheet-danger" data-scan-discard-exit>Scarta sessione</button></section></div>`;}
   manualSheetView(){return `<div class="scan-sheet-backdrop hidden" data-scan-manual-sheet><section class="scan-bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="scan-manual-title"><span class="sheet-handle"></span><small>Fallback</small><h2 id="scan-manual-title">Inserisci codice manualmente</h2><form id="scan-manual-form"><input id="scan-manual-code" autocomplete="off" autocapitalize="characters" placeholder="Es. TDGS-IT001" required><button class="btn">Aggiungi</button></form><button class="btn secondary" data-scan-manual-close>Chiudi</button></section></div>`;}
   reviewView(){const entries=[...this.buffer.entries.values()],progress=syncProgress(this.sync),failed=this.sync?.status==='error';return `<section class="page-stack fast-scan-page scan-review"><header class="page-header split"><div><span class="eyebrow">Review sessione</span><h1>${this.buffer.scanned} carte rilevate</h1><p>${entries.length} printing · ${this.buffer.review.length} da verificare</p></div><button class="btn secondary" data-scan-continue>Continua scansione</button></header>${failed?`<section class="surface scan-sync-warning" role="alert"><strong>Sincronizzazione interrotta. I tuoi scan sono salvati sul dispositivo.</strong><small>${progress.synced}/${progress.total} blocchi completati · al retry saranno inviati soltanto quelli mancanti.</small><div class="actions"><button class="btn" data-scan-save>Riprova sincronizzazione</button><button class="btn secondary" data-scan-sync-later>Continua più tardi</button><button class="btn secondary" data-scan-export>Esporta riepilogo</button></div></section>`:''}${this.buffer.review.length?`<section class="surface"><h2>Da verificare</h2><div class="scan-review-list">${this.buffer.review.map(item=>reviewRow(item)).join('')}</div></section>`:''}<section class="surface"><div class="dashboard-title"><div><span class="eyebrow">Pronte al salvataggio</span><h2>Printing riconosciute</h2></div></div><div class="scan-review-list">${entries.length?entries.map(entry=>entryRow(entry)).join(''):'<div class="empty">Nessuna printing confermata.</div>'}</div></section><div class="scan-save-bar"><span><b>${this.buffer.total}</b> carte saranno aggiunte alla tua raccolta${this.saving&&progress.total?` · ${progress.percent}%`:''}</span><button class="btn" data-scan-save ${!entries.length||this.saving||!this.isOnline()?'disabled':''}>${this.saving?'Sincronizzazione…':failed?'Riprova sincronizzazione':'Salva raccolta'}</button></div></section>`;}
@@ -36,7 +56,7 @@ export class FastScanController {
   readSettings(){const pick=id=>document.querySelector(id);this.buffer.settings={game:'yugioh',language:pick('#scan-language')?.value||'Italiano',condition:pick('#scan-condition')?.value||'Near Mint',edition:pick('#scan-edition')?.value.trim()||'',autoAdd:Boolean(pick('#scan-auto')?.checked),vibration:Boolean(pick('#scan-vibration')?.checked),sound:Boolean(pick('#scan-sound')?.checked)};this.persist();}
   startManual(){this.stopLoop();this.phase='scanning';this.cameraError='Modalità manuale';this.status='Inserisci un codice';this.onRoute?.('scan');this.onRender();}
   async start(){
-    const requestId=++this.startRequestId;this.stopLoop();if(this.phase==='setup'&&!this.hasScans)this.camera.resetSnapshotStrategy?.();this.consensus.reset();this.failureStreak=0;this.forceSnapshot=false;this.snapshotInFlight=false;this.scanState='LIVE';this.buildLocalCatalog();this.exitOpen=false;this.manualOpen=false;this.hiddenSuspended=false;this.phase='scanning';this.cameraError='';this.status='Avvio fotocamera…';this.onRoute?.('scan');this.onRender();const video=document.querySelector('#fast-scan-video');this.debugTrace('camera:start-controller',{requestId});
+    const requestId=++this.startRequestId;this.stopLoop();if(this.phase==='setup'&&!this.hasScans)this.camera.resetSnapshotStrategy?.();this.consensus.reset();this.failureStreak=0;this.forceSnapshot=false;this.snapshotInFlight=false;this.scanState='LIVE';this.buildLocalCatalog();this.loadCatalogIndex();this.exitOpen=false;this.manualOpen=false;this.hiddenSuspended=false;this.phase='scanning';this.cameraError='';this.status='Avvio fotocamera…';this.onRoute?.('scan');this.onRender();const video=document.querySelector('#fast-scan-video');this.debugTrace('camera:start-controller',{requestId});
     try{this.devices=await this.camera.start(video,this.camera.deviceId);if(requestId!==this.startRequestId||this.phase!=='scanning')return;this.refreshControls();this.setStatus('Preparazione OCR…');await this.prepareProductionOcr();if(requestId!==this.startRequestId||this.phase!=='scanning')return;if(this.paddleState==='unavailable'){this.setStatus('OCR non disponibile · usa Manuale');return;}this.setStatus('Pronto allo scatto');this.schedule(250);}catch(error){if(requestId!==this.startRequestId)return;this.camera.stop('start-failed');if(this.phase!=='scanning')return;this.scanState='CAMERA_ERROR';this.cameraError=error.message||'Fotocamera non disponibile';this.status='Riavvia fotocamera';this.debugTrace('camera:start-failed',{requestId,error:this.cameraError});this.onRender();setTimeout(()=>this.showRestartControl(),0);}
   }
   async prepareProductionOcr(){
@@ -94,7 +114,22 @@ export class FastScanController {
     this.localCatalog.clear();this.missCache.clear();const collection=this.getCollection?.()||{mine:[],team:[]},buffered=[...(this.buffer.entries?.values?.()||[])];
     for(const raw of [...(collection.mine||[]),...(collection.team||[]),...buffered]){const item=mapPrinting(raw),code=String(item.setCode||'').toUpperCase();if(!code)continue;this.localCatalog.set(code,dedupe([...(this.localCatalog.get(code)||[]),item]));}
   }
-  lookupMemory(code){const key=String(code||'').toUpperCase();if(this.resolutionCache.has(key))return {matches:this.resolutionCache.get(key),source:'session-cache'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
+  // Fast Scan Step B: indice locale dell'intero catalogo (non solo ciò che
+  // possediamo), caricato dalla cache IndexedDB e poi aggiornato in
+  // background pagina per pagina — non blocca l'avvio dello scanner. A
+  // differenza di collection-cache è genuinamente completo (tutto il
+  // catalogo del gioco, non solo le stampe possedute), quindi un hit unico
+  // può essere trattato come session-cache in resolveFast()/lookupDetailed().
+  loadCatalogIndex(){
+    if(!this.api?.listCatalogPrintingsIndex)return;
+    const game=this.buffer.settings.game||'yugioh',requestId=this.startRequestId;
+    void syncCatalogIndex(this.api,game,{onRows:rows=>{if(this.startRequestId===requestId)this.mergeCatalogIndexRows(rows);}}).catch(()=>{});
+  }
+  mergeCatalogIndexRows(rows){
+    for(const row of rows||[]){const item=mapPrinting(row),code=String(item.setCode||'').toUpperCase();if(!code)continue;this.catalogIndex.set(code,dedupe([...(this.catalogIndex.get(code)||[]),item]));}
+  }
+  recentlyMissed(code){const at=this.missCache.get(code);return Boolean(at)&&Date.now()-at<MISS_CACHE_TTL;}
+  lookupMemory(code){const key=String(code||'').toUpperCase();if(this.resolutionCache.has(key))return {matches:this.resolutionCache.get(key),source:'session-cache'};const indexed=this.catalogIndex.get(key)||[];if(indexed.length)return {matches:indexed,source:'catalog-index'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
   cacheResolution(code,matches){const clean=dedupe(matches||[]);if(clean.length)this.resolutionCache.set(String(code).toUpperCase(),clean);return clean;}
   async lookupDetailed(code,{allowRpc=true,allowExternal=true}={}){
     const key=String(code||'').toUpperCase(),memory=this.lookupMemory(key);
@@ -103,14 +138,15 @@ export class FastScanController {
     // vedi il commento gemello in resolveFast(). Il collection-cache
     // (cosa possediamo già) resta comunque disponibile come fallback più
     // sotto se si è offline o se RPC/esterno non trovano nulla.
-    if(memory.source==='session-cache')return memory;
+    if(memory.source==='session-cache'||memory.source==='catalog-index')return memory;
     // A full (RPC+external) miss is remembered briefly so re-scanning the same
     // still-uncatalogued code doesn't redo the whole slow lookup cascade.
     const fullAttempt=allowRpc&&allowExternal,missedAt=fullAttempt?this.missCache.get(key):0;
     if(missedAt&&Date.now()-missedAt<MISS_CACHE_TTL)return memory.matches.length?memory:{matches:[],source:'recent-miss'};
     if(this.isOnline?.()===false)return memory.matches.length?memory:{matches:[],source:'offline'};
-    if(allowRpc&&this.api?.lookupPrintings){try{const rows=await this.api.lookupPrintings(key,this.buffer.settings.game);const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch{}}
-    if(allowExternal&&this.externalLookup){try{const matches=this.cacheResolution(key,await this.externalLookup(key,this.buffer.settings.game));if(matches.length)return {matches,source:'external'};}catch{}}
+    const telemetry=this.cycleTelemetry;
+    if(allowRpc&&this.api?.lookupPrintings){const started=telemetry&&now();try{const rows=await this.api.lookupPrintings(key,this.buffer.settings.game);if(telemetry)telemetry.externalLookupMs+=now()-started;const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch{if(telemetry)telemetry.externalLookupMs+=now()-started;}}
+    if(allowExternal&&this.externalLookup){const started=telemetry&&now();try{const matches=this.cacheResolution(key,await this.externalLookup(key,this.buffer.settings.game));if(telemetry)telemetry.externalLookupMs+=now()-started;if(matches.length)return {matches,source:'external'};}catch{if(telemetry)telemetry.externalLookupMs+=now()-started;}}
     if(fullAttempt)this.missCache.set(key,Date.now());
     return memory.matches.length?memory:{matches:[],source:'not-found'};
   }
@@ -167,34 +203,79 @@ export class FastScanController {
     const forced=this.forceSnapshot;
     const initialIssue=this.camera.healthIssue?.();if(initialIssue){await this.recoverCamera(initialIssue);return;}
     if(this.camera.refocusing){this.setStatus('Messa a fuoco…');this.schedule(90);return;}
-    const roi=document.querySelector('.live-roi'),frame=this.camera.sample(roi);
+    const sampleStart=now();const roi=document.querySelector('.live-roi'),frame=this.camera.sample(roi);const sampleMs=now()-sampleStart;
     const sampledIssue=this.camera.healthIssue?.();if(sampledIssue){await this.recoverCamera(sampledIssue);return;}if(!frame){this.setStatus('Attendo la fotocamera…');this.schedule(250);return;}
     if(!forced){this.scanState='LIVE';this.schedule(250);return;}
     this.forceSnapshot=false;
     this.scanState='STABLE';
+    this.lastCycleDecision=null;
+    // Telemetria locale (mai inviata a Supabase): attiva solo con ?debugScan=1,
+    // costo nullo altrimenti perché ogni punto di misura è un `if(telemetry)`
+    // su un riferimento null. Vedi ScanTelemetry più sopra per la finestra
+    // statistica di sessione mostrata nel pannello debug.
+    const telemetry=this.debugMode?{cycleStart:now(),sampleMs,snapshotMs:0,primaryPreprocessMs:0,primaryOcrMs:0,primaryResolveMs:0,fallbackPreprocessMs:0,fallbackOcrMs:0,fallbackResolveMs:0,externalLookupMs:0,commitMs:0,fallbackUsed:false,esito:'NOT_FOUND'}:null;
+    this.cycleTelemetry=telemetry;
     this.snapshotInFlight=true;this.updateCaptureUi(true);let snapshot=null;try{
-      this.setStatus('Scatto foto…');this.scanState='CAPTURING';snapshot=await this.camera.captureSnapshot(roi,{preferVideoFrame:true,includeRaw:true});
+      this.setStatus('Scatto foto…');this.scanState='CAPTURING';const snapshotStart=now();
+      snapshot=await this.camera.captureSnapshot(roi,{preferVideoFrame:true,includeRaw:true});
       // The guide is drawn over the video preview, so its exact pixels are the
       // authoritative crop. ImageCapture is only a fallback when no preview
       // frame is available because some mobile cameras return shifted frames.
       if(!snapshot)snapshot=await this.camera.captureSnapshot(roi,{preferVideoFrame:false,includeRaw:true});
+      if(telemetry)telemetry.snapshotMs=now()-snapshotStart;
       if(!snapshot||this.phase!=='scanning'||this.exitOpen||this.manualOpen){if(!snapshot)await this.recordFailure();return;}
       this.lastPreprocessing=snapshot.preprocessing;void this.snapshotFeedback();if(this.phase!=='scanning'||this.exitOpen||this.manualOpen)return;
       const possiblyBlurred=(snapshot.preprocessing?.sharpness||0)<3;
-      this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;const plan=createOcrInputPlan(snapshot),productionReadings=[];try{
+      this.scanState='ANALYZING';this.setStatus('Analizzo codice…');this.ocrStatusShown=false;
+      const planStart=now();const plan=createOcrInputPlan(snapshot);if(telemetry)telemetry.primaryPreprocessMs=now()-planStart;
+      const productionReadings=[];try{
         this.renderDebugCrop(plan.primary.canvas,snapshot.mapping,'grayscale');
-        const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing},primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted;productionReadings.push(primary);let outcome=null;
-        if(primaryCode.valid&&!repeatedLast){this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();const resolved=await this.resolve(primary.text,primary.confidence,{consensus:1,exactOnly:true});if(resolved.status==='high_confidence'){this.gate.accept(resolved.code,frame.signature,Date.now());this.consensus.reset();this.failureStreak=0;this.lastPreprocessing=primary.preprocessing;await this.commitResolution(resolved,primary.text);this.camera.clearPreprocessingPreference?.();outcome=resolved;this.debugTrace('ocr:short-circuit',{rawOcr:primary.text,parsedCode:primaryCode.code,decision:resolved.decision,printingId:resolved.matches?.[0]?.printingId||''});}}
-        if(!outcome){this.setStatus('Verifico lettura OCR…');this.renderDebugCrop(plan.fallback.canvas,snapshot.mapping,'adaptive');const fallback={...await this.recognizeProduction(plan.fallback.canvas),preprocessing:plan.fallback.preprocessing};productionReadings.push(fallback);let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;if(result?.text)outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});else await this.recordFailure();}
+        const primaryOcrStart=now();const primary={...await this.recognizeProduction(plan.primary.canvas),preprocessing:plan.primary.preprocessing};if(telemetry)telemetry.primaryOcrMs=now()-primaryOcrStart;
+        const primaryCode=normalizeSetCode(primary.text),lastAccepted=this.gate.last?.code||'',repeatedLast=primaryCode.valid&&primaryCode.code===lastAccepted;productionReadings.push(primary);let outcome=null;
+        if(primaryCode.valid&&!repeatedLast){
+          this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();
+          const resolveStart=now();const resolved=await this.resolve(primary.text,primary.confidence,{consensus:1,exactOnly:true});if(telemetry)telemetry.primaryResolveMs=now()-resolveStart;
+          if(resolved.status==='high_confidence'){this.gate.accept(resolved.code,frame.signature,Date.now());this.consensus.reset();this.failureStreak=0;this.lastPreprocessing=primary.preprocessing;const commitStart=now();await this.commitResolution(resolved,primary.text);if(telemetry)telemetry.commitMs=now()-commitStart;this.camera.clearPreprocessingPreference?.();outcome=resolved;this.lastCycleDecision=resolved.decision||null;this.debugTrace('ocr:short-circuit',{rawOcr:primary.text,parsedCode:primaryCode.code,decision:resolved.decision,printingId:resolved.matches?.[0]?.printingId||''});}
+        }
+        if(!outcome){
+          if(telemetry)telemetry.fallbackUsed=true;
+          this.setStatus('Verifico lettura OCR…');
+          const fallbackPlanStart=now();const fallbackPlan=plan.buildFallback();if(telemetry)telemetry.fallbackPreprocessMs=now()-fallbackPlanStart;
+          this.renderDebugCrop(fallbackPlan.canvas,snapshot.mapping,'adaptive');
+          const fallbackOcrStart=now();const fallback={...await this.recognizeProduction(fallbackPlan.canvas),preprocessing:fallbackPlan.preprocessing};if(telemetry)telemetry.fallbackOcrMs=now()-fallbackOcrStart;
+          productionReadings.push(fallback);
+          let result=selectSnapshotOcrResult(productionReadings,{avoidCode:repeatedLast?lastAccepted:''});const selectedCode=normalizeSetCode(result?.text).code;if(repeatedLast&&selectedCode&&selectedCode!==lastAccepted)result={...result,confidence:Math.min(87,Number(result.confidence)||0)};
+          this.lastPreprocessing=result?.preprocessing||snapshot.preprocessing;
+          if(result?.text){outcome=await this.processRecognition(result.text,result.confidence,frame.signature,this.lastPreprocessing,{catalogConfirm:forced});this.lastCycleDecision=outcome?.decision||null;}
+          else await this.recordFailure();
+        }
         if(forced&&(!outcome||outcome.status==='not_found')){const read=ocrReadingSummary(productionReadings);this.setStatus(read?`OCR ha letto: ${read}${possiblyBlurred?' · foto poco nitida':''}`:`OCR non ha rilevato testo${possiblyBlurred?' · foto poco nitida':''}`);}
+        if(telemetry)telemetry.esito=esitoFromOutcome(outcome);
       }finally{plan.release();}
     }catch(error){const issue=this.camera.healthIssue?.();if(issue)await this.recoverCamera(issue);else if(error?.message!=='refocus-in-progress')this.setStatus(error.message||'OCR non disponibile');}
-    finally{snapshot?.release?.();snapshot=null;this.snapshotInFlight=false;this.updateCaptureUi(false);if(this.phase==='scanning'&&!this.exitOpen&&!this.manualOpen){this.scanState='LIVE';this.schedule(250);}}
+    finally{
+      snapshot?.release?.();snapshot=null;this.snapshotInFlight=false;this.updateCaptureUi(false);
+      if(this.phase==='scanning'&&!this.exitOpen&&!this.manualOpen){
+        this.scanState='LIVE';
+        // Un EXACT_UNIQUE netto non ha bisogno dei 250ms decorativi: la
+        // fotocamera può tornare pronta per la carta successiva quasi subito.
+        // Su esito incerto/review teniamo il margine pieno.
+        const nextDelay=this.lastCycleDecision==='EXACT_UNIQUE'?90:250;
+        if(telemetry){telemetry.cycleTotalMs=now()-telemetry.cycleStart;telemetry.readyNextMs=telemetry.cycleTotalMs+nextDelay;delete telemetry.cycleStart;this.telemetry.record(telemetry);this.debugTrace('telemetry:cycle',telemetry);this.renderDebugStats();}
+        this.schedule(nextDelay);
+      }
+      this.cycleTelemetry=null;
+    }
   }
   requestSnapshot(){if(this.exitOpen||this.manualOpen){this.setStatus('Chiudi la finestra aperta prima dello scatto');return;}if(this.phase!=='scanning'||!this.camera.stream){this.setStatus('Fotocamera non pronta · riavvia lo scanner');return;}if(this.snapshotInFlight){this.setStatus('Elaborazione snapshot in corso…');return;}this.forceSnapshot=true;this.stopLoop();this.setStatus(this.scanCycleInFlight?'Attendo analisi corrente…':'Scatto manuale…');if(!this.scanCycleInFlight)this.schedule(0);}
   updateCaptureUi(busy){const button=document.querySelector('[data-scan-capture]');if(!button)return;button.disabled=busy;const label=button.querySelector('span');if(label)label.textContent=busy?'Elaborazione…':'Scatta e analizza';}
   renderDebugCrop(source,mapping={},mode='grayscale'){
     if(!this.debugMode||!source?.width||!source?.height)return;const canvas=document.querySelector('[data-scan-debug-crop]'),label=document.querySelector('[data-scan-debug-geometry]');if(!canvas)return;canvas.width=source.width;canvas.height=source.height;const context=canvas.getContext('2d');context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(source,0,0);const crop=mapping.snapshotCrop||mapping.crop||{};if(label)label.textContent=`${mode} · ${source.width}×${source.height} · source ${crop.sx||0},${crop.sy||0} ${crop.sw||0}×${crop.sh||0}`;
+  }
+  renderDebugStats(){
+    if(!this.debugMode)return;const node=document.querySelector('[data-scan-debug-stats]');if(!node)return;
+    const summary=this.telemetry.summary();
+    node.textContent=summary?`${summary.count} scan · media ${summary.meanMs.toFixed(0)}ms · p50 ${summary.p50Ms.toFixed(0)}ms · p95 ${summary.p95Ms.toFixed(0)}ms · fallback ${Math.round(summary.fallbackRate*100)}% · rete ${Math.round(summary.externalRate*100)}%`:'In attesa di scan misurati';
   }
   async recordFailure(catalogMiss=false){
     this.consensus.miss();this.gate.miss();this.failureStreak+=1;
@@ -203,20 +284,58 @@ export class FastScanController {
   }
   async refocus(){const focused=await this.camera.refocus();this.setStatus(focused?'Messa a fuoco…':'Avvicina la carta');if(focused)setTimeout(()=>{if(this.phase==='scanning')this.setStatus('Pronto allo scatto');},650);}
   async processRecognition(raw,ocrConfidence=0,signature=[],preprocessing={},options={}){
+    const telemetry=this.cycleTelemetry;
     this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();
     const evidence=this.consensus.observe(raw,ocrConfidence);
     this.debugTrace('ocr',{raw,ocrConfidence,candidate:evidence.code||'',votes:evidence.votes||0});
     if(!evidence.valid){const near=normalizeSetCode(raw).code;this.debugTrace('resolution:rejected',{rawOcr:raw,normalizedOcr:near,parsedCode:'',candidateCodes:[],catalogMatches:[],accepted:false,rejectionReason:'INVALID_FORMAT'});if(near.includes('-')&&near.length>=5&&near.length<=24)this.camera.preferPreprocessing?.(preprocessing.mode);await this.recordFailure();return {status:'not_found'};}
     if(!evidence.ready&&!evidence.strong){
-      if(options.catalogConfirm){const confirmed=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(confirmed.status!=='not_found'){this.gate.accept(confirmed.code,signature,Date.now());this.consensus.reset();this.failureStreak=0;await this.commitResolution(confirmed,raw);this.camera.clearPreprocessingPreference?.();return confirmed;}this.consensus.reset();await this.commitResolution(confirmed,raw,true);return confirmed;}
-      const fast=await this.resolveFast(evidence.code,evidence.confidence,{consensus:evidence.votes});
-      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:fast.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}this.consensus.reset();this.failureStreak=0;await this.commitResolution(fast,raw);this.camera.clearPreprocessingPreference?.();return fast;}
+      if(options.catalogConfirm){
+        let started=now();const confirmed=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
+        if(confirmed.status!=='not_found'){this.gate.accept(confirmed.code,signature,Date.now());this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(confirmed,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return confirmed;}
+        this.consensus.reset();started=now();await this.commitResolution(confirmed,raw,true);if(telemetry)telemetry.commitMs+=now()-started;return confirmed;
+      }
+      let started=now();const fast=await this.resolveFast(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
+      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:fast.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(fast,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return fast;}
       this.camera.preferPreprocessing?.(preprocessing.mode);this.setStatus(`Conferma lettura ${evidence.votes}/2`);return {status:'pending_consensus',code:evidence.code};
     }
-    const result=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});
+    // Fast Scan Step B (P1.5): un codice valido ma assente da ogni fonte
+    // locale (session-cache/catalog-index/collection-cache) richiederebbe qui
+    // un RPC/resolver esterno bloccante — solo se un lookup di rete è
+    // davvero configurato (altrimenti resolve() è già locale e istantaneo,
+    // vedi i test con un controller senza api/externalLookup). Per il loop
+    // live (non per lo scatto manuale, che l'operatore sta guardando)
+    // mettiamo la carta "in verifica" e continuiamo a scansionare — la
+    // risoluzione prosegue in background e aggiorna la review quando finisce.
+    // recentlyMissed() evita di accodare di nuovo la stessa carta se resta
+    // inquadrata dopo un miss già noto.
+    if(this.pendingCodes.has(evidence.code)){this.consensus.reset();return {status:'pending_async',code:evidence.code};}
+    const hasNetworkLookup=Boolean(this.api?.lookupPrintings||this.externalLookup);
+    if(hasNetworkLookup&&!options.catalogConfirm&&!this.recentlyMissed(evidence.code)&&!this.lookupMemory(evidence.code).matches.length){
+      const pendingId=crypto.randomUUID(),pendingCode=evidence.code;
+      this.pendingCodes.add(pendingCode);
+      this.buffer.queueReview({id:pendingId,raw,code:pendingCode,status:'pending',matches:[],ocrConfidence:evidence.confidence,warning:'Verifica in corso…',pending:true});
+      this.consensus.reset();this.persist();this.refreshHud();
+      // Non-void: nessun chiamante deve aspettarla (è tutto il punto del
+      // deferral), ma tenerne un riferimento permette ai test di attenderla
+      // deterministicamente invece di indovinare quanti tick servono.
+      this.pendingResolution=this.resolvePendingInBackground(raw,evidence.confidence,evidence.votes,pendingId,pendingCode);
+      return {status:'pending_async',code:pendingCode};
+    }
+    let started=now();const result=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
     if(result.status==='not_found'){this.consensus.reset();await this.recordFailure(true);return result;}
     if(options.catalogConfirm)this.gate.accept(result.code,signature,Date.now());else if(!this.gate.consider(result.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:result.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}
-    this.consensus.reset();this.failureStreak=0;await this.commitResolution(result,raw);this.camera.clearPreprocessingPreference?.();return result;
+    this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(result,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return result;
+  }
+  async resolvePendingInBackground(raw,ocrConfidence,consensusVotes,pendingId,pendingCode){
+    try{
+      const result=await this.resolve(raw,ocrConfidence,{consensus:consensusVotes});
+      await this.commitResolution(result,raw,false,pendingId);
+    }catch{
+      this.buffer.updateReview(pendingId,{status:'not_found',warning:'Verifica fallita · correggi manualmente',pending:false});
+      this.persist();if(this.phase==='review')this.onRender?.();else this.refreshHud();
+    }
+    finally{this.pendingCodes.delete(pendingCode);}
   }
   async processManual(raw){const normalized=normalizeSetCode(raw);if(!normalized.valid){this.onToast?.('Formato printing code non valido');return;}const result=await this.resolve(raw,100,{manual:true,consensus:2});await this.commitResolution(result,raw,true);}
   async resolveFast(raw,ocrConfidence,{consensus=0,manual=false}={}){
@@ -226,11 +345,13 @@ export class FastScanController {
     // Ultra Rare con lo stesso codice) e ne possediamo solo una, qui sembra
     // un match unico ma non lo è davvero — trattarlo come high_confidence
     // committerebbe subito la rarità sbagliata quando si scansiona l'altra.
-    // Solo il session-cache (un RPC già fatto in questa sessione, quindi
-    // genuinamente completo) può essere trattato come definitivo qui; il
-    // collection-cache passa invece dal percorso verificato via RPC in
-    // resolve()/lookupDetailed(), che lo tiene comunque come fallback se offline.
-    if(hit.matches.length&&hit.source==='session-cache'){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
+    // session-cache (un RPC già fatto in questa sessione) e catalog-index
+    // (l'indice locale Step B, sincronizzato dall'intero card_printings del
+    // gioco) sono invece genuinamente completi e possono essere trattati come
+    // definitivi qui; il collection-cache passa dal percorso verificato via
+    // RPC in resolve()/lookupDetailed(), che lo tiene comunque come fallback
+    // se offline o se la sync dell'indice non è ancora arrivata a quel codice.
+    if(hit.matches.length&&(hit.source==='session-cache'||hit.source==='catalog-index')){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
     const corrected=candidates.slice(1).map(candidate=>({candidate,...this.lookupMemory(candidate.code)})).filter(item=>item.matches.length);
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
@@ -247,14 +368,31 @@ export class FastScanController {
     const matches=dedupe(corrected.flatMap(item=>item.matches)),classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount}),code=classified.code||(corrected.length===1?corrected[0].candidate.code:exact.code);
     return {...classified,code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
-  async commitResolution(result,raw,manual=false){
+  async commitResolution(result,raw,manual=false,pendingId=null){
     const normalized=normalizeSetCode(raw),candidateCodes=setCodeCandidates(raw).map(item=>item.code),selected=result.matches?.[0]||null,accepted=result.status==='high_confidence'&&(result.decision==='EXACT_UNIQUE'||result.decision==='NEAR_UNIQUE'||manual),rejectionReason=result.status==='not_found'?'NO_CATALOG_MATCH':result.matches?.length>1?'MULTIPLE_CATALOG_MATCHES':accepted?'':result.corrected?'LOW_CONFIDENCE':'VALIDATION_FAILED';
-    this.debugTrace('catalog',{rawOcr:raw,normalizedOcr:normalized.code,parsedCode:result.code||normalized.code,candidateCodes,catalogMatches:(result.matches||[]).map(saveDiagnosticEntry),selectedCatalogEntry:selected?saveDiagnosticEntry(selected):null,printingId:selected?.printingId||selected?.printing_id||'',printingKey:selected?[selected.game||'yugioh',selected.catalogCardId||selected.catalog_card_id||'',selected.setCode||selected.set_code||'',selected.rarity||''].join(':'):'',validationResult:result.decision||result.status,accepted,rejected:!accepted,rejectionReason,source:result.lookupSource||'',timingMs:Math.round((typeof performance!=='undefined'?performance.now():Date.now())-(this.debugStartedAt||0))});
-    if(result.status==='not_found'){this.status='Codice non trovato · riprova o usa Manuale';this.showDetection('Codice non letto','Riprova','error');this.refreshHud();return;}
-    this.scanState='RESULT';
+    this.debugTrace('catalog',{rawOcr:raw,normalizedOcr:normalized.code,parsedCode:result.code||normalized.code,candidateCodes,catalogMatches:(result.matches||[]).map(saveDiagnosticEntry),selectedCatalogEntry:selected?saveDiagnosticEntry(selected):null,printingId:selected?.printingId||selected?.printing_id||'',printingKey:selected?[selected.game||'yugioh',selected.catalogCardId||selected.catalog_card_id||'',selected.setCode||selected.set_code||'',selected.rarity||''].join(':'):'',validationResult:result.decision||result.status,accepted,rejected:!accepted,rejectionReason,source:result.lookupSource||'',timingMs:Math.round((typeof performance!=='undefined'?performance.now():Date.now())-(this.debugStartedAt||0)),pending:Boolean(pendingId)});
+    // pendingId arriva solo da resolvePendingInBackground(): la carta non è
+    // più sotto l'obiettivo (l'operatore può aver già scansionato altro), va
+    // solo aggiornata nella review — niente flash "Codice rilevato",
+    // vibrazione o riscrittura di this.last, che sono feedback per l'istante
+    // dello scatto e qui arriverebbero fuori tempo. Il rendering pieno della
+    // review scatta solo se l'utente la sta già guardando (fase 'review');
+    // durante lo scan dal vivo aggiorniamo solo i contatori HUD per non
+    // toccare/ricreare il DOM della fotocamera.
+    if(result.status==='not_found'){
+      if(pendingId){this.buffer.updateReview(pendingId,{status:'not_found',warning:'Codice non trovato nel catalogo',pending:false});this.persist();if(this.phase==='review')this.onRender?.();else this.refreshHud();return;}
+      this.status='Codice non trovato · riprova o usa Manuale';this.showDetection('Codice non letto','Riprova','error');this.refreshHud();return;
+    }
+    if(!pendingId)this.scanState='RESULT';
     const mustAutoAdd=result.decision==='EXACT_UNIQUE'||(result.decision==='NEAR_UNIQUE'&&this.buffer.settings.autoAdd)||manual;
-    if(result.status==='high_confidence'&&mustAutoAdd){const entry=this.buffer.add(result.matches[0],result.decision||'high_confidence');this.last=entry;this.feedback();this.status='Codice rilevato';this.persist();this.showDetection(entry.setCode,'+1');this.refreshHud();return;}
-    this.buffer.queueReview({raw,code:result.code,status:result.status,matches:result.matches,ocrConfidence:result.ocrConfidence,warning:result.status==='not_found'?'Codice non trovato nel catalogo':result.corrected?'Correzione OCR da confermare':'Match da confermare'});this.status=result.status==='not_found'?'Non riconosciuto':'Codice da verificare';this.persist();this.showDetection(result.status==='not_found'?'Non riconosciuto':result.code,'Da verificare',result.status==='not_found'?'error':'warn');this.refreshHud();
+    if(result.status==='high_confidence'&&mustAutoAdd){
+      const entry=this.buffer.add(result.matches[0],result.decision||'high_confidence','',!pendingId);
+      if(pendingId){this.buffer.removeReview(pendingId);this.persist();if(this.phase==='review')this.onRender?.();else this.refreshHud();return;}
+      this.last=entry;this.feedback();this.status='Codice rilevato';this.persist();this.showDetection(entry.setCode,'+1');this.refreshHud();return;
+    }
+    const warning=result.corrected?'Correzione OCR da confermare':'Match da confermare';
+    if(pendingId){this.buffer.updateReview(pendingId,{code:result.code,status:result.status,matches:result.matches,ocrConfidence:result.ocrConfidence,warning,pending:false});this.persist();if(this.phase==='review')this.onRender?.();else this.refreshHud();return;}
+    this.buffer.queueReview({raw,code:result.code,status:result.status,matches:result.matches,ocrConfidence:result.ocrConfidence,warning});this.status='Codice da verificare';this.persist();this.showDetection(result.code,'Da verificare','warn');this.refreshHud();
   }
   queueZoom(value){const range=this.camera.capabilities?.zoom;if(!range)return;const zoom=Math.min(range.max,Math.max(range.min,Number(value)||range.min));clearTimeout(this.zoomTimer);this.zoomTimer=setTimeout(()=>void this.camera.setZoom(zoom).then(applied=>{if(applied)this.updateZoomUi(this.camera.zoomValue);}),70);this.updateZoomUi(zoom);}
   stepZoom(direction){const range=this.camera.capabilities?.zoom;if(!range)return;const increment=Math.max(Number(range.step)||.1,.1);this.queueZoom((this.camera.zoomValue||range.min)+(direction*increment));}
@@ -332,15 +470,38 @@ function ocrReadingScore(reading){const normalized=normalizeSetCode(reading?.tex
 function ocrReadingSummary(readings=[]){const values=readings.map(reading=>String(reading?.text||'').replace(/\s+/g,'').replace(/[^A-Z0-9-]/gi,'').toUpperCase()).filter(Boolean);return [...new Set(values)].join(' / ').slice(0,48);}
 function toggle(id,label,checked){return `<label class="scan-toggle"><input id="${id}" type="checkbox" ${checked?'checked':''}><span><strong>${label}</strong><small>${checked?'Attivo':'Disattivato'}</small></span></label>`;}
 function entryRow(item){const firstEdition=isFirstEdition(item.edition);return `<article class="scan-review-row"><div>${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="">`:icon('card')}<span><strong>${esc(item.cardName)}</strong><small>${esc([item.setCode,item.rarity,item.confidence,item.warning].filter(Boolean).join(' · '))}</small></span></div><div class="scan-review-controls"><div class="scan-qty-stepper"><button type="button" data-scan-qty-dec="${esc(item.key)}" aria-label="Diminuisci quantità">−</button><b>${item.quantity}</b><button type="button" data-scan-qty-inc="${esc(item.key)}" aria-label="Aumenta quantità" ${item.quantity>=999?'disabled':''}>+</button></div><button type="button" class="scan-first-edition-toggle ${firstEdition?'active':''}" data-scan-first-edition="${esc(item.key)}" aria-pressed="${firstEdition}">1ª Ed.</button><button class="btn secondary danger small" data-scan-remove="${esc(item.key)}">Rimuovi</button></div></article>`;}
-function reviewRow(item){return `<article class="scan-review-row warning"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc([item.warning,item.ocrConfidence?`confidence ${Math.round(item.ocrConfidence)}%`:''].filter(Boolean).join(' · '))}</small></span></div>${item.matches?.length?`<div class="review-choices">${item.matches.map((match,index)=>`<button class="btn secondary small" data-review-choice="${index}" data-review-id="${item.id}">${esc(match.cardName)} · ${esc(match.rarity||'Rarità non indicata')}</button>`).join('')}</div>`:`<div class="review-correction"><input data-review-input="${item.id}" value="${esc(item.code||'')}" placeholder="Correggi codice"><button class="btn secondary small" data-review-correct="${item.id}">Cerca</button></div>`}<button class="btn secondary small" data-review-ignore="${item.id}">Ignora</button></article>`;}
+function reviewRow(item){
+  // Riga "in verifica" (Fast Scan Step B, risoluzione in background): niente
+  // input di correzione/Ignora finché non arriva un esito, altrimenti
+  // l'utente potrebbe correggerla mentre resolvePendingInBackground() la sta
+  // ancora aggiornando in autonomia.
+  if(item.pending)return `<article class="scan-review-row warning pending"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc(item.warning||'Verifica in corso…')}</small></span></div></article>`;
+  return `<article class="scan-review-row warning"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc([item.warning,item.ocrConfidence?`confidence ${Math.round(item.ocrConfidence)}%`:''].filter(Boolean).join(' · '))}</small></span></div>${item.matches?.length?`<div class="review-choices">${item.matches.map((match,index)=>`<button class="btn secondary small" data-review-choice="${index}" data-review-id="${item.id}">${esc(match.cardName)} · ${esc(match.rarity||'Rarità non indicata')}</button>`).join('')}</div>`:`<div class="review-correction"><input data-review-input="${item.id}" value="${esc(item.code||'')}" placeholder="Correggi codice"><button class="btn secondary small" data-review-correct="${item.id}">Cerca</button></div>`}<button class="btn secondary small" data-review-ignore="${item.id}">Ignora</button></article>`;
+}
 function mapPrinting(row){return {printingId:row.printing_id||row.printingId||'',game:row.game||'yugioh',catalogCardId:String(row.catalog_card_id||row.catalogCardId||''),cardName:row.card_name||row.cardName,setCode:row.set_code||row.setCode,setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||''};}
 function dedupe(items){return [...new Map(items.map(item=>[[item.printingId,item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];}
 export const OCR_SUB_ROI={topRatio:.05,heightRatio:.9};
 export function createOcrInputPlan(snapshot){
-  const raw=snapshot.rawCanvas||snapshot.canvas;if(!raw?.width||!raw?.height)throw new Error('ROI raw OCR non disponibile');const {canvas:subCropRaw,geometry:subCrop}=extractOcrSubCrop(raw),grayCanvas=cloneOcrCanvas(subCropRaw),adaptiveCanvas=cloneOcrCanvas(subCropRaw),grayPreprocessing=preprocessCodeImage(grayCanvas.getContext('2d',{willReadFrequently:true}),grayCanvas.width,grayCanvas.height,{mode:'grayscale'}),adaptivePreprocessing=preprocessCodeImage(adaptiveCanvas.getContext('2d',{willReadFrequently:true}),adaptiveCanvas.width,adaptiveCanvas.height,{mode:'adaptive'}),gray={canvas:grayCanvas,preprocessing:{...grayPreprocessing,subCrop}},adaptive={canvas:adaptiveCanvas,preprocessing:{...adaptivePreprocessing,subCrop}};
-  const definitions=[{id:'grayscale',source:gray,targetWidth:900,padding:true},{id:'adaptive',source:adaptive,targetWidth:900,padding:true}];
-  const items=definitions.map(definition=>{const canvas=buildOcrCanvas(definition.source.canvas,{targetWidth:definition.targetWidth,padding:definition.padding,visualOnly:definition.visualOnly});if(canvas.dataset)canvas.dataset.ocrInput=definition.id;return {...definition,canvas,preprocessing:{...definition.source.preprocessing,input:definition.id,targetWidth:definition.targetWidth,paddingX:definition.padding?0.14:0,paddingY:definition.padding?0.2:0,cropExpansion:0}};});
-  return {items,primary:items.find(item=>item.id==='grayscale'),fallback:items.find(item=>item.id==='adaptive'),subCropRaw,subCrop,release(){for(const item of items)clearOcrCanvas(item.canvas);clearOcrCanvas(subCropRaw);clearOcrCanvas(grayCanvas);clearOcrCanvas(adaptiveCanvas);}};
+  const raw=snapshot.rawCanvas||snapshot.canvas;if(!raw?.width||!raw?.height)throw new Error('ROI raw OCR non disponibile');
+  const {canvas:subCropRaw,geometry:subCrop}=extractOcrSubCrop(raw);
+  // L'adaptive costa un secondo preprocessCodeImage + un secondo canvas 900px
+  // ad ogni scatto, ma il primary (grayscale) basta da solo quando l'OCR è
+  // già ad alta confidence (vedi lo short-circuit in performScanOnce): non ha
+  // senso pagarlo se poi non viene mai passato a recognizeProduction.
+  function buildItem(mode){
+    const sourceCanvas=cloneOcrCanvas(subCropRaw),preprocessing={...preprocessCodeImage(sourceCanvas.getContext('2d',{willReadFrequently:true}),sourceCanvas.width,sourceCanvas.height,{mode}),subCrop};
+    const canvas=buildOcrCanvas(sourceCanvas,{targetWidth:900,padding:true});if(canvas.dataset)canvas.dataset.ocrInput=mode;
+    return {id:mode,canvas,sourceCanvas,preprocessing:{...preprocessing,input:mode,targetWidth:900,paddingX:.14,paddingY:.2,cropExpansion:0}};
+  }
+  const primary=buildItem('grayscale'),built=[primary];let fallback=null;
+  return {
+    primary,
+    get fallback(){return fallback;},
+    buildFallback(){if(!fallback){fallback=buildItem('adaptive');built.push(fallback);}return fallback;},
+    get items(){return built;},
+    subCropRaw,subCrop,
+    release(){for(const item of built){clearOcrCanvas(item.canvas);clearOcrCanvas(item.sourceCanvas);}clearOcrCanvas(subCropRaw);}
+  };
 }
 function extractOcrSubCrop(source){const topRatio=OCR_SUB_ROI.topRatio,heightRatio=OCR_SUB_ROI.heightRatio,sy=Math.max(0,Math.round(source.height*topRatio)),sh=Math.max(1,Math.min(source.height-sy,Math.round(source.height*heightRatio))),canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=sh;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(source,0,sy,source.width,sh,0,0,canvas.width,canvas.height);return {canvas,geometry:{sx:0,sy,sw:source.width,sh,topRatio,heightRatio}};}
 function cloneOcrCanvas(source){const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(source,0,0);return canvas;}
