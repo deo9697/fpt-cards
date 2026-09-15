@@ -61,7 +61,10 @@ export const api = {
     ensure(); return unwrap(await client.rpc('list_market_confirm_queue', { p_token:token(),p_game:game }));
   },
   async marketDashboardMovers(game = 'yugioh') {
-    ensure(); return unwrap(await client.rpc('list_market_dashboard_trends', { p_token:token(),p_game:game }));
+    // Torna alla RPC originale, già in produzione (list_market_dashboard_trends
+    // e le sue migration non sono state applicate al DB reale e non fanno
+    // parte di questo task — vedi la nota nel commit di questo cambio).
+    ensure(); return unwrap(await client.rpc('list_market_dashboard_movers', { p_token:token(),p_game:game }));
   },
   async marketPriceHistory(printingId, days = 30) {
     ensure(); return unwrap(await client.rpc('list_market_price_history', { p_token:token(),p_printing_id:printingId,p_days:days }));

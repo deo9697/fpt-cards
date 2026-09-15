@@ -1,6 +1,6 @@
 import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
-import { changePercent, tone } from './market-watch.js';
+import { positiveMovers, negativeMovers, changePercent, tone } from './market-watch.js';
 
 export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
@@ -63,58 +63,106 @@ function trackedCards(loans) {
   return [...records.values()];
 }
 
-// Both rankings cover the complete collection, using the same seven-day baseline.
+// Soluzione ibrida: un hero carousel dominante (solo artwork, in stile
+// cover — mai la carta intera con cornice/testo/ATK-DEF) con le carte in
+// salita come featured movers, e sotto due liste compatte Top 3 Up/Top 3
+// Down (già esistenti, riusate senza modifiche). Zero query nuove: le
+// carte in salita vengono da market.featuredMovers (RPC esistente
+// list_market_dashboard_movers, invariata) con lo stesso fallback
+// client-side già esistente; quelle in discesa restano sempre
+// negativeMovers(market.items,3), la RPC non le fornisce.
+//
+// `Array.isArray` invece di `.length`: market.featuredMovers è `undefined`
+// finché la RPC non ha ancora risposto, ma un `[]` esplicito È una risposta
+// valida ("nessuna carta in crescita adesso") — ricadere comunque su
+// positiveMovers(market.items,3) in quel caso significherebbe classificare
+// da un sottoinsieme PARZIALE (ownedPage è paginata) invece di fidarsi
+// della risposta completa già arrivata.
 function featuredPanel(market) {
-  const rows = (market.featuredMovers || []).filter(item => Number.isFinite(item.positiveChange) && Number.isFinite(item.referencePrice));
-  const upMovers = rows.filter(item => item.positiveChange > 0).sort((a,b) => b.positiveChange-a.positiveChange).slice(0,3);
-  const downMovers = rows.filter(item => item.positiveChange < 0).sort((a,b) => a.positiveChange-b.positiveChange).slice(0,3);
-  const heading = '<div class="section-title"><div><span class="eyebrow">Market Watch · La tua raccolta</span><h2>Il mercato, nelle tue carte</h2></div><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
+  const upMovers = Array.isArray(market.featuredMovers) ? market.featuredMovers.slice(0, 3) : positiveMovers(market.items || [], 3);
+  const downMovers = negativeMovers(market.items || [], 3);
+  const heading = '<div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Il mercato, nelle tue carte</h2></div><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
   if (!upMovers.length && !downMovers.length) {
-    const title = market.trendsError ? 'Trend non disponibili' : market.trendsLoading ? 'Caricamento trend' : 'Nessuna variazione da mostrare';
-    const message = market.trendsError ? 'Apri Market Watch per riprovare il caricamento.' : market.trendsLoading ? 'Controlliamo le carte della tua raccolta.' : 'Servono prezzi recenti e una media a 7 giorni. Le carte stabili non entrano in classifica.';
+    const title = market.trendsError ? 'Trend non disponibili' : market.trendsLoading ? 'Caricamento trend…' : 'Nessuna variazione da mostrare';
+    const message = market.trendsError ? 'Apri Market Watch per riprovare il caricamento.' : market.trendsLoading ? 'Controlliamo le carte della tua raccolta.' : 'Le carte con un prezzo recente e un confronto a 24h appariranno qui.';
     return '<section class="surface duel-panel featured-card-panel featured-empty">'+heading+'<div class="inline-empty">'+icon('chart')+'<div><strong>'+title+'</strong><span>'+message+'</span></div></div></section>';
   }
-  const movers=[...upMovers,...downMovers];
   return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
-    '<p class="market-movers-context">Top 3 in salita e in discesa rispetto alla media a 7 giorni.</p>'+
-    '<div class="market-art-carousel" tabindex="0" aria-label="Carte in evidenza: scorri orizzontalmente">'+movers.map((item,index)=>moverRow(item,index,market,movers.length)).join('')+'</div>'+
-    '<div class="market-carousel-controls"><button type="button" data-mover-step="-1" aria-label="Carta precedente">&#8592;</button><span data-mover-position aria-live="polite">1 / '+movers.length+'</span><button type="button" data-mover-step="1" aria-label="Carta successiva">&#8594;</button></div></section>';
+    heroCarousel(upMovers)+
+    '<div class="market-movers-lists">'+
+      moverGroup('In salita', 'up', upMovers, 'Nessuna carta in crescita al momento.')+
+      moverGroup('In discesa', 'down', downMovers, 'Nessuna variazione negativa al momento.')+
+    '</div></section>';
 }
+// Solo le carte in crescita diventano hero slide (coerente con "usando le
+// carte in crescita come featured movers" — la lista "In discesa" resta
+// sotto, mai promossa nel carousel).
+function heroCarousel(upMovers) {
+  if (!upMovers.length) return '<div class="market-hero-empty">'+icon('chart')+'<span>Nessuna carta in crescita al momento — le carte in discesa restano comunque visibili sotto.</span></div>';
+  const multi = upMovers.length > 1;
+  return '<div class="market-hero-carousel">'+
+    '<div class="market-hero-track" data-hero-track role="listbox" aria-label="Carte in evidenza">'+upMovers.map((item, index) => heroSlide(item, index)).join('')+'</div>'+
+    (multi ? '<div class="market-hero-nav">'+
+      '<button type="button" class="market-hero-nav-btn" data-hero-prev aria-label="Carta precedente">&#8249;</button>'+
+      '<div class="market-hero-dots" data-hero-dots>'+upMovers.map((_, i) => '<button type="button" class="market-hero-dot'+(i===0?' active':'')+'" data-hero-dot="'+i+'" aria-label="Vai alla carta '+(i+1)+'"></button>').join('')+'</div>'+
+      '<button type="button" class="market-hero-nav-btn" data-hero-next aria-label="Carta successiva">&#8250;</button>'+
+    '</div>' : '')+
+  '</div>';
+}
+function heroSlide(item, index) {
+  const artwork = moverArtwork(item), change = Number(item.positiveChange);
+  const previous = Number.isFinite(item.price24h) ? item.price24h : (Number.isFinite(item.baselinePrice) ? item.baselinePrice : null);
+  return '<button type="button" class="market-hero-slide" data-page="market" data-hero-slide="'+index+'" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
+    (artwork ? '<img class="market-hero-art" src="'+esc(artwork)+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">' : '<span class="market-hero-art market-hero-art-placeholder">'+icon('card')+'</span>')+
+    '<span class="market-hero-scrim" aria-hidden="true"></span>'+
+    '<span class="market-hero-copy">'+
+      '<span class="market-hero-badge">In salita &#183; '+changePercent(change)+'</span>'+
+      '<strong class="market-hero-name">'+esc(item.cardName)+'</strong>'+
+      '<span class="market-hero-price"><b>'+marketMoney(item.referencePrice)+'</b>'+(previous!=null?'<small>'+marketMoney(previous)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
+    '</span></button>';
+}
+// Navigazione semplice (frecce + indicatori a pallino), niente autoplay:
+// mai un timer che ricarichi/ridisegni da solo. Una sola slide -> nessun
+// controllo di navigazione montato (return immediato, meno di 2 slide).
 export function bindDashboardCarousel(root=document) {
-  const track=root.querySelector('.market-art-carousel');
+  const track=root.querySelector('[data-hero-track]');
   if(!track||track.dataset.bound)return;
   track.dataset.bound='true';
-  const cards=[...track.querySelectorAll('.market-art-card')],controls=root.querySelectorAll('[data-mover-step]'),position=root.querySelector('[data-mover-position]');
-  const index=()=>Math.round(track.scrollLeft/(cards[0].getBoundingClientRect().width+12));
-  const update=()=>{const i=index();if(position)position.textContent=(i+1)+' / '+cards.length;controls.forEach(button=>button.disabled=Number(button.dataset.moverStep)<0?i===0:i>=cards.length-1);};
-  const move=step=>{const i=Math.max(0,Math.min(cards.length-1,index()+step));track.scrollTo({left:i*(cards[0].getBoundingClientRect().width+12),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
-  controls.forEach(button=>button.onclick=()=>move(Number(button.dataset.moverStep)));
+  const slides=[...track.querySelectorAll('.market-hero-slide')];
+  if(slides.length<2)return;
+  const dots=[...root.querySelectorAll('[data-hero-dot]')];
+  const prevBtn=root.querySelector('[data-hero-prev]'),nextBtn=root.querySelector('[data-hero-next]');
+  const slideWidth=()=>slides[0].getBoundingClientRect().width+12;
+  const currentIndex=()=>Math.round(track.scrollLeft/slideWidth());
+  const goTo=index=>{const clamped=Math.max(0,Math.min(slides.length-1,index));track.scrollTo({left:clamped*slideWidth(),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
+  const update=()=>{const i=currentIndex();dots.forEach((dot,index)=>dot.classList.toggle('active',index===i));if(prevBtn)prevBtn.disabled=i===0;if(nextBtn)nextBtn.disabled=i>=slides.length-1;};
+  prevBtn?.addEventListener('click',()=>goTo(currentIndex()-1));
+  nextBtn?.addEventListener('click',()=>goTo(currentIndex()+1));
+  dots.forEach((dot,index)=>dot.addEventListener('click',()=>goTo(index)));
   track.addEventListener('scroll',update,{passive:true});
-  track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();move(event.key==='ArrowRight'?1:-1);}});
+  track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'){event.preventDefault();goTo(currentIndex()+1);}else if(event.key==='ArrowLeft'){event.preventDefault();goTo(currentIndex()-1);}});
   update();
 }
-function moverRow(item, index, market, total) {
-  const source = String(item.imageUrl||'');
-  const artwork = source.replace(/\/images\/cards\/(\d+\.jpg)/i,'/images/cards_cropped/$1'), change = item.positiveChange;
-  const metadata = [item.setCode, item.rarity].filter(Boolean).join(' · ');
-  const history = market.featuredHistory?.get?.(item.printingId)||[];
-  return '<button class="market-art-card '+(change>0?'up':'down')+'" data-page="market" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
-    (artwork ? '<img class="market-art-background" src="'+esc(artwork)+'" alt="" loading="lazy" decoding="async">' : '<span class="market-art-placeholder">'+icon('card')+'</span>')+
-    '<span class="market-art-copy"><span class="market-art-rank">'+(change>0?'In salita':'In discesa')+' &#183; '+(index+1)+' / '+total+'</span><strong class="market-art-name">'+esc(item.cardName)+'</strong><small>'+esc(metadata)+'</small></span>'+
-    '<span class="market-art-bottom"><span class="market-art-price"><b>'+marketMoney(item.referencePrice)+'</b><span class="'+tone(change)+'">'+(change>0?'↗ ':'↘ ')+changePercent(change)+'<small>vs media 7g</small></span></span>'+
-    moverHistoryChart(history)+
-    (Number.isFinite(item.baselinePrice)?'<small class="market-mover-row-history">Media 7g '+marketMoney(item.baselinePrice)+'</small>':'')+'</span></button>';
+function moverGroup(label, direction, movers, emptyText) {
+  return '<div class="market-movers-group '+direction+'"><h3>'+esc(label)+'</h3>'+(movers.length ? movers.map(moverRow).join('') : '<p class="market-movers-group-empty">'+esc(emptyText)+'</p>')+'</div>';
 }
-function moverHistoryChart(history) {
-  const points=history.filter(p=>Number.isFinite(p.price)&&Number.isFinite(Date.parse(p.capturedAt))).slice().sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt));
-  if(points.length<2)return '<span class="market-art-chart-empty">Storico prezzi non ancora disponibile</span>';
-  const values=points.map(p=>p.price),low=Math.min(...values),high=Math.max(...values),range=high-low||1;
-  const first=Date.parse(points[0].capturedAt),duration=Date.parse(points.at(-1).capturedAt)-first||1;
-  const coords=points.map(p=>[8+(Date.parse(p.capturedAt)-first)/duration*304,high===low?48:80-(p.price-low)/range*64]);
-  const path=coords.map(([x,y],i)=>(i?'L':'M')+x.toFixed(2)+' '+y.toFixed(2)).join(' '),last=coords.at(-1);
-  const date=p=>new Date(p.capturedAt).toLocaleDateString('it-IT',{day:'2-digit',month:'short'});
-  return '<span class="market-art-chart"><svg viewBox="0 0 320 96" role="img" aria-label="Storico reale dei prezzi Cardmarket"><path class="market-chart-grid" d="M8 16H312 M8 48H312 M8 80H312"/><path class="market-chart-area" d="'+path+' L'+last[0]+' 96 L8 96Z"/><path class="market-chart-line" d="'+path+'"/><circle cx="'+last[0]+'" cy="'+last[1]+'" r="3.5"/></svg><span class="market-chart-dates"><small>'+date(points[0])+'</small><small>'+date(points.at(-1))+'</small></span></span>';
+function moverRow(item) {
+  const artwork = moverArtwork(item), change = Number(item.positiveChange), hasPrevious = Number.isFinite(item.price24h);
+  return '<button class="market-mover-row" data-page="market" aria-label="Apri '+esc(item.cardName)+' nel Market Watch">'+
+    (artwork ? '<img class="market-mover-row-art" src="'+esc(artwork)+'" alt="" loading="lazy">' : '<span class="market-mover-row-art market-mover-row-art-placeholder">'+icon('card')+'</span>')+
+    '<span class="market-mover-row-body"><strong class="market-mover-row-name">'+esc(item.cardName)+'</strong>'+
+    (hasPrevious?'<small class="market-mover-row-history">'+marketMoney(item.price24h)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
+    '<span class="market-mover-row-price"><b>'+marketMoney(item.referencePrice)+'</b><small class="'+tone(change)+'">'+changePercent(change)+'</small></span></button>';
 }
+// Preferire il crop per Yu-Gi-Oh! (mai la carta intera nell'hero): un URL
+// già in forma images/cards/<id>.jpg diventa cards_cropped/<id>.jpg, un
+// catalogCardId puramente numerico forza direttamente l'URL cropped
+// (stessa regola già usata altrove nel modulo, qui riusata senza
+// duplicarne la logica in forma diversa). Altrimenti (es. One Piece, che
+// non ha una variante "cropped") resta l'URL affidabile già nei dati;
+// se manca del tutto, mostrare un placeholder è responsabilità di chi
+// chiama questa funzione (mai un <img src=""> rotto).
+function moverArtwork(item){const source=String(item.imageUrl||'');if(/\/images\/cards\/\d+\.jpg(?:\?|$)/i.test(source))return source.replace(/\/images\/cards\//i,'/images/cards_cropped/');const id=String(item.catalogCardId||'');return /^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:source;}
 function marketMoney(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
 
 function loanOverview(loans, attention) {

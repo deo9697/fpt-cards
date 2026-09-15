@@ -200,23 +200,13 @@ export class MarketWatchController {
     try{await this.api.confirmMarketPriceAnomaly(snapshotId);this.anomalies=(this.anomalies||[]).filter(row=>String(row.id)!==String(snapshotId));this.onToast?.('Prezzo confermato');this.refreshBoardSection();}
     catch(error){this.onToast?.(error?.message||'Conferma non riuscita');}
   }
-  async loadFeaturedHistories(){
-    const game=this.getGame(),generation=this.loadGeneration;
-    const current=()=>this.getGame()===game&&this.loadGeneration===generation;
-    const missing=(this.extra.featuredMovers||[]).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId)).slice(0,6);
-    if(!missing.length)return;
-    missing.forEach(item=>this.featuredLoading.add(item.printingId));
-    await Promise.all(missing.map(async item=>{
-      try{
-        const rows=await this.api.marketPriceHistory(item.printingId,30);
-        if(!current())return;
-        const history=(rows||[]).filter(row=>row.price!=null).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));
-        this.featuredHistory.set(item.printingId,history);
-      }catch{if(current())this.featuredHistory.set(item.printingId,[]);}
-      finally{this.featuredLoading.delete(item.printingId);}
-    }));
-    if(current())this.refreshAfterLoad();
-  }
+  // Guard ripristinato: la Dashboard non mostra più un grafico per-carta nel
+  // carousel (niente "price history aggiuntiva per ogni slide" — vincolo
+  // esplicito), quindi questo resta solo un fallback RARO per il pannello
+  // "featured" quando featuredMovers è ancora vuoto — mai una fetch per
+  // singola carta ad ogni caricamento della Dashboard come accadeva prima
+  // di questo fix.
+  async loadFeaturedHistories(){if(this.extra.featuredMovers?.length)return;const missing=positiveMovers(this.ownedPage.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
   // Solo la tab Raccolta è impaginata/ordinata/cercata lato server (arriva
   // già pronta in ownedPage.items) — Mazzi/Watchlist restano piccole per
   // costruzione, filtrate/ordinate lato client come prima.

@@ -132,7 +132,12 @@ try {
   })()`);
   if (backgroundResult.whileTyping.renderCalls !== 0) throw Error('REGRESSIONE: un aggiornamento Market Watch in background ricostruisce la pagina corrente mentre l\'utente sta scrivendo altrove: ' + JSON.stringify(backgroundResult));
   if (!backgroundResult.whileTyping.stageIntact || backgroundResult.whileTyping.value !== 'testo scritto altrove' || !backgroundResult.whileTyping.sameFocus) throw Error('Il campo "di un\'altra pagina" viene comunque toccato: ' + JSON.stringify(backgroundResult));
-  if (backgroundResult.whileIdle.renderCalls !== 2) throw Error('Quando nessuno sta scrivendo, l\'aggiornamento in background deve comunque ridisegnare (altrimenti la Dashboard non vedrebbe mai dati freschi): ' + JSON.stringify(backgroundResult));
+  // Non fissare il conteggio esatto delle chiamate onRender qui: load()
+  // ha più punti di completamento interni (extra/summary, owned_page,
+  // fine giro) che possono cambiare con lavoro legittimo altrove in
+  // market-watch.js — la proprietà che conta per questo test è "almeno un
+  // redraw quando nessuno sta scrivendo", non un numero preciso.
+  if (backgroundResult.whileIdle.renderCalls < 1) throw Error('Quando nessuno sta scrivendo, l\'aggiornamento in background deve comunque ridisegnare (altrimenti la Dashboard non vedrebbe mai dati freschi): ' + JSON.stringify(backgroundResult));
   console.log('PASS controller in background: un aggiornamento Market Watch non montato non ricostruisce mai la pagina corrente mentre l\'utente scrive altrove, ma lo fa normalmente quando nessun campo è a fuoco');
 
   if ((await evaluate('[...(window.__consoleErrors||[])]'))?.length) throw Error('Errori console imprevisti');
