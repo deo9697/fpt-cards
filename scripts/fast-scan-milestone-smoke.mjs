@@ -206,6 +206,26 @@ assert.equal(pendingController.buffer.scanned,1,'lo slot scanned non deve raddop
 assert.equal(pendingController.pendingCodes.has('NEW1-IT001'),false,'pendingCodes deve liberarsi a risoluzione avvenuta');
 clearTimeout(pendingController.persistTimer);clearTimeout(pendingController.feedbackTimer);
 
+// Regressione osservata dopo Step B: nessun limite di concorrenza sulle
+// risoluzioni in background — scansionando più carte nuove di fila (reso
+// possibile proprio da Step A) si accumulavano decine di RPC concorrenti in
+// contesa con l'OCR per rete/CPU. MAX_BACKGROUND_RESOLUTIONS riporta "una
+// carta di rete alla volta" senza tornare a bloccare il loop di scansione.
+let resolveFirstQueueLookup,resolveSecondQueueLookup;const queueLookupOrder=[];
+const firstQueueLookup=new Promise(resolve=>{resolveFirstQueueLookup=resolve;}),secondQueueLookup=new Promise(resolve=>{resolveSecondQueueLookup=resolve;});
+const queueController=new FastScanController({camera:{focusSupported:false,clearPreprocessingPreference:()=>{}},ocr:{},api:{lookupPrintings:async code=>{queueLookupOrder.push(code);if(code==='QUEUE-EN001'){await firstQueueLookup;return[{printing_id:'q1',game:'yugioh',catalog_card_id:'q1',card_name:'Queue Card 1',set_code:'QUEUE-EN001'}];}if(code==='QUEUE-EN002'){await secondQueueLookup;return[{printing_id:'q2',game:'yugioh',catalog_card_id:'q2',card_name:'Queue Card 2',set_code:'QUEUE-EN002'}];}return[];}},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});
+await queueController.processRecognition('QUEUE-EN001',95,[1],{},{});const firstQueueResolution=queueController.pendingResolution;
+await queueController.processRecognition('QUEUE-EN002',95,[1],{},{});const secondQueueResolution=queueController.pendingResolution;
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.deepEqual(queueLookupOrder,['QUEUE-EN001'],'con MAX_BACKGROUND_RESOLUTIONS=1 la seconda carta non deve avviare la sua RPC finché la prima non finisce');
+assert.equal(queueController.backgroundQueue.length,1,'la seconda carta deve restare in coda mentre la prima è attiva');
+resolveFirstQueueLookup();await firstQueueResolution;
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.deepEqual(queueLookupOrder,['QUEUE-EN001','QUEUE-EN002'],'la seconda RPC deve partire solo a risoluzione della prima avvenuta');
+resolveSecondQueueLookup();await secondQueueResolution;
+assert.equal(queueController.buffer.total,2,'entrambe le carte in coda devono risolversi correttamente');
+clearTimeout(queueController.persistTimer);clearTimeout(queueController.feedbackTimer);
+
 // Un pending risolto a not_found resta visibile in review (correggibile
 // manualmente) invece di sparire silenziosamente come il not_found
 // sincrono — l'operatore ha già visto "in verifica" per questa carta, quindi
@@ -277,7 +297,7 @@ const identityV2Sql=fs.readFileSync(new URL('../supabase-fast-scan-catalog-ident
 for(const required of ["'89631146', '89631139'",'normalized_set_code',"upper(trim(printing.set_code)) = normalized_set_code",'public.resolve_catalog_card_id(p_game, image_id)'])assert(identityV2Sql.includes(required),`Migrazione identità catalogo v2 incompleta: ${required}`);
 const sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');assert(/fpt-cards-v\d+/.test(sw)&&sw.includes('fast-scan-ocr-engine-b.js')&&sw.includes('PADDLE_CACHE')&&!sw.includes('fast-scan-ocr.js'));
 const scannerUi=fs.readFileSync(new URL('../js/fast-scan.js',import.meta.url),'utf8'),cameraUi=fs.readFileSync(new URL('../js/fast-scan-camera.js',import.meta.url),'utf8'),scannerCss=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-for(const required of ['fast-scan-live','live-roi','Hai finito?','Sì, mostrami','No, continua a scansionare','data-scan-manual-sheet','data-scan-zoom','data-scan-capture','requestSnapshot','snapshotInFlight','preferVideoFrame:false','includeRaw:true','if(!forced){this.scanState=\'LIVE\'','OCR_SUB_ROI','extractOcrSubCrop','primaryCode.valid&&!repeatedLast','ocr:short-circuit','avoidCode:repeatedLast?lastAccepted','paddingX:.14','paddingY:.2','buildFallback','fallbackUsed','ScanTelemetry','cycleTotalMs','readyNextMs','esitoFromOutcome','selectSnapshotOcrResult','touchDistance','this.camera.sample(roi)','this.camera.captureSnapshot(roi','snapshot?.release?.()','renderDebugCrop','data-scan-debug-crop','debugTrace','catalogIndex','pendingCodes','catalog-index','recentlyMissed','resolvePendingInBackground','updateReview'])assert(scannerUi.includes(required),`Redesign scanner incompleto: ${required}`);
+for(const required of ['fast-scan-live','live-roi','Hai finito?','Sì, mostrami','No, continua a scansionare','data-scan-manual-sheet','data-scan-zoom','data-scan-capture','requestSnapshot','snapshotInFlight','preferVideoFrame:false','includeRaw:true','if(!forced){this.scanState=\'LIVE\'','OCR_SUB_ROI','extractOcrSubCrop','primaryCode.valid&&!repeatedLast','ocr:short-circuit','avoidCode:repeatedLast?lastAccepted','paddingX:.14','paddingY:.2','buildFallback','fallbackUsed','ScanTelemetry','cycleTotalMs','readyNextMs','esitoFromOutcome','selectSnapshotOcrResult','touchDistance','this.camera.sample(roi)','this.camera.captureSnapshot(roi','snapshot?.release?.()','renderDebugCrop','data-scan-debug-crop','debugTrace','catalogIndex','pendingCodes','catalog-index','recentlyMissed','resolvePendingInBackground','updateReview','MAX_BACKGROUND_RESOLUTIONS','enqueueBackgroundResolution','drainBackgroundQueue'])assert(scannerUi.includes(required),`Redesign scanner incompleto: ${required}`);
 assert(/showDetection\(code,detail,tone='ok'\)/.test(scannerUi),"showDetection deve avere un tono, non essere sempre verde");
 assert(scannerUi.includes("this.showDetection('Codice non letto','Riprova','error')"),'il codice non letto deve mostrare il tono errore, non ok');
 assert(scannerUi.includes("this.showDetection(result.code,'Da verificare','warn')"),'i risultati da verificare non devono restare verdi');

@@ -10,6 +10,16 @@ import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
 import { resolveStoredCard } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
+// resolve() da solo può già sparare fino a ~12 RPC concorrenti per una
+// singola carta (candidati di correzione OCR, non è farina del sacco di
+// Step B). Prima di Step B questo era comunque sicuro perché una sola carta
+// alla volta poteva essere in risoluzione (il loop restava bloccato). Con la
+// risoluzione in background senza limiti, scansionare più carte nuove di
+// fila (reso possibile proprio da Step A, molto più veloce) accoda decine di
+// risoluzioni in parallelo che si contendono rete/CPU con l'OCR stesso —
+// il rallentamento riportato dopo Step B. Questo limite riporta "una carta
+// alla volta" per il lavoro di rete, senza tornare a bloccare il loop.
+const MAX_BACKGROUND_RESOLUTIONS=1;
 const TELEMETRY_WINDOW=100;
 function now(){return typeof performance!=='undefined'?performance.now():Date.now();}
 function mean(values){return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:0;}
@@ -34,7 +44,7 @@ export class FastScanController {
   constructor({api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute,camera,paddleOcr}={}) {
     Object.assign(this,{api,externalLookup,getCollection,isOnline,onRender,onSaved,onToast,onRoute});
     this.camera=camera||new FastScanCamera();this.paddleOcr=paddleOcr||new PaddleOcrEngine();this.paddleState='idle';this.paddleError='';this.primaryOcrPreparing=null;
-    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';this.telemetry=new ScanTelemetry();this.cycleTelemetry=null;this.lastCycleDecision=null;this.catalogIndex=new Map();this.pendingCodes=new Set();
+    this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';this.telemetry=new ScanTelemetry();this.cycleTelemetry=null;this.lastCycleDecision=null;this.catalogIndex=new Map();this.pendingCodes=new Set();this.backgroundQueue=[];this.activeBackgroundResolutions=0;
     this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.backgroundStopTimer=0; this.backgroundCameraStopped=false; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;
     if(this.debugMode)this.camera.onDiagnostic=(event,payload)=>this.debugTrace(`camera:${event}`,payload);
     this.visibilityHandler=()=>void this.handleVisibilityChange(); document.addEventListener('visibilitychange',this.visibilityHandler);
@@ -319,13 +329,26 @@ export class FastScanController {
       // Non-void: nessun chiamante deve aspettarla (è tutto il punto del
       // deferral), ma tenerne un riferimento permette ai test di attenderla
       // deterministicamente invece di indovinare quanti tick servono.
-      this.pendingResolution=this.resolvePendingInBackground(raw,evidence.confidence,evidence.votes,pendingId,pendingCode);
+      this.pendingResolution=this.enqueueBackgroundResolution(raw,evidence.confidence,evidence.votes,pendingId,pendingCode);
       return {status:'pending_async',code:pendingCode};
     }
     let started=now();const result=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
     if(result.status==='not_found'){this.consensus.reset();await this.recordFailure(true);return result;}
     if(options.catalogConfirm)this.gate.accept(result.code,signature,Date.now());else if(!this.gate.consider(result.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:result.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}
     this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(result,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return result;
+  }
+  enqueueBackgroundResolution(raw,ocrConfidence,consensusVotes,pendingId,pendingCode){
+    return new Promise(resolve=>{
+      this.backgroundQueue.push(async()=>{await this.resolvePendingInBackground(raw,ocrConfidence,consensusVotes,pendingId,pendingCode);resolve();});
+      this.drainBackgroundQueue();
+    });
+  }
+  drainBackgroundQueue(){
+    while(this.activeBackgroundResolutions<MAX_BACKGROUND_RESOLUTIONS&&this.backgroundQueue.length){
+      const task=this.backgroundQueue.shift();
+      this.activeBackgroundResolutions+=1;
+      task().finally(()=>{this.activeBackgroundResolutions-=1;this.drainBackgroundQueue();});
+    }
   }
   async resolvePendingInBackground(raw,ocrConfidence,consensusVotes,pendingId,pendingCode){
     try{
