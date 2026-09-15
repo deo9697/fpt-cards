@@ -38,14 +38,20 @@ try {
 
 
   await evaluate(`document.head.insertAdjacentHTML('afterbegin','<base href="/">');`);
-  await evaluate(`(async()=>{const {dashboardView}=await import('/js/dashboard.js');const rows=Array.from({length:6},(_,i)=>({cardName:['Ghost Belle & Haunted Mansion','Phantom of Yubel','Mitsurugi Sacred Boundary'][i%3],setCode:'DUDE-EN004',rarity:'Ultra Rare',imageUrl:'/icon-192.png',referencePrice:12.5,baselinePrice:10,positiveChange:i<3?30-i*5:-15-i*5}));document.querySelector('#app').innerHTML=dashboardView({currentUser:'daniele',loans:[]},'yugioh',{featuredMovers:rows});})()`);
+  const artData='data:image/png;base64,'+(await (await import('node:fs/promises')).readFile(process.argv[2]||'assets/fpt-card-hero.png')).toString('base64');
+  await evaluate('window.__testArtwork='+JSON.stringify(artData));
+  await evaluate(`(async()=>{const {dashboardView}=await import('/js/dashboard.js');const rows=Array.from({length:6},(_,i)=>({cardName:['Ghost Belle & Haunted Mansion','Phantom of Yubel','Mitsurugi Sacred Boundary'][i%3],setCode:'DUDE-EN004',rarity:'Ultra Rare',printingId:String(i),imageUrl:window.__testArtwork,referencePrice:12.5,baselinePrice:10,positiveChange:i<3?30-i*5:-15-i*5}));document.querySelector('#app').innerHTML=dashboardView({currentUser:'daniele',loans:[]},'yugioh',{featuredMovers:rows,featuredHistory:new Map(rows.map((row,i)=>[row.printingId,Array.from({length:10},(_,j)=>({price:i<3?8+j*.5+Math.sin(j):15-j*.4+Math.sin(j),capturedAt:new Date(Date.UTC(2026,8,j+1)).toISOString()}))]))});})()`);
   for (const width of [360,390,768,1440]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height:1100,deviceScaleFactor:1,mobile:width<900});
-    const check=await evaluate(`(()=>{const panel=document.querySelector('.market-movers-panel');return {rows:panel.querySelectorAll('.market-mover-row').length,overflow:panel.scrollWidth>panel.clientWidth,groups:panel.querySelectorAll('.market-movers-group').length}})()`);
+    const check=await evaluate(`(()=>{const panel=document.querySelector('.market-movers-panel');return {rows:panel.querySelectorAll('.market-art-card').length,overflow:panel.scrollWidth>panel.clientWidth,groups:panel.querySelectorAll('.market-movers-group').length}})()`);
     if(check.rows!==6||check.groups!==2||check.overflow)throw Error(JSON.stringify({width,...check}));
   }
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:1100,deviceScaleFactor:1,mobile:true});
   await evaluate(`document.querySelector('.market-movers-panel').scrollIntoView();`);
+  await evaluate(`Promise.all([...document.querySelectorAll('.market-art-background')].map(img=>img.decode()))`);
+  const swipe=await evaluate(`(()=>{const el=document.querySelector('.market-art-carousel');el.scrollLeft=el.clientWidth;return el.scrollWidth>el.clientWidth;})()`);
+  if(!swipe)throw Error('Carousel not scrollable');
+  await evaluate(`document.querySelector('.market-art-carousel').scrollLeft=0`);
   const fs=await import('node:fs/promises');const shot=await send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(tmpdir(),'fpt-dashboard-trends.png'),Buffer.from(shot.data,'base64'));
   if((await evaluate('window.__consoleErrors')).length)throw Error('Browser errors');
   console.log('PASS dashboard rankings: 360/390/768/1440px, six rows, no panel overflow.');

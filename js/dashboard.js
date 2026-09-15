@@ -76,22 +76,34 @@ function featuredPanel(market) {
   }
   return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
     '<p class="market-movers-context">Prezzo indicativo Cardmarket rispetto alla media degli ultimi 7 giorni.</p><div class="market-movers-lists">'+
-    moverGroup('In salita','up',upMovers,'Nessuna carta in crescita al momento.')+
-    moverGroup('In discesa','down',downMovers,'Nessuna variazione negativa al momento.')+
+    moverGroup('In salita','up',upMovers,'Nessuna carta in crescita al momento.',market)+
+    moverGroup('In discesa','down',downMovers,'Nessuna variazione negativa al momento.',market)+
     '</div><p class="market-movers-footnote">Solo carte possedute · Fino a 3 per classifica · Prezzi indicativi</p></section>';
 }
-function moverGroup(label, direction, movers, emptyText) {
-  return '<section class="market-movers-group '+direction+'" aria-label="'+label+'"><h3><span>'+(direction==='up'?'↗':'↘')+' '+label+'</span><small>TOP 3</small></h3>'+(movers.length ? movers.map(moverRow).join('') : '<p class="market-movers-group-empty">'+esc(emptyText)+'</p>')+'</section>';
+function moverGroup(label, direction, movers, emptyText, market) {
+  return '<section class="market-movers-group '+direction+'" aria-label="'+label+'"><h3><span>'+(direction==='up'?'↗':'↘')+' '+label+'</span><small>TOP 3</small></h3>'+(movers.length ? '<div class="market-art-carousel" tabindex="0" aria-label="'+label+': scorri per vedere le carte">'+movers.map((item,index)=>moverRow(item,index,market)).join('')+'</div><p class="market-swipe-hint">'+(movers.length>1?'Scorri per vedere le altre carte →':'Una carta in evidenza')+'</p>' : '<p class="market-movers-group-empty">'+esc(emptyText)+'</p>')+'</section>';
 }
-function moverRow(item, index) {
-  const artwork = String(item.imageUrl||''), change = item.positiveChange;
+function moverRow(item, index, market) {
+  const source = String(item.imageUrl||'');
+  const artwork = source.replace(/\/images\/cards\/(\d+\.jpg)/i,'/images/cards_cropped/$1'), change = item.positiveChange;
   const metadata = [item.setCode, item.rarity].filter(Boolean).join(' · ');
-  return '<button class="market-mover-row" data-page="market" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
-    '<span class="market-mover-rank">'+(index+1)+'</span>'+
-    (artwork ? '<img class="market-mover-row-art" src="'+esc(artwork)+'" alt="" loading="lazy" decoding="async">' : '<span class="market-mover-row-art market-mover-row-art-placeholder">'+icon('card')+'</span>')+
-    '<span class="market-mover-row-body"><strong class="market-mover-row-name">'+esc(item.cardName)+'</strong><small class="market-mover-row-meta">'+esc(metadata)+'</small>'+
-    (Number.isFinite(item.baselinePrice) ? '<small class="market-mover-row-history">Media 7g '+marketMoney(item.baselinePrice)+'</small>' : '')+'</span>'+
-    '<span class="market-mover-row-price"><b>'+marketMoney(item.referencePrice)+'</b><small class="'+tone(change)+'">'+(change>0?'↗ ':'↘ ')+changePercent(change)+'</small></span></button>';
+  const history = market.featuredHistory?.get?.(item.printingId)||[];
+  return '<button class="market-art-card" data-page="market" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
+    (artwork ? '<img class="market-art-background" src="'+esc(artwork)+'" alt="" loading="lazy" decoding="async">' : '<span class="market-art-placeholder">'+icon('card')+'</span>')+
+    '<span class="market-art-copy"><span class="market-art-rank">'+(index+1)+' / 3</span><strong class="market-art-name">'+esc(item.cardName)+'</strong><small>'+esc(metadata)+'</small></span>'+
+    '<span class="market-art-bottom"><span class="market-art-price"><b>'+marketMoney(item.referencePrice)+'</b><span class="'+tone(change)+'">'+(change>0?'↗ ':'↘ ')+changePercent(change)+'<small>vs media 7g</small></span></span>'+
+    moverHistoryChart(history)+
+    (Number.isFinite(item.baselinePrice)?'<small class="market-mover-row-history">Media 7g '+marketMoney(item.baselinePrice)+'</small>':'')+'</span></button>';
+}
+function moverHistoryChart(history) {
+  const points=history.filter(p=>Number.isFinite(p.price)&&Number.isFinite(Date.parse(p.capturedAt))).slice().sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt));
+  if(points.length<2)return '<span class="market-art-chart-empty">Storico prezzi non ancora disponibile</span>';
+  const values=points.map(p=>p.price),low=Math.min(...values),high=Math.max(...values),range=high-low||1;
+  const first=Date.parse(points[0].capturedAt),duration=Date.parse(points.at(-1).capturedAt)-first||1;
+  const coords=points.map(p=>[8+(Date.parse(p.capturedAt)-first)/duration*304,high===low?48:80-(p.price-low)/range*64]);
+  const path=coords.map(([x,y],i)=>(i?'L':'M')+x.toFixed(2)+' '+y.toFixed(2)).join(' '),last=coords.at(-1);
+  const date=p=>new Date(p.capturedAt).toLocaleDateString('it-IT',{day:'2-digit',month:'short'});
+  return '<span class="market-art-chart"><svg viewBox="0 0 320 96" role="img" aria-label="Storico reale dei prezzi Cardmarket"><path class="market-chart-grid" d="M8 16H312 M8 48H312 M8 80H312"/><path class="market-chart-area" d="'+path+' L'+last[0]+' 96 L8 96Z"/><path class="market-chart-line" d="'+path+'"/><circle cx="'+last[0]+'" cy="'+last[1]+'" r="3.5"/></svg><span class="market-chart-dates"><small>'+date(points[0])+'</small><small>'+date(points.at(-1))+'</small></span></span>';
 }
 function marketMoney(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
 

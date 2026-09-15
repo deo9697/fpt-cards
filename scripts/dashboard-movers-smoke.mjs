@@ -79,7 +79,7 @@ const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i
 {
   const items = [item({ printingId: 'noart', catalogCardId: 'n1', cardName: 'Senza artwork', imageUrl: '', referencePrice: 5, price24h: 10 })];
   const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
-  assert(html.includes('market-mover-row-art-placeholder'), 'senza imageUrl deve comparire il placeholder, mai un <img src=""> rotto');
+  assert(html.includes('market-art-placeholder'), 'senza imageUrl deve comparire il placeholder, mai un <img src=""> rotto');
   console.log('PASS edge case: artwork assente, placeholder mostrato invece di un\'immagine rotta');
 }
 
@@ -110,7 +110,7 @@ assert(dashboardView(state,'yugioh',{trendsLoading:true}).includes('Caricamento 
 assert(dashboardView(state,'yugioh',{trendsError:true}).includes('Trend non disponibili'));
 const six=Array.from({length:8},(_,i)=>item({cardName:'Rank '+i,printingId:String(i),catalogCardId:String(i),referencePrice:i<4?11+i:9-i}));
 const ranked=dashboardView(state,'yugioh',{featuredMovers:trends(six)});
-assert.equal((ranked.match(/class="market-mover-row"/g)||[]).length,6);
+assert.equal((ranked.match(/class="market-art-card"/g)||[]).length,6);
 assert(ranked.indexOf('Rank 3')<ranked.indexOf('Rank 2'));
 assert(ranked.indexOf('Rank 7')<ranked.indexOf('Rank 6'));
 console.log('PASS complete collection rankings, 3 per direction, loading/error and no partial fallback');
@@ -128,3 +128,9 @@ await controller.load();game='onepiece';await controller.load();await new Promis
 resolveYugi([{cardName:'Old Yugi',positiveChange:20,referencePrice:12}]);await new Promise(r=>setImmediate(r));
 assert.equal(controller.dashboardState().featuredMovers[0].cardName,'One Piece');
 console.log('PASS late old-game response cannot overwrite current collection rankings');
+
+const chart=dashboardView(state,'yugioh',{featuredMovers:[{printingId:'chart',cardName:'Chart',positiveChange:12,referencePrice:4}],featuredHistory:new Map([['chart',[{price:2,capturedAt:'2026-09-01'},{price:3,capturedAt:'2026-09-03'},{price:4,capturedAt:'2026-09-10'}]]])});
+assert(chart.includes('market-chart-line'));
+assert(!chart.includes('NaN'));
+assert(chart.includes('market-art-carousel'));
+console.log('PASS full artwork cards and chart from dated history');
