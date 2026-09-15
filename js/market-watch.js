@@ -58,14 +58,15 @@ export class MarketWatchController {
     const generation=this.loadGeneration=(this.loadGeneration||0)+1;
     const current=()=>this.loadGeneration===generation&&this.getGame()===game;
     this.loadGame=game;this.loading=true;this.error='';this.extraSummaryError='';this.ownedPageError='';this.confirmQueue=[];this.confirmQueueLoaded=false;
+    this.trendsLoading=true;this.trendsError=false;this.extra.featuredMovers=undefined;
     let extrasReady=false,movers=[],anomalies=[];
     // Accessory panels must not hold up the main card list.
     void Promise.all([
-      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>[]),
+      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>{if(current())this.trendsError=true;return [];}),
       Promise.resolve().then(()=>this.api.marketPriceAnomalies?.()||[]).catch(()=>[])
     ]).then(([nextMovers,nextAnomalies])=>{
       movers=nextMovers;anomalies=nextAnomalies;extrasReady=true;
-      if(!current()||this.loading)return;
+      if(!current())return;this.trendsLoading=false;
       this.extra.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
       this.refreshAfterLoad();void this.loadFeaturedHistories();
     });
@@ -176,7 +177,7 @@ export class MarketWatchController {
   // set con printing OWNED e prezzo 24h, non le sole extra (mazzi/watchlist,
   // spesso vuote di owned): allLoadedItems() combina la pagina Raccolta già
   // in memoria con extra, stessa fonte già usata da loadFeaturedHistories().
-  dashboardState(){return {items:this.allLoadedItems(),deckUnresolved:this.extra.deckUnresolved,lastSync:this.summary.lastSync,featuredMovers:this.extra.featuredMovers,error:this.error,featuredHistory:this.featuredHistory};}
+  dashboardState(){return {trendsLoading:this.trendsLoading,trendsError:this.trendsError,items:this.allLoadedItems(),deckUnresolved:this.extra.deckUnresolved,lastSync:this.summary.lastSync,featuredMovers:this.extra.featuredMovers,error:this.error,featuredHistory:this.featuredHistory};}
   // Coda "Conferma rarità"/"Conferma aggregate": lazy, solo quando serve
   // davvero (apertura della tab, o "Conferma tutti aggregate") — è l'unico
   // posto che porta mappingEvidence/candidates, vedi

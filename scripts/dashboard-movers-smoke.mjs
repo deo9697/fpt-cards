@@ -13,6 +13,7 @@ function item(overrides) {
   return { printingId: 'p', catalogCardId: 'c', cardName: 'Card', imageUrl: '', ownedQuantity: 1, sources: ['owned'], referencePrice: 10, price24h: 10, ...overrides };
 }
 const state = { currentUser: 'daniele', loans: [] };
+const trends = items => items.filter(i => i.referencePrice !== i.price24h).map(i => ({...i,baselinePrice:i.price24h,positiveChange:(i.referencePrice-i.price24h)/i.price24h*100}));
 
 // --- negativeMovers: simmetrico a positiveMovers, mai una nuova RPC -------
 {
@@ -46,7 +47,7 @@ const state = { currentUser: 'daniele', loans: [] };
     item({ printingId: 'up1', catalogCardId: 'u1', cardName: 'Su Uno', imageUrl: 'https://images.ygoprodeck.com/images/cards/1.jpg', referencePrice: 12, price24h: 10 }),
     item({ printingId: 'down1', catalogCardId: 'd1', cardName: 'Giù Uno', imageUrl: '', referencePrice: 5, price24h: 10 })
   ];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('market-movers-lists'), 'deve usare il nuovo layout a due liste');
   assert(!html.includes('market-mover-slide') && !html.includes('market-movers-carousel'), 'il vecchio carousel non deve più comparire');
   assert(html.includes('In salita') && html.includes('In discesa'), 'entrambe le etichette delle due classifiche devono comparire');
@@ -57,7 +58,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: meno di 3 movers, un solo mover per direzione --------------
 {
   const items = [item({ printingId: 'up1', catalogCardId: 'u1', cardName: 'Unica su', referencePrice: 11, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('Unica su'), 'l\'unico mover in salita deve comparire');
   assert(html.includes('Nessuna variazione negativa'), 'con zero movers in discesa deve mostrare un messaggio neutro per quella sola lista, non nascondere l\'intero pannello');
   assert(html.includes('market-movers-lists'), 'il pannello resta comunque il layout a due liste (una sola riga presente, non un fallback diverso)');
@@ -67,9 +68,9 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: nessuna variazione in nessuna direzione (pannello vuoto) ---
 {
   const items = [item({ printingId: 'flat1', catalogCardId: 'f1', cardName: 'Stabile', referencePrice: 10, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('featured-empty'), 'con zero movers in entrambe le direzioni deve tornare lo stato vuoto dell\'intero pannello');
-  assert(html.includes('Trend in preparazione'), 'messaggio di stato vuoto atteso');
+  assert(html.includes('Nessuna variazione da mostrare'), 'messaggio di stato vuoto atteso');
   assert(!html.includes('market-movers-lists'), 'lo stato vuoto non deve montare il layout a due liste');
   console.log('PASS edge case: nessuna variazione in nessuna direzione, stato vuoto dell\'intero pannello');
 }
@@ -77,7 +78,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: artwork assente -> placeholder, mai un <img> rotto ---------
 {
   const items = [item({ printingId: 'noart', catalogCardId: 'n1', cardName: 'Senza artwork', imageUrl: '', referencePrice: 5, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = dashboardView(state, 'yugioh', { items, featuredMovers: trends(items) });
   assert(html.includes('market-mover-row-art-placeholder'), 'senza imageUrl deve comparire il placeholder, mai un <img src=""> rotto');
   console.log('PASS edge case: artwork assente, placeholder mostrato invece di un\'immagine rotta');
 }
@@ -96,9 +97,34 @@ const state = { currentUser: 'daniele', loans: [] };
   assert(!html.includes('market-mover-row-history'), 'senza price24h la riga "prezzo precedente → prezzo corrente" è opzionale e va omessa, mai un valore rotto');
 
   const withHistory = item({ printingId: 'h1', catalogCardId: 'hh1', cardName: 'Con storico', referencePrice: 8, price24h: 10 });
-  const htmlWithHistory = dashboardView(state, 'yugioh', { items: [withHistory] });
+  const htmlWithHistory = dashboardView(state, 'yugioh', { items: [withHistory], featuredMovers:trends([withHistory]) });
   assert(htmlWithHistory.includes('market-mover-row-history'), 'quando price24h è disponibile (fallback client-side) deve mostrare "prezzo precedente → prezzo corrente"');
   console.log('PASS "prezzo precedente → prezzo corrente": opzionale, mostrato quando disponibile, mai un valore rotto quando la RPC non lo fornisce');
 }
 
 console.log('PASS dashboard movers (logica pura): negativeMovers simmetrico a positiveMovers, due liste leggibili, tutti gli edge case richiesti (meno di 3, nessuna variazione negativa, storico assente, artwork assente)');
+
+// Never rank a paginated/filtered subset when the complete rankings are empty.
+assert(!dashboardView(state,'yugioh',{items:[item({referencePrice:50})],featuredMovers:[]}).includes('market-movers-lists'));
+assert(dashboardView(state,'yugioh',{trendsLoading:true}).includes('Caricamento trend'));
+assert(dashboardView(state,'yugioh',{trendsError:true}).includes('Trend non disponibili'));
+const six=Array.from({length:8},(_,i)=>item({cardName:'Rank '+i,printingId:String(i),catalogCardId:String(i),referencePrice:i<4?11+i:9-i}));
+const ranked=dashboardView(state,'yugioh',{featuredMovers:trends(six)});
+assert.equal((ranked.match(/class="market-mover-row"/g)||[]).length,6);
+assert(ranked.indexOf('Rank 3')<ranked.indexOf('Rank 2'));
+assert(ranked.indexOf('Rank 7')<ranked.indexOf('Rank 6'));
+console.log('PASS complete collection rankings, 3 per direction, loading/error and no partial fallback');
+
+// A late response from the old game must never populate the current dashboard.
+globalThis.document={querySelector:()=>null,querySelectorAll:()=>[]};
+const {MarketWatchController}=await import('../js/market-watch.js');
+let game='yugioh',resolveYugi;
+const yugi=new Promise(r=>resolveYugi=r);
+const controller=new MarketWatchController({getGame:()=>game,onRender:()=>{},api:{
+ marketDashboardMovers:g=>g==='yugioh'?yugi:Promise.resolve([{cardName:'One Piece',positiveChange:-10,referencePrice:9}]),
+ marketPriceAnomalies:async()=>[],marketWatchExtra:async()=>({items:[]}),marketWatchSummary:async()=>({}),marketWatchOwnedPage:async()=>({items:[]})
+}});
+await controller.load();game='onepiece';await controller.load();await new Promise(r=>setImmediate(r));
+resolveYugi([{cardName:'Old Yugi',positiveChange:20,referencePrice:12}]);await new Promise(r=>setImmediate(r));
+assert.equal(controller.dashboardState().featuredMovers[0].cardName,'One Piece');
+console.log('PASS late old-game response cannot overwrite current collection rankings');

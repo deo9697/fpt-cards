@@ -631,7 +631,16 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .featured-empty { display: flex; min-height: 330px; flex-direction: column; }
 .featured-empty .inline-empty { flex: 1; }
 .featured-empty > .btn { align-self: center; }
-.market-movers-panel { min-height: 330px; }
+.market-movers-panel { min-height: 330px; background: radial-gradient(ellipse at top left,#793bc51a,transparent 65%),var(--surface,#11101b); }
+.market-movers-context,.market-movers-footnote { color: var(--muted); font-size: .75rem; line-height: 1.6; margin: 0 0 16px; }
+.market-movers-footnote { margin: 16px 0 0; font-size: .68rem; }
+.market-movers-group { min-width: 0; padding: 12px; border: 1px solid #ffffff12; border-radius: 16px; background: #070a1280; }
+.market-movers-group.up { border-top-color: #65df8455; }
+.market-movers-group.down { border-top-color: #ff687955; }
+.market-movers-group h3 { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.market-movers-group h3 small { font-size: .6rem; letter-spacing:.1em; opacity:.8; }
+.market-mover-rank { flex:none; color:var(--muted); font-size:.7rem; font-variant-numeric:tabular-nums; }
+.market-mover-row-meta { color:var(--muted); font-size:.65rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* Due mini classifiche leggibili (Top 3 Up / Top 3 Down) al posto del
    vecchio carousel con grafico animato per riga: niente carousel, niente
    animazioni a ciclo, righe compatte mobile-first. */
@@ -643,15 +652,15 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .market-mover-row { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; padding: 8px; border: 0; border-radius: 12px; background: #ffffff08; color: inherit; text-align: left; cursor: pointer; }
 .market-mover-row:last-child { margin-bottom: 0; }
 .market-mover-row:hover,.market-mover-row:focus-visible { background: #ffffff14; }
-.market-mover-row-art { flex: none; width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #1c1826; }
+.market-mover-row-art { flex: none; width: 48px; height: 70px; border-radius: 4px; object-fit: contain; background: #1c1826; }
 .market-mover-row-art-placeholder { display: grid; place-items: center; color: var(--muted); }
 .market-mover-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.market-mover-row-name { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.market-mover-row-name { overflow: hidden; font-size: .82rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; overflow-wrap:anywhere; }
 .market-mover-row-history { font-size: .68rem; color: var(--muted); }
 .market-mover-row-price { flex: none; text-align: right; }
 .market-mover-row-price b,.market-mover-row-price small { display: block; }
 .market-mover-row-price b { font-size: .82rem; }
-.market-mover-row-price small { margin-top: 2px; font-size: .68rem; font-weight: 800; }
+.market-mover-row-price small { margin-top: 6px; padding:4px 6px; border-radius:6px; background:#ffffff08; font-size: .68rem; font-weight: 800; font-variant-numeric:tabular-nums; }
 .loan-overview-panel { display: flex; min-height: 330px; flex-direction: column; }
 .duel-alert { display: flex; align-items: center; gap: 10px; margin: -2px 0 8px; padding: 9px 10px; border: 1px solid #d19c3550; border-radius: 7px; background: #c2811812; color: #efbd57; }
 .duel-alert .icon { flex: none; width: 18px; }
