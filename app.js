@@ -2557,6 +2557,15 @@ async function updateLoan(id, action) {
 }
 
 async function startGuestShare(shareId) {
+  // 'share' non è mai un valore valido di ROUTES/routeFromHash(): invalida
+  // deliberatamente `page` (anche sul percorso rapido di rientro nello
+  // stesso share, non solo alla prima creazione) così che, uscendo dallo
+  // share link con un hashchange verso la STESSA route su cui l'utente si
+  // trovava PRIMA di entrarci (es. back del browser verso "#/collection"),
+  // l'handler in hashchange non la scambi per un no-op (`next===page`) e
+  // lasci la shell guest bloccata a schermo — bug reale scoperto proprio
+  // testando questo percorso.
+  page = 'share';
   if (guestShare?.shareId === shareId) { renderGuestShare(); return; }
   guestShare?.dispose();
   document.body.dataset.page = 'share';

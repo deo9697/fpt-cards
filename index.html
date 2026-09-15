@@ -14,6 +14,16 @@
   <title>F.P.T Cards</title>
 </head>
 <body>
+  <script>
+    // Guard di bootstrap immediato per i link di raccolta condivisa: marca
+    // subito la pagina come "share" (prima ancora che app.js — un modulo
+    // grande — venga scaricato/eseguito), così qualunque regola CSS o
+    // controllo futuro scritto su body[data-page] vede il confine pubblico/
+    // privato fin dal primissimo istante, mai un istante dopo. Nessuna
+    // logica duplicata: app.js resta l'unica sorgente di verità su COSA
+    // renderizzare, questo script tocca solo l'attributo, mai il DOM di #app.
+    if (/^#\/share\/[0-9a-f-]{36}$/i.test(location.hash)) document.body.dataset.page = 'share';
+  </script>
   <div id="app-launch" class="app-launch" role="status" aria-label="Avvio F.P.T. Cards">
     <div class="app-launch-panorama" aria-hidden="true">
       <div class="app-launch-halo"></div>
