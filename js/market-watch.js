@@ -200,13 +200,26 @@ export class MarketWatchController {
     try{await this.api.confirmMarketPriceAnomaly(snapshotId);this.anomalies=(this.anomalies||[]).filter(row=>String(row.id)!==String(snapshotId));this.onToast?.('Prezzo confermato');this.refreshBoardSection();}
     catch(error){this.onToast?.(error?.message||'Conferma non riuscita');}
   }
-  // Guard ripristinato: la Dashboard non mostra più un grafico per-carta nel
-  // carousel (niente "price history aggiuntiva per ogni slide" — vincolo
-  // esplicito), quindi questo resta solo un fallback RARO per il pannello
-  // "featured" quando featuredMovers è ancora vuoto — mai una fetch per
-  // singola carta ad ogni caricamento della Dashboard come accadeva prima
-  // di questo fix.
-  async loadFeaturedHistories(){if(this.extra.featuredMovers?.length)return;const missing=positiveMovers(this.ownedPage.items,3).filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,30),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));this.onRender?.();}
+  // La Dashboard mostra un grafico per ciascuna delle (al massimo 3) carte
+  // in evidenza nel carousel — questa resta comunque una fetch LIMITATA a
+  // quelle sole 3 carte (mai un ventaglio più ampio, mai ripetuta per una
+  // carta già in cache: featuredHistory è svuotata solo quando arriva un
+  // sync più recente, vedi load()), non una fetch per ogni render.
+  // p_days=365: lo storico completo disponibile è scaricato una volta sola,
+  // è poi il grafico stesso a decidere in base alla copertura reale se
+  // mostrare una lettura mensile o (superato il mese) annuale.
+  // onRender() qui è un full page rebuild (necessario per far comparire il
+  // grafico nell'hero della Dashboard) — ma questo stesso controller serve
+  // ANCHE la pagina Market Watch, dove un rebuild in questo momento
+  // ricrea ogni `.market-row` e il suo IntersectionObserver mentre potrebbe
+  // essere a metà di un proprio ciclo di osservazione/fetch (loadRowHistory
+  // → patchRowSparkline). Misurato empiricamente: senza la guardia sotto,
+  // 2 run su 5 in scripts/market-watch-browser-smoke.mjs restituivano
+  // "rows"/"charts" a 0 per questa esatta corsa parallela, contro 0 su 5
+  // con la guardia. Quando l'hero della Dashboard non è montato (non è la
+  // pagina attualmente mostrata) il render è inutile comunque: i dati restano
+  // in featuredHistory e verranno mostrati al prossimo giro naturale.
+  async loadFeaturedHistories(){const movers=(this.extra.featuredMovers?.length?this.extra.featuredMovers:positiveMovers(this.ownedPage.items,3)).slice(0,3);const missing=movers.filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,365),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));if(document.querySelector('[data-featured-track]'))this.onRender?.();}
   // Solo la tab Raccolta è impaginata/ordinata/cercata lato server (arriva
   // già pronta in ownedPage.items) — Mazzi/Watchlist restano piccole per
   // costruzione, filtrate/ordinate lato client come prima.

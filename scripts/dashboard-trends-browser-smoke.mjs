@@ -1,10 +1,9 @@
-// Dashboard Market Watch: hero carousel (solo artwork) + Top 3 Up/Down —
-// verifica reale in Chrome (artwork cropped davvero decodificato, niente
-// overflow a 360/390/768/1440px, navigazione hero a frecce/pallini, mai
-// ritorno dei render pesanti). Sostituisce il vecchio test scritto per il
-// carousel unificato (un'altra sessione, ora non più in uso): niente più
-// dipendenza dalla RPC list_market_dashboard_trends né dal markup
-// .market-art-*.
+// Dashboard Market Watch: hero carousel (solo artwork, con un grafico
+// dell'andamento prezzo per slide) — verifica reale in Chrome (artwork
+// cropped davvero decodificato, grafico SVG renderizzato, niente overflow a
+// 360/390/768/1440px, navigazione hero a frecce/pallini, mai ritorno dei
+// render pesanti). Le liste Top 3 Up/Down sotto il carousel sono state
+// rimosse su richiesta esplicita: questo test non le cerca più.
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -50,9 +49,17 @@ try {
   const setup = await evaluate(`(async()=>{
     const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
-    const upItems = Array.from({length:3},(_,i)=>({printingId:'up'+i, catalogCardId:'up'+i, cardName:'Su '+i, imageUrl:window.__testArtwork, referencePrice:12+i, price24h:10, sources:['owned']}));
-    const downItems = Array.from({length:3},(_,i)=>({printingId:'down'+i, catalogCardId:'down'+i, cardName:'Giù '+i, imageUrl:window.__testArtwork, referencePrice:8-i, price24h:10, sources:['owned']}));
-    window.__renderDashboard = () => { document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items:[...upItems,...downItems]}); bindDashboardCarousel(); };
+    const now = Date.UTC(2026,8,15);
+    // referencePrice decrescente (14,13,12) così positiveMovers() -- che
+    // ordina per variazione % più grande prima -- mantiene l'ordine
+    // up0,up1,up2 invariato, coerente con la mappa featuredHistory sotto.
+    const upItems = Array.from({length:3},(_,i)=>({printingId:'up'+i, catalogCardId:'up'+i, cardName:'Su '+i, imageUrl:window.__testArtwork, referencePrice:14-i, price24h:10, sources:['owned']}));
+    // up0: storico < 1 mese (lettura mensile); up1: storico > 1 mese (annuale); up2: nessuno storico (stato vuoto dedicato).
+    const featuredHistory = new Map([
+      ['up0', [{price:9,capturedAt:new Date(now-20*86400000).toISOString()},{price:12,capturedAt:new Date(now).toISOString()}]],
+      ['up1', [{price:7,capturedAt:new Date(now-250*86400000).toISOString()},{price:13,capturedAt:new Date(now).toISOString()}]]
+    ]);
+    window.__renderDashboard = () => { document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items:upItems, featuredHistory}); bindDashboardCarousel(); };
     window.__renderDashboard();
     return true;
   })()`);
@@ -63,9 +70,8 @@ try {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 1100, deviceScaleFactor: 1, mobile: width < 900 });
     const check = await evaluate(`(()=>{
       const panel = document.querySelector('.market-movers-panel');
-      const slides = panel.querySelectorAll('.market-hero-slide').length;
-      const upRows = panel.querySelectorAll('.market-movers-group.up .market-mover-row').length;
-      const downRows = panel.querySelectorAll('.market-movers-group.down .market-mover-row').length;
+      const slides = panel.querySelectorAll('.market-featured-slide').length;
+      const oldLists = !!document.querySelector('.market-movers-lists');
       // document.documentElement.scrollWidth è inaffidabile su questa pagina:
       // body ha già overflow-x:hidden (convenzione esistente dell'app), quindi
       // può contare contenuto CLIPPATO (mai visibile, mai scrollabile) come se
@@ -75,17 +81,17 @@ try {
       // segnalasse il contrario). La larghezza renderizzata di <body> è la
       // misura diretta di ciò che l'utente vede davvero.
       const overflow = document.body.getBoundingClientRect().width > innerWidth + 1;
-      return {slides, upRows, downRows, overflow, panelOverflow: panel.scrollWidth > panel.clientWidth + 1};
+      return {slides, oldLists, overflow, panelOverflow: panel.scrollWidth > panel.clientWidth + 1};
     })()`);
-    if (check.slides !== 3 || check.upRows !== 3 || check.downRows !== 3 || check.overflow || check.panelOverflow) throw Error(`Layout non valido a ${width}px: ${JSON.stringify(check)}`);
+    if (check.slides !== 3 || check.oldLists || check.overflow || check.panelOverflow) throw Error(`Layout non valido a ${width}px: ${JSON.stringify(check)}`);
   }
-  console.log('PASS nessun overflow a 360/390/768/1440px: 3 slide hero, 3 righe Up, 3 righe Down');
+  console.log('PASS nessun overflow a 360/390/768/1440px: 3 slide hero, nessuna lista Up/Down (rimosse su richiesta)');
 
   // --- Artwork: cover reale decodificata, mai la carta intera --------------
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1100, deviceScaleFactor: 1, mobile: true });
   await evaluate(`document.querySelector('.market-movers-panel').scrollIntoView();`);
   const artCheck = await evaluate(`(async()=>{
-    const imgs = [...document.querySelectorAll('.market-hero-art')];
+    const imgs = [...document.querySelectorAll('.market-featured-art')];
     await Promise.all(imgs.map(img => { img.loading='eager'; return img.decode(); }));
     return {count: imgs.length, allDecoded: imgs.every(img => img.naturalWidth > 0), objectFit: getComputedStyle(imgs[0]).objectFit};
   })()`);
@@ -93,16 +99,30 @@ try {
   if (artCheck.objectFit !== 'cover') throw Error('L\'hero deve usare object-fit:cover: ' + JSON.stringify(artCheck));
   console.log('PASS artwork hero: 3 immagini reali decodificate correttamente, object-fit:cover applicato');
 
+  // --- Grafico andamento: mensile/annuale/vuoto per le 3 slide -------------
+  const chartCheck = await evaluate(`(()=>{
+    const slides = [...document.querySelectorAll('.market-featured-slide')];
+    return slides.map(slide => ({
+      hasSvg: !!slide.querySelector('.market-featured-chart svg'),
+      label: slide.querySelector('.market-featured-chart-dates')?.textContent || '',
+      empty: !!slide.querySelector('.market-featured-chart-empty')
+    }));
+  })()`);
+  if (!chartCheck[0].hasSvg || !chartCheck[0].label.includes('mensile')) throw Error('La prima slide (storico < 1 mese) deve mostrare un grafico con lettura mensile: ' + JSON.stringify(chartCheck));
+  if (!chartCheck[1].hasSvg || !chartCheck[1].label.includes('annuale')) throw Error('La seconda slide (storico > 1 mese) deve mostrare un grafico con lettura annuale: ' + JSON.stringify(chartCheck));
+  if (!chartCheck[2].empty) throw Error('La terza slide (nessuno storico) deve mostrare lo stato vuoto dedicato del grafico, mai un grafico rotto: ' + JSON.stringify(chartCheck));
+  console.log('PASS grafico andamento reale: mensile/annuale scelti in base alla copertura effettiva dello storico, stato vuoto quando assente');
+
   // --- Navigazione: frecce + pallini, niente scroll oltre l'ultima slide ---
-  const beforeNav = await evaluate(`document.querySelector('[data-hero-dot="1"]').classList.contains('active')`);
+  const beforeNav = await evaluate(`document.querySelector('[data-featured-dot="1"]').classList.contains('active')`);
   if (beforeNav) throw Error('Il secondo pallino non deve essere attivo prima della navigazione');
-  await evaluate(`document.querySelector('[data-hero-next]').click()`);
+  await evaluate(`document.querySelector('[data-featured-next]').click()`);
   await delay(300);
-  const afterNext = await evaluate(`({activeDot: [...document.querySelectorAll('[data-hero-dot]')].findIndex(d=>d.classList.contains('active')), prevDisabled: document.querySelector('[data-hero-prev]').disabled})`);
+  const afterNext = await evaluate(`({activeDot: [...document.querySelectorAll('[data-featured-dot]')].findIndex(d=>d.classList.contains('active')), prevDisabled: document.querySelector('[data-featured-prev]').disabled})`);
   if (afterNext.activeDot !== 1 || afterNext.prevDisabled) throw Error('Il bottone "successivo" non ha aggiornato correttamente pallino/stato: ' + JSON.stringify(afterNext));
-  await evaluate(`document.querySelector('[data-hero-dot="2"]').click()`);
+  await evaluate(`document.querySelector('[data-featured-dot="2"]').click()`);
   await delay(300);
-  const afterDot = await evaluate(`({activeDot: [...document.querySelectorAll('[data-hero-dot]')].findIndex(d=>d.classList.contains('active')), nextDisabled: document.querySelector('[data-hero-next]').disabled})`);
+  const afterDot = await evaluate(`({activeDot: [...document.querySelectorAll('[data-featured-dot]')].findIndex(d=>d.classList.contains('active')), nextDisabled: document.querySelector('[data-featured-next]').disabled})`);
   if (afterDot.activeDot !== 2 || !afterDot.nextDisabled) throw Error('Il click su un pallino non ha navigato/disabilitato correttamente "successivo" sull\'ultima slide: ' + JSON.stringify(afterDot));
   console.log('PASS navigazione hero: frecce e pallini sincronizzati, "successivo" disabilitato sull\'ultima slide');
 
@@ -113,23 +133,22 @@ try {
     const items = [{printingId:'solo', catalogCardId:'solo', cardName:'Unica Carta', imageUrl:window.__testArtwork, referencePrice:15, price24h:10, sources:['owned']}];
     document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
     bindDashboardCarousel();
-    return {slides: document.querySelectorAll('.market-hero-slide').length, hasNav: !!document.querySelector('.market-hero-nav')};
+    return {slides: document.querySelectorAll('.market-featured-slide').length, hasNav: !!document.querySelector('.market-featured-nav')};
   })()`);
   if (singleResult.slides !== 1 || singleResult.hasNav) throw Error('Con una sola carta in salita non deve comparire alcuna navigazione: ' + JSON.stringify(singleResult));
   console.log('PASS singola carta: nessuna navigazione montata, hero mostrata normalmente');
 
-  // --- Nessun mover positivo: stato vuoto elegante, lista Down comunque viva ---
-  const emptyUpResult = await evaluate(`(async()=>{
+  // --- Nessun mover positivo: stato vuoto elegante del pannello ------------
+  const emptyResult = await evaluate(`(async()=>{
     const {dashboardView} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
-    const items = [{printingId:'d1', catalogCardId:'d1', cardName:'Solo giù', imageUrl:window.__testArtwork, referencePrice:5, price24h:10, sources:['owned']}];
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
-    return {hasHeroEmpty: !!document.querySelector('.market-hero-empty'), hasSlide: !!document.querySelector('.market-hero-slide'), downText: document.querySelector('.market-movers-group.down')?.textContent || ''};
+    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items:[]});
+    return {hasEmpty: !!document.querySelector('.featured-empty'), hasSlide: !!document.querySelector('.market-featured-slide')};
   })()`);
-  if (!emptyUpResult.hasHeroEmpty || emptyUpResult.hasSlide || !emptyUpResult.downText.includes('Solo giù')) throw Error('Stato vuoto hero senza movers positivi non valido: ' + JSON.stringify(emptyUpResult));
-  console.log('PASS nessun mover positivo: hero vuoto elegante, lista In discesa comunque popolata');
+  if (!emptyResult.hasEmpty || emptyResult.hasSlide) throw Error('Stato vuoto del pannello senza movers positivi non valido: ' + JSON.stringify(emptyResult));
+  console.log('PASS nessun mover positivo: stato vuoto elegante del pannello');
 
-  // Ripristina la vista con 6 carte per lo screenshot finale.
+  // Ripristina la vista iniziale per lo screenshot finale.
   await evaluate(`window.__renderDashboard()`);
   await delay(200);
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -139,7 +158,7 @@ try {
   await fs.writeFile(screenshotPath, Buffer.from(shot.data, 'base64'));
 
   if ((await evaluate('window.__consoleErrors')).length) throw Error('Errori console imprevisti: ' + JSON.stringify(await evaluate('window.__consoleErrors')));
-  console.log('PASS dashboard-trends-browser (browser reale): hero carousel + liste Up/Down, nessun render pesante reintrodotto. Screenshot: ' + screenshotPath);
+  console.log('PASS dashboard-trends-browser (browser reale): hero carousel con grafico mensile/annuale, nessuna lista Up/Down, nessun render pesante reintrodotto. Screenshot: ' + screenshotPath);
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

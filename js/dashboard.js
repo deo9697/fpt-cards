@@ -1,6 +1,6 @@
 import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
-import { positiveMovers, negativeMovers, changePercent, tone } from './market-watch.js';
+import { positiveMovers, changePercent } from './market-watch.js';
 
 export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
@@ -63,14 +63,23 @@ function trackedCards(loans) {
   return [...records.values()];
 }
 
-// Soluzione ibrida: un hero carousel dominante (solo artwork, in stile
-// cover — mai la carta intera con cornice/testo/ATK-DEF) con le carte in
-// salita come featured movers, e sotto due liste compatte Top 3 Up/Top 3
-// Down (già esistenti, riusate senza modifiche). Zero query nuove: le
-// carte in salita vengono da market.featuredMovers (RPC esistente
-// list_market_dashboard_movers, invariata) con lo stesso fallback
-// client-side già esistente; quelle in discesa restano sempre
-// negativeMovers(market.items,3), la RPC non le fornisce.
+// Hero carousel dominante (solo artwork, in stile cover — mai la carta
+// intera con cornice/testo/ATK-DEF), con un grafico dell'andamento prezzo
+// per ogni slide. Solo le carte in crescita (niente più liste Up/Down
+// sotto: rimosse su richiesta, non necessarie). Zero query nuove: le carte
+// vengono da market.featuredMovers (RPC esistente list_market_dashboard_movers,
+// invariata) con lo stesso fallback client-side a positiveMovers(market.items,3)
+// di prima; lo storico prezzi viene da market.featuredHistory, già caricato
+// da MarketWatchController per le sole carte mostrate (max 3, mai una fetch
+// per ogni render).
+//
+// Nota sui nomi di classe: NON riusare il prefisso .market-hero-* — è già
+// la testata della pagina Market Watch (.market-hero, particelle, monete,
+// "La tua collezione vale" con lo sfondo assets/market-watch-dan.jpg). Una
+// precedente versione di questo file riusava per errore lo stesso nome per
+// l'artwork del carousel: lo z-index impostato qui finiva per nascondere
+// quello sfondo (stessa classe, proprietà in conflitto). Prefisso dedicato
+// .market-featured-* per tutto ciò che appartiene a QUESTA card.
 //
 // `Array.isArray` invece di `.length`: market.featuredMovers è `undefined`
 // finché la RPC non ha ancora risposto, ma un `[]` esplicito È una risposta
@@ -80,58 +89,69 @@ function trackedCards(loans) {
 // della risposta completa già arrivata.
 function featuredPanel(market) {
   const upMovers = Array.isArray(market.featuredMovers) ? market.featuredMovers.slice(0, 3) : positiveMovers(market.items || [], 3);
-  const downMovers = negativeMovers(market.items || [], 3);
   const heading = '<div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Il mercato, nelle tue carte</h2></div><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
-  if (!upMovers.length && !downMovers.length) {
+  if (!upMovers.length) {
     const title = market.trendsError ? 'Trend non disponibili' : market.trendsLoading ? 'Caricamento trend…' : 'Nessuna variazione da mostrare';
     const message = market.trendsError ? 'Apri Market Watch per riprovare il caricamento.' : market.trendsLoading ? 'Controlliamo le carte della tua raccolta.' : 'Le carte con un prezzo recente e un confronto a 24h appariranno qui.';
     return '<section class="surface duel-panel featured-card-panel featured-empty">'+heading+'<div class="inline-empty">'+icon('chart')+'<div><strong>'+title+'</strong><span>'+message+'</span></div></div></section>';
   }
-  return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
-    heroCarousel(upMovers)+
-    '<div class="market-movers-lists">'+
-      moverGroup('In salita', 'up', upMovers, 'Nessuna carta in crescita al momento.')+
-      moverGroup('In discesa', 'down', downMovers, 'Nessuna variazione negativa al momento.')+
-    '</div></section>';
-}
-// Solo le carte in crescita diventano hero slide (coerente con "usando le
-// carte in crescita come featured movers" — la lista "In discesa" resta
-// sotto, mai promossa nel carousel).
-function heroCarousel(upMovers) {
-  if (!upMovers.length) return '<div class="market-hero-empty">'+icon('chart')+'<span>Nessuna carta in crescita al momento — le carte in discesa restano comunque visibili sotto.</span></div>';
+  const history = market.featuredHistory instanceof Map ? market.featuredHistory : new Map();
   const multi = upMovers.length > 1;
-  return '<div class="market-hero-carousel">'+
-    '<div class="market-hero-track" data-hero-track role="listbox" aria-label="Carte in evidenza">'+upMovers.map((item, index) => heroSlide(item, index)).join('')+'</div>'+
-    (multi ? '<div class="market-hero-nav">'+
-      '<button type="button" class="market-hero-nav-btn" data-hero-prev aria-label="Carta precedente">&#8249;</button>'+
-      '<div class="market-hero-dots" data-hero-dots>'+upMovers.map((_, i) => '<button type="button" class="market-hero-dot'+(i===0?' active':'')+'" data-hero-dot="'+i+'" aria-label="Vai alla carta '+(i+1)+'"></button>').join('')+'</div>'+
-      '<button type="button" class="market-hero-nav-btn" data-hero-next aria-label="Carta successiva">&#8250;</button>'+
-    '</div>' : '')+
-  '</div>';
+  return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
+    '<div class="market-featured-carousel">'+
+      '<div class="market-featured-track" data-featured-track role="listbox" aria-label="Carte in evidenza">'+upMovers.map((item, index) => heroSlide(item, index, history.get(item.printingId)||[])).join('')+'</div>'+
+      (multi ? '<div class="market-featured-nav">'+
+        '<button type="button" class="market-featured-nav-btn" data-featured-prev aria-label="Carta precedente">&#8249;</button>'+
+        '<div class="market-featured-dots" data-featured-dots>'+upMovers.map((_, i) => '<button type="button" class="market-featured-dot'+(i===0?' active':'')+'" data-featured-dot="'+i+'" aria-label="Vai alla carta '+(i+1)+'"></button>').join('')+'</div>'+
+        '<button type="button" class="market-featured-nav-btn" data-featured-next aria-label="Carta successiva">&#8250;</button>'+
+      '</div>' : '')+
+    '</div>'+
+  '</section>';
 }
-function heroSlide(item, index) {
+function heroSlide(item, index, history) {
   const artwork = moverArtwork(item), change = Number(item.positiveChange);
   const previous = Number.isFinite(item.price24h) ? item.price24h : (Number.isFinite(item.baselinePrice) ? item.baselinePrice : null);
-  return '<button type="button" class="market-hero-slide" data-page="market" data-hero-slide="'+index+'" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
-    (artwork ? '<img class="market-hero-art" src="'+esc(artwork)+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">' : '<span class="market-hero-art market-hero-art-placeholder">'+icon('card')+'</span>')+
-    '<span class="market-hero-scrim" aria-hidden="true"></span>'+
-    '<span class="market-hero-copy">'+
-      '<span class="market-hero-badge">In salita &#183; '+changePercent(change)+'</span>'+
-      '<strong class="market-hero-name">'+esc(item.cardName)+'</strong>'+
-      '<span class="market-hero-price"><b>'+marketMoney(item.referencePrice)+'</b>'+(previous!=null?'<small>'+marketMoney(previous)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
+  return '<button type="button" class="market-featured-slide" data-page="market" data-featured-slide="'+index+'" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
+    (artwork ? '<img class="market-featured-art" src="'+esc(artwork)+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">' : '<span class="market-featured-art market-featured-art-placeholder">'+icon('card')+'</span>')+
+    '<span class="market-featured-scrim" aria-hidden="true"></span>'+
+    '<span class="market-featured-copy">'+
+      '<span class="market-featured-badge">In salita &#183; '+changePercent(change)+'</span>'+
+      '<strong class="market-featured-name">'+esc(item.cardName)+'</strong>'+
+      '<span class="market-featured-price"><b>'+marketMoney(item.referencePrice)+'</b>'+(previous!=null?'<small>'+marketMoney(previous)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
+      heroChart(history)+
     '</span></button>';
+}
+// Andamento mensile finché la storia disponibile copre meno di un mese;
+// superato il mese, l'asse passa automaticamente a una lettura annuale
+// (stessi punti, solo l'etichetta e la granularità delle date cambiano —
+// mai una nuova RPC: riusa lo storico già caricato da featuredHistory).
+function heroChart(history) {
+  const points = (history||[]).filter(p=>Number.isFinite(p.price)&&Number.isFinite(Date.parse(p.capturedAt))).slice().sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt));
+  if (points.length < 2) return '<span class="market-featured-chart-empty">Storico prezzi non ancora disponibile</span>';
+  const values = points.map(p=>p.price), low = Math.min(...values), high = Math.max(...values), range = high-low || 1;
+  const first = Date.parse(points[0].capturedAt), last = Date.parse(points.at(-1).capturedAt), duration = (last-first) || 1;
+  const yearly = duration / 86400000 > 31;
+  const coords = points.map(p => [8+(Date.parse(p.capturedAt)-first)/duration*304, 58-((p.price-low)/range)*44]);
+  const path = coords.map(([x,y],i)=>(i?'L':'M')+x.toFixed(2)+' '+y.toFixed(2)).join(' '), lastPoint = coords.at(-1);
+  const dateLabel = ts => new Date(ts).toLocaleDateString('it-IT', yearly ? {month:'short',year:'2-digit'} : {day:'2-digit',month:'short'});
+  return '<span class="market-featured-chart"><svg viewBox="0 0 320 70" role="img" aria-label="Andamento prezzo '+(yearly?'annuale':'mensile')+'">'+
+    '<path class="market-featured-chart-grid" d="M8 12H312 M8 35H312 M8 58H312"/>'+
+    '<path class="market-featured-chart-area" d="'+path+' L'+lastPoint[0].toFixed(2)+' 70 L8 70Z"/>'+
+    '<path class="market-featured-chart-line" d="'+path+'"/>'+
+    '<circle cx="'+lastPoint[0].toFixed(2)+'" cy="'+lastPoint[1].toFixed(2)+'" r="3"/>'+
+  '</svg><span class="market-featured-chart-dates"><small>'+dateLabel(first)+'</small><small>'+(yearly?'Andamento annuale':'Andamento mensile')+'</small><small>'+dateLabel(last)+'</small></span></span>';
 }
 // Navigazione semplice (frecce + indicatori a pallino), niente autoplay:
 // mai un timer che ricarichi/ridisegni da solo. Una sola slide -> nessun
 // controllo di navigazione montato (return immediato, meno di 2 slide).
 export function bindDashboardCarousel(root=document) {
-  const track=root.querySelector('[data-hero-track]');
+  const track=root.querySelector('[data-featured-track]');
   if(!track||track.dataset.bound)return;
   track.dataset.bound='true';
-  const slides=[...track.querySelectorAll('.market-hero-slide')];
+  const slides=[...track.querySelectorAll('.market-featured-slide')];
   if(slides.length<2)return;
-  const dots=[...root.querySelectorAll('[data-hero-dot]')];
-  const prevBtn=root.querySelector('[data-hero-prev]'),nextBtn=root.querySelector('[data-hero-next]');
+  const dots=[...root.querySelectorAll('[data-featured-dot]')];
+  const prevBtn=root.querySelector('[data-featured-prev]'),nextBtn=root.querySelector('[data-featured-next]');
   const slideWidth=()=>slides[0].getBoundingClientRect().width+12;
   const currentIndex=()=>Math.round(track.scrollLeft/slideWidth());
   const goTo=index=>{const clamped=Math.max(0,Math.min(slides.length-1,index));track.scrollTo({left:clamped*slideWidth(),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
@@ -142,17 +162,6 @@ export function bindDashboardCarousel(root=document) {
   track.addEventListener('scroll',update,{passive:true});
   track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'){event.preventDefault();goTo(currentIndex()+1);}else if(event.key==='ArrowLeft'){event.preventDefault();goTo(currentIndex()-1);}});
   update();
-}
-function moverGroup(label, direction, movers, emptyText) {
-  return '<div class="market-movers-group '+direction+'"><h3>'+esc(label)+'</h3>'+(movers.length ? movers.map(moverRow).join('') : '<p class="market-movers-group-empty">'+esc(emptyText)+'</p>')+'</div>';
-}
-function moverRow(item) {
-  const artwork = moverArtwork(item), change = Number(item.positiveChange), hasPrevious = Number.isFinite(item.price24h);
-  return '<button class="market-mover-row" data-page="market" aria-label="Apri '+esc(item.cardName)+' nel Market Watch">'+
-    (artwork ? '<img class="market-mover-row-art" src="'+esc(artwork)+'" alt="" loading="lazy">' : '<span class="market-mover-row-art market-mover-row-art-placeholder">'+icon('card')+'</span>')+
-    '<span class="market-mover-row-body"><strong class="market-mover-row-name">'+esc(item.cardName)+'</strong>'+
-    (hasPrevious?'<small class="market-mover-row-history">'+marketMoney(item.price24h)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
-    '<span class="market-mover-row-price"><b>'+marketMoney(item.referencePrice)+'</b><small class="'+tone(change)+'">'+changePercent(change)+'</small></span></button>';
 }
 // Preferire il crop per Yu-Gi-Oh! (mai la carta intera nell'hero): un URL
 // già in forma images/cards/<id>.jpg diventa cards_cropped/<id>.jpg, un
