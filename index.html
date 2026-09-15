@@ -3,13 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#070a17">
+  <meta name="theme-color" content="#050711">
   <meta name="description" content="Gestione prestiti carte del team F.P.T">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="preload" href="assets/fonts/manrope-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/cinzel-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <!--
+    Critical launch CSS: deve rendere il primo frame di #app-launch identico
+    allo splash nativo Android/PWA (stesso sfondo, stesso logo centrato,
+    nessun testo) SENZA dipendere da styles.css, che può arrivare qualche
+    millisecondo dopo. Usa selettori di sola classe (mai #app-launch) per
+    restare alla stessa specificità delle regole equivalenti in styles.css:
+    un selettore per id vincerebbe sempre su '.app-launch.is-branded ...' e
+    la rivelazione del branding (Step 2) resterebbe bloccata per sempre.
+  -->
+  <style>
+    html,body{background:#050711}
+    .app-launch{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;overflow:hidden;background:#050711;opacity:1}
+    .app-launch-halo,.app-launch-brand{grid-area:1/1;position:absolute;opacity:0}
+    .app-launch-mark{grid-area:1/1;position:relative;z-index:1;width:clamp(84px,24vw,128px);height:clamp(84px,24vw,128px);object-fit:contain}
+  </style>
   <link rel="stylesheet" href="styles.css">
   <title>F.P.T Cards</title>
 </head>
@@ -25,12 +40,13 @@
     if (/^#\/share\/[0-9a-f-]{36}$/i.test(location.hash)) document.body.dataset.page = 'share';
   </script>
   <div id="app-launch" class="app-launch" role="status" aria-label="Avvio F.P.T. Cards">
-    <div class="app-launch-panorama" aria-hidden="true">
-      <div class="app-launch-halo"></div>
-      <img class="app-launch-art" src="icon-512.png" alt="" fetchpriority="high" width="512" height="512">
-      <div class="app-launch-sweep"></div>
+    <div class="app-launch-halo" aria-hidden="true"></div>
+    <img class="app-launch-mark" src="icon-512.png" alt="" fetchpriority="high" width="512" height="512">
+    <div class="app-launch-brand" aria-hidden="true">
+      <span class="app-launch-eyebrow">F.P.T CARDS</span>
+      <span class="app-launch-tagline">IL TUO TEAM. LE TUE CARTE.</span>
+      <div class="app-launch-track"><i></i></div>
     </div>
-    <div class="app-launch-caption"><span>IL TUO TEAM. LE TUE CARTE.</span><p>Prepariamo il tuo spazio</p><div class="app-launch-track" aria-hidden="true"><i></i></div></div>
   </div>
   <script src="js/app-launch.js"></script>
   <noscript><style>.app-launch { display:none; }</style></noscript>
