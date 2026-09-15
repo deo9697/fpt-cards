@@ -89,44 +89,120 @@ export function resolveImageAccent(theme) {
   return resolved?.accent || FALLBACK_THEME.accent;
 }
 
-// --- Layout puro ---------------------------------------------------------
-// Nessun overflow per costruzione: la griglia usa un numero fisso di
-// colonne e restringe le celle (mai i margini/il canvas) finché tutte le
-// sezioni non entrano nell'altezza disponibile. Testabile senza un canvas
-// reale: produce solo coordinate numeriche.
+// --- Layout puro (V1.1) ---------------------------------------------------
+// Nessun overflow per costruzione: ogni griglia restringe le proprie celle
+// (mai i margini/il canvas) finché entra nel budget di altezza assegnato.
+// Testabile senza un canvas reale: produce solo coordinate numeriche.
+//
+// V1.1 rende il Main dominante invece di condividere UNA griglia uniforme
+// con Extra/Side: Main sceglie tra 4-10 colonne (6-8 il caso comune per un
+// mazzo tipico, mai fissa a 8 come in V1), le sezioni "compatte" (Extra/
+// Side/DON!! — tutto ciò che non è Main) tra 9-12, sempre più dense/piccole
+// del Main anche quando avanza altezza (COMPACT_MAX_WIDTH_RATIO). Il Leader
+// (One Piece) riceve una cornice dedicata più grande SOLO in Poster Mode —
+// in Readable resta una sezione compatta come le altre, nessuna gerarchia
+// visiva aggiuntiva. Nessun branching per gioco: si basa solo sulle CHIAVI
+// di sezione già fornite dall'adapter (main/leader), le stesse per
+// entrambi i giochi.
 const PADDING = 56;
-const HEADER_HEIGHT = 194;
-const FOOTER_HEIGHT = 40;
 const SECTION_TITLE_HEIGHT = 34;
 const SECTION_GAP = 20;
-
 const BASE_CELL_GAP = 10;
 const CELL_ASPECT = 1.46;
+const MAIN_COLUMNS_CANDIDATES = [4, 5, 6, 7, 8, 9, 10];
+const COMPACT_COLUMNS_CANDIDATES = [9, 10, 11, 12];
+const LEADER_COLUMNS_CANDIDATES = [2, 3];
+const COMPACT_MAX_WIDTH_RATIO = 0.85;
+const LEADER_MAX_HEIGHT_SHARE = 0.28;
+const LAYOUT_PRESETS = {
+  // Priorità massima alla leggibilità: header/footer più sobri (meno spazio
+  // decorativo) e una quota maggiore dell'altezza riservata al Main così le
+  // sue card crescono di più.
+  readable: { headerHeight: 172, footerHeight: 30, mainHeightShare: 0.66 },
+  // Più scenico (spazio per firma/branding), quota Main leggermente minore
+  // e il Leader (One Piece) ottiene una cornice dedicata più grande.
+  poster: { headerHeight: 194, footerHeight: 40, mainHeightShare: 0.60 }
+};
 
-export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT } = {}) {
+// `rowsForColumns(columns)` — MAI un semplice ceil(cardCount/columns) quando
+// il candidato copre PIÙ sezioni compatte (Extra+Side, o Extra+Side+DON!!):
+// ognuna arrotonda le proprie righe per conto suo a rendering (ogni sezione
+// è un blocco a sé, con un proprio inizio riga), quindi il budget deve
+// sommare i ceil PER SEZIONE — un ceil unico sul totale delle carte
+// sottostima le righe reali (bug reale, trovato testando l'overflow su
+// 40 main / 15 extra / 15 side) e produce un cellWidth troppo grande che
+// esce dal canvas una volta sommate le sezioni davvero renderizzate.
+function bestGridFor(rowsForColumns, columnsCandidates, availableHeight, contentWidth) {
+  let best = null;
+  for (const columns of columnsCandidates) {
+    const baseWidth = (contentWidth - (columns - 1) * BASE_CELL_GAP) / columns;
+    const rows = Math.max(1, rowsForColumns(columns));
+    const neededHeight = rows * baseWidth * CELL_ASPECT + Math.max(0, rows - 1) * BASE_CELL_GAP;
+    const scale = neededHeight > 0 ? Math.min(1, Math.max(0, availableHeight / neededHeight)) : 1;
+    const candidate = { columns, cellWidth: baseWidth * scale, cellGap: BASE_CELL_GAP * scale, rows };
+    if (!best || candidate.cellWidth > best.cellWidth) best = candidate;
+  }
+  return best;
+}
+const rowsForSingleSection = cardCount => columns => Math.ceil(cardCount / columns);
+const rowsForMultipleSections = sections => columns => sections.reduce((sum, section) => sum + Math.ceil(section.cards.length / columns), 0);
+
+export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT, layoutMode = 'readable' } = {}) {
+  const preset = LAYOUT_PRESETS[layoutMode] || LAYOUT_PRESETS.readable;
+  const { headerHeight, footerHeight, mainHeightShare } = preset;
   const contentX = PADDING;
   const contentWidth = width - PADDING * 2;
   const nonEmpty = model.sections.filter(section => section.cards.length > 0);
-  const availableHeight = height - PADDING - HEADER_HEIGHT - FOOTER_HEIGHT - PADDING;
   const fixedHeight = nonEmpty.length * SECTION_TITLE_HEIGHT + Math.max(0, nonEmpty.length - 1) * SECTION_GAP;
-  let best;
-  // Choose the grid that gives the largest complete cards, not a fixed 8 columns.
-  for (let columns=4; columns<=12; columns++) {
-    const baseWidth = (contentWidth-(columns-1)*BASE_CELL_GAP)/columns;
-    const rows = nonEmpty.reduce((n,section)=>n+Math.ceil(section.cards.length/columns),0);
-    const scalableHeight = rows*baseWidth*CELL_ASPECT + Math.max(0,rows-nonEmpty.length)*BASE_CELL_GAP;
-    const scale = scalableHeight ? Math.min(1,Math.max(0,(availableHeight-fixedHeight)/scalableHeight)) : 1;
-    const candidate = {columns,cellWidth:baseWidth*scale,cellGap:BASE_CELL_GAP*scale};
-    if (!best || candidate.cellWidth>best.cellWidth) best=candidate;
-  }
-  const {columns,cellWidth,cellGap}=best;
-  const cellHeight=cellWidth*CELL_ASPECT;
-  const rowsFor = section => Math.ceil(section.cards.length/columns);
-  const gridX = contentX + (contentWidth-columns*cellWidth-(columns-1)*cellGap)/2;
+  const availableCardsHeight = Math.max(0, height - PADDING - headerHeight - footerHeight - PADDING - fixedHeight);
 
-  let cursorY = PADDING + HEADER_HEIGHT;
+  const mainSection = nonEmpty.find(section => section.key === 'main') || null;
+  const leaderSection = layoutMode === 'poster' ? (nonEmpty.find(section => section.key === 'leader') || null) : null;
+  const otherSections = nonEmpty.filter(section => section !== mainSection && section !== leaderSection);
+  const otherCardCount = otherSections.reduce((sum, section) => sum + section.cards.length, 0);
+
+  let leaderGrid = null, leaderBudget = 0;
+  if (leaderSection) {
+    const rowsForLeader = rowsForSingleSection(leaderSection.cards.length);
+    const probe = bestGridFor(rowsForLeader, LEADER_COLUMNS_CANDIDATES, availableCardsHeight, contentWidth);
+    const neededHeight = probe.rows * probe.cellWidth * CELL_ASPECT + Math.max(0, probe.rows - 1) * probe.cellGap;
+    leaderBudget = Math.min(availableCardsHeight * LEADER_MAX_HEIGHT_SHARE, neededHeight);
+    leaderGrid = bestGridFor(rowsForLeader, LEADER_COLUMNS_CANDIDATES, leaderBudget, contentWidth);
+  }
+  const remainingAfterLeader = Math.max(0, availableCardsHeight - leaderBudget);
+
+  let mainGrid = null, compactGrid = null;
+  if (mainSection && otherSections.length) {
+    const mainBudget = remainingAfterLeader * mainHeightShare;
+    mainGrid = bestGridFor(rowsForSingleSection(mainSection.cards.length), MAIN_COLUMNS_CANDIDATES, mainBudget, contentWidth);
+    const mainUsedHeight = mainGrid.rows * mainGrid.cellWidth * CELL_ASPECT + Math.max(0, mainGrid.rows - 1) * mainGrid.cellGap;
+    // Il Main non usa tutto il proprio budget (poche carte uniche): l'altezza
+    // avanzata torna alle sezioni compatte invece di restare vuota.
+    const compactBudget = Math.max(0, remainingAfterLeader - mainBudget) + Math.max(0, mainBudget - mainUsedHeight);
+    compactGrid = bestGridFor(rowsForMultipleSections(otherSections), COMPACT_COLUMNS_CANDIDATES, compactBudget, contentWidth);
+    if (compactGrid.cellWidth > mainGrid.cellWidth * COMPACT_MAX_WIDTH_RATIO) {
+      const cappedWidth = mainGrid.cellWidth * COMPACT_MAX_WIDTH_RATIO;
+      compactGrid = { ...compactGrid, cellWidth: cappedWidth, cellGap: compactGrid.cellGap * (cappedWidth / compactGrid.cellWidth) };
+    }
+  } else if (mainSection) {
+    mainGrid = bestGridFor(rowsForSingleSection(mainSection.cards.length), MAIN_COLUMNS_CANDIDATES, remainingAfterLeader, contentWidth);
+  } else if (otherSections.length) {
+    compactGrid = bestGridFor(rowsForMultipleSections(otherSections), COMPACT_COLUMNS_CANDIDATES, remainingAfterLeader, contentWidth);
+  }
+
+  const gridFor = section => section === mainSection ? mainGrid : section === leaderSection ? leaderGrid : compactGrid;
+  // Il Leader va sempre per primo quando presente (enfasi visiva in cima al
+  // poster); le altre sezioni restano nell'ordine dato dall'adapter.
+  const ordered = leaderSection ? [leaderSection, ...nonEmpty.filter(section => section !== leaderSection)] : nonEmpty;
+
+  let cursorY = PADDING + headerHeight;
   const sections = [];
-  nonEmpty.forEach((section, index) => {
+  ordered.forEach((section, index) => {
+    const grid = gridFor(section);
+    const { columns, cellWidth, cellGap } = grid;
+    const cellHeight = cellWidth * CELL_ASPECT;
+    const rows = Math.max(1, Math.ceil(section.cards.length / columns));
+    const gridX = contentX + (contentWidth - columns * cellWidth - (columns - 1) * cellGap) / 2;
     const titleY = cursorY;
     const gridY = titleY + SECTION_TITLE_HEIGHT;
     const cards = section.cards.map((card, cardIndex) => {
@@ -134,16 +210,16 @@ export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height
       const row = Math.floor(cardIndex / columns);
       return { ...card, x: gridX + col * (cellWidth + cellGap), y: gridY + row * (cellHeight + cellGap), w: cellWidth, h: cellHeight };
     });
-    sections.push({ key: section.key, label: section.label, totalQuantity: sectionTotalQuantity(section.cards), titleX: gridX, titleY, cards });
-    cursorY = gridY + rowsFor(section) * cellHeight + Math.max(0, rowsFor(section) - 1) * cellGap;
-    if (index < nonEmpty.length - 1) cursorY += SECTION_GAP;
+    sections.push({ key: section.key, label: section.label, totalQuantity: sectionTotalQuantity(section.cards), titleX: gridX, titleY, cards, dominant: section === mainSection, hero: section === leaderSection });
+    cursorY = gridY + rows * cellHeight + Math.max(0, rows - 1) * cellGap;
+    if (index < ordered.length - 1) cursorY += SECTION_GAP;
   });
 
   return {
-    width, height, padding: PADDING,
-    header: { x: contentX, y: PADDING, width: contentWidth, height: HEADER_HEIGHT },
+    width, height, padding: PADDING, layoutMode,
+    header: { x: contentX, y: PADDING, width: contentWidth, height: headerHeight },
     sections,
-    footer: { x: contentX, y: height - PADDING - FOOTER_HEIGHT / 2, width: contentWidth }
+    footer: { x: contentX, y: height - PADDING - footerHeight / 2, width: contentWidth }
   };
 }
 
@@ -377,37 +453,62 @@ function drawQuantityBadge(ctx, quantity, x, y, w, h, accent) {
 
 const GAME_LABELS = { yugioh: 'Yu-Gi-Oh!', onepiece: 'One Piece' };
 
-export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
+// background: 'clean' | 'signature' | 'theme' — Signature/Theme riusano
+// rispettivamente la carta signature già esistente (resolveDeckSignature) e
+// la palette DECK_THEMES già esistente (js/deck-box.js, mai duplicata): un
+// tema non genera mai un colore nuovo, solo una lettura diversa degli stessi
+// accent/dark già usati dal Deck Box. logo: 'fpt' | 'none' — nessun upload,
+// solo un interruttore per il branding testuale già presente in V1; la
+// predisposizione per un logo custom futuro è che questa è l'UNICA riga che
+// dovrebbe cambiare per disegnarne uno al posto del testo.
+export function drawDeckImage(ctx, model, layout, images, { background = 'clean', layoutMode = 'readable', logo = 'fpt' } = {}) {
   const { width, height, padding } = layout;
   const accent = resolveImageAccent(model.theme);
-  const useSignature = mode === 'signature' && model.signatureCard?.imageUrl;
+  const themeColors = DECK_THEMES[normalizeDeckTheme(model.theme)] || {};
+  const readable = layoutMode !== 'poster';
+  const useSignature = background === 'signature' && model.signatureCard?.imageUrl;
+  const useThemeBackground = background === 'theme';
 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#0c0a10';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = accent;
-  ctx.fillRect(padding, 26, width - padding * 2, 3);
+
+  if (useThemeBackground) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, themeColors.dark || '#0c0a10');
+    gradient.addColorStop(1, '#0c0a10');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
 
   if (useSignature) {
     const bg = images.get(model.signatureCard.imageUrl);
     if (bg) {
       ctx.save();
-      ctx.filter = 'blur(14px) brightness(0.55)';
+      // Readable resta sobrio anche con uno sfondo firmato: sfocatura più
+      // forte e overlay più opaco, così il testo/le card restano sempre il
+      // primo piano leggibile invece dello sfondo scenico.
+      ctx.filter = readable ? 'blur(20px) brightness(0.38)' : 'blur(14px) brightness(0.55)';
       drawCoverImage(ctx, bg, -20, -20, width + 40, height + 40);
       ctx.restore();
-      ctx.fillStyle = 'rgba(12,10,16,0.62)';
+      ctx.fillStyle = readable ? 'rgba(12,10,16,0.8)' : 'rgba(12,10,16,0.62)';
       ctx.fillRect(0, 0, width, height);
     }
   }
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(padding, 26, width - padding * 2, 3);
 
   // Header
   const headerX = layout.header.x;
   let y = layout.header.y;
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = accent;
-  ctx.font = '700 24px "Segoe UI", sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('FPT CARDS', headerX, y + 24);
+  if (logo !== 'none') {
+    ctx.fillStyle = accent;
+    ctx.font = '700 24px "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('FPT CARDS', headerX, y + 24);
+  }
   if (model.owner) {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '600 22px "Segoe UI", sans-serif';
@@ -461,15 +562,25 @@ export function drawDeckImage(ctx, model, layout, images, mode = 'clean') {
         ctx.fillText(truncateToWidth(ctx, card.cardName || 'Immagine assente', card.w - 10), card.x + card.w/2, card.y + card.h/2);
       }
       ctx.restore();
+      if (section.hero) {
+        ctx.save();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 3;
+        roundedRect(ctx, card.x + 1.5, card.y + 1.5, card.w - 3, card.h - 3, 8);
+        ctx.stroke();
+        ctx.restore();
+      }
       drawQuantityBadge(ctx, card.quantity, card.x, card.y, card.w, card.h, accent);
     }
   }
 
   // Footer
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = '500 20px "Segoe UI", sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('Made with FPT Cards', layout.footer.x + layout.footer.width, layout.footer.y);
+  if (logo !== 'none') {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '500 20px "Segoe UI", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Made with FPT Cards', layout.footer.x + layout.footer.width, layout.footer.y);
+  }
 }
 
 function truncateToWidth(ctx, text, maxWidth) {
@@ -493,10 +604,19 @@ function prepareCanvasTarget(canvas) {
 // si appoggia al loader progressivo, ma attende SEMPRE il preload completo
 // prima di disegnare — nessun placeholder visibile a chi chiama questa
 // funzione, a differenza di renderDeckImagePreview qui sotto.
-export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
+// mode: 'clean' | 'signature' | 'theme' (background). 'signature' ricade su
+// 'clean' quando il mazzo non ha una signature card con artwork — stesso
+// fallback automatico già presente in V1, mai un frame rotto.
+function resolveEffectiveMode(mode, model) {
+  if (mode === 'signature') return model.signatureCard?.imageUrl ? 'signature' : 'clean';
+  if (mode === 'theme') return 'theme';
+  return 'clean';
+}
+
+export async function renderDeckImage(deck, { mode = 'clean', layoutMode = 'readable', logo = 'fpt', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
   const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
-  const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
-  const layout = computeDeckImageLayout(model);
+  const effectiveMode = resolveEffectiveMode(mode, model);
+  const layout = computeDeckImageLayout(model, { layoutMode });
   // Il pool progressivo libera uno slot dopo previewTimeoutMs anche se il
   // caricamento reale non è ancora finito (per definizione, serve alla
   // concorrenza). Qui però il contratto è bloccante: dopo il pool si
@@ -506,8 +626,8 @@ export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', ca
   await waitForPendingDeckImages(cache, { timeoutMs: DEFAULT_EXPORT_TIMEOUT_MS });
   const target = prepareCanvasTarget(canvas);
   const ctx = target.getContext('2d');
-  drawDeckImage(ctx, model, layout, cache.images, effectiveMode);
-  return { canvas: target, model, layout, mode: effectiveMode };
+  drawDeckImage(ctx, model, layout, cache.images, { background: effectiveMode, layoutMode, logo });
+  return { canvas: target, model, layout, mode: effectiveMode, layoutMode };
 }
 
 // Percorso non bloccante per la preview UI: disegna SUBITO (sincrono, con
@@ -518,16 +638,16 @@ export async function renderDeckImage(deck, { mode = 'clean', ownerName = '', ca
 // La promise `ready` nel valore di ritorno permette comunque a chi chiama
 // di sapere quando il preload è terminato, se serve.
 export function renderDeckImagePreview(deck, {
-  mode = 'clean', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas,
+  mode = 'clean', layoutMode = 'readable', logo = 'fpt', ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas,
   concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS, onProgress
 } = {}) {
   const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
-  const effectiveMode = mode === 'signature' && model.signatureCard?.imageUrl ? 'signature' : 'clean';
-  const layout = computeDeckImageLayout(model);
+  const effectiveMode = resolveEffectiveMode(mode, model);
+  const layout = computeDeckImageLayout(model, { layoutMode });
   const target = prepareCanvasTarget(canvas);
   const ctx = target.getContext('2d');
 
-  const redraw = () => drawDeckImage(ctx, model, layout, cache.images, effectiveMode);
+  const redraw = () => drawDeckImage(ctx, model, layout, cache.images, { background: effectiveMode, layoutMode, logo });
   redraw(); // primo frame immediato, con placeholder per ogni artwork non ancora in cache
 
   const ready = preloadDeckImagesProgressively(model, {
@@ -536,16 +656,16 @@ export function renderDeckImagePreview(deck, {
   }).then(() => { redraw(); });
   cache.ready = ready;
 
-  return { canvas: target, model, layout, mode: effectiveMode, cache, ready };
+  return { canvas: target, model, layout, mode: effectiveMode, layoutMode, cache, ready };
 }
 
-export function exportDeckImageBlob(canvas, { cache, model, layout, mode, exportTimeoutMs = DEFAULT_EXPORT_TIMEOUT_MS } = {}) {
+export function exportDeckImageBlob(canvas, { cache, model, layout, mode, layoutMode = 'readable', logo = 'fpt', exportTimeoutMs = DEFAULT_EXPORT_TIMEOUT_MS } = {}) {
   return (async () => {
     // inFlight alone omits URLs still waiting in the worker queue.
     if (cache?.ready) await raceWithTimeout(cache.ready, Math.max(exportTimeoutMs, 30000));
     if (cache?.inFlight?.size) {
       await waitForPendingDeckImages(cache, { timeoutMs: exportTimeoutMs });
-      if (model && layout) drawDeckImage(canvas.getContext('2d'), model, layout, cache.images, mode);
+      if (model && layout) drawDeckImage(canvas.getContext('2d'), model, layout, cache.images, { background: mode, layoutMode, logo });
     }
     return new Promise((resolve, reject) => {
       canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Generazione PNG non riuscita'))), 'image/png');

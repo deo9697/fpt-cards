@@ -137,7 +137,7 @@ try {
   await evaluate(`document.querySelector('[data-deck-image-mode="signature"]').click()`);
   await delay(600);
   const afterSwitch = await evaluate(`(()=>{
-    const active = document.querySelector('.deck-image-modes .active')?.dataset.deckImageMode;
+    const active = document.querySelector('[data-deck-image-mode].active')?.dataset.deckImageMode;
     return {active, mode: window.__controller.imageExportMode, busy: window.__controller.imageExportBusy};
   })()`);
   if (afterSwitch.active !== 'signature' || afterSwitch.mode !== 'signature') throw Error('Lo switch a Signature non ha aggiornato lo stato/la UI: ' + JSON.stringify(afterSwitch));
@@ -283,6 +283,50 @@ try {
   if (!opUiResult.clicked || opUiResult.downloadName !== 'fpt-deck-one-piece-ui-test.png') throw Error('Download non riuscito per un mazzo One Piece: ' + JSON.stringify(opUiResult));
   if (opUiResult.busy) throw Error('Lo stato busy deve tornare a false dopo il primo frame sincrono: ' + JSON.stringify(opUiResult));
   console.log('PASS One Piece end-to-end (browser reale, UI completa): bottone "Genera immagine" disponibile, canvas 1080x1350 con sezioni leader/main/don, download funzionante — nessun branching hardcoded YGO-only');
+
+  // --- V1.1: controlli Readable/Poster, Deck Theme, Logo funzionano dalla UI reale ---
+  const v11UiResult = await evaluate(`(async()=>{
+    const {DeckController} = await import('/js/decks.js');
+    const deck = {
+      id:'v11', persisted:true, ownerSlug:'daniele', name:'V1.1 UI Test', format:'', game:'yugioh', deckTheme:'abyss-blue', deckBoxTemplate:'procedural', signatureCardId:'valid-1',
+      cards:[
+        {catalogCardId:'valid-1', cardName:'Artwork valido', section:'main', quantity:2, imageUrl:'/icon-192.png'},
+        {catalogCardId:'valid-2', cardName:'Seconda carta', section:'extra', quantity:1, imageUrl:'/icon-192.png'}
+      ]
+    };
+    const controller = new DeckController({
+      api:{}, getState:() => ({decks:[deck], game:'yugioh', currentUser:'daniele'}),
+      onRender:() => { document.querySelector('#app').innerHTML = controller.view(); controller.bind(document); },
+      onToast:() => {}
+    });
+    controller.activeId = 'v11'; controller.screen = 'detail';
+    document.querySelector('#app').innerHTML = controller.view(); controller.bind(document);
+    controller.toggleMoreMenu();
+    document.querySelector('[data-deck-image-open]').click();
+    await new Promise(r => setTimeout(r, 500));
+    const initialLayoutMode = controller.imageExportLayoutMode;
+
+    document.querySelector('[data-deck-image-layout="poster"]').click();
+    await new Promise(r => setTimeout(r, 400));
+    const afterPoster = { layoutMode: controller.imageExportLayoutMode, active: document.querySelector('[data-deck-image-layout].active')?.dataset.deckImageLayout };
+
+    document.querySelector('[data-deck-image-mode="theme"]').click();
+    await new Promise(r => setTimeout(r, 400));
+    const afterTheme = { mode: controller.imageExportMode, active: document.querySelector('[data-deck-image-mode].active')?.dataset.deckImageMode };
+
+    document.querySelector('[data-deck-image-logo="none"]').click();
+    await new Promise(r => setTimeout(r, 400));
+    const afterLogo = { logo: controller.imageExportLogo, active: document.querySelector('[data-deck-image-logo].active')?.dataset.deckImageLogo };
+
+    const canvas = document.querySelector('[data-deck-image-canvas]');
+    return { initialLayoutMode, afterPoster, afterTheme, afterLogo, canvasSize: { w: canvas.width, h: canvas.height } };
+  })()`);
+  if (v11UiResult.initialLayoutMode !== 'readable') throw Error('Il layout di default deve essere Readable: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.afterPoster.layoutMode !== 'poster' || v11UiResult.afterPoster.active !== 'poster') throw Error('Lo switch a Poster non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.afterTheme.mode !== 'theme' || v11UiResult.afterTheme.active !== 'theme') throw Error('Lo switch a Deck Theme non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.afterLogo.logo !== 'none' || v11UiResult.afterLogo.active !== 'none') throw Error('Lo switch a "Nessun logo" non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.canvasSize.w !== 1080 || v11UiResult.canvasSize.h !== 1350) throw Error('Il canvas deve restare sempre 1080x1350 qualunque combinazione di layout/sfondo/logo: ' + JSON.stringify(v11UiResult));
+  console.log('PASS V1.1 controlli UI reali: Readable di default, switch a Poster/Deck Theme/Nessun logo tutti funzionanti, canvas sempre 1080x1350');
 
   if ((await evaluate('window.__consoleErrors')).length) throw Error('Browser errors: ' + JSON.stringify(await evaluate('window.__consoleErrors')));
   console.log('PASS deck-image-export (browser reale): rendering/export/artwork/Web Share/UI/preview progressiva/One Piece completa senza errori console');

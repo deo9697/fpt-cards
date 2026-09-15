@@ -60,6 +60,9 @@ export class DeckController {
     // per accorgersi quando onRender() lo ricrea (innerHTML replace) e
     // servirebbe un ridisegno — mai un dato di stato del mazzo.
     this.imageExportOpen = false; this.imageExportMode = 'clean'; this.imageExportBusy = false; this.imageExportError = ''; this.imageExportCanvas = null;
+    // V1.1: preset di layout (leggibilità vs scenico) e logo, indipendenti
+    // dallo sfondo (imageExportMode resta clean/signature/theme).
+    this.imageExportLayoutMode = 'readable'; this.imageExportLogo = 'fpt';
     // model/layout dell'ultima preview disegnata: servono a exportDeckImageBlob
     // per un eventuale ultimo redraw dopo aver atteso le immagini ancora
     // pendenti, senza ricalcolare nulla (mai una seconda normalizzazione).
@@ -342,9 +345,18 @@ export class DeckController {
         <div class="deck-image-loading" data-deck-image-loading ${this.imageExportBusy ? '' : 'hidden'}><span class="loading-spinner"></span> Generazione…</div>
       </div>
       ${this.imageExportError ? `<div class="connection-banner error">${esc(this.imageExportError)}</div>` : ''}
-      <div class="deck-image-modes" role="group" aria-label="Tema immagine">
+      <div class="deck-image-modes" role="group" aria-label="Stile layout">
+        <button type="button" class="btn secondary ${this.imageExportLayoutMode === 'readable' ? 'active' : ''}" data-deck-image-layout="readable">Readable</button>
+        <button type="button" class="btn secondary ${this.imageExportLayoutMode === 'poster' ? 'active' : ''}" data-deck-image-layout="poster">Poster</button>
+      </div>
+      <div class="deck-image-modes" role="group" aria-label="Sfondo immagine">
         <button type="button" class="btn secondary ${this.imageExportMode === 'clean' ? 'active' : ''}" data-deck-image-mode="clean">Clean</button>
         <button type="button" class="btn secondary ${this.imageExportMode === 'signature' ? 'active' : ''}" data-deck-image-mode="signature">Signature${canShareSignature ? '' : ' (fallback Clean)'}</button>
+        <button type="button" class="btn secondary ${this.imageExportMode === 'theme' ? 'active' : ''}" data-deck-image-mode="theme">Deck Theme</button>
+      </div>
+      <div class="deck-image-modes" role="group" aria-label="Logo">
+        <button type="button" class="btn secondary ${this.imageExportLogo === 'fpt' ? 'active' : ''}" data-deck-image-logo="fpt">Logo FPT Cards</button>
+        <button type="button" class="btn secondary ${this.imageExportLogo === 'none' ? 'active' : ''}" data-deck-image-logo="none">Nessun logo</button>
       </div>
       <div class="deck-image-actions">
         <button type="button" class="btn wide" data-deck-image-download ${this.imageExportBusy ? 'disabled' : ''}>Scarica PNG</button>
@@ -354,7 +366,7 @@ export class DeckController {
   }
   openImageExport() {
     if (!this.active()) return;
-    this.imageExportOpen = true; this.imageExportMode = 'clean'; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
+    this.imageExportOpen = true; this.imageExportMode = 'clean'; this.imageExportLayoutMode = 'readable'; this.imageExportLogo = 'fpt'; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
     this.imageExportModel = null; this.imageExportLayout = null;
     this.moreMenuOpen = false;
     this.onRender();
@@ -363,6 +375,16 @@ export class DeckController {
   setImageExportMode(mode) {
     if (mode === this.imageExportMode || this.imageExportBusy) return;
     this.imageExportMode = mode; this.imageExportBusy = true; this.imageExportError = '';
+    this.onRender();
+  }
+  setImageExportLayoutMode(layoutMode) {
+    if (layoutMode === this.imageExportLayoutMode || this.imageExportBusy) return;
+    this.imageExportLayoutMode = layoutMode; this.imageExportBusy = true; this.imageExportError = '';
+    this.onRender();
+  }
+  setImageExportLogo(logo) {
+    if (logo === this.imageExportLogo || this.imageExportBusy) return;
+    this.imageExportLogo = logo; this.imageExportBusy = true; this.imageExportError = '';
     this.onRender();
   }
   // Disegna nel <canvas> già montato SENZA un secondo onRender() al
@@ -390,7 +412,8 @@ export class DeckController {
     try {
       const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
       const { model, layout, ready } = renderDeckImagePreview(deck, {
-        mode: this.imageExportMode, ownerName, cardTypes:this.cardTypes, proxyUrl: '/api/card-image-proxy',
+        mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo,
+        ownerName, cardTypes:this.cardTypes, proxyUrl: '/api/card-image-proxy',
         cache: this.imageExportCache, canvas,
         onProgress: unlockControls
       });
@@ -410,7 +433,7 @@ export class DeckController {
     try {
       await this.resolveCardTypes(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
-      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo });
       downloadDeckImageBlob(blob, this.active()?.name || 'mazzo');
     } catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
   }
@@ -418,7 +441,7 @@ export class DeckController {
     try {
       await this.resolveCardTypes(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
-      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode });
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo });
       const deckName = this.active()?.name || 'mazzo';
       if (canShareDeckImageBlob(blob, deckName)) await shareDeckImageBlob(blob, deckName, { title: deckName });
       else downloadDeckImageBlob(blob, deckName);
@@ -468,6 +491,8 @@ export class DeckController {
     root.querySelector('[data-deck-image-open]')?.addEventListener('click', () => this.openImageExport());
     root.querySelectorAll('[data-deck-image-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeImageExport(); }));
     root.querySelectorAll('[data-deck-image-mode]').forEach(button => button.addEventListener('click', () => this.setImageExportMode(button.dataset.deckImageMode)));
+    root.querySelectorAll('[data-deck-image-layout]').forEach(button => button.addEventListener('click', () => this.setImageExportLayoutMode(button.dataset.deckImageLayout)));
+    root.querySelectorAll('[data-deck-image-logo]').forEach(button => button.addEventListener('click', () => this.setImageExportLogo(button.dataset.deckImageLogo)));
     root.querySelector('[data-deck-image-download]')?.addEventListener('click', () => void this.downloadImageExport());
     root.querySelector('[data-deck-image-share]')?.addEventListener('click', () => void this.shareImageExport());
     // Il canvas viene ricreato ad ogni onRender() (innerHTML replace): un
