@@ -46,6 +46,7 @@
     ,"test:card-image-proxy": "node scripts/card-image-proxy-hardening-smoke.mjs"
     ,"test:mobile-focus-regression": "node scripts/mobile-focus-regression-smoke.mjs"
     ,"test:collection-share-bootstrap-guard": "node scripts/collection-share-bootstrap-guard-smoke.mjs"
+    ,"test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

@@ -464,6 +464,13 @@ export function buildMarketDecks(decks=[],items=[],unresolved=[],catalogPriceFlo
 }
 export function deduplicateMonitored({owned=[],deck=[],manual=[]}={}){const map=new Map();for(const [source,rows] of Object.entries({owned,deck,manual}))for(const row of rows){if(!row.printingId)continue;const entry=map.get(row.printingId)||{printingId:row.printingId,sources:new Set(),quantity:0};entry.sources.add(source);if(source==='owned')entry.quantity+=Number(row.quantity||0);map.set(row.printingId,entry);}return [...map.values()].map(row=>({...row,sources:[...row.sources]}));}
 export function positiveMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice>item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>b.positiveChange-a.positiveChange||(b.referencePrice-b.price24h)-(a.referencePrice-a.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
+// Simmetrico a positiveMovers: nessuna RPC dedicata restituisce le carte in
+// discesa (list_market_dashboard_movers filtra SOLO trend>baseline, vedi
+// supabase-market-dashboard-movers.sql) — calcolato qui lato client sugli
+// stessi `items` già caricati per la tab Raccolta di Market Watch, senza
+// alcuna nuova query. Il campo resta `positiveChange` (qui negativo) così
+// un'unica riga di rendering nella Dashboard funziona per entrambe le liste.
+export function negativeMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice<item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>a.positiveChange-b.positiveChange||(a.referencePrice-a.price24h)-(b.referencePrice-b.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
 export function mapDashboardMovers(rows=[]){return (Array.isArray(rows)?rows:[]).map(row=>({printingId:row.printingId||row.printing_id,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),cardName:row.cardName||row.card_name||'',setCode:row.setCode||row.set_code||'',setName:row.setName||row.set_name||'',rarity:row.rarity||'',imageUrl:row.imageUrl||row.image_url||'',ownedQuantity:Number(row.ownedQuantity??row.owned_quantity??0),referencePrice:nullableNumber(row.referencePrice??row.reference_price),baselinePrice:nullableNumber(row.baselinePrice??row.baseline_price),positiveChange:nullableNumber(row.positiveChange??row.positive_change),capturedAt:row.capturedAt||row.captured_at||null,sparkline:(row.sparkline||[]).map(point=>({label:point.label||'',price:nullableNumber(point.price),order:Number(point.order||0)})).filter(point=>point.price!=null).sort((a,b)=>a.order-b.order)}));}
 
 function marketRow(item,history,tab){
@@ -641,8 +648,8 @@ function normalizeProviders(value){if(!value||typeof value!=='object')return{};r
 function nullableNumber(value){if(value==null||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null;}
 function money(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
 function changeMoney(value){const number=Number(value)||0;return `${number>=0?'+':'−'}${money(Math.abs(number))}`;}
-function changePercent(value){if(value==null)return'—';const number=Number(value)||0;return `${number>=0?'+':'−'}${Math.abs(number).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}%`;}
-function tone(value){return value==null?'muted':value>0?'positive':value<0?'negative':'muted';}
+export function changePercent(value){if(value==null)return'—';const number=Number(value)||0;return `${number>=0?'+':'−'}${Math.abs(number).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}%`;}
+export function tone(value){return value==null?'muted':value>0?'positive':value<0?'negative':'muted';}
 function formatTimestamp(value){if(!value)return'—';const date=new Date(value);return Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('it-IT',{dateStyle:'short',timeStyle:'short'}).format(date);}
 function providerName(value){return value==='cardtrader'?'CardTrader':value==='cardmarket'?'Cardmarket':value;}
 const PRICE_TYPE_LABELS={low:'Minimo',trend:'Trend',average:'Media',avg:'Media',avg1:'Media 1 giorno',avg7:'Media 7 giorni',avg30:'Media 30 giorni',

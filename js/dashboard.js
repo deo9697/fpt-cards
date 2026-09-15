@@ -1,6 +1,6 @@
 import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
-import { positiveMovers } from './market-watch.js';
+import { positiveMovers, negativeMovers, changePercent, tone } from './market-watch.js';
 
 export function dashboardView(state, game = 'yugioh', market = {}) {
   const me = member(state.currentUser);
@@ -63,23 +63,46 @@ function trackedCards(loans) {
   return [...records.values()];
 }
 
+// Due classifiche leggibili (Top 3 Up / Top 3 Down) al posto del vecchio
+// carousel con grafico per riga — niente carousel obbligatorio, righe
+// mobile-first, mai un re-render pesante: riusa `market.items`/
+// `market.featuredMovers` già caricati per Market Watch, nessuna nuova RPC.
+// Le carte in salita usano la RPC list_market_dashboard_movers quando
+// disponibile (market.featuredMovers), altrimenti lo stesso fallback
+// client-side già esistente; le carte in discesa non hanno una RPC dedicata
+// (quella esistente filtra SOLO trend>baseline) e sono quindi SEMPRE
+// calcolate lato client con negativeMovers() sugli stessi dati.
 function featuredPanel(market) {
-  const movers=market.featuredMovers?.length?market.featuredMovers:positiveMovers(market.items,3),history=market.featuredHistory instanceof Map?market.featuredHistory:new Map();
-  if (!movers.length) return `<section class="surface duel-panel featured-card-panel featured-empty">
+  const upMovers = market.featuredMovers?.length ? market.featuredMovers : positiveMovers(market.items, 3);
+  const downMovers = negativeMovers(market.items, 3);
+  if (!upMovers.length && !downMovers.length) return `<section class="surface duel-panel featured-card-panel featured-empty">
     <div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Carte in evidenza</h2></div><button class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
-    <div class="inline-empty">${icon('chart')}<div><strong>Trend in preparazione</strong><span>Le carte con crescita positiva appariranno dopo il secondo snapshot giornaliero.</span></div></div>
+    <div class="inline-empty">${icon('chart')}<div><strong>Trend in preparazione</strong><span>Le variazioni di prezzo appariranno dopo il secondo snapshot giornaliero.</span></div></div>
   </section>`;
   return `<section class="surface duel-panel featured-card-panel market-movers-panel">
     <div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Carte in evidenza</h2></div><button class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
-    <div class="market-movers-carousel slides-${movers.length}">${movers.map((item,index)=>featuredMover(item,history.get(item.printingId)||[],index)).join('')}</div>
+    <div class="market-movers-lists">
+      ${moverGroup('In salita', 'up', upMovers, 'Nessuna carta in crescita al momento.')}
+      ${moverGroup('In discesa', 'down', downMovers, 'Nessuna variazione negativa al momento.')}
+    </div>
   </section>`;
 }
-
-function featuredMover(item,history,index){const points=marketMoverPoints(item,history),chart=marketMoverChart(points,index),artwork=moverArtwork(item),change=Number(item.positiveChange);return `<button class="market-mover-slide" style="--mover-image:url(&quot;${esc(artwork)}&quot;)" data-page="market" aria-label="Apri ${esc(item.cardName)} nel Market Watch"><span class="market-mover-head"><h3>${esc(item.cardName)}</h3><span class="market-mover-price"><b>${marketMoney(item.referencePrice)}</b><small>Trend Cardmarket${Number.isFinite(change)?` · +${change.toFixed(1)}%`:''}</small></span></span>${chart}</button>`;}
+function moverGroup(label, direction, movers, emptyText) {
+  return `<div class="market-movers-group ${direction}"><h3>${esc(label)}</h3>${movers.length ? movers.map(moverRow).join('') : `<p class="market-movers-group-empty">${esc(emptyText)}</p>`}</div>`;
+}
+function moverRow(item) {
+  const artwork = moverArtwork(item), change = Number(item.positiveChange), hasPrevious = Number.isFinite(item.price24h);
+  return `<button class="market-mover-row" data-page="market" aria-label="Apri ${esc(item.cardName)} nel Market Watch">
+    ${artwork ? `<img class="market-mover-row-art" src="${esc(artwork)}" alt="" loading="lazy">` : `<span class="market-mover-row-art market-mover-row-art-placeholder">${icon('card')}</span>`}
+    <span class="market-mover-row-body">
+      <strong class="market-mover-row-name">${esc(item.cardName)}</strong>
+      ${hasPrevious ? `<small class="market-mover-row-history">${marketMoney(item.price24h)} → ${marketMoney(item.referencePrice)}</small>` : ''}
+    </span>
+    <span class="market-mover-row-price"><b>${marketMoney(item.referencePrice)}</b><small class="${tone(change)}">${changePercent(change)}</small></span>
+  </button>`;
+}
 function moverArtwork(item){const source=String(item.imageUrl||'');if(/\/images\/cards\/\d+\.jpg(?:\?|$)/i.test(source))return source.replace(/\/images\/cards\//i,'/images/cards_cropped/');const id=String(item.catalogCardId||'');return /^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:source;}
 function marketMoney(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
-function marketMoverPoints(item,history){if(item.sparkline?.length>1)return item.sparkline.map(point=>({price:Number(point.price),capturedAt:new Date(Date.now()-(4-point.order)*86400000).toISOString()}));const rows=(history||[]).filter(row=>Number.isFinite(row.price)).map(row=>({price:Number(row.price),capturedAt:row.capturedAt}));if(rows.length>1)return rows.sort((a,b)=>new Date(a.capturedAt)-new Date(b.capturedAt));const now=Date.now(),fallback=[[item.price30d,30],[item.price7d,7],[item.price24h,1],[item.referencePrice,0]].filter(([price])=>Number.isFinite(price)).map(([price,days])=>({price:Number(price),capturedAt:new Date(now-days*86400000).toISOString()}));return fallback;}
-function marketMoverChart(points,index){if(points.length<2)return `<span class="market-mover-chart empty">${icon('chart')}</span>`;const values=points.map(point=>point.price),min=Math.min(...values),max=Math.max(...values),span=max-min||1,width=520,height=150,pad=8,path=points.map((point,position)=>`${position?'L':'M'} ${pad+(position/(points.length-1))*(width-pad*2)} ${height-pad-((point.price-min)/span)*(height-pad*2)}`).join(' '),area=`${path} L ${width-pad} ${height-pad} L ${pad} ${height-pad} Z`,gradient=`mover-gradient-${index}`;return `<span class="market-mover-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico prezzi Cardmarket"><defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ee49a" stop-opacity=".46"/><stop offset="1" stop-color="#5ee49a" stop-opacity="0"/></linearGradient></defs><g class="mover-grid"><path d="M 0 38 H ${width} M 0 75 H ${width} M 0 112 H ${width}"/></g><path class="mover-area" d="${area}" fill="url(#${gradient})"/><path class="mover-line" d="${path}"/><circle cx="${width-pad}" cy="${height-pad-((values.at(-1)-min)/span)*(height-pad*2)}" r="5"/></svg></span>`;}
 
 function loanOverview(loans, attention) {
   const list = attention.length ? [...attention, ...loans.filter(loan => !attention.includes(loan))].slice(0, 4) : loans;

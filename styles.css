@@ -632,29 +632,26 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .featured-empty .inline-empty { flex: 1; }
 .featured-empty > .btn { align-self: center; }
 .market-movers-panel { min-height: 330px; }
-.market-movers-carousel { position: relative; min-height: 260px; margin: 0 -16px -16px; overflow: hidden; }
-.market-mover-slide { position: absolute; inset: 0; display: flex; overflow: hidden; width: 100%; padding: 28px 34px 22px; border: 0; background-image: linear-gradient(90deg,#090c14f7 0%,#090c14d9 42%,#07100bc0 100%),linear-gradient(0deg,#070a11 0%,transparent 65%),var(--mover-image); background-position: center,center,center 18%; background-size: cover; color: #fff; text-align: left; opacity: 0; transform: translateX(18px); flex-direction: column; justify-content: space-between; }
-.market-mover-slide::after { content: ''; position: absolute; inset: 0; border-top: 1px solid #66e6a025; background: radial-gradient(circle at 78% 45%,#41d9861b,transparent 37%); pointer-events: none; }
-.market-mover-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; width: 100%; }
-.market-mover-slide h3 { max-width: 68%; margin: 0; color: #fff8e8; font-family: var(--display-font); font-size: clamp(1.2rem,2.2vw,1.9rem); line-height: 1.12; text-shadow: 0 3px 18px #000; }
-.market-mover-price { flex: none; text-align: right; text-shadow: 0 3px 16px #000; }
-.market-mover-price b,.market-mover-price small { display: block; }
-.market-mover-price b { color: #f4fff8; font-size: clamp(1.15rem,2vw,1.65rem); }
-.market-mover-price small { margin-top: 3px; color: #6ff0a8; font-size: .58rem; font-weight: 800; letter-spacing: .035em; }
-.market-mover-chart { position: relative; z-index: 1; display: block; width: min(92%,560px); height: 142px; color: #65e6a0; filter: drop-shadow(0 5px 12px #0008); }
-.market-mover-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.market-mover-chart .mover-grid path { fill: none; stroke: #b6cec124; stroke-width: 1; stroke-dasharray: 3 5; }
-.market-mover-chart .mover-line { fill: none; stroke: currentColor; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.market-mover-chart circle { fill: #d8ffe9; stroke: #35c97c; stroke-width: 3; vector-effect: non-scaling-stroke; }
-.market-mover-chart.empty { display: grid; place-items: center; border: 1px dashed #5b7867; border-radius: 10px; }
-.market-movers-carousel.slides-1 .market-mover-slide { opacity: 1; transform: none; }
-.market-movers-carousel.slides-2 .market-mover-slide { animation: marketMoverCycleTwo 10s infinite; }
-.market-movers-carousel.slides-2 .market-mover-slide:nth-child(2) { animation-delay: 5s; }
-.market-movers-carousel.slides-3 .market-mover-slide { animation: marketMoverCycleThree 15s infinite; }
-.market-movers-carousel.slides-3 .market-mover-slide:nth-child(2) { animation-delay: 5s; }
-.market-movers-carousel.slides-3 .market-mover-slide:nth-child(3) { animation-delay: 10s; }
-@keyframes marketMoverCycleTwo { 0% { opacity:0;transform:translateX(18px); } 7%,43% { opacity:1;transform:translateX(0); } 50%,100% { opacity:0;transform:translateX(-18px); } }
-@keyframes marketMoverCycleThree { 0% { opacity:0;transform:translateX(18px); } 5%,28% { opacity:1;transform:translateX(0); } 34%,100% { opacity:0;transform:translateX(-18px); } }
+/* Due mini classifiche leggibili (Top 3 Up / Top 3 Down) al posto del
+   vecchio carousel con grafico animato per riga: niente carousel, niente
+   animazioni a ciclo, righe compatte mobile-first. */
+.market-movers-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 4px; }
+.market-movers-group h3 { margin: 0 0 8px; font-size: .78rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.market-movers-group.up h3 { color: #65df84; }
+.market-movers-group.down h3 { color: #ff6879; }
+.market-movers-group-empty { margin: 0; padding: 10px 0; font-size: .8rem; color: var(--muted); }
+.market-mover-row { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; padding: 8px; border: 0; border-radius: 12px; background: #ffffff08; color: inherit; text-align: left; cursor: pointer; }
+.market-mover-row:last-child { margin-bottom: 0; }
+.market-mover-row:hover,.market-mover-row:focus-visible { background: #ffffff14; }
+.market-mover-row-art { flex: none; width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #1c1826; }
+.market-mover-row-art-placeholder { display: grid; place-items: center; color: var(--muted); }
+.market-mover-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.market-mover-row-name { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.market-mover-row-history { font-size: .68rem; color: var(--muted); }
+.market-mover-row-price { flex: none; text-align: right; }
+.market-mover-row-price b,.market-mover-row-price small { display: block; }
+.market-mover-row-price b { font-size: .82rem; }
+.market-mover-row-price small { margin-top: 2px; font-size: .68rem; font-weight: 800; }
 .loan-overview-panel { display: flex; min-height: 330px; flex-direction: column; }
 .duel-alert { display: flex; align-items: center; gap: 10px; margin: -2px 0 8px; padding: 9px 10px; border: 1px solid #d19c3550; border-radius: 7px; background: #c2811812; color: #efbd57; }
 .duel-alert .icon { flex: none; width: 18px; }
@@ -1431,13 +1428,8 @@ img.card-image-unavailable { opacity: 0; }
   .featured-card-content { grid-template-columns: 112px minmax(0, 1fr); gap: 16px; padding: 0 0 4px; }
   .featured-card-ghost { width: 64%; opacity: .09; }
   .featured-card-copy h3 { font-size: 1.05rem; white-space: normal; }
-  .market-movers-carousel { min-height: 225px; margin: 0 -14px -14px; }
-  .market-mover-slide { padding: 22px 20px 16px; }
-  .market-mover-slide h3 { max-width: 62%; font-size: 1.15rem; }
-  .market-mover-head { gap: 10px; }
-  .market-mover-price b { font-size: 1.05rem; }
-  .market-mover-price small { max-width: 120px; font-size: .5rem; }
-  .market-mover-chart { width: 100%; height: 120px; }
+  .market-movers-lists { grid-template-columns: 1fr; gap: 14px; }
+  .market-mover-row-art { width: 34px; height: 34px; }
   .feature-chips { gap: 4px; margin-bottom: 8px; }
   .feature-owner { display: none; }
   .loan-snapshot { grid-template-columns: 34px minmax(0, 1fr) auto; }
@@ -1511,11 +1503,6 @@ img.card-image-unavailable { opacity: 0; }
   .loan-stat-chip b { font-size: .92rem; }
   .loan-search-row, .loan-extra-filters, .loan-status-chips { padding-inline: 12px; }
   .loan-row { grid-template-columns: 48px minmax(0, 1fr) auto; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .market-mover-slide { display: none; animation: none !important; }
-  .market-mover-slide:first-child { display: flex; opacity: 1; transform: none; }
 }
 
 @media (max-width: 380px) {
