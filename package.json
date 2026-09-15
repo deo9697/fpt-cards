@@ -44,6 +44,7 @@
     ,"test:deck-image-export-progressive": "node scripts/deck-image-export-progressive-smoke.mjs"
     ,"test:deck-image-export-browser": "node scripts/deck-image-export-browser-smoke.mjs"
     ,"test:card-image-proxy": "node scripts/card-image-proxy-hardening-smoke.mjs"
+    ,"test:mobile-focus-regression": "node scripts/mobile-focus-regression-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

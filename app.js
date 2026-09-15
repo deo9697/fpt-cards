@@ -1752,8 +1752,15 @@ async function loadPrimaryData() {
     // veloce dei sei, ma restava invisibile fino al completamento anche del
     // più lento (Raccolta/Market Watch) perché nessuno ridisegnava finché
     // TUTTO Promise.allSettled non si risolveva. Ridisegna appena i SUOI
-    // dati sono pronti, senza aspettare gli altri.
-    stats.load().then(() => render())
+    // dati sono pronti, senza aspettare gli altri — ma mai se nel frattempo
+    // l'utente ha già iniziato a scrivere da qualche parte (es. è passato
+    // alla Raccolta prima che il bootstrap finisse): render() sostituisce
+    // TUTTO #app, e lo farebbe a metà digitazione perdendo focus/tastiera
+    // per dati che non c'entrano nulla con quello che si sta scrivendo.
+    // Stesso guard già usato per il fallback periodico Mazzi e la sync
+    // realtime. I dati restano comunque salvati in stats, visibili al
+    // prossimo render naturale.
+    stats.load().then(() => { if (!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) render(); })
   ]);
   if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';

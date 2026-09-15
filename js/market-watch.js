@@ -119,7 +119,11 @@ export class MarketWatchController {
     const offset=reset?0:this.ownedPage.items.length;
     const generation=this.ownedPageGeneration=(this.ownedPageGeneration||0)+1;
     const current=()=>this.ownedPageGeneration===generation&&this.getGame()===game;
-    this.ownedLoading=true;if(!silent)this.refreshBoardSection();
+    // refreshBoard() (mirato al solo .market-board-content), MAI
+    // refreshBoardSection(): quest'ultima ricostruisce anche la toolbar con
+    // la search bar, distruggendo e ricreando l'input a fuoco ad ogni giro
+    // di ricerca — su mobile la tastiera si chiudeva dopo un solo carattere.
+    this.ownedLoading=true;if(!silent)this.refreshBoard();
     try{
       let payload;
       for(let attempt=0;attempt<2;attempt++){
@@ -135,22 +139,37 @@ export class MarketWatchController {
       this.ownedPage={items:reset?mapped.items:[...this.ownedPage.items,...mapped.items],total:mapped.total,limit:ROW_BATCH_SIZE,offset};
       this.ownedPageError='';
     }catch(error){if(current())this.ownedPageError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');}
-    finally{if(current()){this.ownedLoading=false;this.syncError();if(!silent)this.refreshBoardSection();}}
+    finally{if(current()){this.ownedLoading=false;this.syncError();if(!silent)this.refreshBoard();}}
   }
   // load() ora gira anche mentre l'utente è già fermo su Market Watch (apertura
   // pagina + fallback periodico, vedi app.js), non solo al boot: un onRender()
   // pieno lì ricostruirebbe l'intera route (immagini comprese) solo perché sono
   // arrivati prezzi aggiornati. Se la sezione board è già in pagina, la
-  // aggiorniamo sul posto (stesso principio di refreshBoardSection); altrimenti
-  // (boot, o l'utente è sulla Home dove vive il pannello "movers") si passa dal
-  // render pieno come prima.
+  // aggiorniamo sul posto (refreshBoard, mirato al solo contenuto: la search
+  // bar non viene mai ricreata); altrimenti (boot, o l'utente è su un'altra
+  // pagina dove vive il pannello "movers") onRender() ricostruirebbe la route
+  // ATTUALMENTE mostrata — che potrebbe non avere nulla a che fare con Market
+  // Watch (es. loadPrimaryData() al login lancia load() in parallelo mentre
+  // l'utente è già passato alla Raccolta e sta scrivendo). Stesso guard già
+  // usato per il fallback periodico Mazzi e per la sync realtime (vedi
+  // app.js): se un campo è a fuoco, i dati restano comunque aggiornati in
+  // questo controller e compariranno al prossimo render naturale, mai un
+  // onRender() che gli scippa focus/tastiera per un pannello che non sta
+  // nemmeno guardando.
   refreshAfterLoad(){
     const section=document.querySelector('[data-market-board-section]');
-    if(!section||this.selected||this.selectedDeck){this.onRender?.();return;}
+    if(!section||this.selected||this.selectedDeck){
+      const editing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+      if(!editing)this.onRender?.();
+      return;
+    }
     const heroValue=document.querySelector('.market-hero-value'),heroSync=document.querySelector('.market-hero-sync');
     if(heroValue){const pv=this.summary.portfolioValue;heroValue.textContent=pv.complete?money(pv.current):'Dati parziali';}
     if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}`:'In attesa del primo sync'}`;
-    this.refreshBoardSection();
+    // refreshBoard() (mirato), MAI refreshBoardSection(): un refresh di
+    // sfondo (fallback periodico, sync dopo un'azione) mentre l'utente sta
+    // già scrivendo nella search bar di Market Watch non deve ricrearla.
+    this.refreshBoard();
   }
   // dashboard.js usa `items` come sorgente di fallback per i "movers"
   // (positiveMovers) quando la RPC dedicata non ne restituisce — serve un
@@ -326,6 +345,18 @@ export class MarketWatchController {
     const items=this.itemsForTab(),marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue();
     content.innerHTML=this.boardContent({items,marketDecks,hasSnapshots,confirmQueue});
     this.bindBoardContent(content);
+    this.refreshTabCounts(marketDecks);
+  }
+  // countFor('owned') dipende da ownedPage.total, che cambia ad ogni ricerca
+  // (conteggio server-side filtrato) — refreshBoard() non tocca più la
+  // toolbar/tab bar (per non ricreare la search bar a fuoco), quindi senza
+  // questo patch mirato il numero sul tab "Raccolta" resterebbe indietro
+  // rispetto ai risultati mostrati durante la digitazione.
+  refreshTabCounts(marketDecks=this.marketDecks()){
+    document.querySelectorAll('[data-market-tab]').forEach(button=>{
+      const span=button.querySelector('span');
+      if(span)span.textContent=countFor(this,button.dataset.marketTab,marketDecks.length);
+    });
   }
   observeRows(root=document){
     if(typeof IntersectionObserver==='undefined'||!this.api?.marketPriceHistory)return;
