@@ -90,10 +90,17 @@ function confirmRequest(db, ownerSlug, requestId) {
   req.status = 'confirmed';
 }
 
-// Mirrors complete_collection_share_request, ROLLBACK compreso: una singola
-// chiamata RPC = un'unica transazione implicita Postgres, quindi
-// un'eccezione a qualunque punto del loop annulla anche le delete/update
-// degli item PRECEDENTI già eseguite nella stessa chiamata.
+// Mirrors complete_collection_share_request COME CORRETTA da
+// 20260917130000_collection_share_requests_state_machine_hardening.sql: per
+// ogni riga posseduta, consuma al massimo la sua quota LIBERA (quantityOwned
+// - committed, mai oltre), e a livello di printing non può mai eccedere
+// (totale libero) - (quota confirmed di ALTRE richieste sulla stessa
+// printing) — la propria quota confirmed (già inclusa in confirmedShareQty,
+// essendo questa richiesta già 'confirmed' a questo punto) viene esclusa per
+// non contarla due volte. ROLLBACK compreso: una singola chiamata RPC = una
+// sola transazione implicita Postgres, un'eccezione a qualunque punto del
+// loop annulla anche le delete/update degli item PRECEDENTI già eseguite
+// nella stessa chiamata.
 function completeRequest(db, ownerSlug, requestId) {
   const req = findOwnedRequest(db, ownerSlug, requestId);
   if (req.status !== 'confirmed') throw new Error('Solo le richieste confermate possono essere completate');
@@ -101,17 +108,28 @@ function completeRequest(db, ownerSlug, requestId) {
   const items = db.requestItems.filter(i => i.requestId === requestId);
   try {
     for (const it of items) {
-      if (it.quantity > ownerQty(db, req.ownerSlug, it.printingId)) {
+      const rows = db.collectionItems.filter(ci => ci.ownerSlug === req.ownerSlug && ci.printingId === it.printingId);
+      const totalFree = rows.reduce((sum, ci) => sum + Math.max(ci.quantityOwned - (ci.committed || 0), 0), 0);
+      const totalConfirmed = confirmedShareQty(db, req.ownerSlug, it.printingId); // include GIÀ la propria reservation
+      const otherConfirmed = Math.max(totalConfirmed - it.quantity, 0);
+      const availableForThis = Math.max(totalFree - otherConfirmed, 0);
+      if (it.quantity > availableForThis) {
         throw new Error('Una delle carte richieste non è più disponibile in quantità sufficiente');
       }
       let remaining = it.quantity;
-      const rows = db.collectionItems
-        .filter(ci => ci.ownerSlug === req.ownerSlug && ci.printingId === it.printingId && ci.quantityOwned > 0)
-        .sort((a, b) => a.id - b.id);
-      for (const row of rows) {
+      const sortedRows = [...rows].sort((a, b) => a.id - b.id);
+      for (const row of sortedRows) {
         if (remaining <= 0) break;
-        if (row.quantityOwned <= remaining) { remaining -= row.quantityOwned; row.quantityOwned = 0; row._deleted = true; }
-        else { row.quantityOwned -= remaining; remaining = 0; }
+        const freeQty = Math.max(row.quantityOwned - (row.committed || 0), 0);
+        if (freeQty <= 0) continue;
+        const take = Math.min(remaining, freeQty);
+        // Una riga viene eliminata SOLO quando la copia consumata coincide
+        // con l'INTERO quantity_owned (possibile solo se free_qty era già
+        // pari a quantity_owned, cioè la riga non aveva alcun impegno) —
+        // mai azzerata se resta un impegno da rappresentare.
+        if (take === row.quantityOwned) row._deleted = true;
+        else row.quantityOwned -= take;
+        remaining -= take;
       }
       if (remaining > 0) throw new Error('Errore interno: rimozione incompleta dalla raccolta');
     }
@@ -269,6 +287,91 @@ test('quantità impegnata da prestiti/prenotazioni riduce la disponibilità e bl
   assert.throws(() => confirmRequest(db, 'daniele', id), /non è più disponibile/, 'con solo 1 disponibile, confermare 2 deve fallire');
 });
 
+// --- Hardening (20260917130000_collection_share_requests_state_machine_
+// hardening.sql): complete_collection_share_request NON deve mai consumare
+// copie impegnate (loaned/reserved), deve proteggere le quote di ALTRE
+// richieste confirmed sulla stessa printing, ed escludere solo la propria. ---
+
+// H1/H2) complete non consuma quantità loaned né reserved (la reimplementazione
+// mirror qui usa un unico campo "committed" per rappresentare entrambe, come
+// dichiarato in testa al file — collection_item_loaned e collection_item_
+// reserved sono sommati insieme anche nella RPC reale per il calcolo di
+// free_qty di una riga).
+test('complete non consuma la quota LOANED di una riga (free_qty netta il loan)', () => {
+  const db = baseDb(); // p1: 1 riga, quantityOwned 5
+  db.collectionItems.find(ci => ci.printingId === 'p1').committed = 2; // 2 in prestito
+  // Disponibili per una NUOVA richiesta: 5 - 2 = 3. Ne confermiamo 3 (tutto il libero).
+  const id = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p1', quantity: 3 }] });
+  confirmRequest(db, 'daniele', id);
+  completeRequest(db, 'daniele', id);
+  const row = db.collectionItems.find(ci => ci.printingId === 'p1');
+  assert(row, 'la riga non deve sparire: restano 2 copie impegnate da rappresentare');
+  assert.equal(row.quantityOwned, 2, '5 possedute - 3 consumate (libere) = 2, MAI intaccando le 2 in prestito');
+});
+test('complete non consuma la quota RESERVED di una riga (stessa protezione di una prenotazione)', () => {
+  const db = baseDb();
+  db.collectionItems.find(ci => ci.printingId === 'p1').committed = 1; // 1 prenotata
+  const id = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p1', quantity: 4 }] }); // 5-1=4 libere
+  confirmRequest(db, 'daniele', id);
+  completeRequest(db, 'daniele', id);
+  const row = db.collectionItems.find(ci => ci.printingId === 'p1');
+  assert(row, 'la riga con la copia prenotata deve restare rappresentata');
+  assert.equal(row.quantityOwned, 1, '5 - 4 = 1, la copia prenotata non deve mai essere consumata');
+});
+
+// H6/H7) complete protegge le quote di ALTRE richieste confirmed sulla
+// stessa printing, ma consuma correttamente la PROPRIA.
+test('complete protegge la quota confirmed di un\'altra richiesta sulla stessa printing (B resta intatta)', () => {
+  const db = baseDb(); // p1: 5 possedute, nessun impegno prestiti
+  const a = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p1', quantity: 3 }] });
+  const b = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p1', quantity: 2 }] });
+  confirmRequest(db, 'daniele', a);
+  confirmRequest(db, 'daniele', b); // 3+2=5, esattamente tutto il posseduto: entrambe confermabili
+  completeRequest(db, 'daniele', a); // completa SOLO A
+  assert.equal(ownerQty(db, 'daniele', 'p1'), 2, 'A ha consumato le sue 3 copie, restano le 2 di B');
+  assert.equal(db.requests.find(r => r.id === b).status, 'confirmed', 'B resta confirmed, non toccata');
+  // Ora un tentativo di completare B con più di quanto resta libero (0, tutto posseduto è "suo") deve comunque riuscire per la SUA quota.
+  completeRequest(db, 'daniele', b);
+  assert.equal(ownerQty(db, 'daniele', 'p1'), 0);
+});
+
+// H8) row con owned=3, commitment=2, richiesta=1 -> resta quantity_owned=2, mai eliminata.
+test('riga con owned=3/commitment=2: completare una richiesta da 1 lascia quantity_owned=2, riga non eliminata', () => {
+  const db = makeDb();
+  db.collectionItems.push({ id: 1, ownerSlug: 'daniele', printingId: 'p9', quantityOwned: 3, committed: 2 });
+  const id = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p9', quantity: 1 }] }); // free=1
+  confirmRequest(db, 'daniele', id);
+  completeRequest(db, 'daniele', id);
+  const row = db.collectionItems.find(ci => ci.printingId === 'p9');
+  assert(row, 'la riga con un impegno residuo non deve mai essere eliminata');
+  assert.equal(row.quantityOwned, 2, 'deve diventare quantity_owned=2 (3 - 1 consumata), le 2 impegnate restano rappresentate');
+});
+
+// H9) zero copie libere -> complete fallisce interamente.
+test('zero copie libere (tutto in prestito/prenotato) -> complete fallisce', () => {
+  const db = makeDb();
+  db.collectionItems.push({ id: 1, ownerSlug: 'daniele', printingId: 'p9', quantityOwned: 2, committed: 0 });
+  const id = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p9', quantity: 2 }] });
+  confirmRequest(db, 'daniele', id);
+  // Nel frattempo le 2 copie vengono impegnate integralmente da un prestito.
+  db.collectionItems.find(ci => ci.printingId === 'p9').committed = 2;
+  assert.throws(() => completeRequest(db, 'daniele', id), /non è più disponibile/);
+  assert.equal(db.requests.find(r => r.id === id).status, 'confirmed', 'la richiesta resta confirmed, non completed, su fallimento');
+  assert.equal(db.collectionItems.find(ci => ci.printingId === 'p9').quantityOwned, 2, 'nessuna rimozione se non c\'è nulla di libero da consumare');
+});
+
+// H10) errore su una riga per via di un impegno esterno -> rollback totale (anche di un item precedente già processato con successo nello stesso loop).
+test('hardening: errore per impegno esterno su un item -> rollback totale, item precedente non resta parzialmente rimosso', () => {
+  const db = baseDb(); // p1 (5 poss.), p2 (3 poss.)
+  const id = submitRequest(db, { ownerSlug: 'daniele', items: [{ printingId: 'p1', quantity: 2 }, { printingId: 'p2', quantity: 3 }] });
+  confirmRequest(db, 'daniele', id);
+  db.collectionItems.find(ci => ci.printingId === 'p2').committed = 1; // ora solo 2 libere su p2, ne servono 3
+  const ownedP1Before = ownerQty(db, 'daniele', 'p1');
+  assert.throws(() => completeRequest(db, 'daniele', id), /non è più disponibile/);
+  assert.equal(ownerQty(db, 'daniele', 'p1'), ownedP1Before, 'p1 (processato per primo) non deve restare parzialmente consumato');
+  assert.equal(db.requests.find(r => r.id === id).status, 'confirmed');
+});
+
 // 15) dati legacy 'seen' non contano come completed: non riducono
 // disponibilità né quantity_owned, restano confermabili/rifiutabili come pending.
 test('richieste legacy seen: nessun impegno su disponibilità/inventario, restano confermabili come pending', () => {
@@ -340,7 +443,13 @@ test('richieste legacy seen: nessun impegno su disponibilità/inventario, restan
     assert.match(block, /'completedAt', r\.completed_at/);
   });
 
-  test('get_collection_share espone quantityAvailable netto di prestiti/prenotazioni E richieste condivise già confirmed', () => {
+  // NOTA (file originale, superseded): questa versione di get_collection_share
+  // è quella "semplice" (senza catalogCardId/edition/condition/language/
+  // alternateNames/cardCount/printingCount) — 20260917130000_collection_
+  // share_requests_state_machine_hardening.sql la ridefinisce ripartendo dal
+  // contratto ricco già live, con la STESSA aggiunta di quantityAvailable
+  // verificata qui. Vedi la sezione statica dedicata a quella migration.
+  test('get_collection_share (file originale, superseded) espone quantityAvailable netto di prestiti/prenotazioni E richieste condivise già confirmed', () => {
     const start = migration.indexOf('create or replace function public.get_collection_share');
     const end = migration.indexOf('create or replace function public.submit_collection_share_request', start);
     const block = migration.slice(start, end);
@@ -381,7 +490,14 @@ test('richieste legacy seen: nessun impegno su disponibilità/inventario, restan
     assert.equal(/update public\.collection_items/.test(block) || /delete from public\.collection_items/.test(block), false, 'confirm non deve mai modificare collection_items');
   });
 
-  test('complete_collection_share_request: accetta solo confirmed, decrementa/elimina collection_items, imposta completed_at', () => {
+  // NOTA (file originale, superseded): questa versione di complete_
+  // collection_share_request consuma le righe fino a coprire SUM(quantity_
+  // owned), senza guardare loaned/reserved né altre richieste confirmed
+  // sulla stessa printing — è esattamente il bug corretto da 20260917130000_
+  // collection_share_requests_state_machine_hardening.sql. Vedi la sezione
+  // statica dedicata a quella migration per il comportamento EFFETTIVAMENTE
+  // in vigore.
+  test('complete_collection_share_request (file originale, superseded): accetta solo confirmed, decrementa/elimina collection_items, imposta completed_at', () => {
     const start = migration.indexOf('create or replace function public.complete_collection_share_request');
     const end = migration.indexOf('create or replace function public.cancel_collection_share_request', start);
     const block = migration.slice(start, end);
@@ -398,7 +514,16 @@ test('richieste legacy seen: nessun impegno su disponibilità/inventario, restan
     assert.match(block, /if req\.status not in \('pending', 'seen', 'confirmed'\) then/);
   });
 
-  test('grant: confirm/complete/cancel SOLO a authenticated, mai a anon (azioni da proprietario autenticato)', () => {
+  // NOTA: questo grant a "solo authenticated" scritto QUI (nel file
+  // originale, mai riscritto — vedi la history) si è rivelato un blocker
+  // reale: FPT Cards si connette sempre con la chiave `anon` e fa
+  // l'autenticazione applicativa via p_token dentro le RPC. La migration
+  // 20260917130000_collection_share_requests_state_machine_hardening.sql lo
+  // corregge in avanti a "anon, authenticated" — vedi la sezione statica più
+  // sotto dedicata a quella migration, che è la fonte di verità sul grant
+  // EFFETTIVAMENTE in vigore. Questo test resta com'è solo per documentare
+  // fedelmente cosa scrive QUESTO file, non il comportamento finale del DB.
+  test('grant (file originale, superseded): confirm/complete/cancel scritte qui come solo authenticated', () => {
     const grantBlock = migration.slice(migration.indexOf('grant execute on function\n  public.confirm_collection_share_request'));
     assert.match(grantBlock, /to authenticated;/);
     assert.equal(grantBlock.slice(0, grantBlock.indexOf('to authenticated;')).includes('anon'), false);
@@ -412,7 +537,137 @@ test('richieste legacy seen: nessun impegno su disponibilità/inventario, restan
     assert.match(migration, /notify pgrst, 'reload schema';/);
   });
 
-  console.log('migration (statico): colonne snapshot, status CHECK esteso senza migrazione automatica di seen, completed_at, submit con cattura prezzo N+1-free, list dallo snapshot, get_collection_share con quantityAvailable, confirm/complete/cancel con auth+ownership+lock+transizioni corrette, grants authenticated-only, ritiro mark_collection_share_request_seen');
+  console.log('migration (statico): colonne snapshot, status CHECK esteso senza migrazione automatica di seen, completed_at, submit con cattura prezzo N+1-free, list dallo snapshot, get_collection_share con quantityAvailable, confirm/complete/cancel con auth+ownership+lock+transizioni corrette, grants authenticated-only (superseded, vedi hardening), ritiro mark_collection_share_request_seen');
+}
+
+// --- Verifiche statiche sulla migration correttiva (repo-sync) --------------
+// 20260917130000_collection_share_requests_state_machine_hardening.sql:
+// corregge in avanti (senza riscrivere 20260917120000, che resta nella
+// history) i tre blocker emersi confrontando il repo con lo stato reale già
+// applicato sul DB Supabase (migration live "collection_share_requests_
+// state_machine_hardened", DB version 20260916194628) — grant anon mancante,
+// contratto ricco di get_collection_share perso, complete che poteva
+// consumare copie impegnate.
+{
+  const root = path.dirname(fileURLToPath(import.meta.url));
+  const hardeningPath = path.join(root, '..', 'supabase', 'migrations', '20260917130000_collection_share_requests_state_machine_hardening.sql');
+  const hardening = (await readFile(hardeningPath, 'utf8')).replace(/\r\n/g, '\n');
+  const hardeningNoComments = hardening.split('\n').filter(line => !line.trim().startsWith('--')).join('\n');
+
+  test('hardening: non riscrive 20260917120000 — nessun DROP/ALTER sulle colonne o sul CHECK status già introdotti da quella migration', () => {
+    assert.equal(hardening.includes('drop constraint'), false, 'non deve toccare il CHECK status');
+    assert.equal(/add column if not exists (unit_price_snapshot|price_type_snapshot|price_captured_at_snapshot|completed_at)/.test(hardening), false, 'le colonne snapshot/completed_at sono già state introdotte, non vanno ri-aggiunte qui');
+  });
+
+  test('hardening: nessuna riga legacy toccata — nessuna conversione bulk di seen, nessun backfill su richieste esistenti', () => {
+    // L'unico UPDATE su collection_share_requests atteso in questo file è
+    // quello scoped-by-id dentro complete_collection_share_request stessa
+    // (set status='completed' where id = p_request_id, l'esito normale di
+    // UNA chiamata RPC) — non un backfill di massa sui dati storici.
+    assert.equal(/where\s+status\s*=\s*'seen'/i.test(hardeningNoComments), false, 'nessuna conversione bulk di righe seen');
+    assert.equal((hardeningNoComments.match(/update\s+public\.collection_share_requests\b/gi) || []).length, 1, 'atteso un solo UPDATE su collection_share_requests: quello scoped-by-id dentro complete_collection_share_request');
+    assert.match(hardeningNoComments, /update public\.collection_share_requests set status = 'completed', completed_at = now\(\) where id = p_request_id;/);
+  });
+
+  test('hardening BLOCKER 1: list/confirm/complete/cancel concesse a anon E authenticated (mai authenticated da solo)', () => {
+    for (const fn of [
+      'public.list_collection_share_requests(text)',
+      'public.confirm_collection_share_request(text,uuid)',
+      'public.complete_collection_share_request(text,uuid)',
+      'public.cancel_collection_share_request(text,uuid)'
+    ]) {
+      assert(hardeningNoComments.includes(fn), `${fn} non compare nel testo della migration`);
+    }
+    // Ogni blocco grant di queste 4 funzioni deve concedere a "anon, authenticated" insieme.
+    const grantMatches = [...hardeningNoComments.matchAll(/grant execute on function\s*\n?\s*((?:public\.[a-z_]+\([^)]*\)[,\s]*)+)\s*to ([a-z, ]+);/g)];
+    const relevantFns = ['list_collection_share_requests', 'confirm_collection_share_request', 'complete_collection_share_request', 'cancel_collection_share_request'];
+    for (const fnName of relevantFns) {
+      const match = grantMatches.find(m => m[1].includes(fnName));
+      assert(match, `nessun blocco "grant execute ... to ..." trovato per ${fnName}`);
+      assert.match(match[2], /\banon\b/, `${fnName} deve essere concessa anche a anon`);
+      assert.match(match[2], /\bauthenticated\b/, `${fnName} deve restare concessa a authenticated`);
+    }
+  });
+
+  test('hardening: collection_share_confirmed_quantity resta un helper interno (nessun grant execute su di essa in questo file)', () => {
+    assert.equal(hardeningNoComments.includes('collection_share_confirmed_quantity(text,uuid) to'), false);
+  });
+
+  test('hardening BLOCKER 2: get_collection_share ripristina il contratto ricco (catalogCardId/edition/condition/language/alternateNames/cardCount/printingCount)', () => {
+    const start = hardening.indexOf('create or replace function public.get_collection_share');
+    const end = hardening.indexOf('revoke all on function public.get_collection_share', start);
+    const block = hardening.slice(start, end);
+    for (const field of ["'printingId'", "'catalogCardId'", "'cardName'", "'setCode'", "'setName'", "'rarity'", "'imageUrl'", "'quantityOwned'", "'quantityAvailable'", "'edition'", "'condition'", "'language'", "'alternateNames'"]) {
+      assert(block.includes(field), `campo per-item mancante nel contratto ricco: ${field}`);
+    }
+    for (const field of ["'ownerName'", "'game'", "'items'", "'cardCount'", "'printingCount'"]) {
+      assert(block.includes(field), `campo root mancante nel contratto ricco: ${field}`);
+    }
+  });
+
+  test('hardening: quantityAvailable sottrae collection_share_confirmed_quantity UNA volta per gruppo (fuori dal sum() per-riga, mai N+1)', () => {
+    const start = hardening.indexOf('create or replace function public.get_collection_share');
+    const end = hardening.indexOf('revoke all on function public.get_collection_share', start);
+    const block = hardening.slice(start, end);
+    // sum(...)::integer deve CHIUDERSI prima della sottrazione di
+    // collection_share_confirmed_quantity — cioè la chiamata sta FUORI
+    // dall'aggregato per-riga, eseguita una volta per il gruppo (per p.id),
+    // non una volta per ogni collection_item sommata dentro il sum().
+    assert.match(block, /\)\)::integer\s*\n\s*- public\.collection_share_confirmed_quantity\(share\.owner_slug, p\.id\)/);
+  });
+
+  test('hardening BLOCKER 3: complete_collection_share_request calcola free_qty per riga (owned - loaned - reserved), mai oltre', () => {
+    const start = hardening.indexOf('create or replace function public.complete_collection_share_request');
+    const end = hardening.indexOf('revoke all on function public.complete_collection_share_request', start);
+    const block = hardening.slice(start, end);
+    assert.match(block, /greatest\(\s*\n?\s*ci\.quantity_owned - public\.collection_item_loaned\(ci\.id\) - public\.collection_item_reserved\(ci\.id\), 0\s*\n?\s*\)/);
+    assert.match(block, /free_qty/);
+  });
+
+  test('hardening: complete esclude la PROPRIA quota confirmed (già inclusa nel totale) prima di validare le altre', () => {
+    const start = hardening.indexOf('create or replace function public.complete_collection_share_request');
+    const end = hardening.indexOf('revoke all on function public.complete_collection_share_request', start);
+    const block = hardening.slice(start, end);
+    assert.match(block, /other_confirmed := greatest\(total_confirmed - it\.quantity, 0\);/);
+    assert.match(block, /available_for_this := greatest\(total_free - other_confirmed, 0\);/);
+  });
+
+  test('hardening: una riga viene eliminata SOLO quando la quantità consumata coincide con l\'intero quantity_owned (mai quando resta un impegno)', () => {
+    const start = hardening.indexOf('create or replace function public.complete_collection_share_request');
+    const end = hardening.indexOf('revoke all on function public.complete_collection_share_request', start);
+    const block = hardening.slice(start, end);
+    assert.match(block, /if take = row_rec\.quantity_owned then\s*\n\s*delete from public\.collection_items where id = row_rec\.id;\s*\n\s*else\s*\n\s*update public\.collection_items set quantity_owned = quantity_owned - take/);
+  });
+
+  test('hardening: complete resta atomica (advisory lock per owner + FOR UPDATE sulle collection_items coinvolte, fallimento -> nessun update di stato)', () => {
+    const start = hardening.indexOf('create or replace function public.complete_collection_share_request');
+    const end = hardening.indexOf('revoke all on function public.complete_collection_share_request', start);
+    const block = hardening.slice(start, end);
+    assert.match(block, /pg_advisory_xact_lock\(hashtext\('collection_share_owner_mutation:' \|\| me\)\)/);
+    assert.match(block, /for update of ci;/);
+    assert.match(block, /if req\.status <> 'confirmed' then/);
+    assert.match(block, /update public\.collection_share_requests set status = 'completed', completed_at = now\(\) where id = p_request_id;/);
+  });
+
+  test('hardening: indice su collection_share_request_items(printing_id) aggiunto in modo idempotente', () => {
+    assert.match(hardening, /create index if not exists collection_share_request_items_printing_id_idx\s*\n\s*on public\.collection_share_request_items\(printing_id\);/);
+  });
+
+  test('hardening: SECURITY DEFINER e SET search_path preservati sulle funzioni ridefinite', () => {
+    for (const fn of ['get_collection_share', 'complete_collection_share_request']) {
+      const start = hardening.indexOf(`create or replace function public.${fn}`);
+      const dollarStart = hardening.indexOf('$$', start);
+      const header = hardening.slice(start, dollarStart);
+      assert.match(header, /security definer/, `${fn}: manca security definer`);
+      assert.match(header, /set search_path = public, extensions/, `${fn}: manca set search_path`);
+    }
+  });
+
+  test('hardening: notify pgrst reload schema presente', () => {
+    assert.match(hardening, /notify pgrst, 'reload schema';/);
+  });
+
+  console.log('hardening (statico): nessuna riscrittura di 20260917120000, nessun dato legacy toccato, grant anon+authenticated su list/confirm/complete/cancel, get_collection_share con contratto ricco + quantityAvailable (confirmed sottratta una volta per gruppo), complete con free_qty per riga + esclusione della propria quota confirmed + eliminazione riga solo se davvero azzerata, atomicità preservata, indice printing_id presente');
 }
 
 // --- Verifiche statiche sul frontend -----------------------------------------
