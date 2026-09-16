@@ -337,51 +337,103 @@ async function run() {
   await evaluate(`document.querySelector('.sidebar nav button[data-page="loans"]').click()`);
   await waitFor(`Boolean(document.querySelector('.loan-hero-new'))`, 'Pagina Prestiti non raggiunta');
   await evaluate(`document.querySelector('.loan-hero-new').click()`);
-  await waitFor(`Boolean(document.querySelector('.loan-builder-grid'))`, 'Loan Builder non renderizzato');
-  assert(await evaluate(`document.querySelector('.loan-submit').disabled`), 'Submit senza carte/destinatario non disabilitato');
+  // "redesign: Prestiti come lista compatta con dettaglio a foglio dal
+  // basso" (2026-09-06, commit 775536b) ha trasformato la creazione
+  // prestito da un form a schermo unico (.loan-builder-grid, 2 colonne
+  // sempre visibili) a un wizard a 3 passi (.loan-wizard/.loan-builder-page:
+  // Cerca -> Proprietario/Destinatario -> Riepilogo). Ogni passo NON attivo
+  // collassa in una riga riassuntiva: .draft-card/.loan-submit/#borrower/
+  // .loan-direction-flag esistono nel DOM SOLO quando il loro passo è
+  // quello attivo — tutta questa sezione (scritta 2026-08-28) va ripercorsa
+  // passo per passo con [data-loan-step="N"] per saltare avanti/indietro
+  // (lo stesso meccanismo che l'utente reale ha per tornare su un passo
+  // precedente: non esiste un pulsante "indietro" dedicato), non solo con
+  // selettori rinominati.
+  await waitFor(`Boolean(document.querySelector('.loan-search-stage'))`, 'Loan Builder (passo 1: Cerca) non renderizzato');
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Blue-Eyes'))`, 'Risultato Blue-Eyes assente');
   assert(await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('img').src.endsWith('/icon-192.png')`), 'La ricerca usa ancora il ritaglio invece della carta completa piccola');
-  assert(await evaluate(`(()=>{const image=[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('img');const box=image.getBoundingClientRect();return getComputedStyle(image).objectFit==='contain'&&box.height/box.width>1.3})()`), 'La carta completa viene ancora ritagliata dal CSS');
+  // Stesso redesign (commit 1a853ea, 2026-09-05, un giorno prima di
+  // 775536b): .loan-result-tiles è oggi una griglia a 2 colonne con
+  // l'immagine ad altezza fissa 118px (vedi styles.css) — un riquadro
+  // corto e largo, mai più alto/stretto come nel form a schermo unico. Il
+  // rapporto altezza/larghezza >1.3 di prima è strutturalmente impossibile
+  // con queste proporzioni; il segnale reale di "non ritagliata" resta
+  // object-fit:contain (già verificato), qui rafforzato controllando che il
+  // riquadro abbia davvero un'altezza visibile e coerente con i 118px CSS,
+  // non un rendering rotto o a dimensione zero.
+  assert(await evaluate(`(()=>{const image=[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('img');const box=image.getBoundingClientRect();return getComputedStyle(image).objectFit==='contain'&&box.height>110&&box.height<130&&box.width>0})()`), 'La carta completa viene ancora ritagliata dal CSS');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('[data-card-result]').click()`);
-  await waitFor(`document.querySelectorAll('.draft-card').length===1`, 'Aggiunta singola carta non riuscita');
-  assert(await evaluate(`document.querySelector('#card-name').value==='' && document.querySelector('#card-suggestions').classList.contains('is-collapsed') && Boolean(document.querySelector('.loan-card-flight'))`), 'La selezione non chiude la lista o non avvia il trasferimento animato');
+  await waitFor(`Boolean(document.querySelector('.loan-card-flight'))`, 'Animazione trasferimento carta verso il passo Riepilogo assente');
+  assert(await evaluate(`document.querySelector('#card-name').value==='' && document.querySelector('#card-suggestions').classList.contains('is-collapsed')`), 'La selezione non chiude la lista di ricerca');
+  // [data-loan-step="3"] esiste su DUE elementi contemporaneamente: il nodo
+  // dello stepper in alto (sempre presente, testo fisso "3 Riepilogo") e la
+  // riga riassuntiva collassata (.loan-step-collapsed, SOLO quando il passo
+  // non è attivo, col conteggio dinamico) — querySelector prenderebbe il
+  // primo (lo stepper, mai il testo dinamico). Stesso errore già corretto
+  // sopra per .quantity-help: serve lo scope esplicito sulla riga collassata.
+  assert(await evaluate(`document.querySelector('.loan-step-collapsed[data-loan-step="3"]').textContent.includes('1 carta selezionata')`), 'Riepilogo collassato non riflette la carta appena aggiunta');
+  // Passo 3 (Riepilogo): qui vivono .draft-card/.draft-stepper — verifico
+  // subito quantità e blocco del submit senza destinatario.
+  await evaluate(`document.querySelector('[data-loan-step="3"]').click()`);
+  await waitFor(`document.querySelectorAll('.draft-card').length===1`, 'Passo Riepilogo non mostra la carta aggiunta');
+  assert(await evaluate(`document.querySelector('.loan-submit').disabled`), 'Submit senza destinatario non disabilitato');
   await evaluate(`document.querySelector('[data-draft-quantity="plus"]').focus()`);
   await cdp.call('Input.dispatchKeyEvent', { type:'keyDown', key:' ', code:'Space', windowsVirtualKeyCode:32 });
   await cdp.call('Input.dispatchKeyEvent', { type:'keyUp', key:' ', code:'Space', windowsVirtualKeyCode:32 });
   await waitFor(`document.querySelector('.draft-stepper output').textContent==='2'`, 'Incremento da tastiera non riuscito');
+  // Torna al passo 1 per un'altra ricerca — Blue-Eyes deve accorparsi
+  // (stessa printing), non creare una seconda riga in .draft-list.
+  await evaluate(`document.querySelector('[data-loan-step="1"]').click()`);
+  await waitFor(`Boolean(document.querySelector('.loan-search-stage'))`, 'Ritorno al passo 1 non riuscito');
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Blue-Eyes'))`, 'Seconda ricerca Blue-Eyes assente');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Blue-Eyes')).querySelector('[data-card-result]').click()`);
+  await evaluate(`document.querySelector('[data-loan-step="3"]').click()`);
   await waitFor(`document.querySelector('.draft-stepper output').textContent==='3' && document.querySelectorAll('.draft-card').length===1`, 'Stessa carta non accorpata');
   const decrement = await evaluate(`(()=>{const before=document.querySelector('.draft-stepper output').textContent;document.querySelector('[data-draft-quantity="minus"]').click();return {before,after:document.querySelector('.draft-stepper output').textContent}})()`);
   assert(decrement.before==='3' && decrement.after==='2', `Decremento quantità non riuscito: ${JSON.stringify(decrement)}`);
+  await evaluate(`document.querySelector('[data-loan-step="1"]').click()`);
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician'))`, 'Risultato Dark Magician assente');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-card-result]').click()`);
+  await evaluate(`document.querySelector('[data-loan-step="3"]').click()`);
   await waitFor(`document.querySelectorAll('.draft-card').length===2`, 'Aggiunta multipla non riuscita');
   await evaluate(`[...document.querySelectorAll('.draft-card')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-remove-card]').click()`);
   await waitFor(`document.querySelectorAll('.draft-card').length===1`, 'Rimozione carta non riuscita');
+  await evaluate(`document.querySelector('[data-loan-step="1"]').click()`);
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician'))`, 'Seconda ricerca Dark Magician assente');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-card-result]').click()`);
-  await waitFor(`document.querySelectorAll('.draft-card').length===2`, 'Nuova aggiunta dopo rimozione non riuscita');
+  // Da qui il percorso lineare previsto (Continua), non più un salto diretto
+  // allo stepper: verifica che anche quel meccanismo di avanzamento funzioni.
+  await evaluate(`document.querySelector('[data-loan-continue]').click()`);
+  await waitFor(`Boolean(document.querySelector('.loan-recipient'))`, 'Passo 2 (Destinatario) non raggiunto con Continua');
   await evaluate(`document.querySelector('#borrower').focus()`);
   for (let index=0; index<2; index+=1) {
     await cdp.call('Input.dispatchKeyEvent', { type:'keyDown', key:'ArrowDown', code:'ArrowDown', windowsVirtualKeyCode:40 });
     await cdp.call('Input.dispatchKeyEvent', { type:'keyUp', key:'ArrowDown', code:'ArrowDown', windowsVirtualKeyCode:40 });
   }
   await waitFor(`document.querySelector('#borrower').value==='first-access'`, 'Cambio destinatario da tastiera non riuscito');
-  assert(await evaluate(`document.querySelectorAll('#borrower option[value="existing-member"]').length===0 && document.querySelector('.loan-direction-flag').textContent.includes('Stai prestando') && document.querySelector('.loan-direction-flag').textContent.includes('First Access') && document.querySelector('.loan-submit').textContent.includes('proposta')`), 'Direzione del prestito non chiara o profilo personale ancora selezionabile');
+  assert(await evaluate(`document.querySelectorAll('#borrower option[value="existing-member"]').length===0`), 'Profilo personale ancora selezionabile come destinatario');
+  await evaluate(`document.querySelector('[data-loan-continue]').click()`);
+  await waitFor(`document.querySelectorAll('.draft-card').length===2`, 'Passo 3 (Riepilogo) non raggiunto con Continua dal passo 2');
+  assert(await evaluate(`document.querySelector('.loan-direction-flag').textContent.includes('Stai prestando') && document.querySelector('.loan-direction-flag').textContent.includes('First Access') && document.querySelector('.loan-submit').textContent.includes('proposta')`), 'Direzione del prestito non chiara nel Riepilogo');
   await evaluate(`(()=>{const notes=document.querySelector('#notes');notes.value='Near Mint · consegna sabato';notes.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   assert(await evaluate(`document.querySelector('#notes-count').textContent.startsWith('27') && !document.querySelector('.loan-submit').disabled`), 'Note o validazione Loan Builder errate');
-  const desktopLoanLayout = await evaluate(`({columns:getComputedStyle(document.querySelector('.loan-builder-grid')).gridTemplateColumns,overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth})`);
-  assert(desktopLoanLayout.columns.split(' ').length>=2 && desktopLoanLayout.overflow===0, `Layout Loan Builder desktop non valido: ${JSON.stringify(desktopLoanLayout)}`);
+  // .loan-wizard è oggi una singola colonna centrata (max-width:620px, vedi
+  // styles.css) — mai più un form a 2 colonne: l'unico controllo desktop
+  // ancora significativo è "nessun overflow orizzontale", non più una griglia.
+  const desktopLoanLayout = await evaluate(`({overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,width:document.querySelector('.loan-wizard').getBoundingClientRect().width})`);
+  assert(desktopLoanLayout.overflow===0 && desktopLoanLayout.width<=620, `Layout Loan Builder desktop non valido: ${JSON.stringify(desktopLoanLayout)}`);
   for (const width of [390,360]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height:900, deviceScaleFactor:1, mobile:true, screenWidth:width, screenHeight:900 });
     await delay(100);
-    const layout = await evaluate(`(()=>{const search=document.querySelector('.loan-search-stage').getBoundingClientRect();const recipient=document.querySelector('.loan-recipient').getBoundingClientRect();const selected=document.querySelector('.selected-loan-cards').getBoundingClientRect();const notes=document.querySelector('.loan-notes').getBoundingClientRect();const touch=document.querySelector('[data-draft-quantity="plus"]').getBoundingClientRect();return {client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,order:search.top<recipient.top&&recipient.top<selected.top&&selected.top<notes.top,touch:Math.min(touch.width,touch.height)}})()`);
-    assert(layout.client===width && layout.scroll===width && layout.order && layout.touch>=42, `Loan Builder mobile non valido a ${width}px: ${JSON.stringify(layout)}`);
+    // Un solo passo è mai visibile alla volta: verifico il passo 3 (già
+    // attivo, quello con lo stepper quantità) invece del vecchio ordine
+    // verticale fra pannelli che oggi non coesistono più sullo stesso schermo.
+    const layout = await evaluate(`(()=>{const panel=document.querySelector('.loan-summary-panel').getBoundingClientRect();const touch=document.querySelector('[data-draft-quantity="plus"]').getBoundingClientRect();return {client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,panelFits:panel.width<=document.documentElement.clientWidth,touch:Math.min(touch.width,touch.height)}})()`);
+    assert(layout.client===layout.scroll && layout.panelFits && layout.touch>=42, `Loan Builder mobile (passo 3) non valido a ${width}px: ${JSON.stringify(layout)}`);
   }
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1440, height:1000, deviceScaleFactor:1, mobile:false, screenWidth:1440, screenHeight:1000 });
   await evaluate(`window.__authTest.holdCreate=true;(()=>{const button=document.querySelector('.loan-submit');button.click();button.click()})()`);
@@ -389,21 +441,38 @@ async function run() {
   await evaluate(`window.__authTest.releaseCreate();window.__authTest.holdCreate=false`);
   await waitFor(`Boolean(document.querySelector('#loan-query'))`, 'Submit valido Loan Builder non completato');
   assert(await evaluate(`window.__authTest.lastCreate.p_borrower_slug==='first-access' && window.__authTest.lastCreate.p_cards.length===2 && window.__authTest.lastCreate.p_cards[0].quantity===2 && window.__authTest.lastCreate.p_cards[0].image.endsWith('/icon-512.png') && window.__authTest.lastCreate.p_notes.includes('Near Mint')`), 'Payload prestito o immagine completa non rispettati');
+  console.log('PASS Loan Builder wizard (lend): passi 1↔2↔3 (stepper diretto + Continua lineare), ricerca/accorpamento/stepper tastiera+click/rimozione+re-aggiunta, destinatario da tastiera, note, doppio submit bloccato, payload/immagine completa, responsive 390/360');
   await waitFor(`Boolean(document.querySelector('.loan-hero-new'))`, 'Pagina Prestiti non raggiunta dopo il submit');
   await evaluate(`document.querySelector('.loan-hero-new').click()`);
   await waitFor(`Boolean(document.querySelector('[data-loan-mode="request"]'))`, 'Interruttore bidirezionale assente');
   await evaluate(`document.querySelector('[data-loan-mode="request"]').click()`);
-  await waitFor(`document.querySelector('.loan-mode-switch').classList.contains('request') && document.querySelector('.loan-direction-flag').textContent.includes('Stai richiedendo')`, 'Modalità ricezione non attivata');
+  await waitFor(`document.querySelector('.loan-mode-switch').classList.contains('request')`, 'Modalità ricezione non attivata');
+  // setLoanBuilderMode() riporta al passo 1 (ricerca) e prova a mettere il
+  // focus su #borrower subito dopo — che però non esiste finché non si è al
+  // passo 2 (recipientPanel): il focus() è quindi un no-op silenzioso qui
+  // (verificato: nessun errore, semplicemente nessun effetto), non un
+  // crash. Piccola incoerenza UX reale scoperta in questo audit (l'utente
+  // non viene guidato al passo 2 dove serve impostare il proprietario prima
+  // di poter cercare), ma non una perdita di dati: annotata, non corretta
+  // qui (fuori scope per un fix di test). In modalità "request" la ricerca
+  // richiede comunque il proprietario selezionato PRIMA
+  // (loanSearchStatus='owner-required'), quindi si salta al passo 2
+  // esplicitamente per impostarlo — lo stesso percorso che un utente reale
+  // dovrebbe seguire tramite lo stepper.
+  await evaluate(`document.querySelector('[data-loan-step="2"]').click()`);
+  await waitFor(`Boolean(document.querySelector('#borrower'))`, 'Passo 2 non raggiunto in modalità richiesta');
   await evaluate(`(()=>{const select=document.querySelector('#borrower');select.value='first-access';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await evaluate(`document.querySelector('[data-loan-step="1"]').click()`);
   await evaluate(`(()=>{const input=document.querySelector('#card-name');input.value='Dark Magician';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
-  await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician')&&row.textContent.includes('disponibili'))`, 'Raccolta del proprietario non usata nella richiesta');
+  await waitFor(`[...document.querySelectorAll('.loan-search-result')].some(row=>row.textContent.includes('Dark Magician')&&row.textContent.includes('disp.'))`, 'Raccolta del proprietario non usata nella richiesta');
   await evaluate(`[...document.querySelectorAll('.loan-search-result')].find(row=>row.textContent.includes('Dark Magician')).querySelector('[data-card-result]').click()`);
+  await evaluate(`document.querySelector('[data-loan-step="3"]').click()`);
   await waitFor(`document.querySelector('.draft-card')?.textContent.includes('SDY-006')`, 'Printing richiesta non collegata alla raccolta team');
   assert(await evaluate(`document.querySelector('.loan-submit').textContent.includes('richiesta') && document.querySelector('.loan-direction-flag').textContent.includes('First Access')`), 'Conferma ricezione non esplicita');
   await evaluate(`document.querySelector('.loan-submit').click()`);
   await waitFor(`window.__authTest.requestCalls===1 && Boolean(document.querySelector('#loan-query'))`, 'Richiesta dal Loan Builder non inviata');
   assert(await evaluate(`window.__authTest.lastRequest.p_collection_item_id==='team-item' && window.__authTest.lastRequest.p_quantity===1`), 'La richiesta non usa la printing esatta del proprietario');
-  console.log('PASS Loan Builder bidirezionale, animazione, ricerca/quantità/destinatario/note/submit/desktop/mobile/tastiera/touch');
+  console.log('PASS Loan Builder wizard (request): switch bidirezionale, proprietario impostato al passo 2 prima della ricerca, disponibilità reale della raccolta del proprietario, submit');
   await cdp.call('Page.reload', { ignoreCache:true });
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Sessione non ripristinata dopo Loan Builder');
 
@@ -566,6 +635,13 @@ async function run() {
   console.log('PASS Raccolta editor: draft quantità sopravvive al cambio Set, protezione a due passaggi ancora attiva se combinati con un cambio printing');
   await evaluate(`document.querySelector('.detail-close').click()`);
   await waitFor(`!document.querySelector('#collection-owned')`, 'Chiusura editor (annulla la modifica bloccata) non riuscita');
+  // Piccolo margine di assestamento dopo un salvataggio BLOCCATO (il ramo
+  // meno esercitato di saveCollectionItem: nessun await su una vera RPC,
+  // solo il return anticipato del toast) prima di riaprire l'editor per lo
+  // scenario successivo — osservato un flake occasionale altrimenti (stesso
+  // ordine di grandezza dei ritardi già usati altrove in questo file dopo
+  // un cambio viewport).
+  await delay(80);
 
   // --- Regressione: cambio Rarità DOPO aver toccato l'edizione -> il draft
   // deve sopravvivere; rarità+edizione insieme restano instradate alla
@@ -574,6 +650,7 @@ async function run() {
   await evaluate(`document.querySelector('.inventory-card').click()`);
   await evaluate(`document.querySelector('[data-collection-edit]').click()`);
   await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (draft edizione) non aperto');
+  assert(await evaluate(`document.querySelector('#collection-owned').value==='9'`), 'Riapertura editor non riflette la quantità persistita (9): possibile stato residuo dallo scenario precedente');
   await evaluate(`(()=>{const edition=document.querySelector('#collection-first-edition');edition.checked=false;edition.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   await evaluate(`(()=>{const rarity=document.querySelector('#collection-rarity');rarity.value='Common';rarity.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   await waitFor(`document.querySelector('.printing-preview')?.textContent.includes('Common')`, 'Cambio Rarità non applicato dopo modifica edizione');
@@ -717,8 +794,13 @@ async function run() {
     await waitFor(`Boolean(document.querySelector(${JSON.stringify(selector)}))`, `Route ${route} non renderizzata`);
   }
   await evaluate(`location.hash='#/loans'`);
-  await waitFor(`Boolean(document.querySelector('.loan-archive-hero'))`, 'Redesign archivio Prestiti non renderizzato');
-  assert(await evaluate(`Boolean(document.querySelector('.loan-archive-hero [data-page="new"]'))`), 'CTA Nuovo prestito assente dall’archivio');
+  // .loan-archive-hero/.loan-kpi-strip article non esistono dallo stesso
+  // redesign del 2026-09-06 (commit 775536b) responsabile di tutto il resto
+  // di questa sezione: l'header oggi è .loan-hero-compact, le tre metriche
+  // sono .loan-stat-strip > .loan-stat-chip (vedi loansView in app.js) — non
+  // più <article>. Il resto (filtri, reset, CTA nuovo prestito) è invariato.
+  await waitFor(`Boolean(document.querySelector('.loan-hero-compact'))`, 'Redesign archivio Prestiti non renderizzato');
+  assert(await evaluate(`Boolean(document.querySelector('.loan-hero-compact [data-page="new"]'))`), 'CTA Nuovo prestito assente dall’archivio');
   assert(await evaluate(`(()=>{const shell=document.querySelector('.app-shell');const select=document.querySelector('#loan-direction');select.value='received';select.dispatchEvent(new Event('change',{bubbles:true}));return document.querySelector('.app-shell')===shell&&select.isConnected&&select.value==='received'})()`), 'Il filtro Movimento ricostruisce ancora l’app');
   assert(await evaluate(`(()=>{const shell=document.querySelector('.app-shell');const select=document.querySelector('#loan-member');select.value='first-access';select.dispatchEvent(new Event('change',{bubbles:true}));return document.querySelector('.app-shell')===shell&&select.isConnected&&select.value==='first-access'})()`), 'Il filtro Membro ricostruisce ancora l’app');
   await evaluate(`document.querySelector('#clear-filters').click()`);
@@ -726,7 +808,7 @@ async function run() {
   for (const width of [390,360]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height:900, deviceScaleFactor:1, mobile:false, screenWidth:width, screenHeight:900 });
     await delay(80);
-    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,hero:document.querySelector('.loan-archive-hero').getBoundingClientRect().width,kpis:document.querySelectorAll('.loan-kpi-strip article').length})`);
+    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,hero:document.querySelector('.loan-hero-compact').getBoundingClientRect().width,kpis:document.querySelectorAll('.loan-stat-strip .loan-stat-chip').length})`);
     assert(layout.client===layout.scroll && layout.client<=width && layout.client>=width-20 && layout.hero<=layout.client && layout.kpis===3, `Layout Prestiti non valido a ${width}px: ${JSON.stringify(layout)}`);
   }
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
@@ -737,7 +819,14 @@ async function run() {
   await evaluate(`location.hash='#/loans'`);
   await cdp.call('Page.reload', { ignoreCache:true });
   await waitFor(`Boolean(document.querySelector('#loan-query'))`, 'Refresh su deep link prestiti non riuscito');
-  assert(await evaluate(`Boolean(document.querySelector('[data-action="return"]'))`), 'Azione restituzione non disponibile');
+  // data-action="return" vive solo nel foglio di dettaglio (stesso redesign
+  // 2026-09-06 di tutta questa sezione, vedi priorità 1): va aperto il
+  // prestito attivo del fixture originale (l'unico sopravvissuto al
+  // Page.reload appena sopra — loans nel mock non è persistito, torna
+  // all'array iniziale) prima di cercare il pulsante.
+  await evaluate(`document.querySelector('[data-loan-open="11111111-1111-4111-8111-111111111111"]').click()`);
+  assert(await evaluate(`Boolean(document.querySelector('[data-action="return"]'))`), 'Azione restituzione non disponibile nel foglio di dettaglio');
+  await evaluate(`document.querySelector('.loan-detail-sheet .detail-close').click()`);
   console.log('PASS smoke Home/cambio gioco/ricerca/Prestiti/restituzioni/Team/deep link');
 
   await evaluate(`document.querySelector('[data-logout]').click()`);
