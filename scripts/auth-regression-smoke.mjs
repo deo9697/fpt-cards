@@ -28,9 +28,18 @@ const loan = {
 const fakeSupabaseSource = `(()=>{
   const members=${JSON.stringify(members)};
   const loans=${JSON.stringify([loan])};
-  let collectionItems=[{id:'team-item',printing_id:'team-printing',owner_slug:'first-access',owner_name:'First Access',game:'yugioh',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',language:'Italiano',condition:'Near Mint',edition:'',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',quantity_owned:3,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:3,legacy_ambiguous:false,updated_at:new Date().toISOString()}];let decks=[];
+  // collectionItems è persistito in localStorage (non solo in memoria): un
+  // Page.reload rifà girare questo script da zero, resettando ogni variabile
+  // di chiusura a meno che non sopravviva altrove — esattamente come le
+  // bozze mazzo persistono già via fpt-cards-deck-drafts-v1. Necessario per
+  // verificare DAVVERO la persistenza dopo un hard refresh, non solo lo
+  // stato ottimistico della stessa sessione mai ricaricata.
+  const COLLECTION_STORAGE_KEY='fpt-test-collection-items';
+  let collectionItems=JSON.parse(localStorage.getItem(COLLECTION_STORAGE_KEY)||'null')||[{id:'team-item',printing_id:'team-printing',owner_slug:'first-access',owner_name:'First Access',game:'yugioh',catalog_card_id:'46986414',card_name:'Dark Magician',set_code:'SDY-006',set_name:'Starter Deck Yugi',rarity:'Ultra Rare',language:'Italiano',condition:'Near Mint',edition:'',image_url:'https://images.ygoprodeck.com/images/cards/46986414.jpg',quantity_owned:3,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:3,legacy_ambiguous:false,updated_at:new Date().toISOString()}];
+  const persistCollectionItems=()=>localStorage.setItem(COLLECTION_STORAGE_KEY,JSON.stringify(collectionItems));
+  let decks=[];
   let currentSlug='existing-member';
-  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,requestCalls:0,holdCreate:false,syncDelay:0,syncInFlight:0,syncMaxInFlight:0};
+  window.__authTest={wrongPinMode:false,lastLoginSlug:'',createCalls:0,requestCalls:0,holdCreate:false,syncDelay:0,syncInFlight:0,syncMaxInFlight:0,saveCollectionItemCalls:0,correctPrintingCalls:0};
   window.__authTest.getCollection=()=>collectionItems;
   const client={
     async rpc(name,args={}){
@@ -60,23 +69,36 @@ const fakeSupabaseSource = `(()=>{
         window.__authTest.lastBatch=args.p_items;
         if(args.p_items.some(item=>'owner' in item)) return {data:null,error:{message:'Owner client non consentito'}};
         for(const item of args.p_items){const source=collectionItems.find(row=>row.printing_id===item.printingId)||item;const existing=collectionItems.find(row=>row.owner_slug===currentSlug&&row.printing_id===(item.printingId||source.printing_id)&&row.language===item.language&&row.condition===item.condition&&row.edition===item.edition);if(existing)existing.quantity_owned+=item.quantityDelta;else collectionItems.push({id:'scan-own-'+collectionItems.length,printing_id:item.printingId||'scan-printing',owner_slug:currentSlug,owner_name:members.find(member=>member.slug===currentSlug)?.full_name||currentSlug,game:item.game,catalog_card_id:item.catalogCardId,card_name:item.cardName,set_code:item.setCode,set_name:item.setName,rarity:item.rarity,language:item.language,condition:item.condition,edition:item.edition,image_url:item.imageUrl,quantity_owned:item.quantityDelta,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:item.quantityDelta,legacy_ambiguous:false,updated_at:new Date().toISOString()});}
+        persistCollectionItems();
         return {data:{savedItems:args.p_items.length,totalQuantity:args.p_items.reduce((sum,item)=>sum+item.quantityDelta,0),owner:currentSlug},error:null};
       }
       if(name==='save_collection_item'){
+        window.__authTest.saveCollectionItemCalls+=1;window.__authTest.lastSaveCollectionItem=args;
         const id=args.p_id||'22222222-2222-4222-8222-222222222222';
         const current=collectionItems.find(item=>item.id===id);
         const owned=args.p_quantity_mode==='increment'&&current?current.quantity_owned+args.p_quantity_owned:args.p_quantity_owned;
-        const row={id,printing_id:'33333333-3333-4333-8333-333333333333',owner_slug:currentSlug,owner_name:members.find(item=>item.slug===currentSlug)?.full_name||currentSlug,game:args.p_game,catalog_card_id:args.p_catalog_card_id,card_name:args.p_card_name,set_code:args.p_set_code,set_name:args.p_set_name,rarity:args.p_rarity,language:args.p_language,condition:args.p_condition,edition:args.p_edition,image_url:args.p_image_url,quantity_owned:owned,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:owned,legacy_ambiguous:false,updated_at:new Date().toISOString()};
-        collectionItems=collectionItems.filter(item=>item.id!==id);collectionItems.push(row);return {data:id,error:null};
+        // save_collection_item aggiorna SEMPRE tutti i campi in un solo giro
+        // (quantità/lingua/condizione/edizione, e anche printing_id se
+        // cambiato) — stesso comportamento della vera RPC (vedi UPDATE su
+        // collection_items in supabase/migrations/20260911160000), non solo
+        // i campi "toccati": un mock che aggiornasse solo un sottoinsieme
+        // nasconderebbe un regressione reale come quella corretta oggi.
+        const row={id,printing_id:current?.printing_id||'33333333-3333-4333-8333-333333333333',owner_slug:currentSlug,owner_name:members.find(item=>item.slug===currentSlug)?.full_name||currentSlug,game:args.p_game,catalog_card_id:args.p_catalog_card_id,card_name:args.p_card_name,set_code:args.p_set_code,set_name:args.p_set_name,rarity:args.p_rarity,language:args.p_language,condition:args.p_condition,edition:args.p_edition,image_url:args.p_image_url,quantity_owned:owned,quantity_loaned:0,quantity_reserved:0,quantity_physically_available:owned,legacy_ambiguous:false,updated_at:new Date().toISOString()};
+        collectionItems=collectionItems.filter(item=>item.id!==id);collectionItems.push(row);persistCollectionItems();return {data:id,error:null};
       }
       if(name==='correct_collection_item_printing'){
+        window.__authTest.correctPrintingCalls+=1;
         const row=collectionItems.find(item=>item.id===args.p_collection_item_id&&item.owner_slug===currentSlug);
         if(!row)return {data:null,error:{message:'Elemento raccolta non trovato o non modificabile'}};
+        // Field-specific come la vera RPC: SOLO printing_id/set/rarity/edition
+        // cambiano, quantità/lingua/condizione restano quelle già persistite
+        // (mai lette da args, che questa RPC reale non riceve nemmeno).
         row.printing_id='corrected-'+args.p_set_code+'-'+args.p_rarity;row.set_code=args.p_set_code;row.set_name=args.p_set_name;row.rarity=args.p_rarity;row.edition=args.p_edition;row.updated_at=new Date().toISOString();
         window.__authTest.lastPrintingCorrection=args;
+        persistCollectionItems();
         return {data:[{collection_item_id:row.id,printing_id:row.printing_id,rarity:row.rarity,edition:row.edition,quantity_owned:row.quantity_owned,language:row.language,condition:row.condition}],error:null};
       }
-      if(name==='delete_collection_item'){collectionItems=collectionItems.filter(item=>item.id!==args.p_id);return {data:null,error:null};}
+      if(name==='delete_collection_item'){collectionItems=collectionItems.filter(item=>item.id!==args.p_id);persistCollectionItems();return {data:null,error:null};}
       if(name==='create_team_loans'){
         window.__authTest.createCalls+=1;window.__authTest.lastCreate=args;
         if(window.__authTest.holdCreate) await new Promise(resolve=>{window.__authTest.releaseCreate=resolve});
@@ -387,6 +409,16 @@ async function run() {
 
   await evaluate(`location.hash='#/collection'`);
   await waitFor(`Boolean(document.querySelector('.inventory-surface'))`, 'Raccolta non renderizzata');
+  // Tutte le assertion di questa sezione (Disponibili/Possedute nel testo,
+  // .inventory-card-copy strong/small) sono scritte per la vista Lista
+  // (inventoryCard, js/collection.js): la Griglia è oggi il default
+  // (collectionFilters.layout:'grid' in app.js), ma inventoryTile ha un
+  // markup molto più sparso (nessun testo "Possedute"/"Disponibili", nessun
+  // .inventory-card-copy) — senza questo switch esplicito nessuna di queste
+  // assertion troverebbe mai l'elemento giusto, indipendentemente da cosa
+  // succede nell'editor. Cambiato UNA volta qui: resta attivo per il resto
+  // di questa sessione di test.
+  await evaluate(`document.querySelector('[data-collection-layout="list"]').click()`);
   await evaluate(`document.querySelector('[data-collection-add]').click()`);
   await waitFor(`Boolean(document.querySelector('#collection-card-search'))`, 'Editor raccolta non aperto');
   await evaluate(`(()=>{const input=document.querySelector('#collection-card-search');input.value='Blue-Eyes';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
@@ -451,6 +483,105 @@ async function run() {
   await evaluate(`(()=>{const edition=document.querySelector('#collection-first-edition');edition.checked=true;edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
   await waitFor(`document.querySelector('.inventory-card')?.textContent.includes('Ultra Rare')`, 'Relink rarity non completato');
   assert(await evaluate(`window.__authTest.lastPrintingCorrection.p_rarity==='Ultra Rare' && window.__authTest.lastPrintingCorrection.p_edition==='Prima Edizione' && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===4`), 'RPC printing editor non preserva quantità o edizione');
+  // A questo punto: Blue-Eyes, LOB-001, Ultra Rare, Prima Edizione, qty 4.
+
+  // --- Regressione: cambio SOLA edizione -> save_collection_item, MAI la
+  // correzione printing (prima passavano entrambe dalla stessa RPC, che però
+  // ignora silenziosamente quantità/lingua/condizione: un salvataggio che
+  // sembrava riuscito ma non le applicava se toccate nella stessa sessione).
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (sola edizione) non aperto');
+  const correctionsBeforeEdition = await evaluate(`window.__authTest.correctPrintingCalls`);
+  await evaluate(`(()=>{const edition=document.querySelector('#collection-first-edition');edition.checked=false;edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
+  await waitFor(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').edition==='Unlimited'`, 'Modifica di sola edizione non applicata');
+  assert(await evaluate(`window.__authTest.correctPrintingCalls===${correctionsBeforeEdition}`), 'Cambio di sola edizione ha chiamato la correzione printing invece di save_collection_item');
+  assert(await evaluate(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===4 && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').set_code==='LOB-001'`), 'Cambio di sola edizione ha alterato quantità o set');
+  console.log('PASS Raccolta editor: cambio SOLA edizione passa da save_collection_item, mai dalla correzione printing');
+
+  // --- Regressione: cambio SOLA quantità -> save_collection_item (già
+  // corretto prima, riverificato con lo stesso contatore delle altre).
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (sola quantità) non aperto');
+  const correctionsBeforeQty = await evaluate(`window.__authTest.correctPrintingCalls`);
+  await evaluate(`(()=>{const owned=document.querySelector('#collection-owned');owned.value='7';owned.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
+  await waitFor(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===7`, 'Modifica di sola quantità non applicata');
+  assert(await evaluate(`window.__authTest.correctPrintingCalls===${correctionsBeforeQty} && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').edition==='Unlimited'`), 'Cambio di sola quantità ha chiamato la correzione printing o alterato l\'edizione');
+  console.log('PASS Raccolta editor: cambio SOLA quantità passa da save_collection_item');
+
+  // --- Regressione: quantità+edizione INSIEME (nessun cambio printing) ->
+  // una sola chiamata a save_collection_item, MAI bloccata dalla protezione
+  // "salva separatamente" (quella resta solo per un vero cambio printing).
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (quantità+edizione) non aperto');
+  const savesBeforeCombo = await evaluate(`window.__authTest.saveCollectionItemCalls`);
+  const correctionsBeforeCombo = await evaluate(`window.__authTest.correctPrintingCalls`);
+  await evaluate(`(()=>{const owned=document.querySelector('#collection-owned');owned.value='9';owned.dispatchEvent(new Event('input',{bubbles:true}));const edition=document.querySelector('#collection-first-edition');edition.checked=true;edition.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#collection-form').requestSubmit()})()`);
+  await waitFor(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===9`, 'Modifica combinata quantità+edizione non applicata');
+  assert(await evaluate(`window.__authTest.saveCollectionItemCalls===${savesBeforeCombo}+1 && window.__authTest.correctPrintingCalls===${correctionsBeforeCombo} && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').edition==='Prima Edizione'`), 'Quantità+edizione insieme (senza cambio printing) non risolte in un\'unica save_collection_item');
+  console.log('PASS Raccolta editor: quantità+edizione insieme (senza cambio printing) in un\'unica chiamata, mai bloccate');
+
+  // --- Regressione: cambio Set DOPO aver digitato una nuova quantità -> il
+  // draft locale deve sopravvivere al render() che il cambio Set innesca
+  // (prima veniva ricostruito dai valori persistiti, cancellando la
+  // modifica). La protezione a due passaggi per un cambio printing+quantità
+  // insieme resta comunque attiva.
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (draft quantità) non aperto');
+  await evaluate(`(()=>{const owned=document.querySelector('#collection-owned');owned.value='12';owned.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await evaluate(`(()=>{const set=document.querySelector('#collection-set');set.value='SDK-001';set.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await waitFor(`document.querySelector('.printing-preview')?.textContent.includes('SDK-001')`, 'Cambio Set non applicato dopo modifica quantità');
+  assert(await evaluate(`document.querySelector('#collection-owned').value==='12'`), 'La quantità digitata è stata persa cambiando Set: il draft locale non sopravvive al render');
+  await evaluate(`document.querySelector('#collection-form').requestSubmit()`);
+  await waitFor(`document.querySelector('#toast')?.textContent.includes('separatamente')`, 'Protezione a due passaggi (printing+quantità insieme) non attivata');
+  assert(await evaluate(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').set_code==='LOB-001'`), 'Un salvataggio bloccato dalla protezione non deve comunque cambiare il set persistito');
+  console.log('PASS Raccolta editor: draft quantità sopravvive al cambio Set, protezione a due passaggi ancora attiva se combinati con un cambio printing');
+  await evaluate(`document.querySelector('.detail-close').click()`);
+  await waitFor(`!document.querySelector('#collection-owned')`, 'Chiusura editor (annulla la modifica bloccata) non riuscita');
+
+  // --- Regressione: cambio Rarità DOPO aver toccato l'edizione -> il draft
+  // deve sopravvivere; rarità+edizione insieme restano instradate alla
+  // correzione printing (combinazione esplicitamente supportata da quella
+  // RPC), quantità/lingua/condizione restano quelle già persistite (9).
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor modifica (draft edizione) non aperto');
+  await evaluate(`(()=>{const edition=document.querySelector('#collection-first-edition');edition.checked=false;edition.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await evaluate(`(()=>{const rarity=document.querySelector('#collection-rarity');rarity.value='Common';rarity.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await waitFor(`document.querySelector('.printing-preview')?.textContent.includes('Common')`, 'Cambio Rarità non applicato dopo modifica edizione');
+  assert(await evaluate(`document.querySelector('#collection-first-edition').checked===false`), 'Lo stato edizione è stato perso cambiando Rarità: il draft locale non sopravvive al render');
+  await evaluate(`window.confirm=()=>true;document.querySelector('#collection-form').requestSubmit()`);
+  await waitFor(`window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').rarity==='Common'`, 'Cambio rarità+edizione combinato non salvato');
+  assert(await evaluate(`window.__authTest.lastPrintingCorrection.p_rarity==='Common' && window.__authTest.lastPrintingCorrection.p_edition==='Unlimited' && window.__authTest.getCollection().find(item=>item.card_name==='Blue-Eyes White Dragon').quantity_owned===9`), 'Rarità+edizione insieme non instradate correttamente alla correzione printing, o quantità alterata');
+  console.log('PASS Raccolta editor: draft edizione sopravvive al cambio Rarità, rarità+edizione insieme instradate alla correzione printing senza alterare la quantità');
+
+  // --- Regressione: verifica dopo un VERO hard refresh (Page.reload, non
+  // solo lo stato ottimistico della stessa sessione) — collectionItems del
+  // mock è persistito in localStorage apposta per questo (vedi
+  // fakeSupabaseSource).
+  await cdp.call('Page.reload', { ignoreCache:true });
+  await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Sessione non ripristinata dopo hard refresh (editor Raccolta)');
+  await evaluate(`location.hash='#/collection'`);
+  await waitFor(`Boolean(document.querySelector('.inventory-surface'))`, 'Raccolta non ricaricata dopo hard refresh');
+  // collectionFilters (incluso layout) è stato solo in memoria in app.js, mai
+  // persistito: un reload lo riporta al default 'grid' anche se la sessione
+  // resta la stessa — va riselezionata la vista Lista come subito dopo il
+  // primo accesso alla pagina, altrimenti nessuna delle assertion sotto
+  // (scritte per inventoryCard/.inventory-card) troverebbe l'elemento giusto.
+  await evaluate(`document.querySelector('[data-collection-layout="list"]').click()`);
+  await waitFor(`Boolean(document.querySelector('.inventory-card'))`, 'Raccolta non ricaricata dopo hard refresh');
+  assert(await evaluate(`document.querySelector('.inventory-card')?.textContent.includes('Common')`), 'Hard refresh ha perso la rarità salvata');
+  await evaluate(`document.querySelector('.inventory-card').click()`);
+  await evaluate(`document.querySelector('[data-collection-edit]').click()`);
+  await waitFor(`Boolean(document.querySelector('#collection-owned'))`, 'Editor non riaperto dopo hard refresh');
+  assert(await evaluate(`document.querySelector('#collection-owned').value==='9' && document.querySelector('#collection-first-edition').checked===false && document.querySelector('#collection-rarity').value==='Common' && document.querySelector('#collection-set').value==='LOB-001'`), 'Hard refresh: quantità/edizione/rarità/set non coerenti con l\'ultimo salvataggio riuscito');
+  console.log('PASS Raccolta editor: quantità/rarità/edizione/set coerenti dopo un vero hard refresh');
+  await evaluate(`document.querySelector('.detail-close').click()`);
+  await waitFor(`!document.querySelector('#collection-owned')`, 'Chiusura editor (dopo verifica hard refresh) non riuscita');
+
   await evaluate(`document.querySelector('.inventory-card').click()`);
   await evaluate(`window.confirm=()=>true;document.querySelector('[data-collection-delete]').click()`);
   await waitFor(`!document.querySelector('.inventory-card')`, 'Eliminazione raccolta non applicata');

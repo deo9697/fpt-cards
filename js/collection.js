@@ -179,10 +179,21 @@ export function collectionEditorView(editor, game, connected) {
   const selectedSetCode = editor.setCode ?? selectedPrinting?.setCode ?? printings[0]?.setCode ?? '';
   const sets = [...new Map(printings.map(printing => [normalizeSetCode(printing.setCode), printing])).values()];
   const rarities = printings.filter(printing => normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode));
-  const edition = item?.edition || '';
+  // Draft locale per quantità/lingua/condizione/edizione: un cambio di Set o
+  // Rarità richiama questa view via un render() completo (vedi i listener
+  // #collection-set/#collection-rarity in app.js), che senza questo draft
+  // ricostruirebbe questi campi dai valori PERSISTITI di item, cancellando
+  // qualunque modifica non ancora salvata fatta nella stessa sessione di
+  // editing. editor.draft è la fonte di verità quando esiste (scritto dai
+  // listener input/change dei 4 campi in app.js, mai da questa funzione pura
+  // di rendering); i valori di item restano solo il fallback iniziale.
+  const draft = editor.draft || {};
+  const edition = draft.edition ?? item?.edition ?? '';
   const firstEdition = isFirstEdition(edition);
   const editionStatus = editionState(edition);
-  const owned = item?.quantityOwned ?? 1;
+  const owned = draft.quantityOwned ?? item?.quantityOwned ?? 1;
+  const draftLanguage = draft.language ?? item?.language ?? 'Italiano';
+  const draftCondition = draft.condition ?? item?.condition ?? 'Near Mint';
   return `<div class="detail-backdrop" data-close-collection-editor><aside class="card-detail collection-editor" role="dialog" aria-modal="true" aria-labelledby="collection-editor-title"><button class="detail-close" data-close-collection-editor aria-label="Chiudi">×</button><span class="eyebrow">${item ? 'Modifica inventario' : 'Nuova carta'}</span><h2 id="collection-editor-title">${item ? esc(item.cardName) : 'Aggiungi alla raccolta'}</h2>
     <form id="collection-form">
       <label for="collection-card-search">Carta dal catalogo</label><div class="catalog-search"><input id="collection-card-search" autocomplete="off" value="${selected ? esc(selected.name) : ''}" placeholder="Cerca almeno 3 caratteri…" ${item ? 'disabled' : 'required'}><div id="collection-card-suggestions" class="suggestions"></div></div>
@@ -190,7 +201,7 @@ export function collectionEditorView(editor, game, connected) {
       ${game === 'onepiece' ? onePiecePrintingPickerView(printings, selectedPrinting, selected.id) : `<div class="printing-editor-grid"><label for="collection-set">Set / codice<select id="collection-set">${sets.map(printing => `<option value="${esc(printing.setCode)}" ${normalizeSetCode(printing.setCode) === normalizeSetCode(selectedSetCode) ? 'selected' : ''}>${esc([printing.setCode || 'Set non specificato', printing.setName].filter(Boolean).join(' · '))}</option>`).join('')}</select></label><label for="collection-rarity">Rarità<select id="collection-rarity" ${rarities.length ? '' : 'disabled'}>${rarities.length > 1 && !selectedPrinting ? '<option value="" selected>Scegli la rarità…</option>' : ''}${rarities.map(printing => `<option value="${esc(printing.rarity)}" ${selectedPrinting && samePrinting(printing, selectedPrinting) ? 'selected' : ''}>${esc(printing.rarity || 'Non specificata')}</option>`).join('')}</select></label></div>
       ${rarities.length > 1 && !selectedPrinting ? `<div class="data-note warning">${icon('bell')} Questo set contiene più rarità: seleziona esplicitamente quella posseduta.</div>` : ''}
       <div class="printing-preview"><span><small>Codice set</small><b>${esc(selectedPrinting?.setCode || selectedSetCode || 'Non specificato')}</b></span><span><small>Set</small><b>${esc(selectedPrinting?.setName || rarities[0]?.setName || 'Non specificato')}</b></span><span><small>Rarità selezionata</small><b>${esc(selectedPrinting?.rarity || 'Da selezionare')}</b></span></div>`}` : `<div class="catalog-required">${icon('search')} Cerca e seleziona una carta per continuare.</div>`}
-      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === (item?.language || 'Italiano') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === (item?.condition || 'Near Mint') ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field edition-flag"><input id="collection-first-edition" type="checkbox" data-edition-touched="false" data-edition-original="${esc(edition)}" ${firstEdition ? 'checked' : ''}><span><strong>Prima Edizione</strong><small data-edition-status>${editionStatus === 'first' ? 'Prima Edizione' : editionStatus === 'unlimited' ? 'Non Prima Edizione / Unlimited' : 'Non specificata'}</small></span></label></div>
+      <div class="inventory-form-grid"><label>Quantità posseduta<input id="collection-owned" type="number" min="1" max="999" value="${owned}" required></label><label>Lingua<select id="collection-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value => `<option ${value === draftLanguage ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="collection-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value => `<option ${value === draftCondition ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label class="wide-field edition-flag"><input id="collection-first-edition" type="checkbox" data-edition-touched="false" data-edition-original="${esc(edition)}" ${firstEdition ? 'checked' : ''}><span><strong>Prima Edizione</strong><small data-edition-status>${editionStatus === 'first' ? 'Prima Edizione' : editionStatus === 'unlimited' ? 'Non Prima Edizione / Unlimited' : 'Non specificata'}</small></span></label></div>
       <p class="quantity-help">La disponibilità fisica viene calcolata automaticamente sottraendo copie prestate e prenotate.</p>
       <div id="collection-save-status" class="collection-save-status" role="status" aria-live="polite" hidden></div>
       <button class="btn wide" type="submit" ${selected && selectedPrinting && connected ? '' : 'disabled'}>Salva nella raccolta</button>

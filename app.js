@@ -1189,7 +1189,7 @@ function bind() {
   });
   document.querySelectorAll('button[data-page]').forEach(b => b.addEventListener('click', () => { selectedCardKey = ''; navigate(b.dataset.page); }));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
-  document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null }; collectionSearchResults = []; render(); }));
+  document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null, draft:{ quantityOwned:1, language:'Italiano', condition:'Near Mint', edition:'' } }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
   document.querySelectorAll('[data-collection-share]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per condividere la raccolta'); void openCollectionShareModal(); }));
   document.querySelectorAll('[data-close-collection-share]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); collectionShareModal = false; render(); }));
@@ -1241,10 +1241,32 @@ function bind() {
     collectionEditor.setCode = option.setCode;
     render();
   }));
+  // Sincronizzano collectionEditor.draft ad ogni modifica, MAI un render():
+  // un cambio di Set/Rarità richiama render() (vedi i listener sotto), che
+  // ricostruisce l'intero form da collectionEditorView — senza il draft
+  // aggiornato qui, quel render tornerebbe a mostrare i valori persistiti
+  // originali, cancellando quantità/lingua/condizione/edizione appena
+  // modificate nella stessa sessione di editing.
+  document.querySelector('#collection-owned')?.addEventListener('input', event => {
+    if (!collectionEditor) return;
+    (collectionEditor.draft ??= {}).quantityOwned = Number(event.currentTarget.value) || 1;
+  });
+  document.querySelector('#collection-language')?.addEventListener('change', event => {
+    if (!collectionEditor) return;
+    (collectionEditor.draft ??= {}).language = event.currentTarget.value;
+  });
+  document.querySelector('#collection-condition')?.addEventListener('change', event => {
+    if (!collectionEditor) return;
+    (collectionEditor.draft ??= {}).condition = event.currentTarget.value;
+  });
   document.querySelector('#collection-first-edition')?.addEventListener('change', event => {
     event.currentTarget.dataset.editionTouched = 'true';
     const status = document.querySelector('[data-edition-status]');
     if (status) status.textContent = event.currentTarget.checked ? 'Prima Edizione' : 'Non Prima Edizione / Unlimited';
+    if (collectionEditor) (collectionEditor.draft ??= {}).edition = editionFromFirstEditionFlag({
+      checked:event.currentTarget.checked, touched:true,
+      original:event.currentTarget.dataset.editionOriginal ?? ''
+    });
   });
   document.querySelector('#collection-form')?.addEventListener('submit', saveCollectionItem);
   document.querySelector('#collection-request-form')?.addEventListener('submit', submitCollectionLoanRequest);
@@ -1384,7 +1406,7 @@ function refreshCollectionResults(prefetchTypes = true) {
   results.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
   results.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => {
     if (!online()) return toast('Torna online per modificare la raccolta');
-    collectionEditor = { item:null, card:null, printing:null };
+    collectionEditor = { item:null, card:null, printing:null, draft:{ quantityOwned:1, language:'Italiano', condition:'Near Mint', edition:'' } };
     collectionSearchResults = [];
     render();
   }));
@@ -1915,7 +1937,8 @@ async function openCollectionEditor(id) {
   // salva sempre tramite printing_id, mai per nome/set/rarità).
   const currentPrinting = { printingId:item.printingId || null, variantId:item.variantId || '', setCode:item.setCode, setName:item.setName, rarity:normalizedCurrentRarity || item.rarity };
   const initialCard = { id:item.catalogCardId, name:item.cardName, image:item.imageUrl, fullImage:item.imageUrl, printings:[currentPrinting] };
-  collectionEditor = { item, card:initialCard, printing:currentPrinting, setCode:item.setCode };
+  collectionEditor = { item, card:initialCard, printing:currentPrinting, setCode:item.setCode,
+    draft:{ quantityOwned:item.quantityOwned, language:item.language, condition:item.condition, edition:item.edition || '' } };
   selectedCollectionItem = '';
   render();
   const expectedId = item.id;
@@ -2006,15 +2029,25 @@ async function saveCollectionItem(event) {
     original:editionInput?.dataset.editionOriginal ?? collectionEditor.item?.edition ?? ''
   });
   const item = collectionEditor.item;
+  // Solo un vero cambio di printing (set/rarità) deve passare dalla
+  // correzione "prudente" a due passaggi (correct_collection_item_printing):
+  // un cambio di sola edizione — da sola o insieme a quantità/lingua/
+  // condizione — è già gestito correttamente in una singola chiamata da
+  // save_collection_item (vedi UPDATE su collection_items in quella RPC).
+  // editionChanged non deve più contribuire a questo gating: prima faceva
+  // passare anche i cambi di sola edizione dalla correzione printing, che
+  // però ignora silenziosamente quantità/lingua/condizione (colonne "che non
+  // possono cambiare" per design di quella RPC) — un salvataggio che sembrava
+  // riuscito ma non applicava quantità/lingua/condizione se l'utente le
+  // aveva toccate nella stessa sessione.
   const printingChanged = Boolean(item) && (!sameCollectionSet(item.setCode, printing.setCode) || !sameCollectionRarity(item.rarity, printing.rarity));
-  const editionChanged = Boolean(item) && item.edition !== edition;
   if ((!item || printingChanged) && !setCodeMatchesLanguage(printing.setCode, language)) {
     return toast(`Il codice ${printing.setCode} non è coerente con la lingua ${language}`);
   }
-  if ((printingChanged || editionChanged) && (quantityOwned !== item.quantityOwned || language !== item.language || condition !== item.condition)) {
+  if (printingChanged && (quantityOwned !== item.quantityOwned || language !== item.language || condition !== item.condition)) {
     return toast('Per sicurezza, salva quantità, lingua o condizione separatamente dalla correzione printing');
   }
-  if ((printingChanged || editionChanged) && !confirm(`Confermi il collegamento a ${printing.setCode} · ${printing.rarity || 'rarità non specificata'}${edition ? ` · ${edition}` : ''}?`)) return;
+  if (printingChanged && !confirm(`Confermi il collegamento a ${printing.setCode} · ${printing.rarity || 'rarità non specificata'}${edition ? ` · ${edition}` : ''}?`)) return;
   const submit = event.submitter;
   let catalogWarning = '';
   collectionPending = true;
@@ -2035,7 +2068,7 @@ async function saveCollectionItem(event) {
     // che condividono set_code/rarity. One Piece passa sempre da
     // saveCollection con il printingId già risolto, anche per un cambio
     // printing su un item esistente.
-    if (item && (printingChanged || editionChanged) && state.game === 'yugioh') {
+    if (item && printingChanged && state.game === 'yugioh') {
       savedResult = await api.correctCollectionPrinting({
         collectionItemId:item.id, catalogCardId:card.id, cardName:card.name,
         setCode:printing.setCode || '', setName:printing.setName || '', rarity:printing.rarity || '',
