@@ -1,5 +1,6 @@
 // Shared Collection — hardening di submit_collection_share_request
-// (supabase/migrations/20260916120000_shared_collection_request_hardening.sql).
+// (supabase/migrations/20260916120000_shared_collection_request_hardening.sql,
+// corretta da 20260916123000_shared_collection_request_hardening_hotfix.sql).
 // Nessun accesso a un Postgres reale in questa sessione: la validazione è
 // dimostrata con una reimplementazione JS pura che rispecchia ESATTAMENTE
 // l'algoritmo della funzione PL/pgSQL (stesso ordine dei controlli, stessi
@@ -7,6 +8,17 @@
 // eseguita contro un "DB" sintetico in memoria — stesso metodo già usato
 // oggi per le migration Market Watch/missioni senza sessione DB. A questo si
 // aggiungono asserzioni statiche sul testo della migration reale.
+//
+// NOTA sul limite di questo metodo: l'hotfix corregge due bug specifici alla
+// semantica NULL di PL/pgSQL (un confronto <>/!~ con NULL vale NULL, non
+// TRUE, quindi "if NULL then" salta silenziosamente il controllo invece di
+// farlo fallire) — p_items IS NULL e quantity mancante/null. JavaScript non
+// ha questa semantica (typeof/Array.isArray su null si comportano in modo
+// prevedibile), quindi la reimplementazione qui sotto era GIÀ corretta per
+// questi casi anche prima dell'hotfix: non può da sola dimostrare che il bug
+// SQL esisteva o è stato corretto. Le asserzioni statiche sul testo
+// dell'hotfix (guardie "is null or" esplicite) sono quindi la vera prova per
+// questa classe di bug, non la reimplementazione comportamentale.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -216,6 +228,31 @@ test('items vuoto -> reject', () => {
   assert.throws(() => submitCollectionShareRequest(db, { shareId: 'share-1', requesterName: 'Ospite', items: [] }), /Nessuna carta selezionata/);
 });
 
+// 9b) p_items NULL -> reject esplicito (bug hotfix: in SQL, jsonb_typeof
+// (null) <> 'array' vale NULL non TRUE, il controllo veniva saltato).
+test('p_items null -> reject esplicito', () => {
+  const db = baseDb();
+  assert.throws(() => submitCollectionShareRequest(db, { shareId: 'share-1', requesterName: 'Ospite', items: null }), /Elenco carte non valido/);
+  assert.equal(db.requests.length, 0);
+});
+
+// 9c) quantity mancante (chiave assente dall'oggetto item) -> reject esplicito
+// (bug hotfix: in SQL, item->'quantity' assente rendeva NULL sia jsonb_typeof
+// <> 'number' sia !~ regex, "NULL or NULL" = NULL, controllo saltato).
+test('quantity mancante (chiave assente) -> reject esplicito', () => {
+  const db = baseDb();
+  assert.throws(() => submitCollectionShareRequest(db, { shareId: 'share-1', requesterName: 'Ospite', items: [{ printingId: uuid(1) }] }), /Quantità non valida/);
+  assert.equal(db.requests.length, 0);
+});
+
+// 9d) quantity esplicitamente null -> reject esplicito (stesso bug del caso
+// precedente, ma con json null invece di chiave assente).
+test('quantity esplicitamente null -> reject esplicito', () => {
+  const db = baseDb();
+  assert.throws(() => submitCollectionShareRequest(db, { shareId: 'share-1', requesterName: 'Ospite', items: [{ printingId: uuid(1), quantity: null }] }), /Quantità non valida/);
+  assert.equal(db.requests.length, 0);
+});
+
 // 10) payload malformato (non un array, item senza printingId, quantity come stringa) -> reject.
 test('payload malformato -> reject (in ognuna delle sue forme)', () => {
   const db = baseDb();
@@ -351,4 +388,56 @@ test('fallimento notifica: request creata, items creati, nessun rollback', () =>
   console.log('migration (statico): colonna message, firma RPC, drop overload, SECURITY DEFINER/search_path/REVOKE-GRANT, notify pgrst, idempotenza (indice + unique_violation), notifica isolata, aggregazione anti-bypass, message esposto al proprietario');
 }
 
-console.log('PASS Shared Collection request hardening: validazione/idempotenza/notifica non bloccante riproducono fedelmente la RPC, migration verificata staticamente');
+// --- Verifiche statiche sull'hotfix (bug NULL-propagation) -------------------
+{
+  const root = path.dirname(fileURLToPath(import.meta.url));
+  const hotfixPath = path.join(root, '..', 'supabase', 'migrations', '20260916123000_shared_collection_request_hardening_hotfix.sql');
+  const hotfix = await readFile(hotfixPath, 'utf8');
+  const hotfixNoComments = hotfix.split('\n').filter(line => !line.trim().startsWith('--')).join('\n');
+
+  test('hotfix: variabile del loop rinominata item_row (record), non più "item"', () => {
+    assert.match(hotfixNoComments, /item_row record;/);
+    assert.match(hotfixNoComments, /for item_row in select j\.value from jsonb_array_elements\(p_items\) as j\(value\) loop/);
+    assert.equal(/\bitem\b(?!_row)/.test(hotfixNoComments.replace(/collection_share_request_items|collection_share_requests/g, '')), false, 'non deve restare alcun riferimento alla vecchia variabile "item"');
+  });
+  test('hotfix: jsonb_array_elements aliasato esplicitamente come j(value), usato in ENTRAMBI i loop (validazione + aggregazione)', () => {
+    const occurrences = (hotfixNoComments.match(/from jsonb_array_elements\(p_items\) as j\(value\)/g) || []).length;
+    assert.equal(occurrences, 3, `attese 3 occorrenze (validazione + le 2 aggregazioni insert/items), trovate ${occurrences}`);
+  });
+  test('hotfix: p_items IS NULL rifiutato esplicitamente (non più un salto silenzioso)', () => {
+    assert.match(hotfixNoComments, /if p_items is null or jsonb_typeof\(p_items\) <> 'array' then raise exception 'Elenco carte non valido'; end if;/);
+  });
+  test('hotfix: quantity mancante/null rifiutata esplicitamente (non più un salto silenzioso)', () => {
+    assert.match(hotfixNoComments, /if item_row\.value->'quantity' is null\s*\n\s*or jsonb_typeof\(item_row\.value->'quantity'\) <> 'number'\s*\n\s*or \(item_row\.value->>'quantity'\) !~ '\^\[0-9\]\+\$'\s*\n\s*then raise exception 'Quantità non valida/);
+  });
+  test('hotfix: printingId mancante resta rifiutato con la stessa guardia esplicita di prima (non regredito)', () => {
+    assert.match(hotfixNoComments, /if item_row\.value->>'printingId' is null/);
+  });
+  test('hotfix: stessa firma a 5 argomenti di 20260916120000 (nessuna rottura di contratto, nessun drop function necessario)', () => {
+    assert.match(hotfixNoComments, /p_share_id uuid,\s*\n\s*p_requester_name text,\s*\n\s*p_items jsonb,\s*\n\s*p_message text default null,\s*\n\s*p_client_request_id uuid default null/);
+    assert.equal(hotfix.includes('drop function'), false, 'stessa arità/tipi della funzione già creata: create or replace basta, nessun drop necessario');
+  });
+  test('hotfix: SECURITY DEFINER, SET search_path, REVOKE poi GRANT ripetuti esplicitamente', () => {
+    assert.match(hotfixNoComments, /security definer/);
+    assert.match(hotfixNoComments, /set search_path = public, extensions/);
+    assert.match(hotfixNoComments, /revoke all on function public\.submit_collection_share_request\(uuid, text, jsonb, text, uuid\)\s*\n\s*from public, anon, authenticated;/);
+    assert.match(hotfixNoComments, /grant execute on function public\.submit_collection_share_request\(uuid, text, jsonb, text, uuid\)\s*\n\s*to anon, authenticated;/);
+  });
+  test('hotfix: notify pgrst reload schema presente', () => {
+    assert.match(hotfix, /notify pgrst, 'reload schema';/);
+  });
+  test('hotfix: non tocca schema/colonne/indici (già creati da 20260916120000), solo la funzione', () => {
+    for (const forbidden of ['add column', 'create unique index', 'create table', 'drop table']) {
+      assert.equal(hotfixNoComments.toLowerCase().includes(forbidden), false, `la migration hotfix non deve contenere: ${forbidden}`);
+    }
+  });
+  test('hotfix: preserva invariato il resto della logica (idempotenza, cap 99 aggregato, notifica best-effort, list_collection_share_requests non toccata qui)', () => {
+    assert.match(hotfixNoComments, /exception when unique_violation then/);
+    assert.match(hotfixNoComments, /if agg\.quantity > 99 then/);
+    assert.match(hotfixNoComments, /exception when others then\s*\n\s*raise warning/);
+    assert.equal(hotfix.includes('list_collection_share_requests'), false, 'l\'hotfix riguarda solo submit_collection_share_request');
+  });
+  console.log('hotfix (statico): item_row/j(value), p_items IS NULL rifiutato, quantity mancante/null rifiutata, printingId invariato, firma/SECURITY DEFINER/search_path/REVOKE-GRANT/notify pgrst preservati, nessun tocco a schema/colonne/indici, idempotenza/cap-99/notifica best-effort invariati');
+}
+
+console.log('PASS Shared Collection request hardening: validazione/idempotenza/notifica non bloccante riproducono fedelmente la RPC, migration + hotfix verificati staticamente');
