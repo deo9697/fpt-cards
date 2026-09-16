@@ -249,14 +249,47 @@ async function run() {
   await evaluate(`document.querySelector('[data-deck-more]').click()`);
   await waitFor(`Boolean(document.querySelector('[data-deck-cover-open]'))`,'Menu overflow "⋯" non apre le azioni sul mazzo');
   await evaluate(`document.querySelector('[data-deck-cover-open]').click()`);
-  await waitFor(`document.querySelectorAll('[data-deck-box-template]').length===4`,'Selettore modelli Deck Box non aperto');
-  assert(await evaluate(`[...document.querySelectorAll('.deck-template-options img')].filter(image=>image.src.includes('/assets/deck-boxes/')).length===3`),'Le tre immagini Deck Box non sono incorporate nel selettore');
+  // 7 = Object.keys(DECK_BOX_TEMPLATES).length (js/deck-box.js): 4 modelli
+  // base sempre sbloccati (procedural/arcane-vault/infernal-dragon/cyber-core)
+  // + 3 sbloccabili per archetipo aggiunti il 2026-09-11 (sacred_beast_orcust/
+  // mitsurugi/skystriker) — il picker li renderizza SEMPRE tutti (i bloccati
+  // solo disabled+lock icon, mai nascosti, vedi decks.js deckBoxTemplateOptionView).
+  // Questa assertion era rimasta a 4 dopo l'introduzione degli sblocchi per
+  // archetipo, causando un timeout permanente (mai un vero bug UI: il
+  // selettore SI apriva, semplicemente non avrebbe mai raggiunto ===4 righe).
+  await waitFor(`document.querySelectorAll('[data-deck-box-template]').length===7`,'Selettore modelli Deck Box non aperto');
+  // 6 = i 7 modelli meno 'procedural' (image:'' nella definizione, usa
+  // l'icona di fallback invece di un <img> — vedi deckBoxTemplateOptionView).
+  assert(await evaluate(`[...document.querySelectorAll('.deck-template-options img')].filter(image=>image.src.includes('/assets/deck-boxes/')).length===6`),'Le sei immagini Deck Box (3 base + 3 sbloccabili per archetipo) non sono incorporate nel selettore');
+  assert(await evaluate(`document.querySelectorAll('[data-deck-box-template].locked[disabled]').length===3`),'I 3 modelli sbloccabili per archetipo devono comparire bloccati/disabilitati finché non sbloccati');
   await evaluate(`document.querySelector('[data-deck-box-template="infernal-dragon"]').click()`);
-  assert(await evaluate(`!document.querySelector('.deck-cover-picker')&&document.querySelector('[data-deck-theme]').value==='infernal-red'&&Boolean(document.querySelector('.deck-builder'))`),'La scelta del modello non torna automaticamente al mazzo');
-  await evaluate(`document.querySelector('[data-deck-cover-open]').click()`);
-  assert(await evaluate(`document.querySelector('[data-deck-box-template="infernal-dragon"]').classList.contains('active')`),'Modello Deck Box selezionato non conservato');
+  // Dal 2026-09-09 (commit 728ff39, "Improve deck gallery styling") la scelta
+  // di un modello/cover NON chiude più il pannello automaticamente: è uno
+  // "studio" con più controlli (modello, tema, carta signature) pensato per
+  // provarli dal vivo nella stessa sessione, non un wizard a scelta singola —
+  // si chiude solo esplicitamente (× o "Fatto · Torna al mazzo", testato
+  // subito sotto). Questa sezione di test (scritta il 2026-08-30, prima di
+  // quel cambio) si aspettava ancora la chiusura automatica al primo click:
+  // assertion aggiornata al comportamento attuale e intenzionale, non un bug
+  // UI (chooseCover ha perso lo stesso this.coverPickerOpen=false nello
+  // stesso commit, in modo uniforme — non un'unica funzione dimenticata).
+  //
+  // 'select[data-deck-theme]', non il bare '[data-deck-theme]': quell'attributo
+  // esiste ANCHE su un <div> di solo styling (js/deck-box.js themeAttributes,
+  // guida le custom property CSS --deck-hue/--deck-accent/ecc. dell'anteprima),
+  // non solo sul vero <select> del form — querySelector prende il primo match
+  // nell'ordine del DOM, che è il div (senza .value, sempre undefined), non il
+  // select. Il codice app reale evita già la collisione con lo stesso
+  // qualificatore (js/decks.js:489); questo test no, da sempre — un vero bug
+  // del test stesso, non un caso di staleness come le due assertion sopra.
+  assert(await evaluate(`Boolean(document.querySelector('.deck-cover-picker'))&&document.querySelector('select[data-deck-theme]').value==='infernal-red'&&document.querySelector('[data-deck-box-template="infernal-dragon"]').classList.contains('active')`),'La scelta del modello non aggiorna tema/anteprima nel pannello Deck Box Studio (che resta aperto per provare altre combinazioni)');
   await evaluate(`document.querySelector('.deck-cover-back').click()`);
-  assert(await evaluate(`!document.querySelector('.deck-cover-picker')&&Boolean(document.querySelector('.deck-builder'))`),'Il pulsante Torna al mazzo non chiude la personalizzazione');
+  // .deck-builder non esiste più da "feat: mobile-first redesign of the Mazzi
+  // deck editor" (2026-09-03, commit 38d306b) — il contenitore dell'editor è
+  // oggi .deck-mobile (js/decks.js:158/205); questo test (Aug 30) non era mai
+  // stato aggiornato. Stessa categoria delle assertion Deck Box sopra: mai un
+  // vero bug UI, il "Torna al mazzo" chiude correttamente il pannello.
+  assert(await evaluate(`!document.querySelector('.deck-cover-picker')&&Boolean(document.querySelector('.deck-mobile'))`),'Il pulsante Torna al mazzo non chiude la personalizzazione');
   await evaluate(`(()=>{const key='fpt-cards-deck-drafts-v1',drafts=JSON.parse(localStorage.getItem(key)||'[]');for(const deck of drafts)for(const card of deck.cards||[])delete card.banTcg;localStorage.setItem(key,JSON.stringify(drafts))})()`);
   await cdp.call('Page.reload',{ignoreCache:true});
   await waitFor(`[...document.querySelectorAll('.deck-box-card')].some(card=>card.textContent.includes('Nuovo mazzo'))`,'Hard refresh non ha recuperato la bozza nella gallery');
@@ -266,8 +299,15 @@ async function run() {
   assert(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth+1&&getComputedStyle(document.querySelector('.deck-box-grid')).gridTemplateColumns.split(' ').length===1`),'Gallery Mazzi non responsive a 390px');
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
   await evaluate(`[...document.querySelectorAll('.deck-box-card')].find(card=>card.textContent.includes('Nuovo mazzo')).click()`);
-  await waitFor(`document.querySelector('.deck-zone.main')?.textContent.includes('Dark Magician')&&document.querySelector('.deck-zone.extra')?.textContent.includes('Stardust Dragon')`,'Hard refresh ha cancellato la bozza del mazzo');
-  assert(await evaluate(`document.querySelector('.deck-zone.extra .deck-ban-badge.limited')?.textContent==='1'`),'Hard refresh ha perso il bollino banlist TCG');
+  // .deck-zone (zone Main/Extra/Side tutte visibili insieme) non esiste più
+  // dallo stesso redesign mobile-first del 2026-09-03: le sezioni sono oggi a
+  // tab (data-deck-section, una sola visibile alla volta, già il pattern
+  // corretto usato più sopra in questo stesso file alle righe ~232-245) — non
+  // un bug, solo un'altra assertion mai aggiornata dopo quel redesign.
+  await waitFor(`[...document.querySelectorAll('[data-deck-card-select-section="main"]')].some(tile=>tile.getAttribute('aria-label').includes('Dark Magician'))`,'Hard refresh ha cancellato la bozza del mazzo (Main)');
+  await evaluate(`document.querySelector('[data-deck-section="extra"]').click()`);
+  await waitFor(`[...document.querySelectorAll('[data-deck-card-select-section="extra"]')].some(tile=>tile.getAttribute('aria-label').includes('Stardust Dragon'))`,'Hard refresh ha cancellato la bozza del mazzo (Extra)');
+  assert(await evaluate(`document.querySelector('[data-deck-card-select-section="extra"] .deck-ban-badge.limited')?.textContent==='1'`),'Hard refresh ha perso il bollino banlist TCG');
   console.log('PASS Mazzi sezioni simultanee + Extra automatico + recupero hard refresh');
 
   await evaluate(`Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true})`);
