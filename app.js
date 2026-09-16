@@ -9,6 +9,7 @@ import { findCardById, cardTypesByIds, backgroundForCardType, resolveStoredCard,
 import { externalLookupViaRegistry } from './js/ygo-printing-registry.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
+import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconciliation.js';
 import { icon } from './js/icons.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
@@ -108,7 +109,15 @@ function logCatalogRepairIssue(event) {
 const unresolvedCards = new Set();
 const fastScan = new FastScanController({
   api, externalLookup:externalLookupViaRegistry, getCollection:()=>state.collection,
-  isOnline:online, onRender:()=>render(true), onSaved:async()=>{await loadCollection();saveState();}, onToast:message=>toast(message),
+  isOnline:online, onRender:()=>render(true),
+  // scheduleCatalogRepairs() qui (oltre alla singola pianificazione di
+  // bootstrap, vedi catalogRepairBootstrapped) è la vera "post-save
+  // reconciliation" per i casi 3/4 Fast Scan: senza questa chiamata, una
+  // printing pending/unresolved appena salvata da uno scan aspetterebbe il
+  // prossimo login/refresh online per essere riconciliata. scheduleCatalogRepairs
+  // è già rientrante (catalogRepairRunning/catalogRepairQueued), chiamarla
+  // qui non duplica un ciclo già in corso.
+  onSaved:async()=>{await loadCollection();saveState();scheduleCatalogRepairs();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 });
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
@@ -1832,6 +1841,22 @@ async function quarantineMismatchedCollectionImages() {
   return result.verified > 0;
 }
 
+// Fast Scan caso 4: printing_mapping_status unresolved/conflict per le sole
+// printing possedute (vedi js/ygo-printing-mapping-reconciliation.js). Un
+// mapping risolto aggiorna image_url lato server (apply_ygo_printing_
+// mappings) ma non tocca gli item già in state.collection — a differenza di
+// quarantineMismatchedCollectionImages (che sa esattamente quale
+// collection_item_id patchare), qui la riconciliazione è chiave per
+// set_code, non per collection_item_id: un semplice reload è più semplice e
+// robusto di ricostruire la corrispondenza item-per-item, e scatta solo
+// quando qualcosa è davvero cambiato (stats.resolved > 0), mai altrimenti.
+async function reconcileYgoPrintingMappingsForCollection() {
+  const stats = await reconcileYgoPrintingMappings({ api, log:logCatalogRepairIssue });
+  if (stats.resolved <= 0) return false;
+  await loadCollection();
+  return true;
+}
+
 async function runLimited(items, limit, task) {
   let cursor = 0;
   const workers = Array.from({ length:Math.min(limit, items.length) }, async () => {
@@ -1855,11 +1880,12 @@ async function runCatalogRepairs() {
   try {
     while (catalogRepairQueued && state.currentUser) {
       catalogRepairQueued = false;
-      const [collectionChanged, loansChanged] = await Promise.all([
+      const [collectionChanged, loansChanged, mappingsChanged] = await Promise.all([
         quarantineMismatchedCollectionImages(),
-        quarantineMismatchedLoanImages()
+        quarantineMismatchedLoanImages(),
+        reconcileYgoPrintingMappingsForCollection()
       ]);
-      if (!collectionChanged && !loansChanged) continue;
+      if (!collectionChanged && !loansChanged && !mappingsChanged) continue;
       saveState();
       const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
       if (!editing && page !== 'fastscan') renderRoute();

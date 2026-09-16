@@ -52,6 +52,7 @@
     ,"test:market-dashboard-movers-cutover": "node scripts/market-dashboard-movers-cutover-smoke.mjs"
     ,"test:mission-security-lockdown": "node scripts/mission-security-lockdown-smoke.mjs"
     ,"test:share-request-hardening": "node scripts/collection-share-request-hardening-smoke.mjs"
+    ,"test:ygo-printing-mapping-reconciliation": "node scripts/ygo-printing-mapping-reconciliation-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

@@ -298,6 +298,16 @@ export const api = {
       p_token:token(), p_verification_version:version, p_limit:limit
     }));
   },
+  // Coda di riconciliazione post-save per printing_mapping_status
+  // unresolved/conflict (registro Konami ID/artwork), scoped alle sole
+  // printing possedute — vedi js/ygo-printing-mapping-reconciliation.js,
+  // l'unico chiamante. Stesso principio di catalogVerificationQueue: un
+  // batch piccolo e limitato, mai l'intera coda.
+  async collectionPrintingMappingQueue(limit = 20) {
+    ensure(); return unwrap(await client.rpc('list_collection_printing_mapping_queue', {
+      p_token:token(), p_limit:limit
+    }));
+  },
   async repairCollectionCatalogIdentity(item) {
     ensure(); return unwrap(await client.rpc('repair_collection_item_catalog_identity', {
       p_token:token(), p_collection_item_id:item.collectionItemId,
