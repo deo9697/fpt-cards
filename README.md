@@ -43,15 +43,21 @@ Per abilitare Fast Scan e l’ingestion massiva, eseguire infine `supabase-miles
 
 Per abilitare la sezione Mazzi, eseguire dopo la Raccolta `supabase-milestone-4-decks.sql`. Aggiunge mazzi personali, sezioni Main/Extra/Side e RPC protette; la disponibilità e le richieste delle carte mancanti continuano a usare l’inventario e i Prestiti esistenti.
 
-Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). PaddleOCR.js con PP-OCRv6 tiny viene preparato all’avvio dello scanner ed esegue due passaggi di preprocessing per ogni foto. Le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
+Fast Scan usa `getUserMedia` e richiede HTTPS (oppure localhost). La preparazione di PaddleOCR.js con PP-OCRv6 tiny parte insieme alla fotocamera. Le risorse già scaricate vengono conservate nella cache OCR della PWA. Il buffer non salvato è persistito in IndexedDB e può essere ripreso dopo refresh o crash.
 
 Il riconoscimento è esclusivamente manuale: parte soltanto premendo `Scatta e analizza`. Il loop dell'anteprima controlla la salute della camera ma non avvia mai l'OCR. Lo scatto usa i pixel del video mostrato sotto la ROI, così il ritaglio coincide con il riquadro; `ImageCapture.grabFrame()` resta un fallback. Le immagini non vengono salvate, caricate sul database o inviate al catalogo remoto; l'`ImageBitmap` e i canvas OCR vengono liberati subito dopo ogni tentativo.
 
-Il riconoscimento usa una whitelist limitata a lettere maiuscole, cifre e trattino, con segmentazione a riga singola. Ogni snapshot manuale prova sia grayscale sia adaptive threshold prima di scegliere il risultato migliore. Non esistono pannelli DEV, telemetria OCR globale o immagini diagnostiche persistenti.
+Ogni scatto attende un nuovo fotogramma e parte dal grayscale. Una lettura valida con confidence almeno 88 (la soglia già usata dal consenso, ancora da calibrare sui dispositivi) evita il secondo OCR, anche per copie consecutive o rarità ambigue. L'adaptive viene preparato soltanto per letture deboli/non valide; letture deboli o discordanti richiedono review anche se il codice esiste nel catalogo. La normalizzazione filtra il testo restituito: il motore non è configurato con una whitelist o una segmentazione single-line. `?debugScan=1` abilita crop e telemetria locali, incluse le metriche del motore quando disponibili; nessuna immagine diagnostica viene persistita.
+
+Se il codice non è nella cache verificata, ogni scatto viene prima persistito come voce "in verifica" e risolto in background, una carta alla volta. Copie intenzionali mantengono voci e quantità distinte. Il salvataggio finale attende le verifiche pendenti; è possibile ignorarle, e una risposta tardiva non le ripristina. Dopo un refresh le verifiche interrotte restano nella review, correggibili con Cerca. Ogni attesa RPC/provider ha un limite applicativo di 15 secondi: un timeout non autorizza correzioni fuzzy. Le richieste sottostanti non sono necessariamente annullate dal provider.
+
+Il worker OCR ha limiti di 60 secondi per la preparazione e 15 secondi per inferenza. In caso di errore viene terminato e ricreato al tentativo successivo, senza passare automaticamente al thread UI. Se il browser non può avviare il worker, rimane disponibile l'inserimento manuale. La cache catalogo pubblica solo snapshot completi, con una singola scrittura per sync; le sync concorrenti condividono il download. Dopo 24 ore ricostruisce lo snapshot per recuperare modifiche e cancellazioni.
 
 In production il codice OCR esatto ha precedenza assoluta sulle correzioni: lookup in cache sessione, RPC Supabase `card_printings`, catalogo/API esterno e fallback regionale. Il fuzzy matching viene consultato solo dopo il fallimento dell'intero lookup esatto e non può sostituire un codice valido con uno simile presente nella raccolta locale.
 
 Prima del preprocessing viene eliminato soltanto il 5% superiore e inferiore della ROI. Il precedente ritaglio al 46% dell'altezza poteva mozzare la parte inferiore dei caratteri e impedire il riconoscimento. L'input OCR viene portato a 900 px con margine bianco, quindi il canvas temporaneo viene subito liberato.
+
+Regressioni del percorso OCR: `npm run test:fast-scan-ocr-pipeline`. I test usano camera/modello/rete controllati e non sostituiscono una misura su telefono. Il benchmark `test:fast-scan-performance` misura soltanto preprocessing sintetico, non la durata di inferenza reale.
 
 ## Web Push su Vercel
 

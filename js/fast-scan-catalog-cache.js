@@ -8,38 +8,53 @@
 const DB_NAME='fpt-fast-scan-catalog';
 const STORE='index';
 const PAGE_LIMIT=1000;
+const MAX_SNAPSHOT_AGE=24*60*60*1000;
+const activeSyncs=new WeakMap();
 
 export async function loadCachedCatalogIndex(game){
-  try{const db=await openDb();return await requestResult(db.transaction(STORE).objectStore(STORE).get(game));}
+  try{const db=await openDb();try{return await requestResult(db.transaction(STORE).objectStore(STORE).get(game));}finally{db.close();}}
   catch{return null;}
 }
 
 async function saveCachedCatalogIndex(game,record){
-  try{const db=await openDb();const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(record,game);await transactionDone(tx);}catch{}
+  try{const db=await openDb();try{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(record,game);await transactionDone(tx);}finally{db.close();}}catch{}
 }
 
-// Riparte da lastId (append-only: le printing esistenti cambiano raramente
-// rarità/nome dopo la prima verifica) così un refresh ripetuto nella stessa
-// sessione o in sessioni successive scarica solo le righe nuove. onRows
-// riceve ogni blocco di righe grezze (prima il baseline in cache, poi ogni
-// pagina scaricata) così il chiamante può popolare la propria Map subito,
-// senza aspettare che tutta la sincronizzazione finisca.
+// Only completed snapshots are authoritative. Fresh snapshots receive appended
+// pages atomically; after 24 hours a full rebuild also picks up edits/deletions.
+// Concurrent callers share a single download. onRows receives complete arrays,
+// never a partial page that could make a multi-rarity code look unique.
 export async function syncCatalogIndex(api,game,{onRows}={}){
-  const cached=await loadCachedCatalogIndex(game)||{game,lastId:null,entries:[]};
-  let lastId=cached.lastId,entries=cached.entries||[];
-  if(entries.length)onRows?.(entries);
+  let games=activeSyncs.get(api);if(!games){games=new Map();activeSyncs.set(api,games);}
+  let job=games.get(game);
+  if(!job){job={listeners:new Set(),snapshot:null};games.set(game,job);job.promise=syncSnapshot(api,game,record=>{job.snapshot=record;for(const listener of job.listeners)listener(record.entries);}).finally(()=>games.delete(game));}
+  if(onRows){job.listeners.add(onRows);if(job.snapshot)onRows(job.snapshot.entries);}
+  try{return await job.promise;}finally{job.listeners.delete(onRows);}
+}
+
+async function syncSnapshot(api,game,publish){
+  const stored=await loadCachedCatalogIndex(game);
+  // Old records may contain only the first page. Never trust them as complete.
+  const fresh=stored?.complete&&Date.now()-stored.refreshedAt<MAX_SNAPSHOT_AGE;
+  const cached=fresh?stored:null;
+  let lastId=cached?.lastId||null,entries=[...(cached?.entries||[])];
+  if(cached)publish(cached);
+  let changed=false;
   for(;;){
     let rows;
     try{rows=await api.listCatalogPrintingsIndex(game,lastId,PAGE_LIMIT);}
-    catch{break;}
+    catch{return cached||{game,entries:[],lastId:null,complete:false};}
     if(!rows?.length)break;
-    entries=entries.concat(rows);
-    lastId=rows[rows.length-1].printing_id||lastId;
-    await saveCachedCatalogIndex(game,{game,lastId,entries});
-    onRows?.(rows);
+    const nextId=rows[rows.length-1].printing_id;
+    if(!nextId||nextId===lastId)return cached||{game,entries:[],lastId:null,complete:false};
+    entries.push(...rows);changed=true;
+    lastId=nextId;
     if(rows.length<PAGE_LIMIT)break;
   }
-  return {game,lastId,entries};
+  const record={game,lastId,entries,complete:true,refreshedAt:cached?.refreshedAt||Date.now()};
+  // One atomic write and publication per completed sync, not per growing page.
+  if(changed||!cached){await saveCachedCatalogIndex(game,record);publish(record);}
+  return record;
 }
 
 function openDb(){return new Promise((resolve,reject)=>{if(!globalThis.indexedDB)return reject(new Error('IndexedDB non disponibile'));const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE);};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}

@@ -8,13 +8,14 @@ export const PADDLE_WASM_BASE_URL='https://cdn.jsdelivr.net/npm/onnxruntime-web@
 // dominio anche con CORS — va scaricato una volta e avvolto in un blob:
 // URL locale. Il nome del file è l'hash del bundler per QUESTA versione
 // del pacchetto: se PADDLE_SDK_URL cambia versione, verificare che esista
-// ancora a questo percorso (altrimenti prepareWorkerBlobUrl() fallisce e
-// si torna semplicemente al thread principale, vedi prepare()).
+// ancora a questo percorso. Un worker guasto viene ricreato al prossimo tentativo.
 const PADDLE_WORKER_ENTRY_URL=new URL('./assets/worker-entry-C9UNuyOJ.js',new URL('/npm/@paddleocr/paddleocr-js@0.4.2/dist/index.mjs','https://cdn.jsdelivr.net').href).href;
 let workerBlobUrlPromise=null;
 function prepareWorkerBlobUrl(){
   if(!workerBlobUrlPromise)workerBlobUrlPromise=(async()=>{
-    const scriptText=await(await fetch(PADDLE_WORKER_ENTRY_URL)).text();
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+    let scriptText;
+    try{const response=await fetch(PADDLE_WORKER_ENTRY_URL,{signal:controller.signal});if(!response.ok)throw new Error(`Worker OCR: HTTP ${response.status}`);scriptText=await response.text();}finally{clearTimeout(timer);}
     return URL.createObjectURL(new Blob([scriptText],{type:'text/javascript'}));
   })().catch(error=>{workerBlobUrlPromise=null;throw error;});
   return workerBlobUrlPromise;
@@ -28,24 +29,33 @@ function selectCodeItems(items){if(items.length<2)return items;const clusters=[]
 function clusterScore(items){const text=items.map(item=>String(item.text||'').trim()).join('');return (text.includes('-')?1000:0)+(/[A-Z]/i.test(text)&&/\d/.test(text)?500:0)+Math.min(text.length,30);}
 
 export class PaddleOcrEngine {
-  constructor({loader=()=>import(PADDLE_SDK_URL)}={}){this.loader=loader;this.engine=null;this.preparing=null;}
+  constructor({loader=()=>import(PADDLE_SDK_URL),workerUrl=prepareWorkerBlobUrl,WorkerClass=globalThis.Worker,prepareTimeoutMs=60000,recognizeTimeoutMs=15000}={}){Object.assign(this,{loader,workerUrl,WorkerClass,prepareTimeoutMs,recognizeTimeoutMs});this.engine=null;this.preparing=null;this.worker=null;this.generation=0;this.cancellations=new Set();}
+  bounded(promise,timeoutMs,message){
+    return new Promise((resolve,reject)=>{let timer;const cancel=()=>{clearTimeout(timer);this.cancellations.delete(cancel);reject(new Error(message));};this.cancellations.add(cancel);timer=setTimeout(cancel,timeoutMs);Promise.resolve(promise).then(resolve,reject).finally(()=>{clearTimeout(timer);this.cancellations.delete(cancel);});});
+  }
+  reset(){this.generation+=1;this.worker?.terminate();this.worker=null;this.engine=null;this.preparing=null;for(const cancel of [...this.cancellations])cancel();}
   async prepare(){
     if(this.engine)return;
     if(this.preparing)return this.preparing;
-    this.preparing=(async()=>{
+    const generation=this.generation;
+    const preparation=(async()=>{
       const module=await this.loader(),PaddleOCR=module.PaddleOCR||module.default?.PaddleOCR||module.default;
+      if(generation!==this.generation)throw new Error('Preparazione OCR annullata');
       if(!PaddleOCR?.create)throw new Error('PaddleOCR.js non espone PaddleOCR.create');
       const baseOptions={textDetectionModelName:'PP-OCRv6_tiny_det',textRecognitionModelName:'PP-OCRv6_tiny_rec',textDetectionModelAsset:{url:PADDLE_DET_MODEL_URL},textRecognitionModelAsset:{url:PADDLE_REC_MODEL_URL},ortOptions:{backend:'wasm',wasmPaths:PADDLE_WASM_BASE_URL,numThreads:1,simd:true}};
-      try{
-        const blobUrl=await prepareWorkerBlobUrl();
-        this.engine=await PaddleOCR.create({...baseOptions,worker:{createWorker:()=>new Worker(blobUrl,{type:'module'})}});
-      }catch(error){
-        console.warn('[FastScan] OCR worker non disponibile, torno al thread principale',error);
-        this.engine=await PaddleOCR.create({...baseOptions,worker:false});
-      }
+      const blobUrl=await this.workerUrl();
+      if(generation!==this.generation)throw new Error('Preparazione OCR annullata');
+      const engine=await PaddleOCR.create({...baseOptions,worker:{createWorker:()=>{if(generation!==this.generation)throw new Error('Preparazione OCR annullata');return this.worker=new this.WorkerClass(blobUrl,{type:'module'});}}});
+      if(generation!==this.generation){void Promise.resolve(engine.dispose?.()).catch(()=>{});throw new Error('Preparazione OCR annullata');}
+      this.engine=engine;
     })();
-    try{await this.preparing;}catch(error){this.engine=null;throw error;}finally{this.preparing=null;}
+    this.preparing=this.bounded(preparation,this.prepareTimeoutMs,'Preparazione OCR scaduta: riprova');
+    try{await this.preparing;}catch(error){if(generation===this.generation)this.reset();throw error;}finally{if(generation===this.generation)this.preparing=null;}
   }
-  async recognize(canvas){if(!canvas?.width||!canvas?.height)throw new Error('Crop OCR non disponibile');await this.prepare();const response=await this.engine.predict(canvas,{textRecScoreThresh:0}),result=Array.isArray(response)?response[0]:response,items=readItems(result).sort((left,right)=>leftEdge(left)-leftEdge(right)),selected=selectCodeItems(items),text=selected.map(item=>String(item.text||'').trim()).filter(Boolean).join('');return {text,confidence:weightedConfidence(selected),engine:'paddle'};}
-  async dispose(){if(this.preparing)await this.preparing.catch(()=>{});const engine=this.engine;this.engine=null;if(engine?.dispose)await engine.dispose();else if(engine?.release)await engine.release();}
+  async recognize(canvas){
+    if(!canvas?.width||!canvas?.height)throw new Error('Crop OCR non disponibile');await this.prepare();const generation=this.generation;
+    try{const response=await this.bounded(this.engine.predict(canvas,{textRecScoreThresh:0}),this.recognizeTimeoutMs,'OCR troppo lento: riprova lo scatto'),result=Array.isArray(response)?response[0]:response,items=readItems(result).sort((left,right)=>leftEdge(left)-leftEdge(right)),selected=selectCodeItems(items),text=selected.map(item=>String(item.text||'').trim()).filter(Boolean).join('');return {text,confidence:weightedConfidence(selected),engine:'paddle',metrics:result?.metrics||null,runtime:result?.runtime||null,worker:Boolean(this.worker)};}
+    catch(error){if(generation===this.generation)this.reset();throw error;}
+  }
+  async dispose(){const engine=this.engine,worker=this.worker;this.reset();if(!worker){if(engine?.dispose)await engine.dispose();else if(engine?.release)await engine.release();}}
 }

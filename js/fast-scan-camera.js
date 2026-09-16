@@ -11,11 +11,9 @@ export class FastScanCamera {
   get zoomSupported() { return Boolean(this.capabilities.zoom && this.track?.applyConstraints); }
   async start(video, deviceId = '') {
     this.stop('restart-before-start'); const generation=this.generation; if(!this.supported) throw cameraError('unsupported');this.diagnostic('start-request',{generation,deviceId:deviceId||'environment'});
-    // 1280x720 @ ~24fps is plenty: performScanOnce()'s OCR crop is always
-    // upsampled to a fixed 900-1280px analysis width regardless of source
-    // resolution (see captureSnapshot's target/ceiling clamp), so a 1920x1080
-    // stream buys no extra OCR accuracy — it only makes the sensor/ISP work
-    // harder for the whole scan session, which is what was heating phones up.
+    // Conservative stream settings limit heat during long sessions. Higher
+    // capture resolutions may recover finer characters but need device testing;
+    // upscaling the OCR crop alone cannot recreate missing source detail.
     const videoConstraint=deviceId?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}}:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}};
     const request=this.mediaDevices.getUserMedia({audio:false,video:videoConstraint});
     let timeout; const timeoutPromise=new Promise((_,reject)=>{timeout=setTimeout(()=>reject(cameraError('timeout')),this.timeoutMs);});
@@ -87,6 +85,17 @@ export class FastScanCamera {
     const ctx=this.sampleCanvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='medium';ctx.drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);
     const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,qualityStarted=performance.now(),quality=preprocessCodeImage(ctx,width,height,{mode:'grayscale',metricsOnly:true}),qualityMs=performance.now()-qualityStarted;this.lastFrameAt=performance.now();this.blackFrameStreak=quality.meanLuma<2?this.blackFrameStreak+1:0;
     return {signature,roi:crop,quality,timing:{totalMs:performance.now()-started,cropMs,drawMs,qualityMs}};
+  }
+  async waitForFreshFrame(timeoutMs=1500){
+    const video=this.video,generation=this.generation;
+    if(!video)throw new Error('Fotocamera non pronta');
+    await new Promise((resolve,reject)=>{
+      let callback,timer,poll;
+      const finish=error=>{clearTimeout(timer);clearTimeout(poll);if(callback!==undefined)video.cancelVideoFrameCallback?.(callback);error?reject(error):resolve();};
+      timer=setTimeout(()=>finish(new Error('Fotogramma non aggiornato: riprova lo scatto')),timeoutMs);
+      if(video.requestVideoFrameCallback){callback=video.requestVideoFrameCallback(()=>finish(generation===this.generation?null:new Error('Fotocamera riavviata')));}
+      else{const previous=video.currentTime;const check=()=>{if(generation!==this.generation)return finish(new Error('Fotocamera riavviata'));if(video.currentTime!==previous&&video.readyState>=2)return finish();poll=setTimeout(check,25);};check();}
+    });
   }
   async captureSnapshot(roiElement,{preferVideoFrame=false,includeRaw=false}={}) {
     if(this.refocusing)throw new Error('refocus-in-progress');
