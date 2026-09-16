@@ -461,9 +461,34 @@ async function run() {
   await evaluate(`(()=>{document.querySelector('#collection-request-quantity').value='3';document.querySelector('#collection-request-notes').value='Mi serve per il torneo';document.querySelector('#collection-request-form').requestSubmit()})()`);
   await waitFor(`!document.querySelector('#collection-request-form')`, 'Invio richiesta non completato');
   await evaluate(`location.hash='#/loans'`);
-  await waitFor(`Boolean(document.querySelector('[data-action="accept-request"]'))`, 'Richiesta ricevuta non mostrata al proprietario');
+  await waitFor(`Boolean(document.querySelector('[data-loan-open="request-incoming"]'))`, 'Richiesta ricevuta non mostrata al proprietario');
+  // I pulsanti azione (accept-request/reject-request) vivono SOLO nel foglio
+  // di dettaglio dal basso, mai inline sulla riga della lista — da "redesign:
+  // Prestiti come lista compatta con dettaglio a foglio dal basso"
+  // (2026-09-06, commit 775536b). Questa sezione di test (28-08-2026) non
+  // era mai stata aggiornata con il click di apertura dettaglio mancante:
+  // il pulsante non è mai stato assente, semplicemente non ancora
+  // renderizzato perché il foglio non era ancora aperto.
+  await evaluate(`document.querySelector('[data-loan-open="request-incoming"]').click()`);
+  await waitFor(`Boolean(document.querySelector('[data-action="accept-request"]'))`, 'Pulsante accetta richiesta assente nel foglio di dettaglio');
   await evaluate(`(()=>{const input=document.querySelector('[data-accept-qty="request-incoming"]');input.value='1';document.querySelector('[data-action="accept-request"][data-id="request-incoming"]').click()})()`);
-  await waitFor(`[...document.querySelectorAll('.loan-row')].some(row=>row.textContent.includes('Riservata')&&row.textContent.includes('accettate 1'))`, 'Accettazione parziale non rappresentata');
+  // updateLoan() chiude il foglio di dettaglio dopo l'azione (selectedLoanId
+  // = ''), tornando alla lista: la riga mostra SOLO lo status breve
+  // (shortStatus, badge "Riservata" — loanPresentation in app.js), mai il
+  // dettaglio "richieste/accettate/rimanenti" (quello vive solo in
+  // loanDetailSheetView, .quantity-help) — un'altra conseguenza dello stesso
+  // redesign lista+dettaglio. Riapro il foglio per verificare la quantità
+  // accettata davvero registrata, non solo lo status.
+  await waitFor(`[...document.querySelectorAll('.loan-row')].some(row=>row.textContent.includes('Riservata'))`, 'Accettazione parziale non rappresentata nello status della riga');
+  await evaluate(`document.querySelector('[data-loan-open="request-incoming"]').click()`);
+  // .quantity-help è riusata per DUE <p> distinti nello stesso foglio
+  // (loanDetailSheetView, app.js: "Registrato il..." SEMPRE presente prima,
+  // il riepilogo richieste/accettate/rimanenti dopo, solo condizionale) —
+  // querySelector prenderebbe sempre il primo ("Registrato il"), mai quello
+  // cercato: serve querySelectorAll + some(), non un altro caso di redesign
+  // datato, semplicemente due elementi con la stessa classe nello stesso contesto.
+  await waitFor(`[...document.querySelectorAll('.loan-detail-sheet .quantity-help')].some(el=>el.textContent.includes('accettate 1'))`, 'Quantità accettata non registrata nel dettaglio del prestito');
+  await evaluate(`document.querySelector('.loan-detail-sheet .detail-close').click()`);
   console.log('PASS richiesta Raccolta Team + accettazione parziale + mobile 390/360');
   await evaluate(`location.hash='#/collection'`);
   await waitFor(`Boolean(document.querySelector('.inventory-surface'))`, 'Ritorno alla Raccolta dopo richiesta non riuscito');
