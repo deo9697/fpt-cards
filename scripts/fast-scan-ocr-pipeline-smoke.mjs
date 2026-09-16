@@ -12,7 +12,7 @@ const {FastScanController}=await import('../js/fast-scan.js');
 const controllers=[];
 function controller(options={}){
   const value=new FastScanController({camera:{stream:{},sample:()=>({signature:[1],quality:{sharpness:5}}),waitForFreshFrame:async()=>{},captureSnapshot:async()=>({rawCanvas:canvas(),canvas:canvas(),preprocessing:{sharpness:5},release(){}})},paddleOcr:{dispose:async()=>{}},isOnline:()=>true,onRender(){},onToast(){},...options});
-  value.phase='scanning';value.refreshHud=()=>{};value.feedback=()=>{};value.showDetection=()=>{};value.snapshotFeedback=async()=>{};value.schedule=()=>{};controllers.push(value);return value;
+  value.phase='scanning';value.refreshHud=()=>{};value.feedback=()=>{};value.snapshotFeedback=async()=>{};value.schedule=()=>{};controllers.push(value);return value;
 }
 const printing={printingId:'p1',game:'yugioh',catalogCardId:'1',cardName:'Test',setCode:'LOB-IT001',rarity:'Common'};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
@@ -26,10 +26,13 @@ const warm=controller();warm.cacheResolution(printing.setCode,[printing]);
 assert.equal(await scan(warm,[{text:printing.setCode,confidence:96}]),1);
 assert.equal(await scan(warm,[{text:printing.setCode,confidence:96}]),1,'consecutive copies use one inference each');
 assert.equal(warm.buffer.total,2);
+assert.equal(warm.detection.tone,'ok');assert.match(warm.detection.detail,/aggiunta.*avanti/);assert.equal(warm.feedbackTimer,0,'confirmation must not auto-hide');
+assert.match(warm.scannerView(),/live-detection show ok/,'badge survives a full scanner redraw');
 const ambiguous=controller();ambiguous.cacheResolution(printing.setCode,[printing,{...printing,printingId:'p2',rarity:'Ultra Rare'}]);
 assert.equal(await scan(ambiguous,[{text:printing.setCode,confidence:95}]),1,'rarity ambiguity must not trigger adaptive');
 assert.equal(ambiguous.buffer.review[0].matches.length,2);
 assert.equal(ambiguous.buffer.total,0);
+assert.equal(ambiguous.detection.tone,'warn');assert.match(ambiguous.detection.detail,/review.*avanti/);
 const weak=controller();weak.cacheResolution(printing.setCode,[printing]);
 assert.equal(await scan(weak,[{text:printing.setCode,confidence:40},{text:printing.setCode,confidence:50}]),2);
 assert.equal(weak.buffer.total,0,'catalog match cannot auto-add weak OCR');
@@ -37,16 +40,27 @@ assert.match(weak.buffer.review[0].warning,/incerta/);
 const conflict=controller();conflict.cacheResolution(printing.setCode,[printing]);
 await scan(conflict,[{text:'LOB-IT002',confidence:70},{text:printing.setCode,confidence:97}]);
 assert.equal(conflict.buffer.total,0,'conflicting valid reads require review');
+const unreadable=controller();await scan(unreadable,[{text:'',confidence:0}]);assert.equal(unreadable.detection.tone,'error');assert.match(unreadable.detection.detail,/Riprova questa carta/);
+unreadable.requestSnapshot();assert.equal(unreadable.detection,null,'accepted next capture clears previous result immediately');
+const brokenCapture=controller();brokenCapture.camera.captureSnapshot=async()=>{throw new Error('camera failed');};await scan(brokenCapture,[]);assert.equal(brokenCapture.detection.tone,'error');
 
 let networkCalls=0;const network=deferred();const pending=controller({api:{lookupPrintings:async()=>{networkCalls++;await network.promise;return [printing];}}});
 assert.equal(await scan(pending,[{text:printing.setCode,confidence:95}]),1,'cold catalog should not cause another inference');
 const first=pending.pendingResolution;
 assert.equal(pending.buffer.review[0].pending,true);
+assert.equal(pending.detection.tone,'pending');assert.match(pending.detection.detail,/avanti.*background/);
 assert.equal(JSON.parse(local.get('fpt-fast-scan-active')).review[0].pending,true,'pending persisted before lookup completes');
 await scan(pending,[{text:printing.setCode,confidence:95}]);const second=pending.pendingResolution;
 assert.equal(pending.buffer.scanned,2,'each manual copy retained');assert.equal(networkCalls,1);
 let saveStarted=false;pending.api.saveCollectionBatch=async()=>{saveStarted=true;};await pending.save();assert.equal(saveStarted,false,'save blocked while pending');
 network.resolve();await Promise.all([first,second]);assert.equal(pending.buffer.total,2);assert.equal(pending.buffer.scanned,2);assert.equal(networkCalls,1,'second copy reuses resolved identity');
+assert.equal(pending.detection.tone,'ok','current pending badge becomes a confirmed badge');
+
+const oldLookup=deferred();const mixed=controller({api:{lookupPrintings:async()=>{await oldLookup.promise;return [printing];}}});
+await scan(mixed,[{text:printing.setCode,confidence:95}]);const oldResult=mixed.pendingResolution;
+const otherPrinting={...printing,printingId:'other',setCode:'LOB-IT002'};mixed.cacheResolution(otherPrinting.setCode,[otherPrinting]);await scan(mixed,[{text:otherPrinting.setCode,confidence:96}]);
+oldLookup.resolve();await oldResult;assert.equal(mixed.detection.code,otherPrinting.setCode,'late result cannot replace the current badge');assert.equal(mixed.backgroundNotice.code,printing.setCode);assert.match(mixed.backgroundNotice.detail,/Scatto precedente/);assert.match(mixed.scannerView(),/data-scan-background-result/);
+const absent=controller({api:{lookupPrintings:async()=>[]}});await scan(absent,[{text:printing.setCode,confidence:95}]);await absent.pendingResolution;assert.equal(absent.detection.tone,'warn');assert.match(absent.detection.detail,/review.*avanti/,'catalog miss is retained for review, no rescan required');
 
 const late=deferred(),cancelled=controller({api:{lookupPrintings:async()=>{await late.promise;return [printing];}}});
 await cancelled.resolveCapturedReading({text:printing.setCode,confidence:96});const lateResult=cancelled.pendingResolution;
