@@ -170,6 +170,28 @@ const manualPhotoController=new FastScanController({camera:{focusSupported:false
 let rpcLookups=0,externalLookups=0;const cachedController=new FastScanController({camera:{focusSupported:false,refocus:async()=>false},ocr:{},api:{lookupPrintings:async code=>{rpcLookups+=1;return code==='TDGS-IT001'?[{printing_id:'tdgs',game:'yugioh',catalog_card_id:'456',card_name:'Cached Card',set_code:code}]:[];}},externalLookup:async()=>{externalLookups+=1;return[];},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});cachedController.buildLocalCatalog();assert.equal((await cachedController.lookupDetailed('TDGS-IT001')).source,'rpc');assert.equal((await cachedController.lookupDetailed('TDGS-IT001')).source,'session-cache');assert.equal(rpcLookups,1,'la seconda copia non deve ripetere la RPC');assert.equal(externalLookups,0,'un match RPC non deve interrogare il catalogo esterno');
 const manualCatalogResult=await cachedController.processRecognition('TDGS-IT001',72,[],{mode:'adaptive'},{catalogConfirm:true});assert.equal(manualCatalogResult.decision,SCAN_DECISION.EXACT_UNIQUE,'scatto esplicito exact unique non auto-accettato');assert.equal(cachedController.buffer.total,1);assert.equal(cachedController.buffer.review.length,0);clearTimeout(cachedController.persistTimer);clearTimeout(cachedController.feedbackTimer);
 
+// P0 2026-09-16: distinguere "OCR non ha letto alcun codice" da "un codice è
+// stato letto ma non ha match nel catalogo" (le priorità di oggi elencano
+// esplicitamente questi due casi separati). Caso 1 è già gestito PRIMA di
+// arrivare a commitResolution (evidence.valid la intercetta subito, riga
+// ~301: nessun formato di set code plausibile -> recordFailure() senza
+// catalogMiss, wording già corretto e indipendente da questo fix). Caso 2
+// arriva invece SEMPRE a commitResolution con result.code valorizzato (ogni
+// chiamante lo valida prima) — prima del fix mostrava comunque il wording
+// del caso 1 ("Codice non letto · riprova o usa Manuale"), nascondendo che
+// un codice era stato letto correttamente ma senza corrispondenza a catalogo.
+const noCodeController=new FastScanController({camera:{focusSupported:false,refocus:async()=>false},ocr:{},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});noCodeController.buildLocalCatalog();
+const noCodeResult=await noCodeController.processRecognition('zzzz',80,[],{},{catalogConfirm:true});
+assert.equal(noCodeResult.status,'not_found');assert.equal(noCodeResult.code,undefined,'nessun formato di set code plausibile: evidence.valid intercetta prima ancora di produrre un result.code, commitResolution non viene mai chiamato');
+assert.equal(noCodeController.status,'Codice non letto · riprova lo scatto','OCR non ha letto alcun codice: passa da recordFailure(), non da commitResolution');
+clearTimeout(noCodeController.persistTimer);clearTimeout(noCodeController.feedbackTimer);
+
+const catalogMissController=new FastScanController({camera:{focusSupported:false,refocus:async()=>false},ocr:{},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});catalogMissController.buildLocalCatalog();
+const catalogMissResult=await catalogMissController.processRecognition('TG-ZDEJ7',80,[],{},{catalogConfirm:true});
+assert.equal(catalogMissResult.status,'not_found');assert.equal(catalogMissResult.code,'TG-ZDEJ7','un codice dal formato plausibile letto correttamente deve restare in result.code anche se non ha match');
+assert.equal(catalogMissController.status,'Codice non trovato · controlla la review','codice letto ma senza match catalogo (via commitResolution): messaggio dedicato, non più "riprova o usa Manuale" del caso OCR-non-letto');
+clearTimeout(catalogMissController.persistTimer);clearTimeout(catalogMissController.feedbackTimer);
+
 // Fast Scan Step B (roadmap performance 2026-09-15): catalog-index locale
 // (SETCODE -> printing, sincronizzato dall'intero card_printings) deve
 // evitare la RPC esattamente come session-cache — a differenza di
@@ -299,7 +321,7 @@ const sw=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');assert(/fpt
 const scannerUi=fs.readFileSync(new URL('../js/fast-scan.js',import.meta.url),'utf8'),cameraUi=fs.readFileSync(new URL('../js/fast-scan-camera.js',import.meta.url),'utf8'),scannerCss=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
 for(const required of ['fast-scan-live','live-roi','Hai finito?','Sì, mostrami','No, continua a scansionare','data-scan-manual-sheet','data-scan-zoom','data-scan-capture','requestSnapshot','snapshotInFlight','preferVideoFrame:false','includeRaw:true','if(!forced){this.scanState=\'LIVE\'','OCR_SUB_ROI','extractOcrSubCrop','primaryCode.valid&&!repeatedLast','ocr:short-circuit','avoidCode:repeatedLast?lastAccepted','paddingX:.14','paddingY:.2','buildFallback','fallbackUsed','ScanTelemetry','cycleTotalMs','readyNextMs','esitoFromOutcome','selectSnapshotOcrResult','touchDistance','this.camera.sample(roi)','this.camera.captureSnapshot(roi','snapshot?.release?.()','renderDebugCrop','data-scan-debug-crop','debugTrace','catalogIndex','pendingCodes','catalog-index','recentlyMissed','resolvePendingInBackground','updateReview','MAX_BACKGROUND_RESOLUTIONS','enqueueBackgroundResolution','drainBackgroundQueue'])assert(scannerUi.includes(required),`Redesign scanner incompleto: ${required}`);
 assert(/showDetection\(code,detail,tone='ok'\)/.test(scannerUi),"showDetection deve avere un tono, non essere sempre verde");
-assert(scannerUi.includes("this.showDetection('Codice non letto','Riprova','error')"),'il codice non letto deve mostrare il tono errore, non ok');
+assert(scannerUi.includes("this.showDetection(catalogMiss?'Nessun match':'Codice non letto',catalogMiss?'Verifica manuale':'Riprova','error')"),'il codice non letto/nessun match deve mostrare il tono errore, distinto tra OCR non letto e catalogo senza match');
 assert(scannerUi.includes("this.showDetection(result.code,'Da verificare','warn')"),'i risultati da verificare non devono restare verdi');
 assert(scannerUi.includes('${esc(match.cardName)} · ${esc(match.rarity||\'Rarità non indicata\')}'),'le scelte review devono mostrare la rarità, non ripetere solo il nome carta');
 assert(!scannerUi.includes('${esc(match.cardName)} · ${esc(match.setCode)}</button>'),'le scelte review non devono più ripetere lo stesso set code identico per ogni opzione');

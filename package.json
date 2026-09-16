@@ -49,6 +49,8 @@
     ,"test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs"
     ,"test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs"
     ,"test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs"
+    ,"test:market-dashboard-movers-cutover": "node scripts/market-dashboard-movers-cutover-smoke.mjs"
+    ,"test:mission-security-lockdown": "node scripts/mission-security-lockdown-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

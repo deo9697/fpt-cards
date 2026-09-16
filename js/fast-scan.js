@@ -404,7 +404,20 @@ export class FastScanController {
     // toccare/ricreare il DOM della fotocamera.
     if(result.status==='not_found'){
       if(pendingId){this.buffer.updateReview(pendingId,{status:'not_found',warning:'Codice non trovato nel catalogo',pending:false});this.persist();if(this.phase==='review')this.onRender?.();else this.refreshHud();return;}
-      this.status='Codice non trovato · riprova o usa Manuale';this.showDetection('Codice non letto','Riprova','error');this.refreshHud();return;
+      // Questo ramo (non-pendingId) è raggiungibile SOLO quando un codice è
+      // stato letto correttamente (catalogConfirm/processManual validano
+      // raw/evidence.code PRIMA di chiamare resolve(): "OCR non ha letto
+      // nulla" è già intercettato più a monte, riga ~301 evidence.valid, e
+      // non arriva mai qui) — quindi è sempre un catalog miss (codice letto,
+      // nessun match), MAI un "codice non letto". Prima di questo fix
+      // mostrava comunque il wording del caso "non letto"
+      // ('Codice non letto · riprova o usa Manuale'), la stessa confusione
+      // fra i due casi elencata nelle priorità P0 Fast Scan di oggi. Il
+      // Boolean(result.code) resta comunque la guardia esplicita (mai
+      // assunto implicitamente) nel caso quell'invariante cambi in futuro.
+      const catalogMiss=Boolean(result.code);
+      this.status=catalogMiss?'Codice non trovato · controlla la review':'Codice non letto · riprova o usa Manuale';
+      this.showDetection(catalogMiss?'Nessun match':'Codice non letto',catalogMiss?'Verifica manuale':'Riprova','error');this.refreshHud();return;
     }
     if(!pendingId)this.scanState='RESULT';
     const mustAutoAdd=result.decision==='EXACT_UNIQUE'||(result.decision==='NEAR_UNIQUE'&&this.buffer.settings.autoAdd)||manual;

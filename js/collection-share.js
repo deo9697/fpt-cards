@@ -242,7 +242,7 @@ export class CollectionShareController {
   footerView() {
     return `<footer class="share-guest-footer">
       <button type="button" class="share-guest-footer-link" data-share-advanced>${icon('filter')} Filtri avanzati</button>
-      <span>fatti l'uacchi ;)<br>uniscono le persone</span>
+      <span>fatti l'uacchi ;)</span>
     </footer>`;
   }
   facetOptions(key) {
