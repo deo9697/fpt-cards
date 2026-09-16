@@ -702,8 +702,15 @@ async function run() {
   assert(await evaluate(`JSON.parse(localStorage.getItem('fpt-cards-state-v2')).currentUser === 'existing-member'`), 'Sessione locale non persistita');
   console.log('PASS refresh dopo login');
 
+  // .team-list non esiste dal "Redesign Team page with searchable roster
+  // and admin controls" (2026-09-09, commit d75bafb): il contenitore oggi è
+  // .team-page (js/team.js renderTeamPage) — nessuna relazione con il flusso
+  // di richiesta prestito Raccolta team appena verificato: sono due
+  // sottosistemi diversi (roster membri vs richieste prestito), entrambi
+  // semplicemente vittime dello stesso pattern "test non aggiornato dopo un
+  // redesign legittimo".
   const routeChecks = [
-    ['loans', '#loan-query'], ['new', '#card-name'], ['team', '.team-list'], ['collection', '.inventory-surface'], ['home', '.dashboard']
+    ['loans', '#loan-query'], ['new', '#card-name'], ['team', '.team-page'], ['collection', '.inventory-surface'], ['home', '.dashboard']
   ];
   for (const [route, selector] of routeChecks) {
     await evaluate(`location.hash='#/${route}'`);
