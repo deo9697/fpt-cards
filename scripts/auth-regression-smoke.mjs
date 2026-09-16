@@ -654,8 +654,17 @@ async function run() {
   await waitFor(`document.querySelector('[data-scan-total-number]')?.textContent==='1'`, 'Resume scanner non conserva il buffer');
   await evaluate(`document.querySelector('[data-scan-back]').click();document.querySelector('[data-scan-confirm-review]').click()`);
   await waitFor(`Boolean(document.querySelector('[data-scan-save]'))`, 'Review Fast Scan non riaperta dopo resume');
-  await evaluate(`(()=>{const input=document.querySelector('[data-scan-quantity]');input.value='2';input.dispatchEvent(new Event('change',{bubbles:true}))})()`);
-  await waitFor(`document.querySelector('[data-scan-quantity]')?.value==='2'`, 'Modifica quantità Fast Scan non conservata');
+  // [data-scan-quantity] (input numerico) non esiste più da "feat: +/- e
+  // flag Prima Edizione nella review di Fast Scan" (2026-09-07, commit
+  // 12f7427): la review sostituì l'input libero con uno stepper +/- (vedi
+  // entryRow in js/fast-scan.js, data-scan-qty-inc/-dec + <b> di sola
+  // lettura) — questa sezione di test (28-08-2026) non era mai stata
+  // aggiornata. Non è un rischio dati reale: la quantità vive nel buffer del
+  // controller (this.buffer.entries), non in un input DOM non controllato,
+  // quindi non esiste qui la stessa classe di bug "draft perso al render"
+  // trovata altrove oggi — è solo un selettore obsoleto.
+  await evaluate(`document.querySelector('[data-scan-qty-inc]').click()`);
+  await waitFor(`document.querySelector('.scan-qty-stepper b')?.textContent==='2'`, 'Modifica quantità Fast Scan non conservata');
   await evaluate(`document.querySelector('[data-scan-save]').click()`);
   await waitFor(`document.querySelector('#toast').textContent.includes('Sessione salvata')`, 'Batch Fast Scan non salvato');
   assert(await evaluate(`window.__authTest.lastBatch.length===1&&window.__authTest.lastBatch[0].quantityDelta===2&&!('owner' in window.__authTest.lastBatch[0])`),'Payload batch Fast Scan non valido');
