@@ -62,6 +62,7 @@ export class CollectionShareController {
     this.reviewing = false;
     this.requesterName = '';
     this.message = '';
+    this.clientRequestId = '';
     this.submitting = false; this.submitted = false;
     // Tipo YGOPRODeck per catalogCardId (Spell/Trap/Fusion/...), solo per lo
     // sfondo per tipo dietro l'immagine di ogni tile — nessun dato di
@@ -69,8 +70,12 @@ export class CollectionShareController {
     this.draftKey = `fpt-share-draft:${shareId}`;
     try {
       const draft = JSON.parse(sessionStorage.getItem(this.draftKey) || 'null');
-      if (draft) { this.selected = new Map(draft.selected || []); this.requesterName = String(draft.name || ''); this.message = String(draft.message || ''); }
+      if (draft) { this.selected = new Map(draft.selected || []); this.requesterName = String(draft.name || ''); this.message = String(draft.message || ''); this.clientRequestId = String(draft.clientRequestId || ''); }
     } catch {}
+    // Un solo id per l'intera vita del draft corrente (persistito con esso,
+    // mai rigenerato su retry): permette alla RPC di riconoscere un secondo
+    // tentativo dopo timeout come la STESSA richiesta, non una nuova.
+    if (!this.clientRequestId) this.clientRequestId = crypto.randomUUID();
     this.onRender = () => { this.persistDraft(); onRender?.(); };
     this._onBack = event => {
       if (!this.reviewing || event.state?.collectionShareReview === this.shareId) return;
@@ -81,7 +86,7 @@ export class CollectionShareController {
   persistDraft() {
     try {
       if (this.submitted) sessionStorage.removeItem(this.draftKey);
-      else sessionStorage.setItem(this.draftKey, JSON.stringify({ selected:[...this.selected], name:this.requesterName, message:this.message }));
+      else sessionStorage.setItem(this.draftKey, JSON.stringify({ selected:[...this.selected], name:this.requesterName, message:this.message, clientRequestId:this.clientRequestId }));
     } catch {}
   }
   dispose() { clearTimeout(this._searchTimer); window.removeEventListener('popstate', this._onBack); }
@@ -163,7 +168,11 @@ export class CollectionShareController {
     this.submitting = true; this.onRender?.();
     try {
       const items = [...this.selected].map(([printingId, quantity]) => ({ printingId, quantity }));
-      await this.api.submitCollectionShareRequest(this.shareId, this.requesterName.trim(), items, this.message.trim());
+      // clientRequestId non viene mai rigenerato qui: un retry dopo timeout
+      // invia lo STESSO id, la RPC lo riconosce e torna la request già
+      // creata invece di duplicarla — il retry va quindi trattato come un
+      // successo, non serve alcuna gestione speciale oltre a questo.
+      await this.api.submitCollectionShareRequest(this.shareId, this.requesterName.trim(), items, this.message.trim(), this.clientRequestId);
       this.submitted = true;
     } catch (error) { this.onToast?.(error?.message || 'Invio non riuscito, riprova'); }
     finally { this.submitting = false; this.onRender?.(); }

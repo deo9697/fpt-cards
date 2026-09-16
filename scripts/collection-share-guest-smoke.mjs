@@ -74,7 +74,7 @@ try {
     const c = new CollectionShareController({
       api: {
         getCollectionShare: async () => (${JSON.stringify(fixture)}),
-        submitCollectionShareRequest: async (shareId, requesterName, items, message) => { window.__submitted = { shareId, requesterName, items, message }; return 'req-1'; }
+        submitCollectionShareRequest: async (shareId, requesterName, items, message, clientRequestId) => { window.__submitted = { shareId, requesterName, items, message, clientRequestId }; return 'req-1'; }
       },
       shareId: 'share-1',
       onRender: () => { document.querySelector('#app').innerHTML = c.view(); c.bind(document); },
@@ -191,8 +191,41 @@ try {
   await evaluate(`document.querySelector('[data-share-submit]').click()`); await delay(150);
   const afterSubmit = await evaluate(`({submitted:window.__submitted, successTitle:document.querySelector('.share-guest-success h2')?.textContent, hasLoginForm:!!document.querySelector('.login-shell')})`);
   if (afterSubmit.submitted?.requesterName !== 'Cristian' || afterSubmit.submitted?.items?.length !== 1 || afterSubmit.submitted?.message !== 'Mi interessa molto questa carta!') throw new Error(`Payload di invio errato: ${JSON.stringify(afterSubmit.submitted)}`);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(afterSubmit.submitted?.clientRequestId || '')) throw new Error(`clientRequestId assente o non un uuid: ${JSON.stringify(afterSubmit.submitted)}`);
   if (afterSubmit.successTitle !== 'Richiesta inviata!') throw new Error(`Stato finale errato: ${JSON.stringify(afterSubmit)}`);
   if (afterSubmit.hasLoginForm) throw new Error('Il guest non deve essere reindirizzato al login dopo l\'invio');
+
+  // 12b) Idempotenza lato client: un retry dopo un errore (es. timeout) deve
+  // riusare LO STESSO clientRequestId, mai rigenerarlo — è quello che
+  // permette alla RPC di riconoscere il secondo tentativo come la stessa
+  // richiesta invece di crearne una seconda (vedi submit_collection_share_
+  // request P2 idempotenza). Qui simuliamo un primo invio che fallisce e un
+  // secondo che riesce, sullo stesso controller/draft.
+  const retryResult = await evaluate(`import('/js/collection-share.js').then(async ({CollectionShareController})=>{
+    const calls=[];
+    let attempt=0;
+    const c=new CollectionShareController({
+      api:{
+        getCollectionShare: async () => (${JSON.stringify(fixture)}),
+        submitCollectionShareRequest: async (shareId, requesterName, items, message, clientRequestId) => {
+          calls.push(clientRequestId); attempt++;
+          if (attempt===1) throw new Error('Timeout simulato');
+          return 'req-retry';
+        }
+      },
+      shareId:'share-retry', onRender:()=>{}, onToast:()=>{}
+    });
+    await c.load();
+    c.toggle('p1'); c.requesterName='Retry Guest';
+    await c.submit(); // fallisce (attempt 1)
+    const firstId=c.clientRequestId;
+    await c.submit(); // riesce (attempt 2), deve riusare lo stesso id
+    c.dispose();
+    return { calls, firstId, secondId:c.clientRequestId, submitted:c.submitted };
+  })`);
+  if (retryResult.calls.length !== 2 || retryResult.calls[0] !== retryResult.calls[1]) throw new Error(`Il retry deve riusare lo stesso clientRequestId: ${JSON.stringify(retryResult)}`);
+  if (retryResult.firstId !== retryResult.secondId) throw new Error(`clientRequestId rigenerato tra un tentativo e l'altro: ${JSON.stringify(retryResult)}`);
+  if (!retryResult.submitted) throw new Error(`Il secondo tentativo (retry) deve risultare in successo: ${JSON.stringify(retryResult)}`);
 
   // 13) Link scaduto/revocato: errore leggibile, nessuna griglia
   const errorSetup = await evaluate(`import('/js/collection-share.js').then(({CollectionShareController})=>{
