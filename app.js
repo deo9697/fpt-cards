@@ -48,6 +48,9 @@ let collectionShareLink = null;
 let collectionSharePending = false;
 let collectionShareRequests = [];
 let requestsTab = 'pending';
+// id delle richieste con un'azione (conferma/annulla/completa) in corso —
+// disabilita il relativo bottone finché la RPC non risponde, evita doppi tap.
+let requestActionPending = new Set();
 let selectedCardKey = '';
 let selectedCollectionItem = '';
 // tipo YGOPRODeck (Spell/Trap/Fusion/...) per catalogCardId, solo per lo
@@ -1202,10 +1205,10 @@ function bind() {
     catch { field.select(); toast('Seleziona e copia il link'); }
   });
   document.querySelector('[data-share-collection-link]')?.addEventListener('click', () => void shareCollectionShareLink());
-  document.querySelectorAll('[data-mark-request-seen]').forEach(button => button.addEventListener('click', async () => {
-    try { await api.markCollectionShareRequestSeen(button.dataset.markRequestSeen); await loadCollectionShareRequests(); requestsTab = 'confirmed'; render(); }
-    catch (error) { toast(error.message || 'Operazione non riuscita'); }
-  }));
+  document.querySelectorAll('[data-confirm-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.confirmRequest, () => api.confirmCollectionShareRequest(button.dataset.confirmRequest), 'confirmed')));
+  document.querySelectorAll('[data-reject-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.rejectRequest, () => api.cancelCollectionShareRequest(button.dataset.rejectRequest))));
+  document.querySelectorAll('[data-cancel-confirmed-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.cancelConfirmedRequest, () => api.cancelCollectionShareRequest(button.dataset.cancelConfirmedRequest))));
+  document.querySelectorAll('[data-complete-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.completeRequest, () => api.completeCollectionShareRequest(button.dataset.completeRequest), 'completed')));
   document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
   observeCollectionTypes();
   document.querySelectorAll('[data-collection-item]').forEach(button => button.addEventListener('click', () => openCollectionDetail(button.dataset.collectionItem)));
@@ -1429,6 +1432,24 @@ async function refreshCollectionShareRequests() {
   catch (error) { toast(error.message || 'Impossibile aggiornare le richieste'); }
 }
 
+// Azioni sulla state machine di una richiesta (conferma/rifiuta/annulla
+// conferma/completa): tutte seguono lo stesso schema — disabilita il
+// bottone, chiama la RPC, ricarica la lista dal server (mai un update
+// ottimistico locale: la RPC ri-valida server-side e può rifiutare, es. se
+// nel frattempo la disponibilità è cambiata), poi sposta l'utente sul tab
+// dello stato risultante così vede subito dove è finita la richiesta.
+async function runRequestAction(requestId, action, moveToTab) {
+  if (requestActionPending.has(requestId)) return;
+  requestActionPending.add(requestId);
+  render();
+  try {
+    await action();
+    await loadCollectionShareRequests();
+    if (moveToTab) requestsTab = moveToTab;
+  } catch (error) { toast(error.message || 'Operazione non riuscita'); }
+  finally { requestActionPending.delete(requestId); render(); }
+}
+
 function collectionShareUrl(id) { return `${location.origin}${location.pathname}#/share/${id}`; }
 
 async function openCollectionShareModal() {
@@ -1489,16 +1510,25 @@ function collectionShareModalView() {
 }
 
 function requestsView() {
-  const pending = collectionShareRequests.filter(request => request.status === 'pending');
-  const confirmed = collectionShareRequests.filter(request => request.status === 'seen');
-  const list = requestsTab === 'confirmed' ? confirmed : pending;
-  const emptyCopy = requestsTab === 'confirmed'
-    ? { title:'Nessuna richiesta confermata', body:'Le richieste che confermi finiscono qui: un archivio di tutti gli scambi conclusi con chi ha visto la tua raccolta.' }
-    : { title:'Nessuna richiesta in attesa', body:'Condividi la tua raccolta da Raccolta per iniziare a ricevere richieste.' };
+  // 'seen' è legacy (vedi migration 20260917120000): mai un impegno reale
+  // sulla disponibilità, va trattata come pending-equivalent — stesse azioni
+  // Rifiuta/Conferma, MAI mostrata come "confermata" (quella parola oggi
+  // significa "quantità riservate e ri-validate atomicamente").
+  const pending = collectionShareRequests.filter(request => request.status === 'pending' || request.status === 'seen');
+  const confirmed = collectionShareRequests.filter(request => request.status === 'confirmed');
+  const completed = collectionShareRequests.filter(request => request.status === 'completed');
+  const lists = { pending, confirmed, completed };
+  const list = lists[requestsTab] || pending;
+  const emptyCopy = {
+    pending: { title:'Nessuna richiesta in attesa', body:'Condividi la tua raccolta da Raccolta per iniziare a ricevere richieste.' },
+    confirmed: { title:'Nessuna richiesta confermata', body:'Le richieste che confermi restano qui, con le copie riservate, finché non le segni come effettuate.' },
+    completed: { title:'Nessuna richiesta effettuata', body:'Le richieste che completi (carte rimosse dalla raccolta) finiscono qui, come archivio.' }
+  }[requestsTab] || {};
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Interesse ricevuto</span><h1>Richieste</h1><p>Chi ha visto la tua raccolta condivisa e ti ha segnalato interesse.</p></div></header>
     <nav class="market-tabs" aria-label="Filtri richieste">
       <button type="button" data-requests-tab="pending" class="${requestsTab === 'pending' ? 'active' : ''}">In attesa <span>${pending.length}</span></button>
       <button type="button" data-requests-tab="confirmed" class="${requestsTab === 'confirmed' ? 'active' : ''}">Confermate <span>${confirmed.length}</span></button>
+      <button type="button" data-requests-tab="completed" class="${requestsTab === 'completed' ? 'active' : ''}">Effettuate <span>${completed.length}</span></button>
     </nav>
     <section class="surface">${list.length ? `<div class="share-request-list">${list.map(requestRowHtml).join('')}</div>` : `<div class="inline-empty">${icon('bell')}<div><strong>${emptyCopy.title}</strong><span>${emptyCopy.body}</span></div></div>`}</section>
   </section>`;
@@ -1506,8 +1536,23 @@ function requestsView() {
 
 function requestRowHtml(request) {
   const items = request.items || [];
-  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${request.status === 'pending' ? `<button type="button" class="btn secondary small" data-mark-request-seen="${esc(request.id)}">Conferma</button>` : ''}</header>
+  const busy = requestActionPending.has(request.id);
+  const isPendingLike = request.status === 'pending' || request.status === 'seen';
+  const actions = isPendingLike ? `
+      <button type="button" class="btn secondary small" data-reject-request="${esc(request.id)}" ${busy ? 'disabled' : ''}>Rifiuta</button>
+      <button type="button" class="btn small" data-confirm-request="${esc(request.id)}" ${busy ? 'disabled' : ''}>Conferma</button>`
+    : request.status === 'confirmed' ? `
+      <button type="button" class="btn secondary small" data-cancel-confirmed-request="${esc(request.id)}" ${busy ? 'disabled' : ''}>Annulla</button>
+      <button type="button" class="btn small" data-complete-request="${esc(request.id)}" ${busy ? 'disabled' : ''}>Segna come effettuata</button>`
+    : '';
+  const statusNote = request.status === 'confirmed'
+    ? `<p class="share-request-status-note">${icon('lock')} Carte riservate per questa richiesta: non contano più come disponibili per altre richieste o prestiti.</p>`
+    : request.status === 'completed'
+      ? `<p class="share-request-status-note">${icon('check')} Effettuata il ${formatDate(request.completedAt)} · le carte sono state rimosse dalla tua raccolta.</p>`
+      : '';
+  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${actions ? `<div class="share-request-actions">${actions}</div>` : ''}</header>
     ${request.message ? `<p class="share-request-message">${icon('message')} ${esc(request.message)}</p>` : ''}
+    ${statusNote}
     <div class="share-receipt">
       ${items.map(requestReceiptRowHtml).join('')}
       <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
@@ -1516,7 +1561,7 @@ function requestRowHtml(request) {
 }
 function requestReceiptRowHtml(item) {
   const unit = formatEuro(item.unitPrice);
-  const lineTotal = typeof item.unitPrice === 'number' ? formatEuro(item.unitPrice * item.quantity) : null;
+  const lineTotal = formatEuro(item.lineTotal);
   return `<div class="share-receipt-row">
     <span class="share-receipt-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}</span>
     <div class="share-receipt-info"><b>${esc(item.cardName)}</b><small>${item.quantity}× ${unit ? `· ${unit} cad.` : '· prezzo n/d'}</small></div>

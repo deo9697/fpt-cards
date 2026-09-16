@@ -2003,11 +2003,16 @@ button.market-row:hover { background:#15121d; }
 .share-owner-actions .btn.danger { border-color: #4a1f2b; color: var(--danger); }
 .share-request-list { display: grid; gap: 12px; }
 .share-request-row { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f18; }
-.share-request-row.pending { border-color: #9b5cff55; }
+.share-request-row.pending, .share-request-row.seen { border-color: #9b5cff55; }
+.share-request-row.confirmed { border-color: #4fb0d055; }
+.share-request-row.completed { opacity: .82; }
 .share-request-row header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .share-request-row header small { display: block; color: var(--muted); font-size: .68rem; }
+.share-request-actions { display: flex; gap: 8px; flex: none; }
 .share-request-message { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #0b0d16; color: var(--muted); font-size: .78rem; }
 .share-request-message .icon { flex: none; width: 15px; height: 15px; margin-top: 1px; color: #9b5cff; }
+.share-request-status-note { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #0b0d16; color: var(--muted); font-size: .72rem; }
+.share-request-status-note .icon { flex: none; width: 14px; height: 14px; margin-top: 1px; color: #4fb0d0; }
 .share-receipt { display: grid; gap: 2px; padding: 4px 0; border-top: 1px dashed var(--line); }
 .share-receipt-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
 .share-receipt-art { display: block; width: 34px; aspect-ratio: .686; overflow: hidden; border-radius: 5px; background: #171b25; }

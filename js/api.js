@@ -408,7 +408,13 @@ export const api = {
   async revokeCollectionShare(shareId) { ensure(); return unwrap(await client.rpc('revoke_collection_share', { p_token:token(), p_share_id:shareId })); },
   async collectionShares() { ensure(); return unwrap(await client.rpc('list_collection_shares', { p_token:token() })); },
   async collectionShareRequests() { ensure(); return unwrap(await client.rpc('list_collection_share_requests', { p_token:token() })); },
-  async markCollectionShareRequestSeen(requestId) { ensure(); return unwrap(await client.rpc('mark_collection_share_request_seen', { p_token:token(), p_request_id:requestId })); },
+  // pending/seen (legacy) -> confirmed: ri-valida atomicamente la
+  // disponibilità e riserva le quantità, senza ancora toccare quantity_owned.
+  async confirmCollectionShareRequest(requestId) { ensure(); return unwrap(await client.rpc('confirm_collection_share_request', { p_token:token(), p_request_id:requestId })); },
+  // confirmed -> completed: unica RPC che decrementa davvero la raccolta.
+  async completeCollectionShareRequest(requestId) { ensure(); return unwrap(await client.rpc('complete_collection_share_request', { p_token:token(), p_request_id:requestId })); },
+  // pending/seen/confirmed -> cancelled (rifiuto o annullo conferma); completed non è annullabile da qui.
+  async cancelCollectionShareRequest(requestId) { ensure(); return unwrap(await client.rpc('cancel_collection_share_request', { p_token:token(), p_request_id:requestId })); },
   // Guest-facing: no session token — the share id itself is the only
   // credential, validated server-side against collection_shares.
   async getCollectionShare(shareId) { ensure(); return unwrap(await client.rpc('get_collection_share', { p_share_id:shareId })); },
