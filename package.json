@@ -63,6 +63,7 @@
     ,"test:fast-scan-events": "node scripts/fast-scan-events-smoke.mjs"
     ,"test:fast-scan-assisted-browser": "node scripts/fast-scan-assisted-browser-smoke.mjs"
     ,"test:fast-scan-benchmark-dataset": "node scripts/fast-scan-benchmark-dataset-regression-smoke.mjs"
+    ,"test:fast-scan-artwork-variant": "node scripts/fast-scan-artwork-variant-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

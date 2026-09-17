@@ -1080,10 +1080,11 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .scan-ambiguous { display:grid;gap:8px;padding:10px;border:1px solid #85649b;border-radius:12px;background:#12101fed; }
 .scan-ambiguous strong { font-size:.78rem;color:#fff; }
 .scan-ambiguous-options { display:flex;gap:8px;overflow-x:auto; }
-.scan-ambiguous-options button { display:grid;gap:4px;flex:0 0 auto;width:96px;padding:6px;border:1px solid #a981be;border-radius:10px;background:#21152d;color:#fff;text-align:center;cursor:pointer; }
-.scan-ambiguous-options img { width:100%;height:64px;object-fit:contain; }
+.scan-ambiguous-options button { display:grid;gap:4px;flex:0 0 auto;width:112px;padding:7px;border:1px solid #a981be;border-radius:10px;background:#21152d;color:#fff;text-align:center;cursor:pointer; }
+.scan-ambiguous-options img { width:100%;height:84px;object-fit:contain; }
 .scan-ambiguous-options b { font-size:.68rem; }
-.scan-ambiguous-options small { color:#e2dbea;font-size:.6rem; }
+.scan-ambiguous-options small { display:block;color:#e2dbea;font-size:.6rem; }
+.scan-ambiguous-options .scan-ambiguous-label { margin-top:2px;color:#d9a4ff;font-weight:700; }
 .scan-ambiguous-retry { min-height:38px;border:1px solid #ffffff29;border-radius:8px;background:transparent;color:#d5cedb;font-size:.7rem;cursor:pointer; }
 .scan-ambiguous-options button:focus-visible,.scan-ambiguous-retry:focus-visible { outline:2px solid #f8d982;outline-offset:2px; }
 .live-detection img { width:38px;height:54px;object-fit:contain;justify-self:center; }

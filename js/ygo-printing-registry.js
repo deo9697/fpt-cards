@@ -36,7 +36,7 @@
 // via costruttore invece di importarlo: permette ai test di sostituirlo con
 // un fake senza toccare window/Supabase.
 import { api as defaultApi } from './api.js';
-import { findCard, lookupPrintingBySetCode } from './cards.js';
+import { findCard, findCardById, lookupPrintingBySetCode } from './cards.js';
 
 const YGORESOURCES_BASE = 'https://db.ygoresources.com';
 const FETCH_TIMEOUT_MS = 6000;
@@ -264,6 +264,10 @@ async function toPrinting(setCode, resolution, deps) {
     konamiCardId: resolution.konamiCardId || '', artworkIndex: resolution.artworkIndex || '',
     mappingSource: resolution.mappingSource || '', mappingConfidence: resolution.mappingConfidence || '',
     mappingStatus: resolution.mappingStatus, mappingNotes: resolution.mappingNotes || '',
+    // >1 solo quando ygo_artwork_index conferma più artwork REALI per questo
+    // Konami ID (mai una stima): segnale per il chiamante (Fast Scan) per
+    // esporre le varianti al picker invece di mostrare un placeholder vuoto.
+    artworkCount: Number(resolution.artworkCount) || 0,
     // Sovrascritto dal chiamante una volta noto l'esito reale della
     // persistenza (vedi resolveExternally/resolveYgoPrintings) — di default
     // true perché una parte dei chiamanti di toPrinting (precedenza da
@@ -435,7 +439,8 @@ async function resolveExternally(codes, result, deps) {
         : `Identità nota tramite indice nomi YGOResources (print code non indicizzato) — ${artwork ? `${artwork.artwork_count} artwork disponibili, nessuna regola per scegliere quello corretto` : 'artwork non ancora sincronizzato localmente'}`;
       byNameIndexMappings.push({ code, resolution: {
         konamiCardId, cardName: enName, artworkIndex: deterministic ? '1' : '', artworkUrl: deterministic ? artwork.single_artwork_url : '',
-        mappingSource: 'ygoresources', mappingConfidence: deterministic ? 'high' : 'low', mappingStatus, mappingNotes
+        mappingSource: 'ygoresources', mappingConfidence: deterministic ? 'high' : 'low', mappingStatus, mappingNotes,
+        artworkCount: artwork ? Number(artwork.artwork_count) || 0 : 0
       } });
     }
 
@@ -475,7 +480,8 @@ async function resolveExternally(codes, result, deps) {
       : 'artwork non ancora sincronizzato localmente (scripts/ygo-artwork-index-sync.mjs)');
     const resolution = {
       konamiCardId, artworkIndex: deterministic ? '1' : '', artworkUrl: deterministic ? artwork.single_artwork_url : '',
-      mappingSource: 'ygoresources', mappingConfidence: deterministic ? 'high' : 'low', mappingStatus, mappingNotes
+      mappingSource: 'ygoresources', mappingConfidence: deterministic ? 'high' : 'low', mappingStatus, mappingNotes,
+      artworkCount: artwork ? Number(artwork.artwork_count) || 0 : 0
     };
     mappingsToApply.push({ code, resolution });
   }
@@ -534,11 +540,30 @@ export async function resolveYgoPrinting(setCode, options = {}) {
 // più rarità note per la stessa identità carta, la scelta resta all'utente
 // in review, ma l'immagine è SEMPRE quella verificata dal registro, mai
 // quella indovinata dal vecchio percorso.
-export async function externalLookupViaRegistry(setCode, game = 'yugioh') {
+// options è iniettabile per i test (default: resolveYgoPrinting/findCardById/
+// lookupPrintingBySetCode reali) — stesso pattern di resolveYgoPrintings.
+export async function externalLookupViaRegistry(setCode, game = 'yugioh', options = {}) {
   if (game !== 'yugioh') return [];
-  const printing = await resolveYgoPrinting(setCode);
+  const { findCardByIdImpl = findCardById, lookupPrintingBySetCodeImpl = lookupPrintingBySetCode, ...resolveOptions } = options;
+  const printing = await resolveYgoPrinting(setCode, { ...resolveOptions, lookupPrintingBySetCode: lookupPrintingBySetCodeImpl });
   if (!printing.catalogCardId) return [];
-  const legacyMatches = await lookupPrintingBySetCode(setCode).catch(() => []);
+  // Il registro segnala esplicitamente più artwork REALI per questa identità
+  // Konami (mai una stima): espone le varianti note da YGOPRODeck come
+  // candidati distinti — ognuno con il proprio catalogCardId reale, mai
+  // inventato — invece del placeholder vuoto di un'unica riga "unresolved".
+  // Identità/rarità restano quelle già confermate su questo setCode: solo
+  // artwork e catalogCardId cambiano fra le opzioni.
+  if (printing.mappingStatus === 'unresolved' && printing.artworkCount > 1) {
+    const card = await findCardByIdImpl(printing.catalogCardId, printing.cardName, game).catch(() => null);
+    const variants = card?.artworkVariants || [];
+    if (variants.length > 1) {
+      return variants.map((variant, index) => ({
+        ...printing, catalogCardId: variant.id, imageUrl: variant.imageUrl,
+        artworkLabel: index === 0 ? 'Standard' : 'Artwork alternativa'
+      }));
+    }
+  }
+  const legacyMatches = await lookupPrintingBySetCodeImpl(setCode).catch(() => []);
   const sameIdentity = legacyMatches.filter(match => String(match.catalogCardId) === printing.catalogCardId);
   if (sameIdentity.length > 1) {
     return sameIdentity.map(match => ({

@@ -436,6 +436,11 @@ function mapCard(card) {
     fullImage: artwork.image_url || artwork.image_url_small || artwork.image_url_cropped || '',
     banTcg: normalizeTcgBanStatus(card.banlist_info?.ban_tcg),
     imageIds: artworks.map(image => String(image.id || '')).filter(Boolean),
+    // Ogni artwork alternativo di YGOPRODeck ha un id carta reale proprio
+    // (mai inventato qui) — usato SOLO quando il registro segnala esplicitamente
+    // più artwork per la stessa identità (vedi ygo-printing-registry.js), per
+    // esporre le opzioni reali al picker invece di indovinarne una.
+    artworkVariants: artworks.map(image => ({id: String(image.id || ''), imageUrl: image.image_url || image.image_url_small || ''})).filter(item => item.id && item.imageUrl),
     printings: normalizeCatalogPrintings(card.card_sets || [])
   };
 }

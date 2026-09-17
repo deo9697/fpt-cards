@@ -60,11 +60,19 @@ try{
  await send('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true});await screenshot('04-landscape');
  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
- await evaluate(`document.querySelector('[data-scan-history-review]').click()`);await delay(100);assert.equal(await evaluate('c.phase'),'review');assert.equal(await evaluate(`document.querySelectorAll('[data-scan-history] li').length`),9);
+ await evaluate(`document.querySelector('[data-scan-history-review]').click()`);await delay(100);assert.equal(await evaluate('c.phase'),'review');
+ // Sezione 7-8 (produzione, non ambiente dev): la cronologia tecnica NON deve
+ // apparire nella schermata di sessione normale, solo carte/quantità/rimozione.
+ assert.equal(await evaluate(`document.querySelector('[data-scan-history]')`),null,'nessuna cronologia tecnica nella sessione normale');
+ assert.equal(await evaluate(`document.querySelectorAll('.scan-review-row').length>0`),true,'le carte confermate restano visibili senza la cronologia tecnica');
  await screenshot('03-history-mobile');
- await evaluate(`document.querySelector('[data-scan-history] [data-scan-undo]').click()`);assert.equal(await evaluate(`c.buffer.scanEvents.at(-1).status`),'CANCELLED','Annulla ultimo scatto resta disponibile nella schermata di sessione');
+ // Sezione 9: la stessa cronologia compare SOLO sotto ?debugScan=1.
+ await evaluate(`c.debugMode=true;render();`);
+ assert.equal(await evaluate(`document.querySelectorAll('[data-scan-history] li').length`),9);
+ await evaluate(`document.querySelector('[data-scan-history] [data-scan-undo]').click()`);assert.equal(await evaluate(`c.buffer.scanEvents.at(-1).status`),'CANCELLED','Annulla ultimo scatto resta disponibile sotto debug');
  await evaluate(`document.querySelector('[data-scan-history] [data-scan-edit]').click()`);assert.equal(await evaluate('c.phase'),'review');assert.equal(await evaluate(`document.querySelector('[data-scan-manual-sheet]').classList.contains('hidden')`),false);
  await evaluate(`document.querySelector('[data-scan-manual-close]').click()`);assert.equal(await evaluate('c.phase'),'review');
+ await evaluate(`c.debugMode=false;render();`);
  assert.deepEqual(errors,[]);console.log('PASS assisted browser: live view minimale (nessuna cronologia/pannello persistente), badge tappabile, chooser inline per ambiguità reale, background non bloccante, cronologia completa nella review; no JS exceptions.');
 }finally{
  try{socket?.close();}catch{}chrome.kill();server.close();
