@@ -711,13 +711,28 @@ async function run() {
     const scannerLayout=await evaluate(`(()=>{const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return{top:value.top,bottom:value.bottom,left:value.left,right:value.right,width:value.width,height:value.height}};const roiStyle=getComputedStyle(document.querySelector('.live-roi')),buttons=[...document.querySelectorAll('.live-controls button')];return{innerWidth,innerHeight,roi:rect('.live-roi'),footer:rect('.live-scan-bottom'),content:rect('.live-scan-content'),stats:rect('.live-session-stats'),capture:rect('.live-capture'),zoom:rect('[data-layout-zoom]'),controls:rect('.live-controls'),buttons:buttons.map(button=>({top:button.getBoundingClientRect().top,height:button.getBoundingClientRect().height})),roiBackground:roiStyle.backgroundColor,roiBlur:roiStyle.backdropFilter||roiStyle.webkitBackdropFilter,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,pause:Boolean(document.querySelector('[data-scan-pause]'))}})()`);
     const expectedRoiWidth=Math.min(260,Math.max(190,scannerLayout.innerWidth*.55));
     assert(scannerLayout.roi.height<=42&&Math.abs(scannerLayout.roi.width-expectedRoiWidth)<2,`ROI non rispetta clamp(190px, 55vw, 260px) (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
-    assert(Math.abs((scannerLayout.roi.left+scannerLayout.roi.right)/2-scannerLayout.innerWidth/2)<2&&Math.abs((scannerLayout.roi.top+scannerLayout.roi.bottom)/2-scannerLayout.innerHeight/2)<2,`ROI non centrata sul viewport (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
-    const hierarchyOk=viewport.width>viewport.height
-      ? scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&Math.abs(scannerLayout.stats.top-scannerLayout.zoom.top)<2&&scannerLayout.stats.bottom<=scannerLayout.controls.top
-      : scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&scannerLayout.stats.bottom<=scannerLayout.zoom.top&&scannerLayout.zoom.bottom<=scannerLayout.controls.top;
-    assert(hierarchyOk,`Gerarchia scanner sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    // Sotto ~600px di altezza in landscape il footer diventa una colonna laterale (48%) che lascia
+    // spazio alla cronologia assistita: la ROI resta centrata nella colonna camera residua (25% del
+    // viewport), non più sul viewport intero. Le altre viewport (footer a piena larghezza) restano
+    // centrate come prima.
+    const sideColumnLandscape=scannerLayout.footer.left>scannerLayout.innerWidth*.3;
+    if (sideColumnLandscape) {
+      assert(Math.abs((scannerLayout.roi.left+scannerLayout.roi.right)/2-scannerLayout.innerWidth*.25)<2&&Math.abs((scannerLayout.roi.top+scannerLayout.roi.bottom)/2-scannerLayout.innerHeight/2)<2,`ROI non centrata nella colonna camera (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+      const hierarchyOk=scannerLayout.roi.right<=scannerLayout.footer.left&&scannerLayout.stats.bottom<=scannerLayout.capture.top+2&&scannerLayout.capture.bottom<=scannerLayout.zoom.top+2&&scannerLayout.zoom.bottom<=scannerLayout.controls.top+2;
+      assert(hierarchyOk,`Gerarchia colonna contenuto sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    } else {
+      assert(Math.abs((scannerLayout.roi.left+scannerLayout.roi.right)/2-scannerLayout.innerWidth/2)<2&&Math.abs((scannerLayout.roi.top+scannerLayout.roi.bottom)/2-scannerLayout.innerHeight/2)<2,`ROI non centrata sul viewport (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+      const hierarchyOk=viewport.width>viewport.height
+        ? scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&Math.abs(scannerLayout.stats.top-scannerLayout.zoom.top)<2&&scannerLayout.stats.bottom<=scannerLayout.controls.top
+        : scannerLayout.roi.bottom+10<=scannerLayout.stats.top&&scannerLayout.stats.bottom<=scannerLayout.zoom.top&&scannerLayout.zoom.bottom<=scannerLayout.controls.top;
+      assert(hierarchyOk,`Gerarchia scanner sovrapposta (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    }
     assert(scannerLayout.controls.bottom<=scannerLayout.innerHeight&&scannerLayout.capture.bottom<=scannerLayout.innerHeight&&scannerLayout.buttons.length===3&&scannerLayout.buttons.every(button=>button.height>=40)&&new Set(scannerLayout.buttons.map(button=>Math.round(button.top))).size===1&&scannerLayout.scrollWidth===scannerLayout.innerWidth,`Controlli scanner tagliati o a capo (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
-    assert(Math.abs(scannerLayout.footer.left)<2&&Math.abs(scannerLayout.footer.right-scannerLayout.innerWidth)<2&&Math.abs((scannerLayout.content.left+scannerLayout.content.right)/2-scannerLayout.innerWidth/2)<2&&!scannerLayout.pause,`Toolbar non full-width/centrata o Pausa ancora presente (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    if (sideColumnLandscape) {
+      assert(Math.abs(scannerLayout.footer.right-scannerLayout.innerWidth)<2&&Math.abs((scannerLayout.content.left+scannerLayout.content.right)/2-(scannerLayout.footer.left+scannerLayout.footer.right)/2)<2&&!scannerLayout.pause,`Toolbar colonna contenuto non allineata o Pausa ancora presente (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    } else {
+      assert(Math.abs(scannerLayout.footer.left)<2&&Math.abs(scannerLayout.footer.right-scannerLayout.innerWidth)<2&&Math.abs((scannerLayout.content.left+scannerLayout.content.right)/2-scannerLayout.innerWidth/2)<2&&!scannerLayout.pause,`Toolbar non full-width/centrata o Pausa ancora presente (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
+    }
     assert(scannerLayout.roiBackground==='rgba(0, 0, 0, 0)'&&(scannerLayout.roiBlur==='none'||scannerLayout.roiBlur===''),`ROI offuscata (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
     if(viewport.width<viewport.height)assert(scannerLayout.scrollHeight<=scannerLayout.innerHeight,`Scrolling inutile scanner (${viewport.label}): ${JSON.stringify(scannerLayout)}`);
   }
