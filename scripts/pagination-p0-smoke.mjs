@@ -113,20 +113,20 @@ const aliasAddState={game:'yugioh',currentUser:'daniele',decks:[],collection:{mi
 const aliasAddController=new DeckController({api:{decks:async()=>[]},getState:()=>aliasAddState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
 aliasAddController.create(false);
 aliasAddController.add({id:'73642296',name:'Ghost Belle & Haunted Mansion',image:'',type:'Effect Monster'});
-assert.equal(aliasAddController.active().cards[0].catalogCardId,'73642297','add() (ricerca) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
+assert.equal(aliasAddController.active().cards[0].catalogCardId,'73642296','add() (ricerca) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
 
 const aliasImportState={game:'yugioh',currentUser:'daniele',decks:[],collection:{mine:[],team:[]}};
 const aliasImportController=new DeckController({api:{decks:async()=>[]},getState:()=>aliasImportState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
 aliasImportController.create(false);
 aliasImportController.addSilent({id:'73642296',name:'Ghost Belle & Haunted Mansion',image:''},'main',2);
-assert.equal(aliasImportController.active().cards[0].catalogCardId,'73642297','addSilent() (import) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
+assert.equal(aliasImportController.active().cards[0].catalogCardId,'73642296','addSilent() (import) non canonicalizza l\'ID alias al momento dell\'inserimento nel mazzo');
 
 let savedDeckPayload=null;
 const aliasSaveState={game:'yugioh',currentUser:'daniele',decks:[{id:'legacy-draft',persisted:false,dirty:true,ownerSlug:'daniele',name:'Legacy Draft',format:'TCG Avanzato',game:'yugioh',cards:[{catalogCardId:'73642296',cardName:'Ghost Belle & Haunted Mansion',imageUrl:'',banTcg:'',section:'main',quantity:1}],cover:'',signatureCardId:null,deckTheme:'default',deckBoxTemplate:'default'}],collection:{mine:[],team:[]}};
 const aliasSaveController=new DeckController({api:{decks:async()=>[],saveDeck:async deck=>{savedDeckPayload=JSON.parse(JSON.stringify(deck));return {id:deck.id,deckBoxPersisted:true};}},getState:()=>aliasSaveState,isOnline:()=>true,onRender:()=>{},onToast:()=>{}});
 aliasSaveController.activeId='legacy-draft';aliasSaveController.previewId='legacy-draft';
 await aliasSaveController.save();
-assert.equal(savedDeckPayload?.cards[0].catalogCardId,'73642297','save() non normalizza un ID legacy già presente nella bozza prima di persisterlo');
+assert.equal(savedDeckPayload?.cards[0].catalogCardId,'73642296','save() non normalizza un ID legacy già presente nella bozza prima di persisterlo');
 
 const hardenedCollection={mine:[{id:'ghost-canonical-2',game:'yugioh',catalogCardId:'73642297',cardName:'Ghost Belle & Haunted Mansion',quantityAvailable:1}],team:[]};
 const hardenedReport=deckAvailability({cards:aliasAddController.active().cards},hardenedCollection,'daniele');

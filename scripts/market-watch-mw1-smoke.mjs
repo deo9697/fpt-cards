@@ -147,7 +147,15 @@ assert(rollbackSql.includes('drop view if exists public.market_derived_price_sna
 assert(!/delete\s+from\s+(public\.)?(market_provider_printings|market_price_snapshots|market_price_events|market_provider_sync_runs)/i.test(rollbackSql),'rollback MW1 elimina dati storici');
 assert(!/from market_price_snapshots s/i.test(operationalSql),'query operativa usa snapshot superseded');
 assert(moversSql.includes('from market_active_price_snapshots s'),'dashboard include prezzi aggregate nei mover');
-const dryTargetBody=edgeSource.slice(edgeSource.indexOf('async function dryTargetCardmarket'),edgeSource.indexOf('async function resolveCardmarketTargets'));
+// Isola SOLO il corpo di dryTargetCardmarket: fino alla PROSSIMA funzione di
+// primo livello dopo il suo inizio, non a resolveCardmarketTargets per nome
+// (funzioni successive — canary/price-shadow/candidate-metadata — sono state
+// inserite nel file tra le due, rendendo lo slice per nome fragile: catturava
+// anche i loro corpi, con scritture DB legittime ma non pertinenti a questo
+// controllo).
+const dryTargetStart=edgeSource.indexOf('async function dryTargetCardmarket');
+const dryTargetNextFn=edgeSource.slice(dryTargetStart+1).search(/\n(?:async )?function /);
+const dryTargetBody=edgeSource.slice(dryTargetStart,dryTargetStart+1+dryTargetNextFn);
 assert(dryTargetBody.includes('listCardPrintings')&&dryTargetBody.includes('loadCatalog')&&dryTargetBody.includes('loadPrices'),'dry target incompleto');
 assert(!/\brpc\(|\brest\(/.test(dryTargetBody),'dry target contiene una scrittura DB');
 assert(edgeSource.includes("targets=selectedIds.size?allTargets.filter"),'canary non limita i target prima del resolver');
