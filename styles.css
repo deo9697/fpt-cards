@@ -2562,6 +2562,7 @@ button.market-row:hover { background:#15121d; }
 .inventory-market-summary>.icon { color:#b87df5;width:25px;height:25px; }
 .inventory-market-summary small { display:block;color:#a7b2d0;font-size:.67rem;margin-bottom:5px; }
 .inventory-market-summary strong { display:block;font-size:.95rem;color:#f4f2fc;line-height:1.35; }
+.inventory-market-summary.is-price-loading strong { color:#a7b2d0; }
 .inventory-market-summary .text-action { display:flex;align-items:center;gap:5px;font-size:.7rem;color:#b9c1db;white-space:normal; }
 .inventory-market-summary .text-action .icon { width:15px;height:15px; }
 .inventory-detail .detail-actions { margin-top:18px; }

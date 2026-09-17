@@ -56,6 +56,7 @@
     ,"test:share-request-state-machine": "node scripts/collection-share-request-state-machine-smoke.mjs"
     ,"test:share-request-state-machine-e2e": "node scripts/collection-share-requests-state-machine-e2e-smoke.mjs"
     ,"test:ygo-printing-mapping-reconciliation": "node scripts/ygo-printing-mapping-reconciliation-smoke.mjs"
+    ,"test:collection-detail-price-lookup": "node scripts/collection-detail-price-lookup-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

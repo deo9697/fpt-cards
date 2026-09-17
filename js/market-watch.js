@@ -41,6 +41,16 @@ export class MarketWatchController {
     // successo dell'uno non può mai cancellare l'errore genuino dell'altro,
     // qualunque sia l'ordine di arrivo.
     this.extraSummaryError='';this.ownedPageError='';
+    // Cache per sessione, printingId -> {status,price,capturedAt} — P0 fix
+    // "Prezzo non disponibile" nel dettaglio Raccolta: findItem() da solo
+    // vede solo ciò che è già in ownedPage/extra (paginati), non l'intera
+    // Raccolta. ensureItemPrice() fa un lookup mirato via RPC quando serve
+    // (mai un caricamento massivo) e questa cache evita di rifarlo riaprendo
+    // la stessa carta nella stessa sessione. status 'error' non blocca un
+    // retry alla riapertura successiva (le altre 3 status sì, per requisito
+    // esplicito "riaprendo la stessa carta non deve partire una nuova
+    // richiesta").
+    this.priceCache=new Map();
     window.addEventListener('popstate',event=>{let changed=false;if(!event.state?.marketDetail&&this.selected){this.selected='';changed=true;}if(!event.state?.marketDeckDetail&&this.selectedDeck){this.selectedDeck='';changed=true;}if(changed)this.onRender?.();});
   }
   // this.error è la fusione di due esiti tracciati separatamente
@@ -229,6 +239,31 @@ export class MarketWatchController {
   }
   allLoadedItems(){return [...this.ownedPage.items,...this.extra.items];}
   findItem(printingId){return this.allLoadedItems().find(item=>item.printingId===printingId);}
+  // P0 fix dettaglio Raccolta — vedi commento sul costruttore. Letto dal
+  // chiamante (app.js) per decidere cosa mostrare: 'loading' -> "Caricamento
+  // prezzo…", 'ready' -> price, 'missing'/'error' -> "Prezzo non disponibile"
+  // (quest'ultimo SOLO quando il backend ha risposto, mai per assenza dati).
+  priceCacheEntry(printingId){return printingId?this.priceCache.get(printingId):undefined;}
+  // Idempotente: se il prezzo è già noto (findItem, dalle pagine già
+  // caricate) o è già in cache/in corso, non fa alcuna richiesta — mai un
+  // secondo fetch per la stessa printing nella stessa sessione finché non
+  // fallisce. Il chiamante deve garantire che printingId sia quello REALE
+  // (non l'id della riga collection_items) — stesso identificatore già usato
+  // da tutto il resto di Market Watch.
+  ensureItemPrice(printingId){
+    if(!printingId)return;
+    const known=this.findItem(printingId);
+    if(known&&known.referencePrice!=null){this.priceCache.set(printingId,{status:'ready',price:known.referencePrice,capturedAt:known.latestAt||null});return;}
+    const existing=this.priceCache.get(printingId);
+    if(existing&&existing.status!=='error')return;
+    this.priceCache.set(printingId,{status:'loading',price:null,capturedAt:null});
+    this.api.marketWatchItemPrice(printingId).then(data=>{
+      const price=typeof data?.referencePrice==='number'?data.referencePrice:null;
+      this.priceCache.set(printingId,{status:price!=null?'ready':'missing',price,capturedAt:data?.capturedAt||null});
+    }).catch(()=>{
+      this.priceCache.set(printingId,{status:'error',price:null,capturedAt:null});
+    }).finally(()=>{this.onRender?.();});
+  }
   view(){const items=this.itemsForTab(),unresolved=this.tab==='deck'?this.extra.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
     return `<section class="page-stack market-page"><header class="market-hero">
         <div class="market-hero-art" aria-hidden="true"></div>

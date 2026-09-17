@@ -288,7 +288,7 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem), cardTypeReadyForDetail(selectedCollectionItem)) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem), cardTypeReadyForDetail(selectedCollectionItem), resolveDetailPrice(selectedCollectionItem)) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
@@ -1653,8 +1653,33 @@ function quickNavigate(target) {
 function openCollectionDetail(id) {
   selectedCollectionItem = id;
   ensureCardTypeForDetail(id);
+  ensurePriceForDetail(id);
   history.pushState({ collectionDetail: id }, '', location.hash || '#/collection');
   render();
+}
+function collectionEntryForDetail(id) {
+  return collectionFilters.scope === 'team'
+    ? (state.collection.team || []).find(entry => entry.printingId === id)
+    : (state.collection.mine || []).find(entry => entry.id === id);
+}
+// P0 fix: il prezzo nel dettaglio Raccolta non deve dipendere da quali ~60
+// printing Market Watch ha già in memoria (paginazione server-side) — vedi
+// MarketWatchController.ensureItemPrice/priceCacheEntry in js/market-watch.js.
+function ensurePriceForDetail(id) {
+  const printingId = collectionEntryForDetail(id)?.printingId;
+  if (printingId) marketWatch.ensureItemPrice(printingId);
+}
+// {status:'ready'|'loading'|'missing', price} per collectionDetailView. Se
+// marketWatch non ha ancora scritto nulla in cache (caso limite: render
+// prima che ensurePriceForDetail abbia impostato lo stato 'loading' in modo
+// sincrono) tratta come 'loading', mai come "non disponibile".
+function resolveDetailPrice(id) {
+  const printingId = collectionEntryForDetail(id)?.printingId;
+  if (!printingId) return { status: 'missing', price: null };
+  const entry = marketWatch.priceCacheEntry(printingId);
+  if (!entry || entry.status === 'loading') return { status: 'loading', price: null };
+  if (entry.status === 'ready') return { status: 'ready', price: entry.price };
+  return { status: 'missing', price: null };
 }
 function closeCollectionDetail() {
   if (!selectedCollectionItem) return;

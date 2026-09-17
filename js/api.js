@@ -55,6 +55,13 @@ export const api = {
   async marketWatchSummary(game = 'yugioh') {
     ensure(); return unwrap(await client.rpc('get_market_watch_summary', { p_token:token(),p_game:game }));
   },
+  // Lookup mirato per UNA sola printing (dettaglio Raccolta): stessa catena
+  // preferred/reference di list_market_watch_owned_page, mai una seconda
+  // logica di prezzo — vedi supabase/migrations/20260917140000_market_watch_
+  // single_printing_price.sql. Non pagina né scandisce l'insieme owned.
+  async marketWatchItemPrice(printingId) {
+    ensure(); return unwrap(await client.rpc('get_market_watch_item_price', { p_token:token(), p_printing_id:printingId }));
+  },
   // L'unico posto che restituisce mappingEvidence/candidates — chiamata solo
   // quando l'utente apre la tab "Conferma" o preme "Conferma tutti aggregate".
   async marketConfirmQueue(game = 'yugioh') {
