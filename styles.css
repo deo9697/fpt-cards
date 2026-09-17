@@ -1055,6 +1055,8 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .live-crop-debug strong,.live-crop-debug small { font-size:.52rem; }
 .live-crop-debug canvas { display:block;width:100%;height:auto;max-height:96px;border:1px solid #ffffff29;background:#fff;object-fit:contain;image-rendering:auto; }
 .live-crop-debug small { overflow:hidden;color:#cfc6d5;text-overflow:ellipsis;white-space:nowrap; }
+.live-crop-debug-export { display:flex;gap:6px;pointer-events:auto; }
+.live-crop-debug-export button { flex:1;padding:4px 6px;border:1px solid #bd63f5;border-radius:6px;background:#1a0f26;color:#fff;font-size:.52rem; }
 
 @media (max-width:600px) {
   .live-roi,.live-roi.wide { width:55%;min-width:190px;max-width:260px;height:clamp(34px,4.2vh,40px); }

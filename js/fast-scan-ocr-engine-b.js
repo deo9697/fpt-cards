@@ -29,14 +29,25 @@ function selectCodeItems(items){if(items.length<2)return items;const clusters=[]
 function clusterScore(items){const text=items.map(item=>String(item.text||'').trim()).join('');return (text.includes('-')?1000:0)+(/[A-Z]/i.test(text)&&/\d/.test(text)?500:0)+Math.min(text.length,30);}
 
 export class PaddleOcrEngine {
-  constructor({loader=()=>import(PADDLE_SDK_URL),workerUrl=prepareWorkerBlobUrl,WorkerClass=globalThis.Worker,prepareTimeoutMs=60000,recognizeTimeoutMs=15000}={}){Object.assign(this,{loader,workerUrl,WorkerClass,prepareTimeoutMs,recognizeTimeoutMs});this.engine=null;this.preparing=null;this.worker=null;this.generation=0;this.cancellations=new Set();}
-  bounded(promise,timeoutMs,message){
-    return new Promise((resolve,reject)=>{let timer;const cancel=()=>{clearTimeout(timer);this.cancellations.delete(cancel);reject(new Error(message));};this.cancellations.add(cancel);timer=setTimeout(cancel,timeoutMs);Promise.resolve(promise).then(resolve,reject).finally(()=>{clearTimeout(timer);this.cancellations.delete(cancel);});});
+  constructor({loader=()=>import(PADDLE_SDK_URL),workerUrl=prepareWorkerBlobUrl,WorkerClass=globalThis.Worker,prepareTimeoutMs=60000,recognizeTimeoutMs=15000}={}){Object.assign(this,{loader,workerUrl,WorkerClass,prepareTimeoutMs,recognizeTimeoutMs});this.engine=null;this.preparing=null;this.worker=null;this.generation=0;this.cancellations=new Set();
+    // Strumentazione (?debugScan=1, vedi js/fast-scan.js): executionMode/
+    // workerTimeoutCount/workerRestartCount sono SOLO osservabilità di ciò
+    // che il codice già fa (worker vs fallback main-thread già esisteva via
+    // il campo `worker` restituito da recognize(); reset() su fallimento già
+    // esisteva) — nessun nuovo comportamento OCR, nessuna nuova soglia.
+    this.executionMode='WORKER';this.workerTimeoutCount=0;this.workerRestartCount=0;this.everFailed=false;
+  }
+  bounded(promise,timeoutMs,message,timeoutCode){
+    return new Promise((resolve,reject)=>{let timer;const cancel=()=>{clearTimeout(timer);this.cancellations.delete(cancel);reject(Object.assign(new Error(message),timeoutCode?{code:timeoutCode}:null));};this.cancellations.add(cancel);timer=setTimeout(cancel,timeoutMs);Promise.resolve(promise).then(resolve,reject).finally(()=>{clearTimeout(timer);this.cancellations.delete(cancel);});});
   }
   reset(){this.generation+=1;this.worker?.terminate();this.worker=null;this.engine=null;this.preparing=null;for(const cancel of [...this.cancellations])cancel();}
+  // Chiamato dai catch di prepare()/recognize() su un fallimento REALE (non
+  // su una cancellazione per generazione superata, che non è un guasto).
+  noteFailure(error){this.workerRestartCount+=1;this.everFailed=true;this.executionMode='WORKER_FAILED';if(error?.code==='ENGINE_TIMEOUT')this.workerTimeoutCount+=1;}
   async prepare(){
     if(this.engine)return;
     if(this.preparing)return this.preparing;
+    if(this.everFailed)this.executionMode='WORKER_RESTARTING';
     const generation=this.generation;
     const preparation=(async()=>{
       const module=await this.loader(),PaddleOCR=module.PaddleOCR||module.default?.PaddleOCR||module.default;
@@ -49,13 +60,13 @@ export class PaddleOcrEngine {
       if(generation!==this.generation){void Promise.resolve(engine.dispose?.()).catch(()=>{});throw new Error('Preparazione OCR annullata');}
       this.engine=engine;
     })();
-    this.preparing=this.bounded(preparation,this.prepareTimeoutMs,'Preparazione OCR scaduta: riprova');
-    try{await this.preparing;}catch(error){if(generation===this.generation)this.reset();throw error;}finally{if(generation===this.generation)this.preparing=null;}
+    this.preparing=this.bounded(preparation,this.prepareTimeoutMs,'Preparazione OCR scaduta: riprova','ENGINE_TIMEOUT');
+    try{await this.preparing;}catch(error){if(generation===this.generation){this.noteFailure(error);this.reset();}throw error;}finally{if(generation===this.generation)this.preparing=null;}
   }
   async recognize(canvas){
     if(!canvas?.width||!canvas?.height)throw new Error('Crop OCR non disponibile');await this.prepare();const generation=this.generation;
-    try{const response=await this.bounded(this.engine.predict(canvas,{textRecScoreThresh:0}),this.recognizeTimeoutMs,'OCR troppo lento: riprova lo scatto'),result=Array.isArray(response)?response[0]:response,items=readItems(result).sort((left,right)=>leftEdge(left)-leftEdge(right)),selected=selectCodeItems(items),text=selected.map(item=>String(item.text||'').trim()).filter(Boolean).join('');return {text,confidence:weightedConfidence(selected),engine:'paddle',metrics:result?.metrics||null,runtime:result?.runtime||null,worker:Boolean(this.worker)};}
-    catch(error){if(generation===this.generation)this.reset();throw error;}
+    try{const response=await this.bounded(this.engine.predict(canvas,{textRecScoreThresh:0}),this.recognizeTimeoutMs,'OCR troppo lento: riprova lo scatto','ENGINE_TIMEOUT'),result=Array.isArray(response)?response[0]:response,items=readItems(result).sort((left,right)=>leftEdge(left)-leftEdge(right)),selected=selectCodeItems(items),text=selected.map(item=>String(item.text||'').trim()).filter(Boolean).join('');this.executionMode=this.worker?'WORKER':'MAIN_THREAD_FALLBACK';return {text,confidence:weightedConfidence(selected),engine:'paddle',metrics:result?.metrics||null,runtime:result?.runtime||null,worker:Boolean(this.worker)};}
+    catch(error){if(generation===this.generation){this.noteFailure(error);this.reset();}throw error;}
   }
   async dispose(){const engine=this.engine,worker=this.worker;this.reset();if(!worker){if(engine?.dispose)await engine.dispose();else if(engine?.release)await engine.release();}}
 }

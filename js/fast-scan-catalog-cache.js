@@ -24,11 +24,16 @@ async function saveCachedCatalogIndex(game,record){
 // pages atomically; after 24 hours a full rebuild also picks up edits/deletions.
 // Concurrent callers share a single download. onRows receives complete arrays,
 // never a partial page that could make a multi-rarity code look unique.
+// onRows(entries, complete): `complete` è lo stesso flag già calcolato da
+// syncSnapshot (record.complete) — passato attraverso, non ricalcolato.
+// Serve a fast-scan.js per esporre cacheState (?debugScan=1): un publish con
+// complete=true è un indice interrogabile con certezza di unicità del set
+// code, come già documentato sopra ("mai una pagina parziale").
 export async function syncCatalogIndex(api,game,{onRows}={}){
   let games=activeSyncs.get(api);if(!games){games=new Map();activeSyncs.set(api,games);}
   let job=games.get(game);
-  if(!job){job={listeners:new Set(),snapshot:null};games.set(game,job);job.promise=syncSnapshot(api,game,record=>{job.snapshot=record;for(const listener of job.listeners)listener(record.entries);}).finally(()=>games.delete(game));}
-  if(onRows){job.listeners.add(onRows);if(job.snapshot)onRows(job.snapshot.entries);}
+  if(!job){job={listeners:new Set(),snapshot:null};games.set(game,job);job.promise=syncSnapshot(api,game,record=>{job.snapshot=record;for(const listener of job.listeners)listener(record.entries,record.complete);}).finally(()=>games.delete(game));}
+  if(onRows){job.listeners.add(onRows);if(job.snapshot)onRows(job.snapshot.entries,job.snapshot.complete);}
   try{return await job.promise;}finally{job.listeners.delete(onRows);}
 }
 
