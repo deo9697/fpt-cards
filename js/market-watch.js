@@ -250,7 +250,16 @@ export class MarketWatchController {
   // fallisce. Il chiamante deve garantire che printingId sia quello REALE
   // (non l'id della riga collection_items) — stesso identificatore già usato
   // da tutto il resto di Market Watch.
-  ensureItemPrice(printingId){
+  //
+  // onSettled(printingId) è un callback PER CHIAMATA, mai this.onRender():
+  // this.onRender qui è renderRoute() (app.js), che sostituisce SOLO
+  // .page-stage e rimuove esplicitamente ogni .detail-backdrop esistente
+  // senza riprodurlo — il dettaglio Raccolta (un .detail-backdrop, vive
+  // fuori da .page-stage) sparirebbe silenziosamente non appena il prezzo
+  // arriva. Bug reale scoperto con auth-regression-smoke.mjs durante questo
+  // stesso fix: da qui in avanti l'aggiornamento resta mirato (vedi
+  // app.js:updateDetailPriceBox), mai un render completo.
+  ensureItemPrice(printingId,onSettled){
     if(!printingId)return;
     const known=this.findItem(printingId);
     if(known&&known.referencePrice!=null){this.priceCache.set(printingId,{status:'ready',price:known.referencePrice,capturedAt:known.latestAt||null});return;}
@@ -262,7 +271,7 @@ export class MarketWatchController {
       this.priceCache.set(printingId,{status:price!=null?'ready':'missing',price,capturedAt:data?.capturedAt||null});
     }).catch(()=>{
       this.priceCache.set(printingId,{status:'error',price:null,capturedAt:null});
-    }).finally(()=>{this.onRender?.();});
+    }).finally(()=>{onSettled?.(printingId);});
   }
   view(){const items=this.itemsForTab(),unresolved=this.tab==='deck'?this.extra.deckUnresolved:[],marketDecks=this.marketDecks(),hasSnapshots=this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue=this.rarityMismatchQueue(),aggregatePending=this.aggregatePendingQueue(),anomalyQueue=this.anomalyQueue();
     return `<section class="page-stack market-page"><header class="market-hero">

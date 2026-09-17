@@ -123,6 +123,22 @@ function azIndexView(items) {
   return `<div class="inventory-az-index" role="group" aria-label="Salta alla lettera">${[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'].map(letter => `<button type="button" data-collection-jump="${letter}" ${present.has(letter) ? '' : 'disabled'}>${letter}</button>`).join('')}</div>`;
 }
 
+// Contenuto del riquadro prezzo del dettaglio, condiviso fra il render
+// completo (collectionDetailView) e l'aggiornamento mirato del solo riquadro
+// dopo un fetch lazy (app.js:updateDetailPriceBox — mai un render completo,
+// vedi il commento lì: renderRoute() rimuove il .detail-backdrop senza
+// riprodurlo, un bug reale scoperto proprio su questo fix). Un'unica
+// implementazione: nessuna seconda logica di formattazione prezzo.
+export function priceBoxContent(priceState, fallbackReferencePrice) {
+  const loading = priceState?.status === 'loading';
+  const price = priceState ? priceState.price : fallbackReferencePrice;
+  const hasPrice = typeof price === 'number' && Number.isFinite(price) && price >= 0;
+  return {
+    loading,
+    label: hasPrice ? 'Valore indicativo per copia' : 'Valore di mercato',
+    text: loading ? 'Caricamento prezzo…' : (hasPrice ? new Intl.NumberFormat('it-IT', { style:'currency', currency:'EUR' }).format(price) : 'Prezzo non disponibile')
+  };
+}
 // priceState (opzionale): {status:'ready'|'loading'|'missing', price} —
 // risoluzione lazy/mirata del prezzo (P0 fix: il dettaglio Raccolta non deve
 // dipendere da quali printing Market Watch ha già in memoria, vedi
@@ -140,9 +156,7 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
   const artStageClass = `inventory-art-stage${!typeReady ? ' is-type-pending' : ''}`;
   const rows = scope === 'team' ? item.items : team.filter(entry => entry.printingId === item.printingId);
   const market = item.printingId ? marketItems.find(row => row.printingId === item.printingId) : null;
-  const priceLoading = priceState?.status === 'loading';
-  const price = priceState ? priceState.price : market?.referencePrice;
-  const hasPrice = typeof price === 'number' && Number.isFinite(price) && price >= 0;
+  const priceBox = priceBoxContent(priceState, market?.referencePrice);
   const stats = scope === 'mine'
     ? [['collection','Possedute',item.quantityOwned],['swap','In prestito',item.quantityLoaned],['lock','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]]
     : [['swap','In prestito',item.quantityLoaned],['lock','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]];
@@ -154,7 +168,7 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
       <div class="inventory-printing-meta">${meta.map(([value,kind])=>`<span class="inventory-meta-badge is-${kind}">${esc(value)}</span>`).join('')}<span class="inventory-availability ${item.quantityAvailable>0?'is-available':''}">${icon(item.quantityAvailable>0?'check':'lock')} ${item.quantityAvailable>0?'Disponibile':'Non disponibile'}</span></div>
       <dl class="${scope==='mine'?'stat-grid-4':'stat-grid-3'} inventory-quantity-stats">${stats.map(([symbol,label,value])=>`<div><dt>${icon(symbol)}<span>${label}</span></dt><dd>${Number(value)||0}</dd></div>`).join('')}</dl>
       ${item.legacyAmbiguous?`<div class="data-note warning">${icon('bell')} Esistono vecchi prestiti non attribuibili con certezza a questa printing: non sono stati sottratti automaticamente.</div>`:''}
-      <div class="inventory-market-summary${priceLoading?' is-price-loading':''}">${icon('chart')}<div><small>${hasPrice?'Valore indicativo per copia':'Valore di mercato'}</small><strong>${priceLoading?'Caricamento prezzo…':(hasPrice?new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(price):'Prezzo non disponibile')}</strong></div><button type="button" class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
+      <div class="inventory-market-summary${priceBox.loading?' is-price-loading':''}" data-inventory-market-summary>${icon('chart')}<div><small>${priceBox.label}</small><strong>${priceBox.text}</strong></div><button type="button" class="text-action" data-page="market">Vedi mercato ${icon('arrow')}</button></div>
       ${scope==='team'?`<h3>Disponibilità nel team</h3><div class="team-availability">${rows.map(row=>ownerAvailability(row,connected,currentUser)).join('')}</div><div class="detail-actions"><button type="button" class="btn wide" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui printing</button></div>`:`<div class="detail-actions"><button type="button" class="btn wide inventory-loan-cta" data-collection-loan="${esc(item.id)}" ${item.quantityAvailable>0&&connected?'':'disabled'}>${icon('swap')} Crea prestito</button><div class="detail-actions-row"><button type="button" class="btn secondary" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui</button><button type="button" class="btn secondary" data-collection-edit="${esc(item.id)}" ${connected?'':'disabled'}>${icon('settings')} Modifica</button><button type="button" class="btn secondary danger" data-collection-delete="${esc(item.id)}" ${connected?'':'disabled'}>${icon('trash')} Rimuovi</button></div></div>`}
       ${!connected?'<p class="inventory-offline-note">Sei offline. Torna online per modificare la raccolta o creare un prestito.</p>':''}
     </div></div></aside></div>`;

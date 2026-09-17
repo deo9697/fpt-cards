@@ -12,7 +12,7 @@ import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconciliation.js';
 import { icon } from './js/icons.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget } from './js/collection.js';
+import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -1665,9 +1665,24 @@ function collectionEntryForDetail(id) {
 // P0 fix: il prezzo nel dettaglio Raccolta non deve dipendere da quali ~60
 // printing Market Watch ha già in memoria (paginazione server-side) — vedi
 // MarketWatchController.ensureItemPrice/priceCacheEntry in js/market-watch.js.
+// onSettled fa un aggiornamento MIRATO del solo riquadro prezzo (mai
+// renderRoute()/render(): renderRoute() rimuove il .detail-backdrop del
+// dettaglio senza riprodurlo — bug reale scoperto qui, vedi commento su
+// ensureItemPrice) e solo se il dettaglio aperto è ANCORA questa carta
+// (id), altrimenti una risposta tardiva per una carta già chiusa/cambiata
+// non deve toccare il DOM di un'altra carta nel frattempo aperta.
 function ensurePriceForDetail(id) {
   const printingId = collectionEntryForDetail(id)?.printingId;
-  if (printingId) marketWatch.ensureItemPrice(printingId);
+  if (printingId) marketWatch.ensureItemPrice(printingId, () => { if (selectedCollectionItem === id) updateDetailPriceBox(id); });
+}
+function updateDetailPriceBox(id) {
+  const box = document.querySelector('.inventory-detail [data-inventory-market-summary]');
+  if (!box) return;
+  const { loading, label, text } = priceBoxContent(resolveDetailPrice(id));
+  box.classList.toggle('is-price-loading', loading);
+  const small = box.querySelector('small'), strong = box.querySelector('strong');
+  if (small) small.textContent = label;
+  if (strong) strong.textContent = text;
 }
 // {status:'ready'|'loading'|'missing', price} per collectionDetailView. Se
 // marketWatch non ha ancora scritto nulla in cache (caso limite: render

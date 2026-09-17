@@ -46,15 +46,21 @@ await asyncTest('già presente in allLoadedItems (findItem) -> subito ready, nes
 });
 
 // 2) prezzo non presente nella pagina Market Watch ma presente nel DB -> fetch mirato, 'ready' col prezzo reale.
-await asyncTest('non in allLoadedItems ma presente nel DB -> fetch mirato, diventa ready', async () => {
+// onSettled è un callback PER CHIAMATA (mai this.onRender, vedi commento su
+// ensureItemPrice in js/market-watch.js: renderRoute() rimuoverebbe il
+// .detail-backdrop del dettaglio senza riprodurlo — bug reale scoperto con
+// questo stesso fix, catturato da auth-regression-smoke.mjs).
+await asyncTest('non in allLoadedItems ma presente nel DB -> fetch mirato, diventa ready, callback per-chiamata (mai onRender)', async () => {
   let calls = 0;
   const { controller, renderCount } = makeController({ itemPriceImpl: async id => { calls++; assert.equal(id, 'p2'); return { referencePrice: 7.3, capturedAt: '2026-09-17T10:00:00Z' }; } });
-  controller.ensureItemPrice('p2');
+  let settledWith = null;
+  controller.ensureItemPrice('p2', id => { settledWith = id; });
   assert.deepEqual(controller.priceCacheEntry('p2'), { status: 'loading', price: null, capturedAt: null }, 'subito dopo la chiamata, sincrono: loading');
   await new Promise(r => setTimeout(r, 0));
   assert.equal(calls, 1);
   assert.deepEqual(controller.priceCacheEntry('p2'), { status: 'ready', price: 7.3, capturedAt: '2026-09-17T10:00:00Z' });
-  assert.equal(renderCount(), 1, 'onRender chiamato una volta a fetch completato');
+  assert.equal(settledWith, 'p2', 'onSettled(printingId) chiamato con la printing corretta a fetch completato');
+  assert.equal(renderCount(), 0, 'nessun render/renderRoute globale — solo il callback per-chiamata, mai this.onRender()');
 });
 
 // 3) printing realmente senza prezzo -> backend risponde referencePrice:null -> 'missing', MAI 'ready'.
@@ -164,4 +170,22 @@ test('priceState assente (retro-compatibilità): stesso comportamento di prima, 
   assert(withoutMatch.includes('Prezzo non disponibile'), 'senza priceState e senza match in marketItems, comportamento invariato');
 });
 
-console.log('PASS Raccolta — lookup prezzo lazy/mirato: già-in-cache/fetch-mirato/senza-prezzo/errore/chiusura-in-corso/riapertura-senza-refetch/nessuna-contaminazione-tra-carte, rendering loading/ready/missing coerente, retro-compatibilità preservata');
+// --- Guardia di regressione: il fetch del prezzo NON deve mai innescare un
+// render globale (renderRoute()/render()) — è esattamente il bug reale
+// scoperto integrando questo fix: renderRoute() sostituisce SOLO .page-stage
+// e rimuove ogni .detail-backdrop esistente SENZA riprodurlo (il dettaglio
+// Raccolta vive fuori da .page-stage), quindi un onRender() generico alla
+// risoluzione del prezzo faceva sparire silenziosamente il dettaglio appena
+// aperto non appena il fetch completava. Catturato da auth-regression-
+// smoke.mjs ("Disponibilità proprietario assente nel dettaglio team").
+{
+  const fs = await import('node:fs');
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  test('app.js: il fetch prezzo aggiorna il DOM in modo mirato (updateDetailPriceBox), mai via renderRoute()/render() generico', () => {
+    assert.match(appSource, /marketWatch\.ensureItemPrice\(printingId, \(\) => \{ if \(selectedCollectionItem === id\) updateDetailPriceBox\(id\); \}\)/);
+    assert.match(appSource, /function updateDetailPriceBox\(id\) \{/);
+    assert.match(appSource, /document\.querySelector\('\.inventory-detail \[data-inventory-market-summary\]'\)/);
+  });
+}
+
+console.log('PASS Raccolta — lookup prezzo lazy/mirato: già-in-cache/fetch-mirato/senza-prezzo/errore/chiusura-in-corso/riapertura-senza-refetch/nessuna-contaminazione-tra-carte, rendering loading/ready/missing coerente, retro-compatibilità preservata, aggiornamento DOM mirato (mai un render globale)');
