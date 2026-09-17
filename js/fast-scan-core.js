@@ -113,15 +113,67 @@ export class ScanGate {
 export function signatureDistance(left=[],right=[]){if(!left.length||left.length!==right.length)return 1;return left.reduce((sum,value,index)=>sum+Math.abs(value-right[index]),0)/(left.length*255);}
 
 export class ScanSessionBuffer {
-  constructor(snapshot={}){this.entries=new Map((snapshot.entries||[]).map(entry=>[entry.key,{...entry}]));this.review=[...(snapshot.review||[])];this.total=Number(snapshot.total||[...this.entries.values()].reduce((sum,item)=>sum+item.quantity,0));this.scanned=Number(snapshot.scanned??(this.total+this.review.length));this.settings=snapshot.settings||defaultScanSettings();this.updatedAt=snapshot.updatedAt||new Date().toISOString();}
-  add(printing,confidence='high_confidence',warning='',countScan=true){const key=printing.printingId||[printing.game,printing.catalogCardId,printing.setCode,printing.rarity].join(':');const current=this.entries.get(key);if(current)current.quantity+=1;else this.entries.set(key,{key,printingId:printing.printingId||'',game:printing.game||'yugioh',catalogCardId:String(printing.catalogCardId||''),cardName:printing.cardName,setCode:printing.setCode,setName:printing.setName||'',rarity:printing.rarity||'',imageUrl:printing.imageUrl||'',quantity:1,confidence,warning,language:(printing.game||'yugioh')==='yugioh'?languageFromSetCode(printing.setCode,this.settings.language):this.settings.language,condition:this.settings.condition,edition:this.settings.edition});this.total+=1;if(countScan)this.scanned+=1;this.touch();return this.entries.get(key);}
-  queueReview(item){this.review.push({...item,id:item.id||crypto.randomUUID()});this.scanned+=1;this.touch();}
-  updateReview(id,patch){const item=this.review.find(entry=>entry.id===id);if(item){Object.assign(item,patch);this.touch();}}
-  updateQuantity(key,quantity){const item=this.entries.get(key);if(!item)return;const next=Math.max(0,Math.min(999,Number(quantity)||0));this.total+=next-item.quantity;if(next)item.quantity=next;else this.entries.delete(key);this.touch();}
-  setEdition(key,edition){const item=this.entries.get(key);if(!item)return;item.edition=edition;this.touch();}
-  removeReview(id){this.review=this.review.filter(item=>item.id!==id);this.touch();}
-  clear(){this.entries.clear();this.review=[];this.total=0;this.scanned=0;this.touch();}
-  snapshot(){return {entries:[...this.entries.values()],review:this.review,total:this.total,scanned:this.scanned,settings:this.settings,updatedAt:this.updatedAt};}
+  constructor(snapshot={}){
+    this.settings={...defaultScanSettings(),...snapshot.settings};this.updatedAt=snapshot.updatedAt||new Date().toISOString();this.scanEvents=[];this.entries=new Map();this.review=[];this.nextSequence=1;
+    if(Array.isArray(snapshot.scanEvents))this.scanEvents=structuredClone(snapshot.scanEvents);
+    else{
+      // Legacy aggregates cannot recover physical order: retain every copy,
+      // review ID and historic counter, explicitly marking imported events.
+      for(const entry of snapshot.entries||[])for(let i=0;i<Number(entry.quantity||entry.quantityDelta||0);i++){
+        const event=this.createScan({source:'legacy'});Object.assign(event,{status:'CONFIRMED',printing:this.printing(entry),printingId:entry.printingId||'',cardName:entry.cardName,setCode:entry.setCode,rarity:entry.rarity,imageUrl:entry.imageUrl,matchType:entry.confidence||'',warning:entry.warning||''});
+      }
+      for(const row of snapshot.review||[])this.queueReview({...row,source:'legacy'});
+      const previous=Number(snapshot.scanned??this.scanEvents.length);
+      while(this.scanEvents.length<previous)this.createScan({status:'CANCELLED',source:'legacy',failureReason:'LEGACY_HISTORY_UNAVAILABLE'});
+      this.scanEvents.forEach((event,index)=>{event.countsAsScan=index<previous;});
+    }
+    this.nextSequence=Math.max(0,...this.scanEvents.map(event=>Number(event.sequence)||0))+1;this.rebuild();
+  }
+  printing(value){return {key:value.key||value.printingId||[value.game,value.catalogCardId,value.setCode,value.rarity].join(':'),printingId:value.printingId||'',game:value.game||'yugioh',catalogCardId:String(value.catalogCardId||''),cardName:value.cardName||'',setCode:value.setCode||'',setName:value.setName||'',rarity:value.rarity||'',imageUrl:value.imageUrl||'',language:value.language||((value.game||'yugioh')==='yugioh'?languageFromSetCode(value.setCode,this.settings.language):this.settings.language),condition:value.condition||this.settings.condition,edition:value.edition??this.settings.edition};}
+  createScan(data={}){
+    const event={id:data.id||crypto.randomUUID(),sequence:data.countsAsScan===false?0:this.nextSequence++,createdAt:new Date().toISOString(),status:data.status||'CAPTURED',rawCode:data.rawCode||'',normalizedCode:data.normalizedCode||'',ocrConfidence:Number(data.ocrConfidence)||0,matchType:'',printingId:'',cardName:'',setCode:'',rarity:'',imageUrl:'',source:data.source||'camera',failureReason:data.failureReason||'',resolutionVersion:0,countsAsScan:data.countsAsScan!==false};
+    this.scanEvents.push(event);this.rebuild();this.touch();return event;
+  }
+  getScan(id){return this.scanEvents.find(event=>event.id===id);}
+  isCurrent(id,version){const event=this.getScan(id);return Boolean(event&&event.status!=='CANCELLED'&&event.resolutionVersion===version);}
+  updateScan(id,patch,version){const event=this.getScan(id);if(!event||event.status==='CANCELLED'||version!==undefined&&!this.isCurrent(id,version))return null;Object.assign(event,patch);this.rebuild();this.touch();return event;}
+  invalidateScan(id){const event=this.getScan(id);if(!event||event.status==='CANCELLED')return null;event.resolutionVersion+=1;this.touch();return event.resolutionVersion;}
+  confirmScan(id,printing,confidence='high_confidence',warning='',version){
+    const previous=this.getScan(id)?.printing,value=this.printing({...printing,condition:printing.condition||previous?.condition,edition:printing.edition??previous?.edition});return this.updateScan(id,{status:'CONFIRMED',printing:value,printingId:value.printingId,cardName:value.cardName,setCode:value.setCode,rarity:value.rarity,imageUrl:value.imageUrl,matchType:confidence,warning,failureReason:'',reviewData:null},version);
+  }
+  correctScan(id,printing){const version=this.invalidateScan(id);return version===null?null:this.confirmScan(id,printing,'manual','Correzione manuale',version);}
+  cancelScan(id){const event=this.getScan(id);if(!event||event.status==='CANCELLED')return;event.resolutionVersion+=1;event.status='CANCELLED';event.reviewData=null;this.rebuild();this.touch();}
+  deferScan(id){const version=this.invalidateScan(id);if(version===null)return;const event=this.getScan(id);this.updateScan(id,{status:'DEFERRED',reviewData:{...event.reviewData,id,raw:event.rawCode,code:event.normalizedCode||event.setCode,matches:event.reviewData?.matches||[],pending:false,status:'needs_review',warning:'Messa da parte: conferma o correggi'}});}
+  failScan(id,reason){return this.updateScan(id,{status:'FAILED',failureReason:reason,reviewData:null});}
+  add(printing,confidence='high_confidence',warning='',countScan=true,scanId=null){
+    // Callers converting reviews should pass the ID. The legacy single-review
+    // adapter remains for older consumers without creating a second scan.
+    const event=this.getScan(scanId)||(!countScan?this.scanEvents.find(event=>['PENDING_REMOTE','REVIEW_REQUIRED','DEFERRED'].includes(event.status)&&event.normalizedCode===printing.setCode):null)||this.createScan({countsAsScan:countScan,source:countScan?'manual':'quantity-adjustment'});
+    this.confirmScan(event.id,printing,confidence,warning);return this.entries.get(this.printing(printing).key);
+  }
+  queueReview(item){
+    const event=this.getScan(item.scanId||item.id)||this.createScan({id:item.id,source:item.source});
+    this.updateScan(event.id,{status:item.pending?'PENDING_REMOTE':'REVIEW_REQUIRED',rawCode:item.raw||event.rawCode,normalizedCode:item.code||event.normalizedCode,ocrConfidence:item.ocrConfidence??event.ocrConfidence,reviewData:{...item,id:event.id,scanId:event.id}});return event;
+  }
+  updateReview(id,patch){const event=this.getScan(id);if(!event||!event.reviewData)return;const row={...event.reviewData,...patch};this.updateScan(id,{reviewData:row,status:row.pending?'PENDING_REMOTE':event.status==='DEFERRED'?'DEFERRED':'REVIEW_REQUIRED',normalizedCode:row.code||event.normalizedCode});}
+  updateQuantity(key,quantity){
+    const item=this.entries.get(key);if(!item)return;const next=Math.max(0,Math.min(999,Math.floor(Number(quantity)||0))),active=this.scanEvents.filter(event=>event.status==='CONFIRMED'&&event.printing?.key===key);
+    if(next<active.length)for(const event of active.slice(next))this.cancelScan(event.id);
+    else for(let i=active.length;i<next;i++){const event=this.createScan({source:'quantity-adjustment',countsAsScan:false});this.confirmScan(event.id,item,item.confidence,item.warning);}
+  }
+  setEdition(key,edition){for(const event of this.scanEvents)if(event.status==='CONFIRMED'&&event.printing?.key===key){event.printing.edition=edition;event.resolutionVersion+=1;}this.rebuild();this.touch();}
+  removeReview(id){const event=this.getScan(id);if(event?.status==='CONFIRMED')return;this.cancelScan(id);}
+  interruptPending(){for(const event of this.scanEvents)if(['CAPTURED','PROCESSING','PENDING_REMOTE'].includes(event.status)){event.resolutionVersion+=1;event.status='REVIEW_REQUIRED';event.reviewData={...event.reviewData,id:event.id,raw:event.rawCode,code:event.normalizedCode,matches:event.reviewData?.matches||[],pending:false,status:'needs_review',warning:'Verifica interrotta: conferma o correggi il codice'};}this.rebuild();this.touch();}
+  rebuild(){
+    this.entries=new Map();this.review=[];this.total=0;this.scanned=0;
+    for(const event of this.scanEvents){
+      if(event.countsAsScan!==false)this.scanned+=1;
+      if(event.status==='CONFIRMED'&&event.printing){const key=event.printing.key,current=this.entries.get(key);if(current)current.quantity++;else this.entries.set(key,{...event.printing,quantity:1,confidence:event.matchType,warning:event.warning||''});this.total++;}
+      else if(event.status!=='CANCELLED'&&event.reviewData)this.review.push(event.reviewData);
+    }
+  }
+  clear(){this.scanEvents=[];this.nextSequence=1;this.rebuild();this.touch();}
+  snapshot(){return structuredClone({version:2,scanEvents:this.scanEvents,entries:[...this.entries.values()],review:this.review,total:this.total,scanned:this.scanned,settings:this.settings,updatedAt:this.updatedAt});}
   touch(){this.updatedAt=new Date().toISOString();}
 }
 

@@ -10,38 +10,62 @@ export class FastScanCamera {
   get focusSupported() { return Boolean(this.capabilities.focusSupported && this.track?.applyConstraints); }
   get zoomSupported() { return Boolean(this.capabilities.zoom && this.track?.applyConstraints); }
   async start(video, deviceId = '') {
-    this.stop('restart-before-start'); const generation=this.generation; if(!this.supported) throw cameraError('unsupported');this.diagnostic('start-request',{generation,deviceId:deviceId||'environment'});
-    // Conservative stream settings limit heat during long sessions. Higher
-    // capture resolutions may recover finer characters but need device testing;
-    // upscaling the OCR crop alone cannot recreate missing source detail.
-    const videoConstraint=deviceId?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}}:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}};
-    const request=this.mediaDevices.getUserMedia({audio:false,video:videoConstraint});
-    let timeout; const timeoutPromise=new Promise((_,reject)=>{timeout=setTimeout(()=>reject(cameraError('timeout')),this.timeoutMs);});
-    let acquired=null;try { acquired=await Promise.race([request,timeoutPromise]); }
-    catch(error){if(error?.code==='timeout'){request.then(stream=>stream.getTracks().forEach(track=>track.stop())).catch(()=>{});throw error;}throw cameraError(error?.name==='NotAllowedError'||error?.name==='SecurityError'?'denied':error?.name==='NotFoundError'||error?.name==='OverconstrainedError'?'unavailable':'failed',error);}
-    finally { clearTimeout(timeout); }
-    if(generation!==this.generation){acquired?.getTracks?.().forEach(track=>track.stop());this.diagnostic('start-aborted',{generation,currentGeneration:this.generation});throw cameraError('aborted');}
-    this.stream=acquired;
-    const track=this.track; this.video=video; this.deviceId=track?.getSettings?.().deviceId||deviceId; this.capabilities=readCapabilities(track); this.settings=track?.getSettings?.()||{};this.imageCapture=this.imageCaptureUnstable?null:createImageCapture(this.ImageCaptureClass,track);this.attachTrackHealth(track);
-    video.srcObject=this.stream; video.muted=true; video.playsInline=true; await video.play(); await this.configureTrack();this.diagnostic('start-ready',this.stateSnapshot());return this.devices();
+    this.stop('restart-before-start');
+    const generation=this.generation,deadline=performance.now()+this.timeoutMs;
+    if(!this.supported)throw cameraError('unsupported');
+    let acquired=null,expired=false;
+    const check=()=>{if(generation!==this.generation||expired)throw cameraError('aborted');};
+    const bounded=async(promise,limit=Infinity)=>{const result=await cameraDeadline(promise,Math.max(1,Math.min(limit,deadline-performance.now())),this.startCancellation);check();return result;};
+    this.startCancellation=new Promise((_,reject)=>{this.cancelStartup=()=>reject(cameraError('aborted'));});
+    const acquire=async exact=>{
+      const constraints={width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30},...(exact?{deviceId:{exact}}:{facingMode:{ideal:'environment'}})};
+      const request=Promise.resolve().then(()=>{check();return this.mediaDevices.getUserMedia({audio:false,video:constraints});});
+      request.then(stream=>{if(expired||generation!==this.generation)stream.getTracks().forEach(track=>track.stop());},()=>{});
+      return bounded(request);
+    };
+    try{
+      try{acquired=await acquire(deviceId);}
+      catch(error){check();if(!deviceId||!['NotFoundError','OverconstrainedError','DevicesNotFoundError'].includes(error?.name))throw error;acquired=await acquire('');deviceId='';}
+      check();this.stream=acquired;
+      const track=this.track;this.video=video;this.deviceId=track?.getSettings?.().deviceId||deviceId;this.capabilities=readCapabilities(track);this.settings=track?.getSettings?.()||{};this.imageCapture=this.imageCaptureUnstable?null:createImageCapture(this.ImageCaptureClass,track);this.attachTrackHealth(track);
+      video.srcObject=acquired;video.muted=true;video.playsInline=true;
+      await bounded(video.play());
+      // Metadata can lag play on mobile. Use events, not a polling loop.
+      if(!video.videoWidth||!video.videoHeight){
+        let ready;
+        const available=new Promise(resolve=>{ready=()=>{if(video.videoWidth&&video.videoHeight)resolve();};video.addEventListener?.('loadeddata',ready);video.addEventListener?.('resize',ready);ready();});
+        try{await bounded(available);}finally{video.removeEventListener?.('loadeddata',ready);video.removeEventListener?.('resize',ready);}
+      }
+      await bounded(this.configureTrack(generation));
+      let devices=[];
+      try{devices=await bounded(this.devices(),1500);}catch(error){check();this.diagnostic('device-inventory-unavailable',{message:error.message});}
+      check();this.resetFrameProgress();this.diagnostic('start-ready',this.stateSnapshot());return devices;
+    }catch(error){
+      expired=true;
+      if(generation===this.generation)this.stop('start-failed');
+      else{acquired?.getTracks?.().forEach(track=>track.stop());if(video?.srcObject===acquired)video.srcObject=null;}
+      if(error?.code)throw error;
+      throw cameraError(['NotAllowedError','SecurityError'].includes(error?.name)?'denied':['NotFoundError','OverconstrainedError'].includes(error?.name)?'unavailable':'failed',error);
+    }finally{if(generation===this.generation){this.cancelStartup=null;this.startCancellation=null;}}
   }
-  async configureTrack() {
+  async configureTrack(generation=this.generation) {
     const track=this.track; if(!track?.applyConstraints)return;
     if(this.capabilities.focusModes.includes('continuous')) await this.applyConstraint({focusMode:'continuous'});
+    if(generation!==this.generation||track!==this.track)return;
     this.settings=track.getSettings?.()||this.settings;
     this.zoomValue=Number(this.settings.zoom)||this.capabilities.zoom?.min||1;
   }
   async devices() { if(!this.mediaDevices?.enumerateDevices)return[]; return (await this.mediaDevices.enumerateDevices()).filter(item=>item.kind==='videoinput'); }
   async refocus() {
-    const track=this.track; if(!this.focusSupported||!track||this.refocusing)return false;
+    const track=this.track,generation=this.generation; if(!this.focusSupported||!track||this.refocusing)return false;
     this.refocusing=true;try{const modes=this.capabilities.focusModes;
       if(modes.includes('single-shot')) {
         const applied=await this.applyConstraint({focusMode:'single-shot'}); if(!applied)return false;
-        if(modes.includes('continuous')) { await wait(180); await this.applyConstraint({focusMode:'continuous'}); }
-        return true;
+        if(modes.includes('continuous')) { await wait(180);if(generation!==this.generation)return false;await this.applyConstraint({focusMode:'continuous'}); }
+        return generation===this.generation;
       }
       return modes.includes('continuous') ? this.applyConstraint({focusMode:'continuous'}) : false;
-    }finally{this.refocusing=false;}
+    }finally{if(generation===this.generation)this.refocusing=false;}
   }
   async setZoom(value) {
     const track=this.track, range=this.capabilities.zoom; if(!track||!range)return false;
@@ -49,7 +73,7 @@ export class FastScanCamera {
   }
   async toggleTorch(){const track=this.track;if(!this.torchSupported||!track)return false;this.torchOn=!this.torchOn;const applied=await this.applyConstraint({torch:this.torchOn});if(applied)return this.torchOn;this.torchOn=false;return false;}
   async applyConstraint(constraint){
-    const track=this.track;if(!track?.applyConstraints)return false;
+    const track=this.track,generation=this.generation;if(!track?.applyConstraints)return false;
     // Some Android camera drivers never settle this promise (seen with rapid
     // focusMode changes). Without a bounded timeout here, refocus() would stay
     // stuck mid-flight forever, wedging the scan loop in "Messa a fuoco..." and
@@ -60,8 +84,8 @@ export class FastScanCamera {
         track.applyConstraints({advanced:[constraint]}),
         new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('applyConstraints timeout')),2500);})
       ]);
-      return true;
-    }catch(error){this.constraintErrors.push({constraint:Object.keys(constraint)[0],message:error?.message||'applyConstraints failed',at:new Date().toISOString()});if(this.constraintErrors.length>12)this.constraintErrors.shift();return false;}
+      return generation===this.generation;
+    }catch(error){if(generation!==this.generation)return false;this.constraintErrors.push({constraint:Object.keys(constraint)[0],message:error?.message||'applyConstraints failed',at:new Date().toISOString()});if(this.constraintErrors.length>12)this.constraintErrors.shift();return false;}
     finally{clearTimeout(timeout);}
   }
   preferPreprocessing(mode){if(['grayscale','adaptive'].includes(mode))this.preferredMode=mode;}
@@ -74,6 +98,8 @@ export class FastScanCamera {
   markImageCaptureUnstable(reason='unstable'){this.imageCaptureUnstable=true;this.imageCapture=null;this.lastGrabError=reason;}
   resetSnapshotStrategy(){this.imageCaptureUnstable=false;this.snapshotErrors=0;this.lastGrabError='';this.constraintErrors=[];}
   healthIssue(now=performance.now()){
+    const time=this.video?.currentTime;
+    if(Number.isFinite(time)){if(time!==this.lastVideoTime){this.lastVideoTime=time;this.frameProgressAt=now;}else if(now-(this.frameProgressAt??now)>4000)return 'frozen-preview';}
     const track=this.track;if(!track)return 'missing-track';if(this.stream?.active===false)return 'inactive-stream';if(this.lastTrackEvent==='ended')return 'track-ended';if(track.readyState&&track.readyState!=='live')return `track-${track.readyState}`;if(track.enabled===false)return 'track-disabled';if((track.muted||this.mutedAt)&&(this.mutedAt?now-this.mutedAt:0)>1200)return 'track-muted';if(this.blackFrameStreak>=8)return 'black-preview';if(this.video&&(!this.video.videoWidth||!this.video.videoHeight)&&now-this.trackStartedAt>1800)return 'no-video-frame';return '';
   }
   stateSnapshot(){const track=this.track,settings=track?.getSettings?.()||this.settings||{};return {streamActive:this.stream?.active!==false,srcObjectConnected:Boolean(this.video&&this.video.srcObject===this.stream),readyState:track?.readyState||'unknown',enabled:track?.enabled!==false,muted:Boolean(track?.muted),resolution:{width:Number(settings.width||this.video?.videoWidth||0),height:Number(settings.height||this.video?.videoHeight||0)},snapshotSource:this.imageCapture&&!this.imageCaptureUnstable?'ImageCapture':'canvas',imageCaptureUnstable:this.imageCaptureUnstable,snapshotErrors:this.snapshotErrors,lastGrabError:this.lastGrabError,lastTrackEvent:this.lastTrackEvent,lastFrameAt:this.lastFrameAt,blackFrameStreak:this.blackFrameStreak,constraintErrors:[...this.constraintErrors]};}
@@ -83,7 +109,7 @@ export class FastScanCamera {
     const cropStarted=performance.now(),crop=sourceCrop(video,roiElement),cropMs=performance.now()-cropStarted; if(!crop||crop.sw<24||crop.sh<12)return null;
     const width=320,height=Math.max(38,Math.round(width*crop.sh/crop.sw)),drawStarted=performance.now();this.sampleCanvas.width=width;this.sampleCanvas.height=height;
     const ctx=this.sampleCanvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='medium';ctx.drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);
-    const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,qualityStarted=performance.now(),quality=preprocessCodeImage(ctx,width,height,{mode:'grayscale',metricsOnly:true}),qualityMs=performance.now()-qualityStarted;this.lastFrameAt=performance.now();this.blackFrameStreak=quality.meanLuma<2?this.blackFrameStreak+1:0;
+    const signature=this.makeSignature(ctx,width,height),drawMs=performance.now()-drawStarted,qualityStarted=performance.now(),quality=preprocessCodeImage(ctx,width,height,{mode:'grayscale',metricsOnly:true}),qualityMs=performance.now()-qualityStarted;this.lastFrameAt=this.frameProgressAt||0;this.blackFrameStreak=quality.meanLuma<2?this.blackFrameStreak+1:0;
     return {signature,roi:crop,quality,timing:{totalMs:performance.now()-started,cropMs,drawMs,qualityMs}};
   }
   async waitForFreshFrame(timeoutMs=1500){
@@ -113,7 +139,15 @@ export class FastScanCamera {
   }
   makeSignature(ctx,width,height){this.signatureCanvas.width=16;this.signatureCanvas.height=8;const sctx=this.signatureCanvas.getContext('2d',{willReadFrequently:true});sctx.drawImage(ctx.canvas,0,0,width,height,0,0,16,8);const data=sctx.getImageData(0,0,16,8).data;const values=[];for(let i=0;i<data.length;i+=4)values.push(Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114));return values;}
   diagnostic(event,payload={}){this.onDiagnostic?.(event,payload);}
-  stop(reason='explicit'){const snapshot=this.stream?this.stateSnapshot():null;this.generation+=1;this.torchOn=false;this.refocusing=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.imageCapture=null;this.detachTrackHealth();this.stream?.getTracks?.().forEach(track=>track.stop());if(this.video)this.video.srcObject=null;this.stream=null;this.video=null;clearCanvas(this.sampleCanvas);clearCanvas(this.snapshotCanvas);this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};if(snapshot)this.diagnostic('stop',{reason,generation:this.generation,before:snapshot});}
+  resetFrameProgress(){this.lastVideoTime=this.video?.currentTime;this.frameProgressAt=performance.now();}
+  stop(reason='explicit'){
+    this.cancelStartup?.();this.cancelStartup=null;this.startCancellation=null;this.resetFrameProgress();
+    let snapshot=null;try{if(this.stream)snapshot=this.stateSnapshot();}catch{}
+    this.generation+=1;this.torchOn=false;this.refocusing=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.imageCapture=null;this.detachTrackHealth();
+    this.stream?.getTracks?.().forEach(track=>{try{track.stop();}catch{}});
+    if(this.video&&this.video.srcObject===this.stream)this.video.srcObject=null;
+    this.stream=null;this.video=null;clearCanvas(this.sampleCanvas);clearCanvas(this.snapshotCanvas);this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};if(snapshot)this.diagnostic('stop',{reason,generation:this.generation,before:snapshot});
+  }
 }
 
 export function readCapabilities(track) {
@@ -170,3 +204,4 @@ function laplacianVariance(gray,width,height){let sum=0,sumSquares=0,count=0;for
 function clamp(value,min,max){return Math.min(max,Math.max(min,value));}
 function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
 function cameraError(code,cause){const error=new Error(({unsupported:'Fotocamera non supportata dal browser',denied:'Permesso fotocamera negato',unavailable:'Nessuna fotocamera disponibile',timeout:'La fotocamera non ha risposto: prova da Safari o cambia camera',aborted:'Avvio fotocamera annullato',failed:'Impossibile avviare la fotocamera'})[code]);error.code=code;error.cause=cause;return error;}
+async function cameraDeadline(promise,ms,cancel){let timer;try{return await Promise.race([promise,...(cancel?[cancel]:[]),new Promise((_,reject)=>{timer=setTimeout(()=>reject(cameraError('timeout')),ms);})]);}finally{clearTimeout(timer);}}

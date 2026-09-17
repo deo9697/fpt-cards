@@ -1079,6 +1079,35 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
   .live-controls button { min-height:40px; }
 }
 
+/* Assisted scan: compact result, explicit decisions, local acquisition history. */
+.live-scan-content > [data-scan-assistant] { order:0;max-height:160px;overflow:auto; }
+.scan-current { display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #85649b;border-radius:12px;background:#12101fed; }
+.scan-current img { width:42px;height:60px;object-fit:contain;flex:none; }
+.scan-current div { min-width:0;display:grid;gap:3px; }
+.scan-current strong { font-size:.78rem;color:#fff; }
+.scan-current span,.scan-current small { font-size:.72rem;overflow-wrap:anywhere;color:#e2dbea; }
+.scan-current-actions { display:flex;gap:6px;flex-wrap:wrap;margin-top:5px; }
+.scan-current-actions button,.scan-history button,.scan-history-review button { min-height:40px;padding:7px 10px;border:1px solid #a981be;border-radius:8px;background:#21152d;color:#fff;font-size:.72rem;cursor:pointer; }
+.scan-history { position:absolute;z-index:7;top:70px;right:12px;left:12px;margin:auto;max-width:620px;padding:7px 10px;border:1px solid #695679;border-radius:12px;background:#10101feb; }
+.scan-history summary,.scan-history-review summary { cursor:pointer;font-size:.78rem;padding:6px; }
+.scan-history ol,.scan-history-review ol { list-style:none;padding:0;margin:5px 0;max-height:28dvh;overflow:auto; }
+.scan-history li,.scan-history-review li { display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid #76648466; }
+.scan-history li span,.scan-history-review li span { flex:1;min-width:0;display:grid;gap:3px;overflow-wrap:anywhere;font-size:.73rem; }
+.scan-history small { color:#d8cfe2; }
+.scan-history > button { margin:2px; }
+.scan-current-actions button:focus-visible,.scan-history button:focus-visible,.scan-history summary:focus-visible { outline:2px solid #f8d982;outline-offset:2px; }
+.fast-scan-live .live-last { display:none; }
+.fast-scan-live .live-scan-bottom { padding-top:12px;max-height:45dvh;overflow:auto; }
+.fast-scan-live .live-detection { top:29%; }
+@media (orientation:landscape) and (max-height:600px) {
+  .fast-scan-live .live-scan-bottom { left:auto;width:48%;max-height:calc(100dvh - 65px); }
+  .fast-scan-live .live-scan-content { display:grid;grid-template-columns:1fr; }
+  .fast-scan-live .live-scan-content > * { grid-column:auto;grid-row:auto; }
+  .fast-scan-live .live-roi,.fast-scan-live .live-roi-label,.fast-scan-live .live-ocr-state { left:25%; }
+  .fast-scan-live .scan-history { left:12px;right:auto;width:44%;top:60px; }
+  .fast-scan-live .live-detection { left:25%;top:72%; }
+}
+
 /* Mazzi */
 .deck-page { --deck-accent:#c15cff; }
 .deck-hero { display:flex;align-items:end;justify-content:space-between;gap:20px;padding:8px 0 4px; }.deck-hero h1 { margin:3px 0;font-size:clamp(1.8rem,3vw,2.7rem); }.deck-hero p { margin:0;color:var(--muted); }.deck-hero-actions { display:flex;gap:10px; }.deck-hero .btn:first-child,.deck-page>.btn { border:1px solid #dc7cff;background:linear-gradient(145deg,#7c249c,#3c125e);color:#fff;box-shadow:0 0 22px #bc4dff28; }
