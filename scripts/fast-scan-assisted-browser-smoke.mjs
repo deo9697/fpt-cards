@@ -36,25 +36,36 @@ try{
  c.phase='scanning';c.schedule=()=>{};c.reattachVideo=()=>{};window.render=()=>{document.querySelector('#app').innerHTML=c.view();c.bind(document);};
  for(let i=0;i<7;i++)c.buffer.add(card);c.currentScanId=c.buffer.scanEvents.at(-1).id;render();
  })()`);
+ // Flusso minimale 2026-09-17: nessun pannello persistente/cronologia nel
+ // live view. Solo l'indicatore "N carte" tappabile, il chooser inline per
+ // una vera ambiguità, e il feedback transitorio (mai un pannello fisso).
  assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').textContent.trim()`),'Prossima carta');
- assert.equal(await evaluate(`document.querySelectorAll('[data-scan-history] li').length`),5);
+ assert.equal(await evaluate(`document.querySelector('[data-scan-history]')`),null,'nessuna cronologia persistente nel live view');
+ assert.equal(await evaluate(`document.querySelector('[data-scan-history-review]').textContent.trim()`),'7 carte');
  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
  await screenshot('01-confirmed-mobile');
- await evaluate(`document.querySelector('[data-scan-undo]').click()`);assert.equal(await evaluate('c.buffer.total'),6);
  await evaluate(`const scan=c.buffer.createScan();c.buffer.queueReview({id:scan.id,code:card.setCode,matches:[card,{...card,printingId:'rare',rarity:'Rare'}],warning:'Scegli la rarità'});c.currentScanId=scan.id;c.refreshHud();`);
- assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),true);
- assert.equal(await evaluate(`document.querySelectorAll('[data-scan-choice]').length`),2);await screenshot('02-review-required-mobile');
- await evaluate(`document.querySelector('[data-scan-choice="1"]').click()`);assert.equal(await evaluate(`c.currentScan.rarity`),'Rare');assert.equal(await evaluate('c.buffer.total'),7);
+ assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),true,'una vera ambiguità blocca lo scatto finché non risolta inline');
+ assert.equal(await evaluate(`document.querySelectorAll('[data-scan-choice]').length`),2);
+ assert.match(await evaluate(`document.querySelector('.scan-ambiguous strong').textContent`),/Quale carta è\?/);
+ assert.ok(await evaluate(`Boolean(document.querySelector('[data-scan-retry]'))`),'Riprova foto disponibile sull\'ambiguità');
+ await screenshot('02-review-required-mobile');
+ await evaluate(`document.querySelector('[data-scan-choice="1"]').click()`);assert.equal(await evaluate(`c.currentScan.rarity`),'Rare');assert.equal(await evaluate('c.buffer.total'),8);
+ assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),false,'una scelta confermata sblocca subito lo scatto successivo');
+ // Una verifica di rete in corso (PENDING_REMOTE) non blocca più lo scatto:
+ // non deve comparire alcun pannello, e il pulsante resta abilitato.
  await evaluate(`const next=c.buffer.createScan();c.buffer.queueReview({id:next.id,code:card.setCode,matches:[],pending:true});c.currentScanId=next.id;c.refreshHud();`);
- assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),true);
- await evaluate(`document.querySelector('[data-scan-defer]').click()`);assert.equal(await evaluate(`c.buffer.scanEvents.at(-1).status`),'DEFERRED');assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),false);
- await evaluate(`document.querySelector('[data-scan-history] summary').click()`);await screenshot('03-history-mobile');
+ assert.equal(await evaluate(`document.querySelector('[data-scan-capture]').disabled`),false,'la verifica in background non deve bloccare lo scatto successivo');
+ assert.equal(await evaluate(`document.querySelector('[data-scan-assistant]').innerHTML.trim()`),'','nessun pannello persistente durante una verifica in corso');
  await send('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true});await screenshot('04-landscape');
  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
+ await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await evaluate(`document.querySelector('[data-scan-history-review]').click()`);await delay(100);assert.equal(await evaluate('c.phase'),'review');assert.equal(await evaluate(`document.querySelectorAll('[data-scan-history] li').length`),9);
+ await screenshot('03-history-mobile');
+ await evaluate(`document.querySelector('[data-scan-history] [data-scan-undo]').click()`);assert.equal(await evaluate(`c.buffer.scanEvents.at(-1).status`),'CANCELLED','Annulla ultimo scatto resta disponibile nella schermata di sessione');
  await evaluate(`document.querySelector('[data-scan-history] [data-scan-edit]').click()`);assert.equal(await evaluate('c.phase'),'review');assert.equal(await evaluate(`document.querySelector('[data-scan-manual-sheet]').classList.contains('hidden')`),false);
  await evaluate(`document.querySelector('[data-scan-manual-close]').click()`);assert.equal(await evaluate('c.phase'),'review');
- assert.deepEqual(errors,[]);console.log('PASS assisted browser: mobile/landscape, confirmed next action, 5 recent scans, undo, ambiguity choice, pending/defer and full review; no JS exceptions.');
+ assert.deepEqual(errors,[]);console.log('PASS assisted browser: live view minimale (nessuna cronologia/pannello persistente), badge tappabile, chooser inline per ambiguità reale, background non bloccante, cronologia completa nella review; no JS exceptions.');
 }finally{
  try{socket?.close();}catch{}chrome.kill();server.close();
  // Only the temporary profile created by this script can be deleted.

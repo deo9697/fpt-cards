@@ -24,7 +24,12 @@ const SET_LANGUAGE_CODES = new Map([
 const LOCALIZED_SET_NAMES = new Map([
   ['DOOD:IT','Destino delle Dimensioni']
 ]);
-const NON_RARITY_CATALOG_VALUES = new Set(['new','reprint']);
+// YGOProDeck's set_rarity field sometimes carries a non-rarity tag instead of
+// a real rarity (structure deck / championship pack reprints): "New",
+// "Reprint", "New artwork", "Reprint (new artwork)"... — a whole-word prefix
+// match catches the family without touching any real rarity name (none in
+// the canonical list start with "new"/"reprint" — see market/rarity-canon-seed.js).
+const NON_RARITY_CATALOG_PATTERN = /^(new|reprint)\b/i;
 
 export function validCatalogCardId(value, game = 'yugioh') {
   const id = String(value || '').trim();
@@ -376,19 +381,31 @@ export function normalizeCatalogRarity(value) {
   const rarity = String(value || '').trim();
   if (!rarity) return '';
   if (/^\d+$/.test(rarity)) return 'Common';
-  if (NON_RARITY_CATALOG_VALUES.has(rarity.toLocaleLowerCase('en'))) return '';
+  if (NON_RARITY_CATALOG_PATTERN.test(rarity)) return '';
   return rarity;
+}
+
+// A non-rarity tag ("New artwork"...) must not vanish entirely or the
+// printing becomes unmatchable by rarity — falls back to Common, same
+// treatment as a card with no distinguishing rarity at all. A field that was
+// simply empty to begin with stays empty (nothing to fall back from).
+// Shared by normalizeCatalogPrintings and Fast Scan's session buffer so a
+// contaminated value can never survive as a literal "rarity" anywhere in the
+// app, regardless of which lookup path produced it.
+export function sanitizeYugiohRarity(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return normalizeCatalogRarity(raw) || (NON_RARITY_CATALOG_PATTERN.test(raw) ? 'Common' : '');
 }
 
 export function normalizeCatalogPrintings(rows = []) {
   const printings = new Map();
   for (const printing of rows) {
     const rawRarity = String(printing?.set_rarity || printing?.rarity || '').trim();
-    // "New"/"Reprint" rarities (common on Structure Decks) must not vanish entirely, or the printing never matches.
     const normalized = {
       setCode:String(printing?.set_code || printing?.setCode || '').trim().toUpperCase(),
       setName:String(printing?.set_name || printing?.setName || '').trim(),
-      rarity:normalizeCatalogRarity(rawRarity) || (NON_RARITY_CATALOG_VALUES.has(rawRarity.toLocaleLowerCase('en')) ? 'Common' : '')
+      rarity:sanitizeYugiohRarity(rawRarity)
     };
     if (!normalized.setCode || !normalized.rarity) continue;
     const key = `${normalized.setCode}\u0000${normalized.rarity.toLocaleLowerCase('en')}`;

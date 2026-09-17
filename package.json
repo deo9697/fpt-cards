@@ -58,6 +58,11 @@
     ,"test:ygo-printing-mapping-reconciliation": "node scripts/ygo-printing-mapping-reconciliation-smoke.mjs"
     ,"test:collection-detail-price-lookup": "node scripts/collection-detail-price-lookup-smoke.mjs"
     ,"test:fast-scan-telemetry": "node scripts/fast-scan-telemetry-smoke.mjs"
+    ,"test:fast-scan-save-hardening": "node scripts/fast-scan-save-hardening-smoke.mjs"
+    ,"test:fast-scan-camera-audit": "node scripts/fast-scan-camera-audit.mjs"
+    ,"test:fast-scan-events": "node scripts/fast-scan-events-smoke.mjs"
+    ,"test:fast-scan-assisted-browser": "node scripts/fast-scan-assisted-browser-smoke.mjs"
+    ,"test:fast-scan-benchmark-dataset": "node scripts/fast-scan-benchmark-dataset-regression-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

@@ -7,7 +7,7 @@ import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-
 import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
-import { resolveStoredCard } from './cards.js';
+import { resolveStoredCard, sanitizeYugiohRarity } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
 // resolve() da solo può già sparare fino a ~12 RPC concorrenti per una
@@ -96,11 +96,18 @@ export class FastScanController {
   get hasScans(){return this.buffer.scanned>0||this.buffer.total>0||this.buffer.review.length>0;}
   get currentScan(){return this.buffer.getScan(this.currentScanId);}
   interruptCapture(){for(const id of [this.pendingCaptureId,this.activeCaptureId]){const scan=this.buffer.getScan(id);if(scan&&['CAPTURED','PROCESSING'].includes(scan.status)){this.buffer.invalidateScan(id);this.buffer.failScan(id,'INTERRUPTED');}}this.pendingCaptureId=null;this.forceSnapshot=false;this.persist();}
+  // Solo un vero esito da confermare (1-4 candidati reali) interrompe il
+  // flusso, e lo risolve subito qui — mai una coda "da verificare dopo".
+  // Ogni altro esito (accettato, fallito, in verifica) resta un feedback
+  // transitorio su showDetection/showResolvedFeedback: nessun pannello
+  // persistente durante lo scatto normale.
   assistantView(){
-    const event=this.currentScan;if(!event)return '<p>Inquadra il codice e scatta.</p>';
-    const labels={CAPTURED:'Acquisito',PROCESSING:'Analisi in corso',PENDING_REMOTE:`Carta corrente in verifica (${this.buffer.scanEvents.filter(scan=>scan.status==='PENDING_REMOTE').length}/3)`,CONFIRMED:'Aggiunta alla sessione',REVIEW_REQUIRED:'Da verificare',DEFERRED:'Messa da parte',FAILED:'Scatto fallito',CANCELLED:'Scatto annullato'};
-    const uncertain=['REVIEW_REQUIRED','FAILED'].includes(event.status),pending=event.status==='PENDING_REMOTE';
-    return `<article class="scan-current" data-scan-current-status="${event.status}" aria-live="polite">${event.status==='CONFIRMED'&&event.imageUrl?`<img src="${esc(event.imageUrl)}" alt="Immagine catalogo">`:''}<div><strong>#${event.sequence} · ${labels[event.status]||event.status}</strong><span>${esc(event.cardName||event.normalizedCode||event.rawCode||'Codice non letto')}</span><small>${esc([event.setCode,event.rarity,event.failureReason].filter(Boolean).join(' · '))}</small></div></article>${uncertain||pending?`<div class="scan-current-actions">${uncertain?`<button type="button" data-scan-retry="${event.id}">Riprova</button><button type="button" data-scan-edit="${event.id}">Correggi</button>`:''}<button type="button" data-scan-defer="${event.id}">Metti da parte</button></div>`:''}${event.reviewData?.matches?.length?`<div class="scan-current-actions">${event.reviewData.matches.map((match,index)=>`<button type="button" data-scan-choice="${index}" data-scan-id="${event.id}">${esc(match.cardName)} · ${esc(match.rarity||'Rarità non indicata')}</button>`).join('')}</div>`:''}`;
+    const event=this.currentScan;
+    const matches=event?.reviewData?.matches;
+    if(!event||event.status!=='REVIEW_REQUIRED'||!matches?.length)return '';
+    const options=matches.slice(0,4);
+    const title=options.length>1?'Quale carta è?':'Confermi questa carta?';
+    return `<article class="scan-ambiguous" aria-live="polite"><strong>${title}</strong><div class="scan-ambiguous-options">${options.map((match,index)=>`<button type="button" data-scan-choice="${index}" data-scan-id="${event.id}">${match.imageUrl?`<img src="${esc(match.imageUrl)}" alt="">`:''}<span><b>${esc(match.setCode||'')}</b><small>${esc(match.rarity||'Rarità non indicata')}</small></span></button>`).join('')}</div><button type="button" class="scan-ambiguous-retry" data-scan-retry="${event.id}">Riprova foto</button></article>`;
   }
   historyView(all=false){
     const events=this.buffer.scanEvents.filter(event=>event.countsAsScan!==false),visible=all?events:events.slice(-5);
@@ -109,8 +116,10 @@ export class FastScanController {
     return `<details ${all?'open':''}><summary>${all?'Cronologia completa':'Ultime 5 acquisizioni'} · ${events.length} scatti</summary><ol>${rows||'<li>Nessuno scatto</li>'}</ol></details><button type="button" data-scan-undo ${!events.some(event=>event.status!=='CANCELLED')?'disabled':''}>Annulla ultimo scatto</button>${!all?'<button type="button" data-scan-history-review>Apri cronologia e review</button>':''}`;
   }
   async handleScanAction(event){
-    const button=event.target.closest?.('[data-scan-retry],[data-scan-edit],[data-scan-defer],[data-scan-cancel],[data-scan-undo],[data-scan-choice],[data-scan-history-review]');if(!button)return;
-    if(button.hasAttribute('data-scan-history-review')){await this.openReview();return;}
+    // data-scan-choice/data-scan-retry: chooser di ambiguità inline (assistantView,
+    // solo scattato). data-scan-edit/data-scan-cancel/data-scan-undo: cronologia
+    // completa della schermata di sessione (historyView in reviewView).
+    const button=event.target.closest?.('[data-scan-retry],[data-scan-edit],[data-scan-cancel],[data-scan-undo],[data-scan-choice]');if(!button)return;
     if(!this.canEditSession()||this.snapshotInFlight){this.onToast?.('Attendi la fine dello scatto');return;}
     const data=button.dataset;
     if(data.scanEdit){
@@ -120,8 +129,12 @@ export class FastScanController {
     }
     this.invalidateSync();
     if(data.scanChoice!==undefined){this.chooseReview(data.scanId,Number(data.scanChoice));return;}
-    if(data.scanRetry){this.buffer.deferScan(data.scanRetry);this.currentScanId=null;this.persist();this.refreshHud();this.requestSnapshot();return;}
-    if(data.scanDefer){this.buffer.deferScan(data.scanDefer);if(this.currentScanId===data.scanDefer)this.currentScanId=null;}
+    if(data.scanRetry){
+      // Riprova foto: scarta questo scatto (resta nella cronologia interna,
+      // mai una coda di verifica) e riarma subito la fotocamera per il prossimo.
+      this.buffer.cancelScan(data.scanRetry);if(this.currentScanId===data.scanRetry)this.currentScanId=null;
+      this.persist();this.refreshHud();this.requestSnapshot();return;
+    }
     const cancelId=data.scanCancel||(button.hasAttribute('data-scan-undo')?[...this.buffer.scanEvents].reverse().find(scan=>scan.countsAsScan!==false&&scan.status!=='CANCELLED')?.id:null);
     if(cancelId){this.buffer.cancelScan(cancelId);if(this.currentScanId===cancelId)this.currentScanId=null;}
     this.persist();this.refreshHud();if(this.phase==='review')this.onRender?.();
@@ -133,11 +146,11 @@ export class FastScanController {
   async restore(){const snapshot=await loadScanSession();if(snapshot&&(snapshot.scanEvents?.length||snapshot.scanned||snapshot.total||snapshot.review?.length)){this.buffer=new ScanSessionBuffer(snapshot);this.buffer.interruptPending();this.sync=snapshot.sync||null;this.hasRecovery=true;if(this.sync?.status==='syncing')this.sync={...this.sync,status:'pending'};this.onRender?.();}}
   view(){return this.phase==='review'?this.reviewView()+this.manualSheetView():this.phase==='scanning'?this.scannerView():this.setupView();}
   setupView(){const s=this.buffer.settings||defaultScanSettings();return `<section class="page-stack fast-scan-page fast-scan-setup"><header class="page-header split"><div><span class="eyebrow">Scanner</span><h1>Fast Scan</h1><p>Prepara la sessione, poi la fotocamera diventerà il centro dell’esperienza.</p></div><button class="btn secondary" data-scan-setup-back>Torna alla Raccolta</button></header>${this.hasRecovery?`<div class="resume-scan surface"><div>${icon('collection')}<span><strong>Hai una sessione Fast Scan non salvata</strong><small>${this.buffer.scanned} scansioni · ${this.buffer.entries.size} printing · ${this.buffer.review.length} da verificare</small></span></div><div class="actions"><button class="btn" data-scan-resume-session>Riprendi scansione</button><button class="btn secondary" data-scan-recovery-review>Vai alla review</button><button class="btn secondary danger" data-scan-discard>Scarta</button></div></div>`:''}<form id="fast-scan-settings" class="surface scan-settings"><div><span class="eyebrow">Impostazioni sessione</span><h2>Prepara lo scanner</h2></div><div class="scan-settings-grid"><label>Gioco<select id="scan-game"><option value="yugioh">Yu-Gi-Oh!</option></select></label><label>Lingua predefinita<select id="scan-language">${['Italiano','Inglese','Giapponese','Francese','Tedesco','Spagnolo'].map(value=>`<option ${value===s.language?'selected':''}>${value}</option>`).join('')}</select></label><label>Condizione<select id="scan-condition">${['Mint','Near Mint','Excellent','Good','Played','Poor'].map(value=>`<option ${value===s.condition?'selected':''}>${value}</option>`).join('')}</select></label><label>Edizione<input id="scan-edition" maxlength="100" value="${esc(s.edition||'')}" placeholder="Non specificata"></label></div><div class="scan-toggles">${toggle('scan-auto','Accetta automaticamente corrispondenze molto simili',s.autoAdd)}${toggle('scan-vibration','Vibrazione',s.vibration)}${toggle('scan-sound','Suono',s.sound)}</div><p class="muted">Le corrispondenze esatte vengono aggiunte alla sessione. Le letture dubbie richiedono verifica.</p><div class="scan-start-actions"><button class="btn" type="submit">${icon('search')} Avvia scansione</button><button class="btn secondary" type="button" data-scan-manual-start>Inserimento manuale</button></div></form></section>`;}
-  scannerView(){return `<section class="fast-scan-live ${this.cameraError?'manual-camera':''}"><video id="fast-scan-video" autoplay muted playsinline></video><div class="live-scan-shade"></div><header class="live-scan-header"><button class="live-icon-button" data-scan-back aria-label="Indietro">${icon('arrow')}</button><div><small>Scanner</small><strong>Fast Scan</strong></div><span class="live-header-spacer" aria-hidden="true"></span></header>${this.cameraError?`<div class="live-camera-error"><span>${icon('bell')}</span><strong>${esc(this.cameraError)}</strong><small>Puoi continuare tramite inserimento manuale.</small></div>`:''}<div class="live-roi-label">Allinea il codice</div><div class="live-roi" aria-label="Area di lettura codice"><i></i><span></span></div>${this.debugMode?'<aside class="live-crop-debug" aria-live="polite"><strong>Crop OCR esatto</strong><canvas data-scan-debug-crop></canvas><small data-scan-debug-geometry>In attesa dello scatto</small><small data-scan-debug-stats>In attesa di scan misurati</small><div class="live-crop-debug-export"><button type="button" data-scan-export-telemetry="json">Esporta JSON</button><button type="button" data-scan-export-telemetry="csv">Esporta CSV</button></div></aside>':''}<div class="live-ocr-state"><strong data-scan-status>${esc(this.status)}</strong></div><div class="live-detection ${this.detection?`show ${this.detection.tone}`:''}" data-scan-detection role="status" aria-live="polite" aria-atomic="true">${this.detectionContent(this.detection)}</div><div class="live-background-result ${this.backgroundNotice?`show ${this.backgroundNotice.tone}`:''}" data-scan-background-result role="status" aria-live="polite" aria-atomic="true">${this.detectionContent(this.backgroundNotice)}</div><footer class="live-scan-bottom"><div class="live-scan-content"><div data-scan-assistant>${this.assistantView()}</div><div class="live-last" data-scan-last>${this.last?`✓ <b>${esc(this.last.setCode)}</b> · +1`:'Nessun codice rilevato'}</div><div class="live-session-stats"><span><b data-scan-total-number>${this.buffer.scanned}</b> scan</span><i>·</i><span><b data-scan-distinct>${this.buffer.entries.size}</b> printing</span><i>·</i><span><b data-scan-review>${this.buffer.review.length}</b> review</span></div><button type="button" class="live-capture" data-scan-capture ${this.snapshotInFlight?'disabled':''}>${icon('camera')}<span>${this.snapshotInFlight?'Elaborazione…':'Scatta e analizza'}</span></button><div class="live-controls"><button data-scan-manual-open>${icon('card')}<span>Manuale</span></button><button data-scan-torch ${this.camera.torchSupported?'':'disabled'}>${icon('flash')}<span>Flash</span></button><button data-scan-switch-camera ${this.devices.length>1?'':'disabled'}>${icon('camera')}<span>Camera</span></button></div></div></footer><aside class="scan-history" data-scan-history>${this.historyView()}</aside>${this.exitSheetView()}${this.manualSheetView()}</section>`;}
+  scannerView(){return `<section class="fast-scan-live ${this.cameraError?'manual-camera':''}"><video id="fast-scan-video" autoplay muted playsinline></video><div class="live-scan-shade"></div><header class="live-scan-header"><button class="live-icon-button" data-scan-back aria-label="Indietro">${icon('arrow')}</button><div><small>Scanner</small><strong>Fast Scan</strong></div><span class="live-header-spacer" aria-hidden="true"></span></header>${this.cameraError?`<div class="live-camera-error"><span>${icon('bell')}</span><strong>${esc(this.cameraError)}</strong><small>Puoi continuare tramite inserimento manuale.</small></div>`:''}<div class="live-roi-label">Allinea il codice</div><div class="live-roi" aria-label="Area di lettura codice"><i></i><span></span></div>${this.debugMode?'<aside class="live-crop-debug" aria-live="polite"><strong>Crop OCR esatto</strong><canvas data-scan-debug-crop></canvas><small data-scan-debug-geometry>In attesa dello scatto</small><small data-scan-debug-stats>In attesa di scan misurati</small><div class="live-crop-debug-export"><button type="button" data-scan-export-telemetry="json">Esporta JSON</button><button type="button" data-scan-export-telemetry="csv">Esporta CSV</button></div></aside>':''}<div class="live-ocr-state"><strong data-scan-status>${esc(this.status)}</strong></div><div class="live-detection ${this.detection?`show ${this.detection.tone}`:''}" data-scan-detection role="status" aria-live="polite" aria-atomic="true">${this.detectionContent(this.detection)}</div><div class="live-background-result ${this.backgroundNotice?`show ${this.backgroundNotice.tone}`:''}" data-scan-background-result role="status" aria-live="polite" aria-atomic="true">${this.detectionContent(this.backgroundNotice)}</div><footer class="live-scan-bottom"><div class="live-scan-content"><div data-scan-assistant>${this.assistantView()}</div><button type="button" class="live-session-count" data-scan-history-review>${icon('card')}<b data-scan-total-number>${this.buffer.total}</b> carte</button><button type="button" class="live-capture" data-scan-capture ${this.snapshotInFlight?'disabled':''}>${icon('camera')}<span>${this.snapshotInFlight?'Elaborazione…':'Scatta e analizza'}</span></button><div class="live-controls"><button data-scan-manual-open>${icon('card')}<span>Manuale</span></button><button data-scan-torch ${this.camera.torchSupported?'':'disabled'}>${icon('flash')}<span>Flash</span></button><button data-scan-switch-camera ${this.devices.length>1?'':'disabled'}>${icon('camera')}<span>Camera</span></button></div></div></footer>${this.exitSheetView()}${this.manualSheetView()}</section>`;}
   exitSheetView(){return `<div class="scan-sheet-backdrop hidden" data-scan-exit-sheet><section class="scan-bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="scan-exit-title"><span class="sheet-handle"></span><small>Sessione Fast Scan</small><h2 id="scan-exit-title">Hai finito?</h2><p>Vediamo cos’hai raccolto allora?</p><div class="sheet-session-summary"><b>${this.buffer.scanned} carte scansionate</b><span>${this.buffer.entries.size} printing · ${this.buffer.review.length} da verificare</span></div><button class="btn" data-scan-confirm-review>Sì, mostrami</button><button class="btn secondary" data-scan-cancel-exit>No, continua a scansionare</button><button class="sheet-danger" data-scan-discard-exit>Scarta sessione</button></section></div>`;}
   manualSheetView(){return `<div class="scan-sheet-backdrop hidden" data-scan-manual-sheet><section class="scan-bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="scan-manual-title"><span class="sheet-handle"></span><small>Fallback</small><h2 id="scan-manual-title">Inserisci codice manualmente</h2><form id="scan-manual-form"><input id="scan-manual-code" autocomplete="off" autocapitalize="characters" placeholder="Es. TDGS-IT001" required><button class="btn">Aggiungi</button></form><button class="btn secondary" data-scan-manual-close>Chiudi</button></section></div>`;}
   reviewView(){const entries=[...this.buffer.entries.values()],progress=syncProgress(this.sync),failed=this.sync?.status==='error';return `<section class="page-stack fast-scan-page scan-review"><header class="page-header split"><div><span class="eyebrow">Review sessione</span><h1>${this.buffer.scanned} carte rilevate</h1><p>${entries.length} printing · ${this.buffer.review.length} da verificare</p></div><button class="btn secondary" data-scan-continue>Continua scansione</button></header>${failed?`<section class="surface scan-sync-warning" role="alert"><strong>Sincronizzazione interrotta. I tuoi scan sono salvati sul dispositivo.</strong><small>${progress.synced}/${progress.total} blocchi completati · al retry saranno inviati soltanto quelli mancanti.</small><div class="actions"><button class="btn" data-scan-save>Riprova sincronizzazione</button><button class="btn secondary" data-scan-sync-later>Continua più tardi</button><button class="btn secondary" data-scan-export>Esporta riepilogo</button></div></section>`:''}${this.buffer.review.length?`<section class="surface"><h2>Da verificare</h2><div class="scan-review-list">${this.buffer.review.map(item=>reviewRow(item)).join('')}</div></section>`:''}<section class="surface"><div class="dashboard-title"><div><span class="eyebrow">Pronte al salvataggio</span><h2>Printing riconosciute</h2></div></div><div class="scan-review-list">${entries.length?entries.map(entry=>entryRow(entry)).join(''):'<div class="empty">Nessuna printing confermata.</div>'}</div></section><section class="surface scan-history-review" data-scan-history>${this.historyView(true)}</section><div class="scan-save-bar"><span><b>${this.buffer.total}</b> carte saranno aggiunte alla tua raccolta · ${this.buffer.scanEvents.filter(scan=>!['CONFIRMED','CANCELLED'].includes(scan.status)).length} scatti irrisolti esclusi${this.saving&&progress.total?` · ${progress.percent}%`:''}</span><button class="btn" data-scan-save ${!entries.length||this.saving||this.buffer.review.some(item=>item.pending)||!this.isOnline()?'disabled':''}>${this.saving?'Sincronizzazione…':failed?'Riprova sincronizzazione':'Salva raccolta'}</button></div></section>`;}
-  bind(root=document){this.reattachVideo();this.updateCaptureUi(this.snapshotInFlight);root.querySelector('#fast-scan-settings')?.addEventListener('submit',e=>{e.preventDefault();this.readSettings();void this.start();});root.querySelector('[data-scan-setup-back]')?.addEventListener('click',()=>void this.exitToCollection());root.querySelector('[data-scan-manual-start]')?.addEventListener('click',()=>{this.readSettings();this.startManual();});root.querySelector('[data-scan-resume-session]')?.addEventListener('click',()=>{this.hasRecovery=false;void this.start();});root.querySelector('[data-scan-recovery-review]')?.addEventListener('click',()=>void this.openReview());root.querySelector('[data-scan-discard]')?.addEventListener('click',()=>void this.discard());root.querySelector('[data-scan-back]')?.addEventListener('click',()=>void this.requestExit());root.querySelector('[data-scan-confirm-review]')?.addEventListener('click',()=>void this.openReview());root.querySelector('[data-scan-cancel-exit]')?.addEventListener('click',()=>this.cancelExit());root.querySelector('[data-scan-discard-exit]')?.addEventListener('click',()=>void this.discardAndExit());root.querySelector('[data-scan-continue]')?.addEventListener('click',()=>{if(!this.canEditSession())return;this.onRoute?.('scan');void this.start();});root.querySelector('[data-scan-manual-open]')?.addEventListener('click',()=>this.toggleManual(true));root.querySelector('[data-scan-manual-close]')?.addEventListener('click',()=>this.toggleManual(false));root.querySelector('[data-scan-capture]')?.addEventListener('click',()=>this.requestSnapshot());root.querySelector('[data-scan-torch]')?.addEventListener('click',async e=>{const on=await this.camera.toggleTorch();e.currentTarget.classList.toggle('active',on);e.currentTarget.querySelector('span').textContent=on?'Flash on':'Flash';});root.querySelector('[data-scan-switch-camera]')?.addEventListener('click',()=>void this.switchCamera());root.querySelector('#scan-manual-form')?.addEventListener('submit',e=>{e.preventDefault();const input=root.querySelector('#scan-manual-code');void (this.editScanId?this.correctReview(this.editScanId,input.value):this.processManual(input.value)).then(()=>{input.value='';input.focus();});});root.querySelectorAll('[data-scan-qty-inc]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanQtyInc,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.updateQuantity(key,item.quantity+1);this.persist();this.onRender();}));root.querySelectorAll('[data-scan-qty-dec]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanQtyDec,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.updateQuantity(key,item.quantity-1);this.persist();this.onRender();}));root.querySelectorAll('[data-scan-first-edition]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanFirstEdition,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.setEdition(key,isFirstEdition(item.edition)?'Unlimited':'Prima Edizione');this.persist();this.onRender();}));root.querySelectorAll('[data-scan-remove]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;this.invalidateSync();this.buffer.updateQuantity(button.dataset.scanRemove,0);this.persist();this.onRender();}));root.querySelectorAll('[data-review-choice]').forEach(button=>button.addEventListener('click',()=>this.chooseReview(button.dataset.reviewId,Number(button.dataset.reviewChoice))));root.querySelectorAll('[data-review-ignore]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;this.invalidateSync();this.buffer.removeReview(button.dataset.reviewIgnore);this.persist();this.onRender();}));root.querySelectorAll('[data-review-correct]').forEach(button=>button.addEventListener('click',()=>{const input=root.querySelector(`[data-review-input="${button.dataset.reviewCorrect}"]`);void this.correctReview(button.dataset.reviewCorrect,input.value);}));root.querySelectorAll('[data-scan-save]').forEach(button=>button.addEventListener('click',()=>void this.save()));root.querySelector('[data-scan-sync-later]')?.addEventListener('click',()=>{this.hasRecovery=true;this.onRoute?.('collection');});root.querySelector('[data-scan-export]')?.addEventListener('click',()=>this.exportSummary());root.querySelectorAll('[data-scan-export-telemetry]').forEach(button=>button.addEventListener('click',()=>this.exportTelemetry(button.dataset.scanExportTelemetry)));}
+  bind(root=document){this.reattachVideo();this.updateCaptureUi(this.snapshotInFlight);root.querySelector('#fast-scan-settings')?.addEventListener('submit',e=>{e.preventDefault();this.readSettings();void this.start();});root.querySelector('[data-scan-setup-back]')?.addEventListener('click',()=>void this.exitToCollection());root.querySelector('[data-scan-manual-start]')?.addEventListener('click',()=>{this.readSettings();this.startManual();});root.querySelector('[data-scan-resume-session]')?.addEventListener('click',()=>{this.hasRecovery=false;void this.start();});root.querySelector('[data-scan-recovery-review]')?.addEventListener('click',()=>void this.openReview());root.querySelector('[data-scan-discard]')?.addEventListener('click',()=>void this.discard());root.querySelector('[data-scan-back]')?.addEventListener('click',()=>void this.requestExit());root.querySelector('[data-scan-confirm-review]')?.addEventListener('click',()=>void this.openReview());root.querySelector('[data-scan-cancel-exit]')?.addEventListener('click',()=>this.cancelExit());root.querySelector('[data-scan-discard-exit]')?.addEventListener('click',()=>void this.discardAndExit());root.querySelector('[data-scan-continue]')?.addEventListener('click',()=>{if(!this.canEditSession())return;this.onRoute?.('scan');void this.start();});root.querySelector('[data-scan-manual-open]')?.addEventListener('click',()=>this.toggleManual(true));root.querySelector('[data-scan-history-review]')?.addEventListener('click',()=>void this.openReview());root.querySelector('[data-scan-manual-close]')?.addEventListener('click',()=>this.toggleManual(false));root.querySelector('[data-scan-capture]')?.addEventListener('click',()=>this.requestSnapshot());root.querySelector('[data-scan-torch]')?.addEventListener('click',async e=>{const on=await this.camera.toggleTorch();e.currentTarget.classList.toggle('active',on);e.currentTarget.querySelector('span').textContent=on?'Flash on':'Flash';});root.querySelector('[data-scan-switch-camera]')?.addEventListener('click',()=>void this.switchCamera());root.querySelector('#scan-manual-form')?.addEventListener('submit',e=>{e.preventDefault();const input=root.querySelector('#scan-manual-code');void (this.editScanId?this.correctReview(this.editScanId,input.value):this.processManual(input.value)).then(()=>{input.value='';input.focus();});});root.querySelectorAll('[data-scan-qty-inc]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanQtyInc,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.updateQuantity(key,item.quantity+1);this.persist();this.onRender();}));root.querySelectorAll('[data-scan-qty-dec]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanQtyDec,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.updateQuantity(key,item.quantity-1);this.persist();this.onRender();}));root.querySelectorAll('[data-scan-first-edition]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;const key=button.dataset.scanFirstEdition,item=this.buffer.entries.get(key);if(!item)return;this.invalidateSync();this.buffer.setEdition(key,isFirstEdition(item.edition)?'Unlimited':'Prima Edizione');this.persist();this.onRender();}));root.querySelectorAll('[data-scan-remove]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;this.invalidateSync();this.buffer.updateQuantity(button.dataset.scanRemove,0);this.persist();this.onRender();}));root.querySelectorAll('[data-review-choice]').forEach(button=>button.addEventListener('click',()=>this.chooseReview(button.dataset.reviewId,Number(button.dataset.reviewChoice))));root.querySelectorAll('[data-review-ignore]').forEach(button=>button.addEventListener('click',()=>{if(!this.canEditSession())return;this.invalidateSync();this.buffer.removeReview(button.dataset.reviewIgnore);this.persist();this.onRender();}));root.querySelectorAll('[data-review-correct]').forEach(button=>button.addEventListener('click',()=>{const input=root.querySelector(`[data-review-input="${button.dataset.reviewCorrect}"]`);void this.correctReview(button.dataset.reviewCorrect,input.value);}));root.querySelectorAll('[data-scan-save]').forEach(button=>button.addEventListener('click',()=>void this.save()));root.querySelector('[data-scan-sync-later]')?.addEventListener('click',()=>{this.hasRecovery=true;this.onRoute?.('collection');});root.querySelector('[data-scan-export]')?.addEventListener('click',()=>this.exportSummary());root.querySelectorAll('[data-scan-export-telemetry]').forEach(button=>button.addEventListener('click',()=>this.exportTelemetry(button.dataset.scanExportTelemetry)));}
   readSettings(){const pick=id=>document.querySelector(id);this.buffer.settings={game:'yugioh',language:pick('#scan-language')?.value||'Italiano',condition:pick('#scan-condition')?.value||'Near Mint',edition:pick('#scan-edition')?.value.trim()||'',autoAdd:Boolean(pick('#scan-auto')?.checked),vibration:Boolean(pick('#scan-vibration')?.checked),sound:Boolean(pick('#scan-sound')?.checked)};this.persist();}
   startManual(){this.startRequestId+=1;this.camera.stop('manual-mode');this.recoveringCamera=false;this.cameraStarting=false;this.stopLoop();this.phase='scanning';this.cameraError='Modalità manuale';this.status='Inserisci un codice';this.onRoute?.('scan');this.onRender();}
   async start(){
@@ -257,7 +270,15 @@ export class FastScanController {
     return memory.matches.length?memory:{matches:[],source:'not-found'};
   }
   async lookup(code,options){return (await this.lookupDetailed(code,options)).matches;}
-  detectionContent(value){if(!value)return '';const mark=value.tone==='error'?'✕':value.tone==='pending'?'…':value.tone==='warn'?'!':'✓';return `<strong>${mark} ${esc(value.code)}</strong><span>${esc(value.detail)}</span>`;}
+  detectionContent(value){
+    if(!value)return '';
+    const mark=value.tone==='error'?'✕':value.tone==='pending'?'…':value.tone==='warn'?'!':'✓';
+    if(value.card){
+      const card=value.card,meta=[card.setCode,card.rarity].filter(Boolean).join(' · ');
+      return `${card.imageUrl?`<img src="${esc(card.imageUrl)}" alt="">`:''}<div><strong>${mark} ${esc(value.detail)}</strong><span>${esc(card.cardName||value.code)}</span>${meta?`<small>${esc(meta)}</small>`:''}</div>${card.quantity>1?`<b class="scan-detection-qty">×${card.quantity}</b>`:''}`;
+    }
+    return `<strong>${mark} ${esc(value.code)}</strong><span>${esc(value.detail)}</span>`;
+  }
   renderDetection(){
     for(const [selector,value] of [['[data-scan-detection]',this.detection],['[data-scan-background-result]',this.backgroundNotice]]){
       const node=document.querySelector(selector);if(!node)continue;
@@ -265,11 +286,17 @@ export class FastScanController {
       node.classList.remove('ok','pending','warn','error','show');if(value)node.classList.add('show',value.tone);
     }
   }
-  showDetection(code,detail,tone='ok'){clearTimeout(this.feedbackTimer);this.feedbackTimer=0;this.detection={code,detail,tone};this.renderDetection();}
+  showDetection(code,detail,tone='ok',card=null){
+    clearTimeout(this.feedbackTimer);this.feedbackTimer=0;
+    const entry=this.detection={code,detail,tone,card};this.renderDetection();
+    // Pop transitorio: sparisce da solo, non lascia mai una traccia persistente
+    // che l'utente debba chiudere a mano — lo scatto successivo non aspetta.
+    this.feedbackTimer=setTimeout(()=>{if(this.detection===entry){this.detection=null;this.renderDetection();}},card?2600:2200);
+  }
   beginCaptureFeedback(){this.feedbackCaptureId=(this.feedbackCaptureId||0)+1;this.detection=null;this.backgroundNotice=null;clearTimeout(this.feedbackTimer);this.renderDetection();}
-  showResolvedFeedback(code,detail,tone,captureId,sequence){
+  showResolvedFeedback(code,detail,tone,captureId,sequence,card=null){
     if(this.phase!=='scanning')return;
-    if(captureId===(this.feedbackCaptureId||0)){this.showDetection(code,detail,tone);this.setStatus(tone==='ok'?'Aggiunta alla sessione':'Da verificare: tieni questa carta');}
+    if(captureId===(this.feedbackCaptureId||0)){this.showDetection(code,detail,tone,card);this.setStatus(tone==='ok'?'Aggiunta alla sessione':'Da verificare: tieni questa carta');}
     else{this.backgroundNotice={code,detail:`Scatto precedente #${sequence||'?'} · ${detail}`,tone};this.renderDetection();}
   }
   chooseReview(id,index){
@@ -295,7 +322,14 @@ export class FastScanController {
     this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
     try{
       const prepared=await canonicalizeFastScanEntries(entries);
-      this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry)});
+      const rejectedNames=prepared.rejected.map(row=>row.entry.cardName||row.entry.setCode||'carta sconosciuta');
+      this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry),rejected:prepared.rejected.map(row=>({...saveDiagnosticEntry(row.entry),code:row.code,message:row.message}))});
+      if(!prepared.items.length){
+        // Ogni entry è stata isolata: nessuna RPC, sessione locale intatta,
+        // l'utente sa esattamente quali carte correggere prima di riprovare.
+        this.onToast?.(`Nessuna carta salvabile: da correggere · ${rejectedNames.join(', ')}`);
+        return;
+      }
       stage='rpc';const rpcPayload=prepared.items;this.sync=prepareFastScanSync(rpcPayload,this.sync);await this.persist(true);this.debugTrace('save:rpc-request',{batchId:this.sync.batchId,chunks:this.sync.chunks.length,rpcPayload});
       let repairAttempts=0;
       for(const index of pendingChunkIndexes(this.sync)){
@@ -309,9 +343,23 @@ export class FastScanController {
         }catch(error){this.sync=markChunk(this.sync,index,'error',null,error?.message||String(error));await this.persist(true);throw error;}
       }
       const rpcResult={batchId:this.sync.batchId,chunks:this.sync.chunks.map(chunk=>chunk.result)};this.debugTrace('save:rpc-result',{saveAccepted:true,rpcResult,repairAttempts});
-      stage='acknowledged';clearTimeout(this.persistTimer);this.currentScanId=null;this.pendingCaptureId=null;await this.disposeProductionOcr();this.buffer.clear();this.sync=null;this.hasRecovery=false;await clearScanSession();
-      stage='refresh';try{await this.onSaved?.();this.debugTrace('save:refresh',{saveAccepted:true});}catch(error){this.debugTrace('save:refresh-failed',{saveAccepted:true,error:error?.message||String(error)});this.onToast?.('Raccolta salvata. Aggiornamento elenco rimandato.');}
-      this.phase='setup';const repaired=prepared.repaired+repairAttempts;this.onToast?.(repaired?`Sessione salvata · ${repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
+      // Rimuove dal buffer SOLO le entry effettivamente salvate — updateQuantity(key,0)
+      // annulla i loro scan CONFIRMED senza toccare quelli isolati in `rejected`,
+      // che restano visibili e correggibili nella sessione locale.
+      stage='acknowledged';clearTimeout(this.persistTimer);
+      const rejectedKeys=new Set(prepared.rejected.map(row=>row.entry.key));
+      for(const entry of entries)if(!rejectedKeys.has(entry.key))this.buffer.updateQuantity(entry.key,0);
+      this.sync=null;await this.persist(true);
+      const fullySaved=!prepared.rejected.length&&!this.buffer.entries.size&&!this.buffer.review.length;
+      if(fullySaved){
+        this.currentScanId=null;this.pendingCaptureId=null;await this.disposeProductionOcr();this.buffer.clear();this.hasRecovery=false;await clearScanSession();
+        stage='refresh';try{await this.onSaved?.();this.debugTrace('save:refresh',{saveAccepted:true});}catch(error){this.debugTrace('save:refresh-failed',{saveAccepted:true,error:error?.message||String(error)});this.onToast?.('Raccolta salvata. Aggiornamento elenco rimandato.');}
+        this.phase='setup';const repaired=prepared.repaired+repairAttempts;this.onToast?.(repaired?`Sessione salvata · ${repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
+      }else{
+        stage='refresh';try{await this.onSaved?.();}catch{}
+        this.hasRecovery=true;
+        this.onToast?.(`${rpcPayload.length} carte salvate · ${rejectedNames.length} da correggere: ${rejectedNames.join(', ')}`);
+      }
     }catch(error){const reason=saveRejectionReason(error,stage);this.debugTrace('save:rejected',{saveAccepted:false,saveRejected:true,saveRejectionReason:reason,stage,error:error?.message||String(error),details:error?.details||null});this.onToast?.('Sincronizzazione interrotta. I tuoi scan sono salvati sul dispositivo.');}
     finally{this.saving=false;this.onRender();}
   }
@@ -323,7 +371,7 @@ export class FastScanController {
   canEditSession(){if(this.saving){this.onToast?.('Attendi il salvataggio della sessione');return false;}const locked=this.sync?.chunks?.some(chunk=>chunk.status==='synced');if(locked)this.onToast?.('Sincronizzazione parziale: completa prima i blocchi mancanti.');return !locked;}
   exportSummary(){const payload={exportedAt:new Date().toISOString(),session:this.buffer.snapshot(),sync:this.sync};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`fpt-fast-scan-${this.sync?.batchId||Date.now()}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
   setStatus(next){if(!next||next===this.status)return;this.status=next;this.refreshHud();}
-  refreshHud(){this.refreshScanPanels();const root=document,write=(node,value)=>{const text=String(value);if(node&&node.textContent!==text)node.textContent=text;};root.querySelectorAll('[data-scan-total-number]').forEach(el=>write(el,this.buffer.scanned));root.querySelectorAll('[data-scan-distinct]').forEach(el=>write(el,this.buffer.entries.size));root.querySelectorAll('[data-scan-review]').forEach(el=>write(el,this.buffer.review.length));write(root.querySelector('[data-scan-status]'),this.status);const last=root.querySelector('[data-scan-last]');if(last&&this.last){const html=`✓ <b>${esc(this.last.setCode)}</b> · +1`;if(last.innerHTML!==html)last.innerHTML=html;}}
+  refreshHud(){this.refreshScanPanels();const root=document,write=(node,value)=>{const text=String(value);if(node&&node.textContent!==text)node.textContent=text;};root.querySelectorAll('[data-scan-total-number]').forEach(el=>write(el,this.buffer.total));write(root.querySelector('[data-scan-status]'),this.status);}
   async snapshotFeedback(){this.scanState='CAPTURING';this.setStatus('Acquisito');const roi=document.querySelector('.live-roi');roi?.classList.add('captured');await delay(180);roi?.classList.remove('captured');}
   async scanOnce(){
     if(this.scanCycleInFlight)return;this.scanCycleInFlight=true;
@@ -444,11 +492,16 @@ export class FastScanController {
     if(this.exitOpen||this.manualOpen){this.setStatus('Chiudi la finestra aperta prima dello scatto');return;}
     if(this.phase!=='scanning'||document.hidden||this.hiddenSuspended||!this.camera.stream||this.cameraStarting||this.recoveringCamera){this.setStatus('Fotocamera non pronta · riavvia lo scanner');return;}
     if(this.snapshotInFlight||this.forceSnapshot){this.setStatus('Elaborazione snapshot in corso…');return;}
-    if(['PENDING_REMOTE','REVIEW_REQUIRED'].includes(this.currentScan?.status)){this.setStatus('Verifica questa carta oppure mettila da parte');return;}
+    if(this.currentScan?.status==='REVIEW_REQUIRED'){this.setStatus('Scegli la carta qui sopra prima di continuare');return;}
     if(this.buffer.scanEvents.filter(scan=>scan.status==='PENDING_REMOTE').length>=3){this.setStatus('Attendi le verifiche in corso (3/3)');return;}
     const scan=this.buffer.createScan();this.currentScanId=scan.id;this.pendingCaptureId=scan.id;this.persist();this.beginCaptureFeedback();this.captureRequestedAt=now();this.forceSnapshot=true;this.stopLoop();this.refreshHud();this.setStatus(this.scanCycleInFlight?'Attendo analisi corrente…':'Scatto manuale…');if(!this.scanCycleInFlight)this.schedule(0);
   }
-  updateCaptureUi(busy){const button=document.querySelector('[data-scan-capture]');if(!button)return;const status=this.currentScan?.status,blocked=['PENDING_REMOTE','REVIEW_REQUIRED','CAPTURED','PROCESSING'].includes(status);button.disabled=Boolean(busy||blocked||this.cameraStarting||this.recoveringCamera);const label=button.querySelector('span');if(label)label.textContent=busy?'Elaborazione…':status==='CONFIRMED'?'Prossima carta':status==='FAILED'?'Riprova questa carta':blocked?'Verifica questa carta':'Scatta e analizza';}
+  // PENDING_REMOTE non blocca più lo scatto successivo (Sezione 2/5: la
+  // verifica di rete prosegue in background — già race-safe via captureId/
+  // isCurrent — e non deve rallentare scan -> prossima carta). Solo una vera
+  // ambiguità (REVIEW_REQUIRED, risolta subito dal chooser inline) o uno
+  // scatto fisicamente in corso restano bloccanti.
+  updateCaptureUi(busy){const button=document.querySelector('[data-scan-capture]');if(!button)return;const status=this.currentScan?.status,blocked=['REVIEW_REQUIRED','CAPTURED','PROCESSING'].includes(status);button.disabled=Boolean(busy||blocked||this.cameraStarting||this.recoveringCamera);const label=button.querySelector('span');if(label)label.textContent=busy?'Elaborazione…':status==='CONFIRMED'?'Prossima carta':status==='FAILED'?'Riprova questa carta':blocked?'Verifica questa carta':'Scatta e analizza';}
   renderDebugCrop(source,mapping={},mode='grayscale'){
     if(!this.debugMode||!source?.width||!source?.height)return;const canvas=document.querySelector('[data-scan-debug-crop]'),label=document.querySelector('[data-scan-debug-geometry]');if(!canvas)return;canvas.width=source.width;canvas.height=source.height;const context=canvas.getContext('2d');context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(source,0,0);const crop=mapping.snapshotCrop||mapping.crop||{};if(label)label.textContent=`${mode} · ${source.width}×${source.height} · source ${crop.sx||0},${crop.sy||0} ${crop.sw||0}×${crop.sh||0}`;
   }
@@ -489,7 +542,11 @@ export class FastScanController {
       if(requireReview&&result.matches?.length)result={...result,status:'needs_review',warning:'Lettura OCR incerta: conferma il codice'};
       await this.commitResolution(result,reading.text,false,pendingId,{scanId:scan.id,version});
       if(!current())return;
-      if(pendingId)this.showResolvedFeedback(code,scan.status==='CONFIRMED'?'Carta aggiunta alla sessione · +1':'Da verificare: correggi o metti da parte',scan.status==='CONFIRMED'?'ok':'warn',captureId,scan.sequence);
+      if(pendingId){
+        if(scan.status==='CONFIRMED'){const entry=this.buffer.entries.get(scan.printing?.key);this.showResolvedFeedback(code,'Salvata','ok',captureId,scan.sequence,entry?{imageUrl:entry.imageUrl,cardName:entry.cardName,setCode:entry.setCode,rarity:entry.rarity,quantity:entry.quantity}:null);}
+        else if(scan.status==='FAILED')this.showResolvedFeedback(code,'Codice non letto — riprova','error',captureId,scan.sequence);
+        else this.showResolvedFeedback(code,'Conferma la carta qui sopra','warn',captureId,scan.sequence);
+      }
     };
     this.consensus.reset();this.failureStreak=0;
     if(['session-cache','catalog-index'].includes(memory.source)){
@@ -630,10 +687,20 @@ export class FastScanController {
     this.buffer.updateScan(scan.id,{rawCode:raw,normalizedCode:result.code||normalized.code,ocrConfidence:result.ocrConfidence||scan.ocrConfidence,matchType:result.decision||'',source:result.lookupSource||scan.source});
     const mustAutoAdd=result.decision==='EXACT_UNIQUE'||(result.decision==='NEAR_UNIQUE'&&this.buffer.settings.autoAdd)||manual;
     const added=result.status==='high_confidence'&&mustAutoAdd;
+    // Nessun codice/match reale: fallimento pulito, mai un elemento da
+    // rivedere — l'utente non deve mai vedere una coda per una lettura
+    // spazzatura (Sezione 7). Un vero candidato (1-4) resta invece nella
+    // review, risolto SUBITO dal chooser inline di assistantView().
     if(added)this.buffer.confirmScan(scan.id,result.matches[0],result.decision||'high_confidence');
-    else this.buffer.queueReview({id:scan.id,raw,code:result.code,status:result.status,matches:result.matches||[],ocrConfidence:result.ocrConfidence,warning:result.warning||(result.status==='not_found'?'Codice non trovato nel catalogo':result.corrected?'Correzione OCR da confermare':'Match da confermare'),pending:false});
+    else if(!result.matches?.length)this.buffer.failScan(scan.id,result.status==='not_found'?'NOT_FOUND':'NO_VALID_MATCH');
+    else this.buffer.queueReview({id:scan.id,raw,code:result.code,status:result.status,matches:result.matches,ocrConfidence:result.ocrConfidence,warning:result.warning||(result.corrected?'Correzione OCR da confermare':'Match da confermare'),pending:false});
     this.persist();
-    if(!pendingId){this.currentScanId=scan.id;if(added){this.last=this.buffer.entries.get(scan.printing.key);this.feedback();}this.scanState='RESULT';this.status=added?'Aggiunta alla sessione':'Codice da verificare';this.showDetection(result.code||normalized.code,added?'Carta aggiunta alla sessione · +1':'Da verificare: riprova, correggi o metti da parte',added?'ok':'warn');}
+    if(!pendingId){
+      this.currentScanId=scan.id;
+      if(added){this.last=this.buffer.entries.get(scan.printing.key);this.feedback();this.scanState='RESULT';this.status='Aggiunta alla sessione';this.showDetection(result.code||normalized.code,'Salvata',this.last?.quantity>1?'ok':'ok',this.last?{imageUrl:this.last.imageUrl,cardName:this.last.cardName,setCode:this.last.setCode,rarity:this.last.rarity,quantity:this.last.quantity}:null);}
+      else if(!result.matches?.length){this.scanState='RESULT';this.status='Codice non letto · riprova';this.showDetection(result.code||normalized.code||'','Codice non letto — riprova','error');}
+      else{this.scanState='RESULT';this.status='Codice da verificare';}
+    }
     if(this.phase==='review')this.onRender?.();else this.refreshHud();
   }
   queueZoom(value){const range=this.camera.capabilities?.zoom;if(!range)return;const zoom=Math.min(range.max,Math.max(range.min,Number(value)||range.min));clearTimeout(this.zoomTimer);this.zoomTimer=setTimeout(()=>void this.camera.setZoom(zoom).then(applied=>{if(applied)this.updateZoomUi(this.camera.zoomValue);}),70);this.updateZoomUi(zoom);}
@@ -663,27 +730,61 @@ export class FastScanController {
   }
 }
 
-export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null) {
-  const items=[],decisions=[];let repaired=0;
-  for(const entry of entries){
-    const base=batchItem(entry);
-    if(base.printingId){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
-    if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
-    let rows=[],lookupFailure='';try{rows=await lookupPrintings(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
-    const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
-    if(!candidates.length){
-      if(base.game==='yugioh'){
-        let card=null,resolverFailure='';try{card=await resolveCanonicalCard({id:'',name:base.cardName,setCode:base.setCode},base.game);}catch(error){resolverFailure=error?.message||'resolver_failed';}
-        if(card){const setMatch=(card.printings||[]).some(printing=>sameText(printing.setCode,base.setCode)),legacyArtwork=(card.imageIds||[]).includes(String(base.catalogCardId));if(!sameText(card.name,base.cardName)||(!setMatch&&!legacyArtwork))throw saveError('CATALOG_IDENTITY_MISMATCH',`Identità printing incoerente per ${base.setCode}: il catalogo non conferma la carta`,{base,cardId:card.id||'',cardName:card.name||''});const canonicalId=String(card.id||'');if(!canonicalId)throw saveError('PRINTING_CANONICALIZATION_FAILED',`Identità printing incompleta per ${base.setCode}`,base);const canonical={...base,catalogCardId:canonicalId,cardName:card.name,imageUrl:card.fullImage||card.image||base.imageUrl};items.push(canonical);decisions.push(canonicalDecision(canonical,'CANONICAL_CATALOG_ID',{lookupFailure}));if(canonicalId!==base.catalogCardId)repaired+=1;continue;}
-        items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure,resolverFailure:resolverFailure||'catalog_unavailable'}));continue;
-      }
-      items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
-    }
-    const ranked=candidates.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
-    if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
-    const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
+// Stessi vincoli imposti server-side da save_collection_batch (RPC condivisa
+// da Fast Scan e dall'editor Raccolta) — validati QUI prima dell'invio così
+// una singola entry fuori norma non arriva mai a un chunk RPC che altrimenti
+// la rifiuterebbe in blocco insieme a tutte le altre. Non un secondo elenco
+// di regole: le stesse identiche soglie del vincolo server, solo anticipate.
+const VALID_CONDITIONS=['Mint','Near Mint','Excellent','Good','Played','Poor'];
+function hardValidationReason(base){
+  if(!['yugioh','onepiece'].includes(base.game))return 'Gioco non valido';
+  if(!VALID_CONDITIONS.includes(base.condition))return `Condizione non valida: ${base.condition}`;
+  if(!(base.quantityDelta>=1&&base.quantityDelta<=999))return `Quantità non valida: ${base.quantityDelta}`;
+  if(!base.printingId){
+    if(!(base.catalogCardId.length>=1&&base.catalogCardId.length<=100))return 'ID catalogo non valido';
+    if(!(base.cardName.length>=1&&base.cardName.length<=200))return 'Nome carta non valido';
+    if(!(base.setCode.length>=4&&base.setCode.length<=100))return `Set code non valido: ${base.setCode||'(vuoto)'}`;
+    if(base.imageUrl&&!base.imageUrl.startsWith('https://'))return 'URL immagine non valido';
   }
-  return {items,repaired,decisions};
+  return '';
+}
+
+export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null) {
+  const items=[],decisions=[],rejected=[];let repaired=0;
+  for(const entry of entries){
+    // Ogni entry è isolata in un proprio try/catch: una singola identità
+    // irrisolvibile (rarity contaminata sopravvissuta alla sanitizzazione,
+    // mismatch di catalogo, ambiguità reale) non deve più far fallire l'intera
+    // sessione — finisce in `rejected`, il resto del batch procede.
+    try{
+      const base=batchItem(entry);
+      // La rarity yugioh è già sanitizzata da ScanSessionBuffer.printing()/
+      // rebuild() a monte: questa è solo l'ultima rete di sicurezza, per una
+      // entry legacy scritta su disco da una versione dell'app precedente a
+      // quel fix, ripristinata senza mai passare da rebuild() di nuovo.
+      if(base.game==='yugioh')base.rarity=sanitizeYugiohRarity(base.rarity);
+      const invalidReason=hardValidationReason(base);
+      if(invalidReason)throw saveError('INVALID_RPC_PAYLOAD',`${base.cardName||base.setCode||'Carta'}: ${invalidReason}`,base);
+      if(base.printingId){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
+      if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
+      let rows=[],lookupFailure='';try{rows=await lookupPrintings(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
+      const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
+      if(!candidates.length){
+        if(base.game==='yugioh'){
+          let card=null,resolverFailure='';try{card=await resolveCanonicalCard({id:'',name:base.cardName,setCode:base.setCode},base.game);}catch(error){resolverFailure=error?.message||'resolver_failed';}
+          if(card){const setMatch=(card.printings||[]).some(printing=>sameText(printing.setCode,base.setCode)),legacyArtwork=(card.imageIds||[]).includes(String(base.catalogCardId));if(!sameText(card.name,base.cardName)||(!setMatch&&!legacyArtwork))throw saveError('CATALOG_IDENTITY_MISMATCH',`Identità printing incoerente per ${base.setCode}: il catalogo non conferma la carta`,{base,cardId:card.id||'',cardName:card.name||''});const canonicalId=String(card.id||'');if(!canonicalId)throw saveError('PRINTING_CANONICALIZATION_FAILED',`Identità printing incompleta per ${base.setCode}`,base);const canonical={...base,catalogCardId:canonicalId,cardName:card.name,imageUrl:card.fullImage||card.image||base.imageUrl};items.push(canonical);decisions.push(canonicalDecision(canonical,'CANONICAL_CATALOG_ID',{lookupFailure}));if(canonicalId!==base.catalogCardId)repaired+=1;continue;}
+          items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure,resolverFailure:resolverFailure||'catalog_unavailable'}));continue;
+        }
+        items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
+      }
+      const ranked=candidates.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
+      if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
+      const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
+    }catch(error){
+      rejected.push({entry,code:error?.code||'PRINTING_CANONICALIZATION_FAILED',message:error?.message||String(error),details:error?.details||null});
+    }
+  }
+  return {items,repaired,decisions,rejected};
 }
 
 export async function saveFastScanBatchWithRepair(items=[],saveBatch,repairEntries,{maxRepairs=8}={}){

@@ -1,3 +1,5 @@
+import { sanitizeYugiohRarity } from './cards.js';
+
 const STRICT_SET_CODE = /^[A-Z0-9]{2,12}-[A-Z0-9]{2,10}$/;
 const OCR_SWAPS = {J:['H'],H:['J'],O:['0'],0:['O'],I:['1','L','T'],1:['I','L','T'],L:['I','1'],T:['I','1'],S:['5'],5:['S','3'],3:['5'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G']};
 const REGION_CODES = ['IT','EN','DE','FR','SP','PT','ENC',...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(letter=>`EN${letter}`)];
@@ -129,7 +131,15 @@ export class ScanSessionBuffer {
     }
     this.nextSequence=Math.max(0,...this.scanEvents.map(event=>Number(event.sequence)||0))+1;this.rebuild();
   }
-  printing(value){return {key:value.key||value.printingId||[value.game,value.catalogCardId,value.setCode,value.rarity].join(':'),printingId:value.printingId||'',game:value.game||'yugioh',catalogCardId:String(value.catalogCardId||''),cardName:value.cardName||'',setCode:value.setCode||'',setName:value.setName||'',rarity:value.rarity||'',imageUrl:value.imageUrl||'',language:value.language||((value.game||'yugioh')==='yugioh'?languageFromSetCode(value.setCode,this.settings.language):this.settings.language),condition:value.condition||this.settings.condition,edition:value.edition??this.settings.edition};}
+  printing(value){
+    const game=value.game||'yugioh';
+    // Single choke point for every confirmed/imported entry: whatever set the
+    // raw rarity (fresh catalog lookup, a stale card_printings row, a legacy
+    // snapshot), a YGOProDeck artwork/reprint tag can never survive as a
+    // literal rarity from here on — see js/cards.js sanitizeYugiohRarity.
+    const rarity=game==='yugioh'?sanitizeYugiohRarity(value.rarity):(value.rarity||'');
+    return {key:value.key||value.printingId||[game,value.catalogCardId,value.setCode,rarity].join(':'),printingId:value.printingId||'',game,catalogCardId:String(value.catalogCardId||''),cardName:value.cardName||'',setCode:value.setCode||'',setName:value.setName||'',rarity,imageUrl:value.imageUrl||'',language:value.language||(game==='yugioh'?languageFromSetCode(value.setCode,this.settings.language):this.settings.language),condition:value.condition||this.settings.condition,edition:value.edition??this.settings.edition};
+  }
   createScan(data={}){
     const event={id:data.id||crypto.randomUUID(),sequence:data.countsAsScan===false?0:this.nextSequence++,createdAt:new Date().toISOString(),status:data.status||'CAPTURED',rawCode:data.rawCode||'',normalizedCode:data.normalizedCode||'',ocrConfidence:Number(data.ocrConfidence)||0,matchType:'',printingId:'',cardName:'',setCode:'',rarity:'',imageUrl:'',source:data.source||'camera',failureReason:data.failureReason||'',resolutionVersion:0,countsAsScan:data.countsAsScan!==false};
     this.scanEvents.push(event);this.rebuild();this.touch();return event;
@@ -168,7 +178,16 @@ export class ScanSessionBuffer {
     this.entries=new Map();this.review=[];this.total=0;this.scanned=0;
     for(const event of this.scanEvents){
       if(event.countsAsScan!==false)this.scanned+=1;
-      if(event.status==='CONFIRMED'&&event.printing){const key=event.printing.key,current=this.entries.get(key);if(current)current.quantity++;else this.entries.set(key,{...event.printing,quantity:1,confidence:event.matchType,warning:event.warning||''});this.total++;}
+      if(event.status==='CONFIRMED'&&event.printing){
+        // A snapshot restored from persistence (reload mid-session, resumed
+        // export) rebuilds scanEvents with structuredClone, never through
+        // printing() above — re-sanitize here too so a rarity contaminated
+        // before this fix shipped can't survive a resumed session either.
+        if(event.printing.game==='yugioh'){
+          const clean=sanitizeYugiohRarity(event.printing.rarity);
+          if(clean!==event.printing.rarity){event.printing.rarity=clean;event.printing.key=event.printing.printingId||[event.printing.game,event.printing.catalogCardId,event.printing.setCode,clean].join(':');}
+        }
+        const key=event.printing.key,current=this.entries.get(key);if(current)current.quantity++;else this.entries.set(key,{...event.printing,quantity:1,confidence:event.matchType,warning:event.warning||''});this.total++;}
       else if(event.status!=='CANCELLED'&&event.reviewData)this.review.push(event.reviewData);
     }
   }

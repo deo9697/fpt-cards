@@ -26,13 +26,19 @@ const warm=controller();warm.cacheResolution(printing.setCode,[printing]);
 assert.equal(await scan(warm,[{text:printing.setCode,confidence:96}]),1);
 assert.equal(await scan(warm,[{text:printing.setCode,confidence:96}]),1,'consecutive copies use one inference each');
 assert.equal(warm.buffer.total,2);
-assert.equal(warm.detection.tone,'ok');assert.match(warm.detection.detail,/aggiunta alla sessione/);assert.equal(warm.feedbackTimer,0,'confirmation must not auto-hide');
+// Sezione 4 (feedback minimale 2026-09-17): il pop di conferma ora sparisce
+// da solo dopo una breve durata (mai bloccante sul prossimo scatto), non più
+// tenuto vivo solo dal prossimo scatto — vedi showDetection().
+assert.equal(warm.detection.tone,'ok');assert.match(warm.detection.detail,/Salvata/);assert(warm.feedbackTimer,'la conferma deve sparire da sola dopo una breve durata');
 assert.match(warm.scannerView(),/live-detection show ok/,'badge survives a full scanner redraw');
 const ambiguous=controller();ambiguous.cacheResolution(printing.setCode,[printing,{...printing,printingId:'p2',rarity:'Ultra Rare'}]);
 assert.equal(await scan(ambiguous,[{text:printing.setCode,confidence:95}]),1,'rarity ambiguity must not trigger adaptive');
 assert.equal(ambiguous.buffer.review[0].matches.length,2);
 assert.equal(ambiguous.buffer.total,0);
-assert.equal(ambiguous.detection.tone,'warn');assert.match(ambiguous.detection.detail,/Da verificare/);
+// Una vera ambiguità (2+ candidati) non usa più il banner transitorio: la
+// scelta inline di assistantView() è l'unico feedback, mostrata subito.
+assert.equal(ambiguous.detection,null,'una vera ambiguità non mostra il banner transitorio, solo il chooser inline');
+assert.match(ambiguous.assistantView(),/Quale carta è\?/);assert.equal(ambiguous.assistantView().match(/data-scan-choice/g)?.length,2);
 const weak=controller();weak.cacheResolution(printing.setCode,[printing]);
 assert.equal(await scan(weak,[{text:printing.setCode,confidence:40},{text:printing.setCode,confidence:50}]),2);
 assert.equal(weak.buffer.total,0,'catalog match cannot auto-add weak OCR');
@@ -60,7 +66,11 @@ const oldLookup=deferred();const mixed=controller({api:{lookupPrintings:async()=
 await scan(mixed,[{text:printing.setCode,confidence:95}]);const oldResult=mixed.pendingResolution;
 const otherPrinting={...printing,printingId:'other',setCode:'LOB-IT002'};mixed.cacheResolution(otherPrinting.setCode,[otherPrinting]);await scan(mixed,[{text:otherPrinting.setCode,confidence:96}]);
 oldLookup.resolve();await oldResult;assert.equal(mixed.detection.code,otherPrinting.setCode,'late result cannot replace the current badge');assert.equal(mixed.backgroundNotice.code,printing.setCode);assert.match(mixed.backgroundNotice.detail,/Scatto precedente/);assert.match(mixed.scannerView(),/data-scan-background-result/);
-const absent=controller({api:{lookupPrintings:async()=>[]}});await scan(absent,[{text:printing.setCode,confidence:95}]);await absent.pendingResolution;assert.equal(absent.detection.tone,'warn');assert.match(absent.detection.detail,/Da verificare/,'catalog miss is retained for review, no rescan required');
+// Sezione 7 (2026-09-17): zero candidati è un fallimento pulito, non più
+// "trattenuto per review senza richiedere una nuova scansione" — l'utente
+// deve poter riprovare subito, mai lavorare su una coda per una lettura senza
+// alcun candidato reale.
+const absent=controller({api:{lookupPrintings:async()=>[]}});await scan(absent,[{text:printing.setCode,confidence:95}]);await absent.pendingResolution;assert.equal(absent.detection.tone,'error');assert.match(absent.detection.detail,/Codice non letto — riprova/,'zero candidati: fallimento pulito, retry immediato');
 
 const late=deferred(),cancelled=controller({api:{lookupPrintings:async()=>{await late.promise;return [printing];}}});
 await cancelled.resolveCapturedReading({text:printing.setCode,confidence:96});const lateResult=cancelled.pendingResolution;
