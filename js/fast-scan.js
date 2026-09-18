@@ -165,9 +165,9 @@ export class FastScanController {
   }
   async prepareProductionOcr(){
     if(this.paddleState==='paddle')return;if(this.primaryOcrPreparing)return this.primaryOcrPreparing;this.paddleState='preparing';this.paddleError='';this.primaryOcrPreparing=(async()=>{try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(error){this.paddleState='unavailable';this.paddleError=error?.message||String(error);}})();try{await this.primaryOcrPreparing;}finally{this.primaryOcrPreparing=null;}}
-  async recognizeProduction(canvas){
+  async recognizeProduction(canvas,{isFallback=false}={}){
     if(this.paddleState!=='paddle')await this.prepareProductionOcr();
-    if(this.paddleState==='paddle'){const started=performance.now();const result=await this.paddleOcr.recognize(canvas);if(this.cycleTelemetry)this.cycleTelemetry.executionMode=this.paddleOcr.executionMode;this.debugTrace('ocr:timing',{durationMs:Math.round(performance.now()-started),width:canvas.width,height:canvas.height,confidence:result.confidence,metrics:result.metrics,runtime:result.runtime,worker:result.worker,executionMode:this.paddleOcr.executionMode});return {...result,engine:'paddle'};}
+    if(this.paddleState==='paddle'){const started=performance.now();const result=await this.paddleOcr.recognize(canvas,{isFallback});if(this.cycleTelemetry)this.cycleTelemetry.executionMode=this.paddleOcr.executionMode;this.debugTrace('ocr:timing',{durationMs:Math.round(performance.now()-started),width:canvas.width,height:canvas.height,confidence:result.confidence,metrics:result.metrics,runtime:result.runtime,worker:result.worker,executionMode:this.paddleOcr.executionMode});return {...result,engine:'paddle'};}
     throw new Error(this.paddleError||'Motore OCR non disponibile');
   }
   async disposeProductionOcr(){await this.paddleOcr.dispose?.();if(this.primaryOcrPreparing)await this.primaryOcrPreparing.catch(()=>{});this.paddleState='idle';this.paddleError='';}
@@ -439,7 +439,7 @@ export class FastScanController {
           this.setStatus('Verifico lettura OCR…');
           const fallbackPlanStart=now();const fallbackPlan=plan.buildFallback();if(telemetry)telemetry.fallbackPreprocessMs=now()-fallbackPlanStart;
           this.renderDebugCrop(fallbackPlan.canvas,snapshot.mapping,'adaptive');
-          const fallbackOcrStart=now();const fallback={...await this.recognizeProduction(fallbackPlan.canvas),preprocessing:fallbackPlan.preprocessing};if(telemetry)telemetry.fallbackOcrMs=now()-fallbackOcrStart;
+          const fallbackOcrStart=now();const fallback={...await this.recognizeProduction(fallbackPlan.canvas,{isFallback:true}),preprocessing:fallbackPlan.preprocessing};if(telemetry)telemetry.fallbackOcrMs=now()-fallbackOcrStart;
           if(captureSession!==this.buffer||captureRequest!==this.startRequestId)return;
           productionReadings.push(fallback);
           const result=selectSnapshotOcrResult(productionReadings);
@@ -530,7 +530,7 @@ export class FastScanController {
     if(this.activeCaptureId){this.buffer.failScan(this.activeCaptureId,catalogMiss?'NO_CATALOG_MATCH':'NO_TEXT');this.persist();this.refreshHud();}
     this.showDetection(catalogMiss?'Codice non confermato':'Codice non letto','Riprova questa carta','error');
     this.consensus.miss();this.gate.miss();this.failureStreak+=1;
-    if(this.failureStreak>=4){this.failureStreak=0;this.camera.clearPreprocessingPreference?.();const focused=await this.camera.refocus();this.setStatus(focused?'Messa a fuoco…':this.camera.focusSupported?'Tocca per mettere a fuoco':'Avvicina la carta');}
+    if(this.failureStreak>=4){this.failureStreak=0;const focused=await this.camera.refocus();this.setStatus(focused?'Messa a fuoco…':this.camera.focusSupported?'Tocca per mettere a fuoco':'Avvicina la carta');}
     else this.setStatus(catalogMiss?'Codice non trovato · controlla la review':'Codice non letto · riprova lo scatto');
   }
   async refocus(){const requestId=this.startRequestId,focused=await this.camera.refocus();if(requestId!==this.startRequestId||this.phase!=='scanning'||document.hidden)return;this.setStatus(focused?'Messa a fuoco…':'Avvicina la carta');if(focused)setTimeout(()=>{if(requestId===this.startRequestId&&this.phase==='scanning'&&!document.hidden)this.setStatus('Pronto allo scatto');},650);}
@@ -553,7 +553,13 @@ export class FastScanController {
       }
     };
     this.consensus.reset();this.failureStreak=0;
-    if(['session-cache','catalog-index'].includes(memory.source)){
+    // reconstructedSeparator (audit OCR 2026-09-17, Finding 1): `code` qui è
+    // un'ipotesi su dove andava un trattino che l'OCR non ha letto — anche
+    // con un hit di memoria "genuinamente completo" (catalog-index) non deve
+    // saltare la review come farebbe una lettura col trattino verificata.
+    // Il codice cade nel percorso "in verifica" più sotto, che passa da
+    // resolve()/classifyNearPrintingMatch (sempre requiresReview per queste).
+    if(!normalized.reconstructedSeparator&&['session-cache','catalog-index'].includes(memory.source)){
       const result={...classifyPrintingMatch({normalized,matches:memory.matches}),code,ocrConfidence:reading.confidence,lookupSource:memory.source};
       await finish(result);return requireReview?{...result,status:'needs_review'}:result;
     }
@@ -577,16 +583,16 @@ export class FastScanController {
     this.debugStartedAt=typeof performance!=='undefined'?performance.now():Date.now();
     const evidence=this.consensus.observe(raw,ocrConfidence);
     this.debugTrace('ocr',{raw,ocrConfidence,candidate:evidence.code||'',votes:evidence.votes||0});
-    if(!evidence.valid){const near=normalizeSetCode(raw).code;this.debugTrace('resolution:rejected',{rawOcr:raw,normalizedOcr:near,parsedCode:'',candidateCodes:[],catalogMatches:[],accepted:false,rejectionReason:'INVALID_FORMAT'});if(near.includes('-')&&near.length>=5&&near.length<=24)this.camera.preferPreprocessing?.(preprocessing.mode);await this.recordFailure();return {status:'not_found'};}
+    if(!evidence.valid){const near=normalizeSetCode(raw).code;this.debugTrace('resolution:rejected',{rawOcr:raw,normalizedOcr:near,parsedCode:'',candidateCodes:[],catalogMatches:[],accepted:false,rejectionReason:'INVALID_FORMAT'});await this.recordFailure();return {status:'not_found'};}
     if(!evidence.ready&&!evidence.strong){
       if(options.catalogConfirm){
         let started=now();const confirmed=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
-        if(confirmed.status!=='not_found'){this.gate.accept(confirmed.code,signature,Date.now());this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(confirmed,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return confirmed;}
+        if(confirmed.status!=='not_found'){this.gate.accept(confirmed.code,signature,Date.now());this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(confirmed,raw);if(telemetry)telemetry.commitMs+=now()-started;return confirmed;}
         this.consensus.reset();started=now();await this.commitResolution(confirmed,raw,true);if(telemetry)telemetry.commitMs+=now()-started;return confirmed;
       }
       let started=now();const fast=await this.resolveFast(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
-      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:fast.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(fast,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return fast;}
-      this.camera.preferPreprocessing?.(preprocessing.mode);this.setStatus(`Conferma lettura ${evidence.votes}/2`);return {status:'pending_consensus',code:evidence.code};
+      if(fast.status==='high_confidence'){if(!this.gate.consider(fast.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:fast.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(fast,raw);if(telemetry)telemetry.commitMs+=now()-started;return fast;}
+      this.setStatus(`Conferma lettura ${evidence.votes}/2`);return {status:'pending_consensus',code:evidence.code};
     }
     // Fast Scan Step B (P1.5): un codice valido ma assente da ogni fonte
     // locale (session-cache/catalog-index/collection-cache) richiederebbe qui
@@ -614,7 +620,7 @@ export class FastScanController {
     let started=now();const result=await this.resolve(evidence.code,evidence.confidence,{consensus:evidence.votes});if(telemetry)telemetry.fallbackResolveMs+=now()-started;
     if(result.status==='not_found'){this.consensus.reset();await this.recordFailure(true);return result;}
     if(options.catalogConfirm)this.gate.accept(result.code,signature,Date.now());else if(!this.gate.consider(result.code,signature)){this.debugTrace('resolution:rejected',{rawOcr:raw,parsedCode:result.code,accepted:false,rejectionReason:'DUPLICATE_DEBOUNCE'});return {status:'duplicate_blocked'};}
-    this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(result,raw);if(telemetry)telemetry.commitMs+=now()-started;this.camera.clearPreprocessingPreference?.();return result;
+    this.consensus.reset();this.failureStreak=0;started=now();await this.commitResolution(result,raw);if(telemetry)telemetry.commitMs+=now()-started;return result;
   }
   enqueueBackgroundResolution(raw,ocrConfidence,consensusVotes,pendingId,pendingCode){
     return new Promise(resolve=>{
@@ -653,7 +659,14 @@ export class FastScanController {
     catch(error){if(this.buffer!==buffer||!buffer.isCurrent(scan.id,version))return;buffer.failScan(scan.id,'LOOKUP_FAILED');this.persist();this.refreshHud();this.onToast?.(error.message||'Verifica non disponibile: riprova');}
   }
   async resolveFast(raw,ocrConfidence,{consensus=0,manual=false}={}){
-    const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};const exact=candidates[0],hit=this.lookupMemory(exact.code);
+    const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};
+    // exact.corrected (audit OCR 2026-09-17, Finding 1): candidates[0] non è
+    // sempre una lettura pulita — può essere la ricostruzione di un trattino
+    // mai visto dall'OCR (normalizeSetCode/setCodeCandidates la marcano
+    // corrected+requiresReview). In quel caso non va trattata come "exact":
+    // resta nel pool sottostante (slice(0) invece di slice(1)), soggetta allo
+    // stesso gate edits===1/requiresReview di ogni altra correzione.
+    const exact=candidates[0],hit=exact.corrected?{matches:[],source:''}:this.lookupMemory(exact.code);
     // Un hit "collection-cache" nasce da cosa il team possiede GIÀ, non dal
     // catalogo completo: se un set code ha più rarità (es. una Common e una
     // Ultra Rare con lo stesso codice) e ne possediamo solo una, qui sembra
@@ -666,18 +679,21 @@ export class FastScanController {
     // RPC in resolve()/lookupDetailed(), che lo tiene comunque come fallback
     // se offline o se la sync dell'indice non è ancora arrivata a quel codice.
     if(hit.matches.length&&(hit.source==='session-cache'||hit.source==='catalog-index')){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:hit.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:hit.source};}
-    const corrected=candidates.slice(1).map(candidate=>({candidate,...this.lookupMemory(candidate.code)})).filter(item=>item.matches.length);
+    const corrected=candidates.slice(exact.corrected?0:1).map(candidate=>({candidate,...this.lookupMemory(candidate.code)})).filter(item=>item.matches.length);
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
   async resolve(raw,ocrConfidence,{consensus=0,manual=false,exactOnly=false}={}){
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};
     const fast=await this.resolveFast(raw,ocrConfidence,{consensus,manual});if(!fast.fastMiss&&!fast.corrected)return fast;
-    const exact=candidates[0],exactLookup=await this.lookupDetailed(exact.code,{allowExternal:!exactOnly});
+    // exact.corrected: stessa guardia di resolveFast() qui sopra — una
+    // ricostruzione di trattino non passa dal percorso "exact" fidato via
+    // rete/RPC, resta nel pool corrected qualche riga più sotto (slice(0)).
+    const exact=candidates[0],exactLookup=exact.corrected?{matches:[],source:''}:await this.lookupDetailed(exact.code,{allowExternal:!exactOnly});
     if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
     if(exactOnly)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus}; if(!fast.fastMiss&&fast.corrected)return fast;
-    let corrected=(await Promise.all(candidates.slice(1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
-    if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}
+    let corrected=(await Promise.all(candidates.slice(exact.corrected?0:1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
+    if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(exact.corrected?0:1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus};
     const matches=dedupe(corrected.flatMap(item=>item.matches)),classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount}),code=classified.code||(corrected.length===1?corrected[0].candidate.code:exact.code);
     return {...classified,code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};

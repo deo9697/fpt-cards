@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { normalizeSetCode,extractSetCodeCandidates,setCodeCandidates,classifyPrintingMatch,classifyNearPrintingMatch,OcrConsensus,ScanGate,ScanSessionBuffer,signatureDistance,SCAN_DECISION,languageFromSetCode,defaultScanSettings } from '../js/fast-scan-core.js';
 
-assert.deepEqual(normalizeSetCode(' tdgs - it001 '),{raw:' tdgs - it001 ',code:'TDGS-IT001',valid:true});
+assert.deepEqual(normalizeSetCode(' tdgs - it001 '),{raw:' tdgs - it001 ',code:'TDGS-IT001',valid:true,reconstructedSeparator:false,reconstructionEdits:0,reconstructionCandidates:[]});
 assert.equal(normalizeSetCode('YS13IT002').code,'YS13-IT002','trattino mancante non ricostruito dalla struttura SET/REGIONE/NUMERO');
 assert.equal(normalizeSetCode('PTDNIT004').code,'PTDN-IT004');
 assert.equal(normalizeSetCode('SDDLIT007').code,'SDDL-IT007');
@@ -16,8 +16,8 @@ assert.equal(normalizeSetCode('LOB-001').valid,true);
 assert.equal(normalizeSetCode('L5DD-ENY39').valid,true);
 assert.equal(normalizeSetCode('JUSH-IT047').valid,true);
 assert.equal(normalizeSetCode('L5DD-ENC32').valid,true);
-for(const code of ['SDM-I105','TDGS-EN004','L26D-ENS26'])assert.deepEqual(normalizeSetCode(code),{raw:code,code,valid:true},`codice lungo/storico non preservato: ${code}`);
-assert.deepEqual(normalizeSetCode(' L26D–ENX40 '),{raw:' L26D–ENX40 ',code:'L26D-ENX40',valid:true});
+for(const code of ['SDM-I105','TDGS-EN004','L26D-ENS26'])assert.deepEqual(normalizeSetCode(code),{raw:code,code,valid:true,reconstructedSeparator:false,reconstructionEdits:0,reconstructionCandidates:[]},`codice lungo/storico non preservato: ${code}`);
+assert.deepEqual(normalizeSetCode(' L26D–ENX40 '),{raw:' L26D–ENX40 ',code:'L26D-ENX40',valid:true,reconstructedSeparator:false,reconstructionEdits:0,reconstructionCandidates:[]});
 assert.equal(normalizeSetCode('codice?').valid,false);
 assert(setCodeCandidates('TDGS-ITO01').some(item=>item.code==='TDGS-IT001'&&item.ambiguous),'O/0 produce candidato, non correzione silenziosa');
 assert.equal(setCodeCandidates('PHNI-ITO46')[1].code,'PHNI-IT046','lo zero nel suffisso numerico deve avere prioritÃ ');
@@ -275,7 +275,27 @@ const phniLookups=[],phniPrinting={...printing,printingId:'phni',catalogCardId:'
 const crbrLookups=[],crbrPrinting={...printing,printingId:'crbr',catalogCardId:'55285840',cardName:'Time Thief Redoer',setCode:'CRBR-IT014'},crbrController=new FastScanController({camera:{focusSupported:false},ocr:{},externalLookup:async code=>{crbrLookups.push(code);return code==='CRBR-IT014'?[crbrPrinting]:[];},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});const crbrResult=await crbrController.resolve('OCRBR-ITO14',74,{consensus:2});assert.equal(crbrResult.status,'needs_review');assert.equal(crbrResult.code,'CRBR-IT014');assert.equal(crbrResult.matches[0].cardName,'Time Thief Redoer');assert.deepEqual(crbrLookups.slice(0,3),['OCRBR-ITO14','OCRBR-IT014','CRBR-IT014'],'la rimozione marginale non viene validata in ordine sicuro');
 const structuralPrinting=(code,id)=>({...printing,printingId:id,catalogCardId:id,cardName:`Card ${code}`,setCode:code});
 const ysPrinting=structuralPrinting('YS13-IT002','ys13'),ysLookups=[];const ysController=new FastScanController({camera:{focusSupported:false,clearPreprocessingPreference:()=>{}},api:{lookupPrintings:async code=>{ysLookups.push(code);return code==='YS13-IT002'?[ysPrinting]:[];}},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{},onToast:()=>{}});const ysExact=await ysController.processRecognition('YS13IT002',93,[],{}, {catalogConfirm:true});assert.equal(ysExact.decision,SCAN_DECISION.EXACT_UNIQUE);assert.equal(ysExact.code,'YS13-IT002');assert.equal(ysController.buffer.total,1,'YS13 senza trattino non viene confermata al primo exact catalog match');assert.equal(ysLookups.filter(code=>code==='YS13-IT002').length,1,'YS13 exact continua a richiedere retry downstream');clearTimeout(ysController.persistTimer);clearTimeout(ysController.feedbackTimer);
-for(const [raw,expected] of [['YS13-1T002','YS13-IT002'],['BP02TT044','BP02-IT044'],['BP02-11044','BP02-IT044'],['LSDD-ENC09','L5DD-ENC09'],['L3DD-ENC09','L5DD-ENC09']]){const target=structuralPrinting(expected,`printing-${raw}`),resolver=new FastScanController({camera:{focusSupported:false},api:{lookupPrintings:async code=>code===expected?[target]:[]},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}}),result=await resolver.resolve(raw,82,{consensus:2});assert.equal(result.decision,SCAN_DECISION.NEAR_UNIQUE,`${raw} non risolve in modo catalog-aware verso ${expected}`);assert.equal(result.code,expected);}
+for(const [raw,expected] of [['YS13-1T002','YS13-IT002'],['LSDD-ENC09','L5DD-ENC09'],['L3DD-ENC09','L5DD-ENC09']]){const target=structuralPrinting(expected,`printing-${raw}`),resolver=new FastScanController({camera:{focusSupported:false},api:{lookupPrintings:async code=>code===expected?[target]:[]},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}}),result=await resolver.resolve(raw,82,{consensus:2});assert.equal(result.decision,SCAN_DECISION.NEAR_UNIQUE,`${raw} non risolve in modo catalog-aware verso ${expected}`);assert.equal(result.code,expected);}
+// Audit OCR 2026-09-17 (candidate generation), Finding 1/2: un trattino
+// ricostruito che ha richiesto una confusione sulla regione ("TT" per "IT",
+// non letteralmente presente) e una correzione strutturale a 2 edit
+// simultanei ("11" per "IT") non devono più auto-accettarsi solo perché il
+// catalogo conferma un candidato unico — restano needs_review, il codice
+// suggerito resta comunque quello corretto per il chooser inline.
+for(const [raw,expected] of [['BP02TT044','BP02-IT044'],['BP02-11044','BP02-IT044']]){const target=structuralPrinting(expected,`printing-review-${raw}`),resolver=new FastScanController({camera:{focusSupported:false},api:{lookupPrintings:async code=>code===expected?[target]:[]},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}}),result=await resolver.resolve(raw,82,{consensus:2});assert.equal(result.decision,SCAN_DECISION.AMBIGUOUS,`${raw}: trattino ricostruito o region a 2 edit non deve auto-accettarsi`);assert.equal(result.status,'needs_review');assert.equal(result.code,expected,'il codice suggerito resta quello corretto, solo non confermato in automatico');}
+// Finding 3: edgeDeletionVariants() non ha alcun legame con OCR_SWAPS (a
+// differenza di ogni altra correzione) — "XMRD-EN479" (un carattere spurio
+// in testa; M/R/D/E/N/4/7/9 non sono in OCR_SWAPS, "EN" è già esatto: nessun
+//'altra correzione possibile oltre alla cancellazione di bordo) deve restare
+// needs_review anche con un solo edit e un solo match di catalogo, mai
+// NEAR_UNIQUE.
+{
+  const edgeTarget=structuralPrinting('MRD-EN479','printing-edge-deletion'),edgeResolver=new FastScanController({camera:{focusSupported:false},api:{lookupPrintings:async code=>code==='MRD-EN479'?[edgeTarget]:[]},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}});
+  const edgeResult=await edgeResolver.resolve('XMRD-EN479',82,{consensus:2});
+  assert.equal(edgeResult.decision,SCAN_DECISION.AMBIGUOUS,'cancellazione di bordo con match unico non deve auto-accettarsi');
+  assert.equal(edgeResult.status,'needs_review');
+  assert.equal(edgeResult.code,'MRD-EN479');
+}
 const ambiguousIt=structuralPrinting('YS13-IT002','ys-it'),ambiguousItRarity={...ambiguousIt,printingId:'ys-it-alt',rarity:'Rare'},structuralAmbiguous=new FastScanController({camera:{focusSupported:false},api:{lookupPrintings:async code=>code==='YS13-IT002'?[ambiguousIt,ambiguousItRarity]:[]},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender:()=>{},onRoute:()=>{}}),ambiguousStructuralResult=await structuralAmbiguous.resolve('YS13-1T002',82,{consensus:2});assert.equal(ambiguousStructuralResult.decision,SCAN_DECISION.AMBIGUOUS,'due printing reali vicine vengono ancora scelte arbitrariamente');assert.equal(ambiguousStructuralResult.status,'needs_review');
 structuralAmbiguous.buffer.queueReview({raw:'YS13-1T002',code:ambiguousStructuralResult.code,status:ambiguousStructuralResult.status,matches:ambiguousStructuralResult.matches,ocrConfidence:82,warning:'Match da confermare'});
 structuralAmbiguous.phase='review';

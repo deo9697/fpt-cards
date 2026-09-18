@@ -2,7 +2,15 @@ import { sanitizeYugiohRarity } from './cards.js';
 
 const STRICT_SET_CODE = /^[A-Z0-9]{2,12}-[A-Z0-9]{2,10}$/;
 const OCR_SWAPS = {J:['H'],H:['J'],O:['0'],0:['O'],I:['1','L','T'],1:['I','L','T'],L:['I','1'],T:['I','1'],S:['5'],5:['S','3'],3:['5'],B:['8'],8:['B'],Z:['2'],2:['Z'],G:['6'],6:['G']};
-const REGION_CODES = ['IT','EN','DE','FR','SP','PT','ENC',...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(letter=>`EN${letter}`)];
+// Lista curata (audit OCR 2026-09-17, candidate generation — Finding 2): prima
+// generava EN + tutte le 26 lettere (27 combinazioni da 3 caratteri), quasi
+// tutte mai osservate su una carta reale — solo "ENC" (Speed Duel) era
+// documentata. 'ITV' (Structure Deck) è l'unico altro marker a 3 lettere
+// citato nei commenti di questo file. Aggiungere qui SOLO marker confermati
+// da una printing reale (registry/benchmark), mai una combinazione per
+// completezza dell'alfabeto: ogni voce qui è un target che una lettura
+// ambigua può "vincere" fino a un auto-accept (classifyNearPrintingMatch).
+const REGION_CODES = ['IT','EN','DE','FR','SP','PT','ENC','ITV'];
 export const SCAN_DECISION = Object.freeze({EXACT_UNIQUE:'EXACT_UNIQUE',NEAR_UNIQUE:'NEAR_UNIQUE',AMBIGUOUS:'AMBIGUOUS',NOT_FOUND:'NOT_FOUND'});
 
 function plausibleSetCode(code) {
@@ -15,8 +23,30 @@ export function normalizeSetCode(raw) {
   const source=String(raw||'').normalize('NFKC').toUpperCase().replace(/[\u2010-\u2015\u2212_]/g,'-');
   const tokens=extractSetCodeCandidates(source);
   const cleaned=source.replace(/\s+/g,'').replace(/[^A-Z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'');
-  const code=tokens[0]||reconstructMissingSeparator(cleaned)||cleaned;
-  return {raw:String(raw||''),code,valid:plausibleSetCode(code)};
+  // reconstructions \u00e8 vuoto quando un trattino \u00e8 stato letto davvero nel
+  // testo OCR (tokens.length>0): la ricostruzione parte SOLO quando l'OCR
+  // non ha visto alcun trattino, mai come "seconda opinione" su una lettura
+  // gi\u00e0 col trattino.
+  const reconstructions=tokens.length?[]:reconstructMissingSeparatorCandidates(cleaned);
+  // Tra pi\u00f9 ricostruzioni plausibili, quella con meno edit vince come `code`
+  // (mai l'ordine fisso dell'array REGION_CODES di prima \u2014 vedi Finding 1).
+  const best=reconstructions.length?[...reconstructions].sort((left,right)=>left.edits-right.edits)[0]:null;
+  const code=tokens[0]||best?.code||cleaned;
+  // reconstructedSeparator (audit OCR 2026-09-17, Finding 1): true SOLO
+  // quando la ricostruzione scelta ha richiesto una confusione controllata
+  // sulla regione (edits>=1, es. "TT" letto per "IT") o quando esistono PI\u00d9
+  // ricostruzioni plausibili tra cui scegliere \u2014 cio\u00e8 quando c'\u00e8
+  // un'incertezza VERA, non semplicemente perch\u00e9 il trattino non \u00e8 stato
+  // visto. Un trattino invisibile davanti a una regione gi\u00e0 inequivocabile
+  // (edits:0, un solo candidato) resta trattato come lettura esatta: \u00e8 solo
+  // un problema di formattazione OCR, non un'ambiguit\u00e0 reale da rivedere.
+  // I chiamanti (setCodeCandidates qui sotto, resolve()/resolveFast()/
+  // resolveCapturedReading() in fast-scan.js) usano questo flag per non
+  // trattare mai una ricostruzione incerta come lettura esatta \u2014 prima di
+  // questo fix bypassava ogni gate di revisione perch\u00e9 finiva nello slot
+  // "exact" di resolve().
+  const reconstructedSeparator=Boolean(best)&&(best.edits>0||reconstructions.length>1);
+  return {raw:String(raw||''),code,valid:plausibleSetCode(code),reconstructedSeparator,reconstructionEdits:best?.edits??0,reconstructionCandidates:reconstructions.map(item=>item.code)};
 }
 
 const SET_CODE_LANGUAGES = {IT:'Italiano',EN:'Inglese',FR:'Francese',DE:'Tedesco',SP:'Spagnolo',PT:'Portoghese'};
@@ -45,6 +75,11 @@ export function setCodeCandidates(raw,limit=24) {
   const base=normalizeSetCode(raw);if(!base.valid)return[];
   const variants=[];
   for(const code of extractSetCodeCandidates(raw).slice(1))variants.push({code,corrected:false,ambiguous:true,confusion:'altro candidato OCR',edits:0,priority:110});
+  // Audit OCR 2026-09-17, Finding 1: quando il trattino è stato ricostruito
+  // (nessun trattino visto nel testo OCR), base.code è la PRIMA delle
+  // ricostruzioni plausibili — le altre non vengono scartate solo perché non
+  // sono la prima, diventano candidate a pieno titolo qui.
+  if(base.reconstructedSeparator)for(const code of base.reconstructionCandidates)if(code!==base.code)variants.push({code,corrected:true,ambiguous:true,requiresReview:true,confusion:'trattino ricostruito (alternativa)',edits:1,priority:65});
   const numericTail=correctNumericTailZeros(base.code);
   if(numericTail&&numericTail!==base.code)variants.push({code:numericTail,corrected:true,ambiguous:true,confusion:'O/0 numeric-tail',edits:characterDistance(base.code,numericTail),priority:100});
   const structural=structuralRegionVariants(base.code);variants.push(...structural);
@@ -53,15 +88,52 @@ export function setCodeCandidates(raw,limit=24) {
   const separator=base.code.indexOf('-'),observedRegion=base.code.slice(separator+1,separator+3),protectRegion=REGION_CODES.includes(observedRegion)||structural.length>0,indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0&&!(protectRegion&&index>separator&&index-separator-1<2)).slice(0,6);
   for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,edits:1,requiresReview:['J','H'].includes(base.code[index])&&['J','H'].includes(replacement),priority:confusionPriority(base.code,index,replacement)});}
   variants.sort((left,right)=>right.priority-left.priority);
-  const output=[{code:base.code,corrected:false,ambiguous:false},...variants.map(({priority,...item})=>item)];
+  // base.code stesso è un'ipotesi (mai una lettura) quando reconstructedSeparator
+  // è vero: corrected/requiresReview lo segnalano ai chiamanti (resolve()/
+  // resolveFast() in fast-scan.js), che altrimenti lo tratterebbero come
+  // slot "exact" fidato alla cieca — vedi Finding 1.
+  const output=[{code:base.code,corrected:base.reconstructedSeparator,ambiguous:false,requiresReview:base.reconstructedSeparator,edits:base.reconstructedSeparator?base.reconstructionEdits:0},...variants.map(({priority,...item})=>item)];
   return [...new Map(output.map(item=>[item.code,item])).values()].slice(0,limit);
 }
 
-function reconstructMissingSeparator(cleaned){
-  if(!cleaned||cleaned.includes('-'))return'';const tail=cleaned.match(/([0-9]{1,4}[A-Z]?)$/)?.[1]||'',head=tail?cleaned.slice(0,-tail.length):'';if(!head)return'';
-  for(const region of [...REGION_CODES].sort((left,right)=>right.length-left.length)){if(!head.endsWith(region))continue;const prefix=head.slice(0,-region.length),code=`${prefix}-${region}${tail}`;if(prefix.length>=2&&plausibleSetCode(code))return code;}
-  for(const regionLength of [2,3]){const prefix=head.slice(0,-regionLength),region=head.slice(-regionLength),code=`${prefix}-${region}${tail}`;if(prefix.length>=2&&plausibleSetCode(code))return code;}
-  return'';
+// Audit OCR 2026-09-17, Finding 1: prima ritornava la PRIMA corrispondenza
+// (ordine fisso dell'array REGION_CODES, mai per plausibilità) come se fosse
+// una lettura certa. Ora ritorna TUTTE le ricostruzioni plausibili — mai una
+// verità univoca — lasciando a normalizeSetCode()/setCodeCandidates() il
+// compito di trattarle come correzioni da confermare, non da fidarsi alla
+// cieca. Il secondo ciclo "alla cieca" (ultimi 2/3 caratteri assunti come
+// region senza verificarli contro REGION_CODES) è stato rimosso: generava
+// candidate senza alcun legame con un marker Konami reale.
+function reconstructMissingSeparatorCandidates(cleaned){
+  if(!cleaned||cleaned.includes('-'))return[];
+  const tail=cleaned.match(/([0-9]{1,4}[A-Z]?)$/)?.[1]||'',head=tail?cleaned.slice(0,-tail.length):'';
+  if(!head)return[];
+  const codes=[];
+  // Non solo un match letterale contro REGION_CODES: se il trattino manca,
+  // può mancare perché la regione stessa è stata letta male (es. "TT" per
+  // "IT") — senza un ponte qui quella lettura non produce MAI un base.code
+  // valido (niente trattino da nessuna parte) e salta anche la correzione
+  // strutturale più sotto, che parte solo da un codice già con trattino.
+  // Il ponte resta controllato: solo un match esatto o una confusione
+  // OCR_SWAPS a un edit, mai un taglio alla cieca degli ultimi N caratteri
+  // (quello che faceva il vecchio secondo ciclo, rimosso nell'audit
+  // 2026-09-17 — Finding 1).
+  for(const regionLength of [3,2]){
+    if(head.length<=regionLength)continue;
+    const observed=head.slice(-regionLength),prefix=head.slice(0,-regionLength);
+    if(prefix.length<2)continue;
+    for(const region of REGION_CODES.filter(item=>item.length===regionLength)){
+      const edits=observed===region?0:controlledConfusionDistance(observed,region);
+      if(edits>1)continue;
+      const code=`${prefix}-${region}${tail}`;
+      if(plausibleSetCode(code))codes.push({code,edits});
+    }
+  }
+  // Un codice può in teoria emergere da più di un region length/target: tiene
+  // l'edit-distance migliore, mai un duplicato con edits peggiore.
+  const byCode=new Map();
+  for(const item of codes){const existing=byCode.get(item.code);if(!existing||item.edits<existing.edits)byCode.set(item.code,item);}
+  return [...byCode.values()];
 }
 function structuralRegionVariants(code){
   const [prefix,suffix]=code.split('-'),variants=[];
@@ -76,7 +148,15 @@ function structuralRegionVariants(code){
 }
 function controlledConfusionDistance(observed,expected){if(observed.length!==expected.length)return Infinity;let edits=0;for(let index=0;index<observed.length;index++){if(observed[index]===expected[index])continue;if(!OCR_SWAPS[observed[index]]?.includes(expected[index]))return Infinity;edits+=1;}return edits;}
 function correctNumericTailZeros(code){const [prefix,suffix]=code.split('-');if(!/^(?:IT|EN|DE|FR|SP|PT)[A-Z0-9]{2,8}$/.test(suffix))return'';const language=suffix.slice(0,2),tail=suffix.slice(2),corrected=tail.replace(/O/g,'0');return corrected!==tail?`${prefix}-${language}${corrected}`:'';}
-function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali`,edits:count,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,edits:count,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,edits:count,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,confusion:`rimossi ${count} caratteri finali`,edits:count,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
+// Audit OCR 2026-09-17, Finding 3: a differenza di ogni altra correzione qui
+// (ancorata a OCR_SWAPS, caratteri che si confondono davvero visivamente),
+// cancellare un carattere da un bordo non ha alcun legame con un vero
+// fallimento OCR — è una supposizione. requiresReview:true sempre, anche a
+// edits:1, così non viene mai trattata con la stessa fiducia di una vera
+// sostituzione OCR_SWAPS: una collisione col catalogo resta possibile
+// (prefissi/suffissi Yu-Gi-Oh sono stringhe dense di pochi caratteri), ma non
+// deve mai bastare da sola per un auto-accept.
+function edgeDeletionVariants(code,priority){const [prefix,suffix]=code.split('-'),variants=[];for(const count of [1,2]){if(prefix.length-count>=2){variants.push({code:`${prefix.slice(count)}-${suffix}`,corrected:true,ambiguous:true,requiresReview:true,confusion:`rimossi ${count} caratteri iniziali`,edits:count,priority:priority-count});variants.push({code:`${prefix.slice(0,-count)}-${suffix}`,corrected:true,ambiguous:true,requiresReview:true,confusion:`rimossi ${count} caratteri finali dal prefisso`,edits:count,priority:priority-count-10});}if(suffix.length-count>=2){variants.push({code:`${prefix}-${suffix.slice(count)}`,corrected:true,ambiguous:true,requiresReview:true,confusion:`rimossi ${count} caratteri iniziali dal suffisso`,edits:count,priority:priority-count-20});variants.push({code:`${prefix}-${suffix.slice(0,-count)}`,corrected:true,ambiguous:true,requiresReview:true,confusion:`rimossi ${count} caratteri finali`,edits:count,priority:priority-count-30});}}return variants.filter(item=>plausibleSetCode(item.code));}
 function confusionPriority(code,index,replacement){if(['J','H'].includes(code[index])&&['J','H'].includes(replacement))return 95;const hyphen=code.indexOf('-'),suffix=code.slice(hyphen+1),offset=index-hyphen-1;if(index>hyphen&&offset>=2&&replacement==='0'&&/\d/.test(suffix))return 90;if(index>hyphen&&offset>=2&&/\d/.test(replacement))return 40;if(index>hyphen&&offset<3&&/[A-Z]/.test(replacement))return 82;return 72;}
 function characterDistance(left,right){if(left.length!==right.length)return Math.max(left.length,right.length);let count=0;for(let index=0;index<left.length;index++)if(left[index]!==right[index])count+=1;return count;}
 
@@ -93,7 +173,14 @@ export function classifyNearPrintingMatch(resolvedCandidates=[],{plausibleCandid
   const uniqueCodes=[...new Set(candidates.map(item=>item.candidate.code))];
   const matches=[...new Map(candidates.flatMap(item=>item.matches).map(match=>[[match.printingId||match.printing_id,match.catalogCardId||match.catalog_card_id,match.setCode||match.set_code,match.rarity].join(':'),match])).values()];
   const candidate=candidates[0]?.candidate;
-  const safeEdit=candidate?.edits===1||(candidate?.structural&&candidate.edits<=2),safe=!candidate?.requiresReview&&plausibleCandidateCount===1&&uniqueCodes.length===1&&matches.length===1&&safeEdit;
+  // Audit OCR 2026-09-17, Finding 2: una correzione "structural" (region a
+  // 2 caratteri riletta come un'altra region) permetteva fino a 2 edit
+  // simultanei per essere "safe" — più permissivo di QUALSIASI altra
+  // correzione del file, che richiede sempre edits===1. Con REGION_CODES
+  // curato la combinatoria è già molto più piccola, ma non c'è motivo per
+  // cui una region a 2 confusioni debba fidarsi più di una sostituzione
+  // singola: edits===1 per tutti, structural incluso.
+  const safeEdit=candidate?.edits===1,safe=!candidate?.requiresReview&&plausibleCandidateCount===1&&uniqueCodes.length===1&&matches.length===1&&safeEdit;
   return {status:safe?'high_confidence':'needs_review',decision:safe?SCAN_DECISION.NEAR_UNIQUE:SCAN_DECISION.AMBIGUOUS,matches,code:safe?uniqueCodes[0]:'',corrected:true,alternatives:uniqueCodes};
 }
 

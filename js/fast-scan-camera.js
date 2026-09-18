@@ -2,7 +2,7 @@ export class FastScanCamera {
   constructor(mediaDevices = navigator.mediaDevices, timeoutMs = 12000, ImageCaptureClass = globalThis.ImageCapture) {
     this.mediaDevices=mediaDevices; this.timeoutMs=timeoutMs; this.stream=null; this.video=null; this.deviceId=''; this.generation=0; this.torchOn=false;
     this.ImageCaptureClass=ImageCaptureClass;this.imageCapture=null;this.imageCaptureUnstable=false;this.snapshotErrors=0;this.lastGrabError='';this.constraintErrors=[];this.refocusing=false;this.trackListeners=null;this.trackStartedAt=0;this.lastFrameAt=0;this.mutedAt=0;this.blackFrameStreak=0;this.lastTrackEvent='';this.onDiagnostic=null;
-    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.captureIndex=0; this.preferredMode=''; this.sampleCanvas=document.createElement('canvas');this.snapshotCanvas=document.createElement('canvas');this.signatureCanvas=document.createElement('canvas');
+    this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false}; this.settings={}; this.zoomValue=1; this.sampleCanvas=document.createElement('canvas');this.snapshotCanvas=document.createElement('canvas');this.signatureCanvas=document.createElement('canvas');
   }
   get supported() { return Boolean(this.mediaDevices?.getUserMedia); }
   get track() { return this.stream?.getVideoTracks?.()[0] || null; }
@@ -88,8 +88,6 @@ export class FastScanCamera {
     }catch(error){if(generation!==this.generation)return false;this.constraintErrors.push({constraint:Object.keys(constraint)[0],message:error?.message||'applyConstraints failed',at:new Date().toISOString()});if(this.constraintErrors.length>12)this.constraintErrors.shift();return false;}
     finally{clearTimeout(timeout);}
   }
-  preferPreprocessing(mode){if(['grayscale','adaptive'].includes(mode))this.preferredMode=mode;}
-  clearPreprocessingPreference(){this.preferredMode='';}
   attachTrackHealth(track){
     this.detachTrackHealth();this.trackStartedAt=performance.now();this.lastFrameAt=0;this.mutedAt=track?.muted?performance.now():0;this.blackFrameStreak=0;this.lastTrackEvent='attached';if(!track?.addEventListener)return;
     const ended=()=>{this.lastTrackEvent='ended';this.diagnostic('track-ended',this.stateSnapshot());},mute=()=>{this.lastTrackEvent='mute';this.mutedAt=performance.now();this.diagnostic('track-muted',this.stateSnapshot());},unmute=()=>{this.lastTrackEvent='unmute';this.mutedAt=0;this.blackFrameStreak=0;this.diagnostic('track-unmuted',this.stateSnapshot());};track.addEventListener('ended',ended);track.addEventListener('mute',mute);track.addEventListener('unmute',unmute);this.trackListeners={track,ended,mute,unmute};
@@ -130,8 +128,19 @@ export class FastScanCamera {
     if(!preferVideoFrame&&this.imageCapture?.grabFrame&&!this.imageCaptureUnstable){const grabStarted=performance.now();try{bitmap=await this.imageCapture.grabFrame();if(bitmap?.width&&bitmap?.height){const previewAspect=video.videoWidth/video.videoHeight,bitmapAspect=bitmap.width/bitmap.height;if(Math.abs(previewAspect-bitmapAspect)/previewAspect<=.025){source=bitmap;sourceType='image-capture';}else{this.markImageCaptureUnstable('aspect-ratio-mismatch');bitmap.close?.();bitmap=null;}}}catch(error){this.snapshotErrors+=1;this.markImageCaptureUnstable(error?.message||'grabFrame failed');bitmap=null;}grabMs=performance.now()-grabStarted;}
     try{
       const sourceWidth=Number(source.width||video.videoWidth),sourceHeight=Number(source.height||video.videoHeight),cropStarted=performance.now(),mapping=sourceCropDetails(video,roiElement),previewRoi=mapping.crop,crop=sourceType==='image-capture'?mapCropToSource(previewRoi,video.videoWidth,video.videoHeight,sourceWidth,sourceHeight):previewRoi,cropMs=performance.now()-cropStarted;if(!crop||crop.sw<24||crop.sh<12)return null;
-      const mode=this.preferredMode||(this.captureIndex%3===2?'adaptive':'grayscale');this.captureIndex+=1;
-      const factor=mode==='adaptive'?2.8:2.35,target=mode==='adaptive'?1080:900,ceiling=mode==='adaptive'?1280:1120,width=Math.min(ceiling,Math.max(target,Math.round(crop.sw*factor))),height=Math.max(88,Math.round(width*crop.sh/crop.sw));
+      // Risoluzione di cattura fissa (audit OCR 2026-09-17): sceglieva prima
+      // 'grayscale'/'adaptive' a rotazione (captureIndex%3) o da una
+      // preferenza mai realmente impostata in produzione (preferPreprocessing
+      // era chiamato solo da processRecognition, non raggiunto dal percorso
+      // di scatto reale) — createOcrInputPlan() sceglie comunque SEMPRE
+      // 'grayscale' per il primary e costruisce l'adaptive come fallback
+      // lazy a partire da questo stesso raw canvas, quindi quella rotazione
+      // non cambiava mai la strategia OCR, solo la risoluzione di questo
+      // scatto. 'grayscale' è il target più piccolo (il caso comune, che non
+      // arriva mai al fallback): non alzarlo per ogni scatto solo per il
+      // minor numero di casi che useranno l'adaptive.
+      const mode='grayscale';
+      const factor=2.35,target=900,ceiling=1120,width=Math.min(ceiling,Math.max(target,Math.round(crop.sw*factor))),height=Math.max(88,Math.round(width*crop.sh/crop.sw));
       const drawStarted=performance.now();this.snapshotCanvas.width=width;this.snapshotCanvas.height=height;const ctx=this.snapshotCanvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(source,crop.sx,crop.sy,crop.sw,crop.sh,0,0,width,height);const frameCapturedAt=performance.now(),frameCapturedWallAt=new Date().toISOString();if(includeRaw)rawCanvas=cloneCanvas(this.snapshotCanvas);const drawMs=performance.now()-drawStarted;
       const preprocessStarted=performance.now(),preprocessing=preprocessCodeImage(ctx,width,height,{mode,metricsOnly:includeRaw}),preprocessMs=performance.now()-preprocessStarted,snapshot={canvas:this.snapshotCanvas,rawCanvas,previewRoi,roi:crop,preprocessing,alternates:[],mapping:{...mapping,snapshotCrop:crop,sourceWidth,sourceHeight},source:sourceType,resolution:{width:sourceWidth,height:sourceHeight},frameCapturedAt,frameCapturedWallAt,timing:{totalMs:performance.now()-started,grabMs,cropMs,drawMs,preprocessMs}};
       snapshot.release=()=>releaseSnapshot(snapshot);completed=true;return snapshot;
@@ -143,7 +152,7 @@ export class FastScanCamera {
   stop(reason='explicit'){
     this.cancelStartup?.();this.cancelStartup=null;this.startCancellation=null;this.resetFrameProgress();
     let snapshot=null;try{if(this.stream)snapshot=this.stateSnapshot();}catch{}
-    this.generation+=1;this.torchOn=false;this.refocusing=false;this.captureIndex=0;this.zoomValue=1;this.preferredMode='';this.imageCapture=null;this.detachTrackHealth();
+    this.generation+=1;this.torchOn=false;this.refocusing=false;this.zoomValue=1;this.imageCapture=null;this.detachTrackHealth();
     this.stream?.getTracks?.().forEach(track=>{try{track.stop();}catch{}});
     if(this.video&&this.video.srcObject===this.stream)this.video.srcObject=null;
     this.stream=null;this.video=null;clearCanvas(this.sampleCanvas);clearCanvas(this.snapshotCanvas);this.capabilities={focusModes:[],focusSupported:false,zoom:null,torch:false};this.settings={};if(snapshot)this.diagnostic('stop',{reason,generation:this.generation,before:snapshot});

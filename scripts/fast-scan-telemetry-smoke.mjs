@@ -47,20 +47,28 @@ await asyncTest('recognize SENZA worker creato (libreria non lo invoca) -> execu
   assert.equal(engine.executionMode, 'MAIN_THREAD_FALLBACK');
 });
 
-await asyncTest('fallimento di prepare() -> workerRestartCount incrementato, executionMode WORKER_FAILED, poi WORKER_RESTARTING al tentativo successivo', async () => {
+await asyncTest('fallimento di prepare() -> workerRestartCount incrementato, executionMode WORKER_FAILED, cooldown immediato, poi WORKER_RESTARTING dopo il cooldown', async () => {
   let attempt = 0;
   const engine = new PaddleOcrEngine({
     loader: async () => { attempt++; if (attempt === 1) throw new Error('modello non disponibile'); return { PaddleOCR: { create: async ({ worker }) => { worker.createWorker(); return { predict: async () => ({ items: [] }) }; } } }; },
     workerUrl: async () => 'blob:fake',
-    WorkerClass: class { terminate() {} }
+    WorkerClass: class { terminate() {} },
+    cooldownBaseMs: 5
   });
   await assert.rejects(() => engine.prepare());
   assert.equal(engine.workerRestartCount, 1);
   assert.equal(engine.executionMode, 'WORKER_FAILED');
   assert.equal(engine.everFailed, true);
+  // Circuit breaker (audit OCR 2026-09-17): un tentativo immediato dopo il
+  // fallimento non deve ripartire dalla rete (CDN/modello ancora giù) — deve
+  // fallire subito con ENGINE_COOLDOWN, non ritentare loader().
+  await assert.rejects(() => engine.prepare(), { code: 'ENGINE_COOLDOWN' });
+  assert.equal(attempt, 1, 'durante il cooldown il loader non deve essere richiamato');
+  await new Promise(resolve => setTimeout(resolve, 15));
   const preparePromise = engine.prepare();
-  assert.equal(engine.executionMode, 'WORKER_RESTARTING', 'il tentativo successivo dopo un fallimento deve segnalarsi come riavvio');
+  assert.equal(engine.executionMode, 'WORKER_RESTARTING', 'il tentativo dopo il cooldown deve segnalarsi come riavvio');
   await preparePromise;
+  assert.equal(attempt, 2);
 });
 
 await asyncTest('timeout esplicito (bounded) -> workerTimeoutCount incrementato oltre a workerRestartCount', async () => {
@@ -73,6 +81,62 @@ await asyncTest('timeout esplicito (bounded) -> workerTimeoutCount incrementato 
   await assert.rejects(() => engine.recognize(fakeCanvas()), /OCR troppo lento/);
   assert.equal(engine.workerTimeoutCount, 1);
   assert.equal(engine.workerRestartCount, 1, 'un timeout è anche un fallimento (reset del motore), va contato in entrambi');
+});
+
+await asyncTest('un recognize() fallito non arma il cooldown: il tentativo successivo riparte subito (audit OCR 2026-09-17)', async () => {
+  let creations = 0;
+  const engine = new PaddleOcrEngine({
+    loader: async () => ({ PaddleOCR: { create: async ({ worker }) => { worker.createWorker(); creations++; return { predict: () => creations === 1 ? new Promise(() => {}) : Promise.resolve({ items: [{ text: 'LOB-IT001', score: 0.95 }] }) }; } } }),
+    workerUrl: async () => 'blob:fake',
+    WorkerClass: class { terminate() {} },
+    recognizeTimeoutMs: 5
+  });
+  await assert.rejects(() => engine.recognize(fakeCanvas()), /OCR troppo lento/);
+  // Il circuit breaker (test precedente) è specifico dei fallimenti di
+  // prepare() — un worker impallato su UNA lettura non deve impedire alla
+  // carta successiva di ripartire con un engine fresh, altrimenti ogni
+  // timeout occasionale si tradurrebbe nello stesso stallo che il breaker
+  // vuole evitare per la rete, ma qui senza alcuna ragione (nessuna rete
+  // coinvolta in recognize()).
+  const result = await engine.recognize(fakeCanvas());
+  assert.equal(result.text, 'LOB-IT001');
+  assert.equal(creations, 2, 'il secondo tentativo deve ricreare l\'engine, non restare bloccato in cooldown');
+});
+
+await asyncTest('bounds() gestisce anche il box flat [x1,y1,x2,y2,...] (non solo [[x,y],...]) — audit OCR 2026-09-17', async () => {
+  // Prima del fix, bounds() riconosceva solo il formato annidato: con un box
+  // flat il clustering restava disabilitato e titolo+codice si fondevano in
+  // un unico testo. I due blocchi qui sono verticalmente lontani (title in
+  // alto, codice molto più in basso) apposta per far scattare lo split.
+  const engine = new PaddleOcrEngine({
+    loader: async () => ({ PaddleOCR: { create: async ({ worker }) => { worker.createWorker(); return { predict: async () => ({ items: [
+      { text: 'CARD TITLE', poly: [10, 10, 90, 10, 90, 30, 10, 30] },
+      { text: 'LOB-IT001', poly: [10, 200, 90, 200, 90, 220, 10, 220] }
+    ] }) }; } } }),
+    workerUrl: async () => 'blob:fake',
+    WorkerClass: class { terminate() {} }
+  });
+  const result = await engine.recognize(fakeCanvas());
+  assert.equal(result.text, 'LOB-IT001', 'il box flat deve permettere di isolare il blocco codice dal titolo, non concatenarli');
+});
+
+await asyncTest('timeout separati per primary e fallback recognize (audit OCR 2026-09-17)', async () => {
+  const slowPredict = () => new Promise(resolve => setTimeout(() => resolve({ items: [{ text: 'LOB-IT001', score: 0.9 }] }), 15));
+  let creations = 0;
+  const engine = new PaddleOcrEngine({
+    loader: async () => ({ PaddleOCR: { create: async ({ worker }) => { worker.createWorker(); creations++; return { predict: slowPredict }; } } }),
+    workerUrl: async () => 'blob:fake',
+    WorkerClass: class { terminate() {} },
+    recognizeTimeoutMs: 5,
+    fallbackRecognizeTimeoutMs: 40
+  });
+  // Stesso identico predict() (15ms): il primary (5ms) scade, il fallback
+  // (40ms) no — le due soglie sono davvero indipendenti, non la stessa
+  // riusata sotto un altro nome.
+  await assert.rejects(() => engine.recognize(fakeCanvas()), /OCR troppo lento/, 'primary: 5ms non basta per un predict da 15ms');
+  const result = await engine.recognize(fakeCanvas(), { isFallback: true });
+  assert.equal(result.text, 'LOB-IT001', 'fallback: 40ms basta per lo stesso predict da 15ms');
+  assert.equal(creations, 2, 'il fallback riparte da un engine fresh dopo il timeout del primary');
 });
 
 // --- ScanTelemetry (via FastScanController.telemetry, non esportata a parte) ---
