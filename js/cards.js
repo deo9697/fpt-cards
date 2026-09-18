@@ -168,6 +168,21 @@ export async function findCardById(id, expectedName = '', game = 'yugioh') {
   return match || null;
 }
 
+// Variante sincrona, cache-only, di findCardById: mai una fetch, mai una
+// Promise pendente. Ritorna null se questo id non è mai stato risolto in
+// questa sessione (o è ancora in volo) — il chiamante (externalLookupViaRegistry,
+// percorso artwork variant) la usa per decidere se un dato è già disponibile
+// SENZA reintrodurre una chiamata di rete bloccante nel fast path di Fast Scan.
+export function peekCardById(id, expectedName = '', game = 'yugioh') {
+  if (game !== 'yugioh') return null;
+  const value = String(id || '').trim();
+  const cached = identityCache.get(value);
+  if (!cached || typeof cached.then === 'function') return null;
+  const expected = normalizeName(expectedName);
+  const match = expected ? cached.find(card => normalizeName(card.name) === expected) : cached[0];
+  return match || null;
+}
+
 export async function resolveStoredCard({ id = '', name = '', setCode = '' } = {}, game = 'yugioh') {
   if (game !== 'yugioh' || !name) return null;
   const byId = id ? await findCardById(id, name, game) : null;

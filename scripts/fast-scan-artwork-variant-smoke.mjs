@@ -69,10 +69,17 @@ const SET_CODE = 'CH01-EN015';
 const RARITY = 'Common';
 const ARTWORK_A_URL = 'https://images.ygoprodeck.com/images/cards/89777841.jpg';
 const ARTWORK_B_URL = 'https://images.ygoprodeck.com/images/cards/89777842.jpg';
+// Identità distinta, mai toccata dal resto del file: garantisce una cache
+// findCardById sempre fredda per il guard test di latenza più sotto,
+// indipendentemente dall'ordine/dal warm-up della cache di CATALOG_ID.
+const GUARD_KONAMI_ID = '99099';
+const GUARD_CATALOG_ID = '89779999';
+const GUARD_CARD_NAME = 'Guard Latency Dummy';
+const GUARD_SET_CODE = 'GRD1-EN099';
 
 installFetchMock({
-  printcode: { 'CH01-EN': { '015': Number(KONAMI_ID) } },
-  cardData: { [KONAMI_ID]: { cardData: { ae: { name: CARD_NAME } } } },
+  printcode: { 'CH01-EN': { '015': Number(KONAMI_ID) }, 'GRD1-EN': { '099': Number(GUARD_KONAMI_ID) } },
+  cardData: { [KONAMI_ID]: { cardData: { ae: { name: CARD_NAME } } }, [GUARD_KONAMI_ID]: { cardData: { ae: { name: GUARD_CARD_NAME } } } },
   ygoprodeckById: { [CATALOG_ID]: {
     name: CARD_NAME,
     card_images: [{ id: Number(CATALOG_ID), image_url: ARTWORK_A_URL }, { id: 89777842, image_url: ARTWORK_B_URL }],
@@ -98,9 +105,22 @@ assert.notEqual(printing.rarity, 'New artwork');
 assert.equal(printing.imageUrl, '', 'con artwork ambiguo il resolver di base non deve inventare un\'immagine: la scelta arriva dal picker (externalLookupViaRegistry), non da questo oggetto');
 console.log('PASS CH01-EN015: identità carta risolta correttamente, "New artwork" mai presente, artworkCount propagato');
 
-// --- 3-4) externalLookupViaRegistry espone ENTRAMBE le artwork reali ---
-const candidates = await externalLookupViaRegistry(SET_CODE, 'yugioh', { api, findCard, findCardByIdImpl: () => cardsModule.findCardById(CATALOG_ID, CARD_NAME, 'yugioh'), lookupPrintingBySetCodeImpl: lookupPrintingBySetCode });
-assert.equal(candidates.length, 2, 'il picker deve ricevere ENTRAMBE le artwork reali');
+// --- 3) cache fredda (prima volta in sessione): il riconoscimento NON
+//     aspetta la rete artwork — un solo match base, immediato (audit OCR
+//     2026-09-17: qui stava l'await bloccante che rallentava ogni scan) ---
+const coldCandidates = await externalLookupViaRegistry(SET_CODE, 'yugioh', { api, findCard, lookupPrintingBySetCodeImpl: lookupPrintingBySetCode });
+assert.equal(coldCandidates.length, 1, 'cache fredda: il riconoscimento base non deve bloccarsi sulla rete artwork');
+assert.equal(coldCandidates[0].catalogCardId, CATALOG_ID);
+assert(!coldCandidates[0].artworkLabel, 'senza cache calda nessuna label artwork inventata');
+console.log('PASS CH01-EN015: cache fredda -> riconoscimento base immediato, nessun await di rete sull\'artwork');
+
+// La chiamata precedente scalda la cache in background (fire-and-forget):
+// attenderla qui replica cosa succede appena il fetch in background termina.
+await cardsModule.findCardById(CATALOG_ID, CARD_NAME, 'yugioh');
+
+// --- 4) cache calda: ORA il picker riceve ENTRAMBE le artwork reali ---
+const candidates = await externalLookupViaRegistry(SET_CODE, 'yugioh', { api, findCard, lookupPrintingBySetCodeImpl: lookupPrintingBySetCode });
+assert.equal(candidates.length, 2, 'cache calda: il picker deve ricevere ENTRAMBE le artwork reali');
 assert.notEqual(candidates[0].catalogCardId, candidates[1].catalogCardId, 'le due opzioni devono avere catalogCardId reali distinti');
 assert.notEqual(candidates[0].imageUrl, candidates[1].imageUrl, 'le due opzioni devono avere imageUrl distinti');
 assert.equal(candidates[0].artworkLabel, 'Standard');
@@ -143,6 +163,24 @@ assert.equal(savedPayload?.[0]?.imageUrl, ARTWORK_B_URL);
 assert.equal(savedPayload?.[0]?.rarity, RARITY);
 clearTimeout(controller.persistTimer); clearTimeout(controller.feedbackTimer);
 console.log('PASS CH01-EN015: la scelta artwork B sopravvive alla entry di sessione e al payload di salvataggio (nessun fallback ad artworks[0])');
+
+// --- guardia anti-regressione (audit OCR 2026-09-17): un findCardById lento
+//     (rete reale su mobile) NON deve MAI rallentare externalLookupViaRegistry
+//     con cache fredda. Prima del fix, questo era esattamente l'await
+//     bloccante che rendeva ogni scan con artwork ambiguo molto più lento. ---
+{
+  const guardApi = fakeApi({ ygoArtworkIndexLookup: async () => [{ konami_card_id: GUARD_KONAMI_ID, artwork_count: 2, single_artwork_url: null }] });
+  const guardFindCard = async name => name === GUARD_CARD_NAME ? { id: Number(GUARD_CATALOG_ID), name } : null;
+  const guardLookupPrintingBySetCode = async code => code === GUARD_SET_CODE ? [{ catalogCardId: GUARD_CATALOG_ID, setCode: GUARD_SET_CODE, setName: 'Set', rarity: 'Common' }] : [];
+  function slowDelay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  const slowFindCardByIdImpl = async () => { await slowDelay(400); return { artworkVariants: [{ id: '1', imageUrl: 'a.jpg' }, { id: '2', imageUrl: 'b.jpg' }] }; };
+  const startedAt = Date.now();
+  const guardResult = await externalLookupViaRegistry(GUARD_SET_CODE, 'yugioh', { api: guardApi, findCard: guardFindCard, findCardByIdImpl: slowFindCardByIdImpl, lookupPrintingBySetCodeImpl: guardLookupPrintingBySetCode });
+  const elapsedMs = Date.now() - startedAt;
+  assert(elapsedMs < 100, `externalLookupViaRegistry non deve attendere la rete artwork (findCardById lento simulato): ${elapsedMs}ms trascorsi, doveva restare cache-only`);
+  assert.equal(guardResult.length, 1, 'cache fredda: un solo match base, mai bloccato in attesa delle varianti');
+}
+console.log('PASS guardia anti-regressione: findCardById lento non blocca mai externalLookupViaRegistry (cache fredda)');
 
 // --- una sola artwork nota: nessun picker aggiuntivo ---
 {

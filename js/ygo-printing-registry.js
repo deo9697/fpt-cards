@@ -36,7 +36,7 @@
 // via costruttore invece di importarlo: permette ai test di sostituirlo con
 // un fake senza toccare window/Supabase.
 import { api as defaultApi } from './api.js';
-import { findCard, findCardById, lookupPrintingBySetCode } from './cards.js';
+import { findCard, findCardById, peekCardById, lookupPrintingBySetCode } from './cards.js';
 
 const YGORESOURCES_BASE = 'https://db.ygoresources.com';
 const FETCH_TIMEOUT_MS = 6000;
@@ -544,7 +544,7 @@ export async function resolveYgoPrinting(setCode, options = {}) {
 // lookupPrintingBySetCode reali) — stesso pattern di resolveYgoPrintings.
 export async function externalLookupViaRegistry(setCode, game = 'yugioh', options = {}) {
   if (game !== 'yugioh') return [];
-  const { findCardByIdImpl = findCardById, lookupPrintingBySetCodeImpl = lookupPrintingBySetCode, ...resolveOptions } = options;
+  const { findCardByIdImpl = findCardById, peekCardByIdImpl = peekCardById, lookupPrintingBySetCodeImpl = lookupPrintingBySetCode, ...resolveOptions } = options;
   const printing = await resolveYgoPrinting(setCode, { ...resolveOptions, lookupPrintingBySetCode: lookupPrintingBySetCodeImpl });
   if (!printing.catalogCardId) return [];
   // Il registro segnala esplicitamente più artwork REALI per questa identità
@@ -553,15 +553,25 @@ export async function externalLookupViaRegistry(setCode, game = 'yugioh', option
   // inventato — invece del placeholder vuoto di un'unica riga "unresolved".
   // Identità/rarità restano quelle già confermate su questo setCode: solo
   // artwork e catalogCardId cambiano fra le opzioni.
+  //
+  // Case B/C (audit OCR 2026-09-17, regressione post-005f84f): questo era un
+  // await bloccante su findCardById (2 richieste YGOPRODeck IT+EN) OGNI volta
+  // che una printing risultava unresolved con più artwork — cioè su una
+  // quota rilevante di scan reali, non un caso raro. Ora si arricchisce SOLO
+  // da una cache già calda (peekCardByIdImpl, sincrono, mai rete): se il dato
+  // non c'è ancora, il riconoscimento base NON aspetta la rete — la cache
+  // viene scaldata in background (fire-and-forget) per le scansioni
+  // successive della stessa carta nella stessa sessione.
   if (printing.mappingStatus === 'unresolved' && printing.artworkCount > 1) {
-    const card = await findCardByIdImpl(printing.catalogCardId, printing.cardName, game).catch(() => null);
-    const variants = card?.artworkVariants || [];
+    const cachedCard = peekCardByIdImpl(printing.catalogCardId, printing.cardName, game);
+    const variants = cachedCard?.artworkVariants || [];
     if (variants.length > 1) {
       return variants.map((variant, index) => ({
         ...printing, catalogCardId: variant.id, imageUrl: variant.imageUrl,
         artworkLabel: index === 0 ? 'Standard' : 'Artwork alternativa'
       }));
     }
+    void findCardByIdImpl(printing.catalogCardId, printing.cardName, game).catch(() => {});
   }
   const legacyMatches = await lookupPrintingBySetCodeImpl(setCode).catch(() => []);
   const sameIdentity = legacyMatches.filter(match => String(match.catalogCardId) === printing.catalogCardId);
