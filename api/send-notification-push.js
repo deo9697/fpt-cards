@@ -1,9 +1,11 @@
-const webpush = require('web-push');
-const { createClient } = require('@supabase/supabase-js');
+// ESM: package.json ha "type": "module"; la sintassi CommonJS faceva crashare la funzione su Vercel (FUNCTION_INVOCATION_FAILED).
+import webpush from 'web-push';
+import { createClient } from '@supabase/supabase-js';
+import { webhookAuthorized } from './_webhook-auth.js';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message:'Metodo non consentito' });
-  if (!process.env.PUSH_WEBHOOK_SECRET || req.headers['x-webhook-secret'] !== process.env.PUSH_WEBHOOK_SECRET) return res.status(401).json({ message:'Non autorizzato' });
+  if (!webhookAuthorized(req)) return res.status(401).json({ message:'Non autorizzato' });
   const required = ['VAPID_PUBLIC_KEY','VAPID_PRIVATE_KEY','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'];
   if (required.some(name => !process.env[name])) return res.status(503).json({ message:'Configurazione incompleta' });
 
