@@ -1,7 +1,7 @@
-import {renderTeamPage, bindTeamPage} from './js/team.js';
+// team.js, admin.js, market-variant-admin.js, fast-scan.js e collection-share.js
+// non sono più import statici: si caricano alla prima apertura della loro
+// pagina (vedi lazyPageModule / loadFastScan), fuori dal percorso critico del login.
 import { collectionSearchAliases, enrichCollectionAliases, loadCollectionNameAliases } from './js/collection-search.js';
-import {renderAdminPage, bindAdminPage} from './js/admin.js';
-import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-variant-admin.js';
 import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
@@ -17,10 +17,8 @@ import { enablePushNotifications, pushSupported, pushConfigured } from './js/pus
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
-import { FastScanController } from './js/fast-scan.js';
 import { DeckController, deckUsageIndex } from './js/decks.js';
 import { MarketWatchController } from './js/market-watch.js';
-import { CollectionShareController } from './js/collection-share.js';
 import { StatsController } from './js/stats.js';
 import { progressForXp, titleForLevel } from './js/progression.js';
 import { cosmeticsByType, cosmeticPacks, findCosmetic, isCosmeticUnlocked } from './js/cosmetics.js';
@@ -110,7 +108,30 @@ function logCatalogRepairIssue(event) {
   console.warn('[catalog-repair]', event.stage, { collectionItemId:event.collectionItemId, game:event.game, error:event.error?.message || event.error?.code || String(event.error || '') });
 }
 const unresolvedCards = new Set();
-const fastScan = new FastScanController({
+// Fast Scan (~190 KB con le sue 7 dipendenze) non serve al login: il
+// controller nasce alla prima apertura della pagina Scan, con le STESSE
+// opzioni di prima, e restore() (ripristino di una sessione di scan
+// interrotta, usato solo dentro la pagina Scan) gira subito dopo, come
+// faceva prima all'avvio. Finché non è caricato fastScan è null: ogni uso
+// fuori dalla pagina Scan è protetto con ?.
+let fastScan = null, fastScanLoading = null;
+function loadFastScan() {
+  fastScanLoading ??= import('./js/fast-scan.js').then(async ({ FastScanController }) => {
+    const controller = createFastScanController(FastScanController);
+    await controller.restore();
+    fastScan = controller;
+    return controller;
+  }).catch(error => { fastScanLoading = null; throw error; });
+  return fastScanLoading;
+}
+// Pagina Scan richiesta ma modulo non ancora pronto: avvia il caricamento,
+// mostra un segnaposto e ridisegna quando arriva (solo se si è ancora lì).
+function fastScanPageView() {
+  if (fastScan) return fastScan.view();
+  void loadFastScan().then(() => { if (page === 'fastscan') render(); }).catch(() => { if (page === 'fastscan') toast('Impossibile caricare Fast Scan: controlla la connessione e riprova'); });
+  return lazyLoadingView('Fast Scan');
+}
+function createFastScanController(FastScanController) { return new FastScanController({
   api, externalLookup:externalLookupViaRegistry, getCollection:()=>state.collection,
   isOnline:online, onRender:()=>render(true),
   // scheduleCatalogRepairs() qui (oltre alla singola pianificazione di
@@ -122,7 +143,39 @@ const fastScan = new FastScanController({
   // qui non duplica un ciclo già in corso.
   onSaved:async()=>{await loadCollection();saveState();scheduleCatalogRepairs();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
-});
+}); }
+
+// Moduli di pagina caricati alla prima apertura (Team, Admin, Market variant):
+// finché non arrivano la pagina mostra un segnaposto, poi si ridisegna da sola
+// se l'utente è ancora su quella pagina. Un errore di rete non resta in cache:
+// la visita successiva riprova.
+const lazyPageModules = new Map();
+function lazyPageModule(key, pageId, loader) {
+  const entry = lazyPageModules.get(key);
+  if (entry?.module) return entry.module;
+  if (!entry) {
+    const record = { module: null };
+    lazyPageModules.set(key, record);
+    loader().then(module => { record.module = module; if (page === pageId) renderRoute(); })
+      .catch(() => { lazyPageModules.delete(key); if (page === pageId) toast('Impossibile caricare la pagina: controlla la connessione e riprova'); });
+  }
+  return null;
+}
+const loadedPageModule = key => lazyPageModules.get(key)?.module || null;
+function lazyLoadingView(label) {
+  return `<section class="page-stack lazy-page-loading" aria-busy="true"><div class="inline-empty">${icon('card')}<div><strong>Caricamento ${esc(label)}…</strong><span>Un attimo, sto preparando la pagina.</span></div></div></section>`;
+}
+// Dopo il primo render da utente loggato, a browser inattivo, scarica (senza
+// istanziarlo) il modulo Fast Scan: così aprire Scan resta immediato, ma il
+// download non compete più con il primo caricamento.
+let routePrefetchScheduled = false;
+function scheduleRoutePrefetch() {
+  if (routePrefetchScheduled || !state.currentUser) return;
+  routePrefetchScheduled = true;
+  const prefetch = () => { void import('./js/fast-scan.js').catch(() => {}); };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(prefetch, { timeout: 8000 });
+  else setTimeout(prefetch, 4000);
+}
 const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
 const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
 const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
@@ -155,7 +208,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan?.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
 
 // Niente più poll globale ogni 2 minuti: ogni pagina che non ha copertura
 // Realtime si aggiorna da sola quando l'utente la apre, invece di dipendere
@@ -268,7 +321,7 @@ async function loadLoginFeaturedCards() {
 }
 
 function appView() {
-  if (page === 'fastscan') return `<main class="fast-scan-route">${fastScan.view()}</main>`;
+  if (page === 'fastscan') return `<main class="fast-scan-route">${fastScanPageView()}</main>`;
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
@@ -443,7 +496,7 @@ function pageContent() {
   if (page === 'loans') return loansView();
   if (page === 'team') return teamView();
   if (page === 'cards') return cardsView();
-  if (page === 'fastscan') return fastScan.view();
+  if (page === 'fastscan') return fastScanPageView();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch.view();
   if (page === 'decks') return decks.view();
@@ -782,7 +835,7 @@ function teamModel() {
     title:m=>{const profile=memberProfiles.get(m.id)||{};return findCosmetic(profile.activeTitle)?.label||titleForLevel(profile.level||1);}
   };
 }
-function teamView() { return renderTeamPage(teamModel()); }
+function teamView() { const module = lazyPageModule('team', 'team', () => import('./js/team.js')); return module ? module.renderTeamPage(teamModel()) : lazyLoadingView('Team'); }
 
 // Artwork Resolver: stato locale della coda, mai persistito (si ricarica ogni
 // volta che la pagina si apre — è un elenco di lavoro, non dati utente).
@@ -807,7 +860,7 @@ function adminModel() {
     isAdmin: state.role === 'admin', currentUserName: member(state.currentUser)?.name || ''
   };
 }
-function adminView() { return renderAdminPage(adminModel()); }
+function adminView() { const module = lazyPageModule('admin', 'admin', () => import('./js/admin.js')); return module ? module.renderAdminPage(adminModel()) : lazyLoadingView('Admin'); }
 
 async function loadAdminArtworkQueue(reset = true) {
   if (!canManageArtwork()) return;
@@ -926,7 +979,7 @@ function marketVariantModel() {
     backfillRunning: marketVariantState.backfillRunning, backfillReport: marketVariantState.backfillReport
   };
 }
-function marketVariantView() { return renderMarketVariantPage(marketVariantModel()); }
+function marketVariantView() { const module = lazyPageModule('market-variants', 'market-variants', () => import('./js/market-variant-admin.js')); return module ? module.renderMarketVariantPage(marketVariantModel()) : lazyLoadingView('Market variant'); }
 
 // Report di sola diagnostica (fase finale dello shadow pricing, vedi
 // 20260912180000_ygo_market_variant_exact_price_shadow.sql) — non incide sul
@@ -1188,6 +1241,7 @@ async function runMarketVariantBackfill() {
 }
 
 function bind() {
+  scheduleRoutePrefetch();
   bindDashboardCarousel();
   document.querySelectorAll('[data-dashboard-progression]').forEach(button => button.addEventListener('click', () => { progressionDrawerOpen = true; render(); }));
   document.querySelector('#login-form')?.addEventListener('submit', login);
@@ -1321,13 +1375,13 @@ function bind() {
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
-  bindTeamPage(document, teamModel(), manageMember);
-  bindAdminPage(document, adminModel(), {
+  loadedPageModule('team')?.bindTeamPage(document, teamModel(), manageMember);
+  loadedPageModule('admin')?.bindAdminPage(document, adminModel(), {
     onSelectCandidate: selectAdminArtworkCandidate, onConfirm: confirmAdminArtworkSelection,
     onLoadMore: () => loadAdminArtworkQueue(false), onFilterChange: setAdminArtworkFilter,
     onViewHistory: loadMyArtworkHistory, onViewQueue: () => { adminArtworkState.view = 'queue'; render(); }
   });
-  bindMarketVariantPage(document, marketVariantModel(), {
+  loadedPageModule('market-variants')?.bindMarketVariantPage(document, marketVariantModel(), {
     onSelectCandidate: selectMarketVariantCandidate, onConfirm: confirmMarketVariantSelection,
     onLoadMore: () => loadMarketVariantQueue(false), onFilterChange: setMarketVariantFilter,
     onRefreshMetadata: refreshMarketVariantCandidateMetadata,
@@ -1340,7 +1394,7 @@ function bind() {
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks') decks.bind(document);
   if (page === 'market') marketWatch.bind(document);
-  if (page === 'fastscan') fastScan.bind(document);
+  if (page === 'fastscan') fastScan?.bind(document);
   if (page === 'stats') stats.bind(document);
   bindProgressionHeader(document);
 }
@@ -2351,7 +2405,7 @@ async function login(e) {
 }
 
 async function logout() {
-  await fastScan.leave();
+  await fastScan?.leave();
   api.unsubscribe();
   await api.logout();
   state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
@@ -2737,8 +2791,15 @@ async function startGuestShare(shareId) {
   // testando questo percorso.
   page = 'share';
   if (guestShare?.shareId === shareId) { renderGuestShare(); return; }
-  guestShare?.dispose();
   document.body.dataset.page = 'share';
+  // Modulo della raccolta condivisa caricato solo per i link di condivisione.
+  // L'import avviene PRIMA di dismettere il controller precedente, così lo
+  // scambio resta sincrono; se nel frattempo l'hash è cambiato non si fa nulla.
+  let CollectionShareController;
+  try { ({ CollectionShareController } = await import('./js/collection-share.js')); }
+  catch { toast('Impossibile aprire la raccolta condivisa: controlla la connessione e riprova'); return; }
+  if (location.hash.match(SHARE_HASH)?.[1] !== shareId) return;
+  guestShare?.dispose();
   guestShare = new CollectionShareController({ api, shareId, onRender:renderGuestShare, onToast:toast });
   renderGuestShare();
   await guestShare.load();
@@ -2769,7 +2830,7 @@ async function start() {
   if (shareMatch) { await startGuestShare(shareMatch[1]); return; }
   installCardImageRecovery();
   installCollectionControls();
-  await fastScan.restore();
+  // fastScan.restore() ora gira dentro loadFastScan(), alla prima apertura della pagina Scan.
   watchConnectivity(async connected => {
     if (!state.currentUser) return;
     if (!connected) { render(); return; }
@@ -2824,14 +2885,15 @@ window.addEventListener('hashchange', () => {
   const next = routeFromHash();
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();
+    if(!fastScan)return;
     if(mode==='review'&&fastScan.phase!=='review')void fastScan.openReview();
     else if(mode==='scan'&&fastScan.phase==='review')void fastScan.start();
     return;
   }
   if (next === page) return;
   if (page === 'fastscan' && next !== 'fastscan') {
-    if(['scanning','paused'].includes(fastScan.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
-    void fastScan.leave();
+    if(['scanning','paused'].includes(fastScan?.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
+    void fastScan?.leave();
   }
   const previous = page;
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
