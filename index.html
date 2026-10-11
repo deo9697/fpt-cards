@@ -8,8 +8,14 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" href="icon-192.png">
+  <!-- La lista profili del login arriva da una RPC Supabase: aprire subito
+       DNS/TCP/TLS verso l'API (in parallelo al download di app.js) evita di
+       pagarli alla prima chiamata. crossorigin: le fetch di Supabase sono CORS. -->
+  <link rel="preconnect" href="https://gonycawupahawocqafcf.supabase.co" crossorigin>
   <link rel="preload" href="assets/fonts/manrope-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="assets/fonts/cinzel-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Cinzel serve solo dopo il login (titoli Dashboard/Market): prefetch a
+       bassa priorità invece di preload, così non compete col primo paint. -->
+  <link rel="prefetch" href="assets/fonts/cinzel-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
   <!--
     Critical launch CSS: deve rendere il primo frame di #app-launch identico
     allo splash nativo Android/PWA (stesso sfondo, stesso logo centrato,
