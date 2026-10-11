@@ -65,12 +65,11 @@ assert.equal(resolve(printing({rarity:'3'}),[oneProduct]).status,CARDMARKET_RESO
 for(const rarity of ['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Starlight Rare','Platinum Secret Rare',"Collector's Rare",'Quarter Century Secret Rare','Starfoil Rare','Short Print','Prismatic Secret Rare','Gold Secret Rare','Gold Rare','Mosaic Rare','Premium Gold Rare','Shatterfoil Rare'])assert(normalizeMarketRarity(rarity),`Rarità supportata non normalizzata: ${rarity}`);
 for(const rarity of ['2','3'])assert.equal(normalizeMarketRarity(rarity),'Common');
 assert.equal(normalizeMarketRarity('Ghost Rare'),'Ghost Rare');
-// "New"/"Reprint" sono designazioni reali di YGOPRODeck per certe copie di Structure
-// Deck, non un placeholder vuoto — js/cards.js le tratta già come alias di Common
-// lato catalogo; il resolver le scartava comunque come UNSUPPORTED perché non le
-// conosceva, lasciando quelle printing senza prezzo per sempre (2026-09-07).
-assert.equal(normalizeMarketRarity('New'),'Common','rarità "New" (Structure Deck) non riconosciuta come alias di Common');
-assert.equal(normalizeMarketRarity('Reprint'),'Common','rarità "Reprint" (Structure Deck) non riconosciuta come alias di Common');
+// "New"/"Reprint"/"New artwork"/"Reprint (new artwork)" sono etichette di catalogo, non
+// rarità fisiche (js/cards.js NON_RARITY_CATALOG_PATTERN): non devono mai diventare Common.
+for(const tag of ['New','Reprint','New artwork','Reprint (new artwork)','  nEw  '])assert.equal(normalizeMarketRarity(tag),null,`etichetta non-rarità trattata come rarità: ${tag}`);
+for(const tag of ['New','Reprint'])assert.equal(resolve(printing({rarity:tag}),[oneProduct]).status,CARDMARKET_RESOLUTION_STATES.UNSUPPORTED,`printing con sola etichetta ${tag} abbinata a un prodotto`);
+assert.equal(normalizeMarketRarity('Common'),'Common','Common legittimo non più riconosciuto');
 // Rarità reali del catalogo YGOPRODeck che il resolver scartava come UNSUPPORTED prima di
 // tentare qualunque match su Cardmarket, escludendo dal Market Watch carte altrimenti valide.
 for(const rarity of ['Ghost/Gold Rare','Platinum Rare','Prismatic Ultimate Rare',"Prismatic Collector's Rare",'Extra Secret Rare','20th Secret Rare','Super Short Print','Ultra Short Print','Parallel Rare','Normal Parallel Rare','Super Parallel Rare','Ultra Parallel Rare','Duel Terminal Normal Parallel Rare','Duel Terminal Rare Parallel Rare','Duel Terminal Super Parallel Rare','Duel Terminal Ultra Parallel Rare','Millennium Rare','Millennium Super Rare','Millennium Ultra Rare','Millennium Secret Rare','Millennium Gold Rare','Holographic Rare',"Ultra Rare (Pharaoh's Rare)"])assert(normalizeMarketRarity(rarity),`Rarità reale del catalogo esclusa dal resolver: ${rarity}`);

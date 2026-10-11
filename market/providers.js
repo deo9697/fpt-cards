@@ -19,14 +19,11 @@ const SUPPORTED_RARITIES=new Map([
   ['duel terminal super parallel rare','Duel Terminal Super Parallel Rare'],['duel terminal ultra parallel rare','Duel Terminal Ultra Parallel Rare'],
   ['millennium rare','Millennium Rare'],['millennium super rare','Millennium Super Rare'],['millennium ultra rare','Millennium Ultra Rare'],
   ['millennium secret rare','Millennium Secret Rare'],['millennium gold rare','Millennium Gold Rare'],
-  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"],
-  // "New"/"Reprint" sono designazioni reali di YGOPRODeck per certe copie di
-  // Structure Deck (non un placeholder vuoto) — js/cards.js's normalizeCatalogRarity()
-  // le tratta già come alias di Common per lo stesso motivo ("must not vanish
-  // entirely, or the printing never matches"). Questa mappa non le conosceva,
-  // quindi ogni printing con card_printings.rarity='New'/'Reprint' veniva
-  // scartata come UNSUPPORTED prima ancora di cercarla su Cardmarket.
-  ['new','Common'],['reprint','Common']
+  ['holographic rare','Holographic Rare'],["ultra rare (pharaoh's rare)","Ultra Rare (Pharaoh's Rare)"]
+  // "New", "Reprint", "New artwork", "Reprint (new artwork)" NON sono rarità fisiche:
+  // sono etichette di catalogo (js/cards.js NON_RARITY_CATALOG_PATTERN → ''). Restano
+  // volutamente fuori dalla mappa: una printing con sola etichetta è UNSUPPORTED e non
+  // viene mai abbinata a un prodotto Common su Cardmarket.
 ]);
 
 // Chiavi grezze del Price Guide Cardmarket per tipo di prezzo — hoisted fuori
