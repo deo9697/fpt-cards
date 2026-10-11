@@ -55,5 +55,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="app.js" type="module"></script>
+  <script type="module">
+    // Web Vitals solo in debug (?debugPerf=1): senza il flag non si scarica nulla.
+    if (new URLSearchParams(location.search).get('debugPerf') === '1') import('./js/performance-vitals.js').then(m => m.startPerformanceVitals()).catch(error => console.warn('[perf] web-vitals non disponibile', error));
+  </script>
 </body>
 </html>
