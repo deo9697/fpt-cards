@@ -1,0 +1,15 @@
+[
+  {"raw":"MAMO-EN012","catalog":["MAMO-EN012"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"MAMO-EN013","catalog":["MAMO-EN013"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"MAMO-EN014","catalog":["MAMO-EN014"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"RA01-EN001","catalog":["RA01-EN001","RA01-EN001"],"confidence":92,"consensus":2,"expected":"RARITY_AMBIGUOUS"},
+  {"raw":"RA02-IT001","catalog":["RA02-IT001"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"RA01EN001","catalog":["RA01-EN001"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"MAMO-ENO13","catalog":["MAMO-EN013"],"confidence":76,"consensus":2,"expected":"NEAR"},
+  {"raw":"MAMO-EN0I3","catalog":["MAMO-EN013"],"confidence":76,"consensus":2,"expected":"NEAR"},
+  {"raw":"MAMO-EN0L3","catalog":["MAMO-EN013"],"confidence":76,"consensus":2,"expected":"NEAR"},
+  {"raw":"MIP-I010","catalog":["MIP-I010"],"confidence":92,"consensus":2,"expected":"EXACT"},
+  {"raw":"???","catalog":[],"confidence":20,"consensus":0,"expected":"OCR_INVALID"},
+  {"raw":"MAMO-EN099","catalog":[],"confidence":92,"consensus":2,"expected":"CATALOG_MISSING"},
+  {"raw":"MAMO-EN099","catalog":[],"confidence":40,"consensus":1,"expected":"UNRESOLVED"}
+]

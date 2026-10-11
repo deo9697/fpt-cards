@@ -1,0 +1,92 @@
+[
+  {
+    "code": "BLGG-EN012",
+    "evidence": "read-only DB snapshot replayed through previous isolated scanner",
+    "db_rows": 1,
+    "result": {
+      "status": "high_confidence",
+      "decision": "EXACT_UNIQUE",
+      "matches": [
+        {
+          "printingId": "331aabd6-cc35-40b7-bb32-592c99231fac",
+          "game": "yugioh",
+          "catalogCardId": "8039562",
+          "cardName": "Dragunity Falchion",
+          "setCode": "BLGG-EN012",
+          "setName": "Battles of Legend: Glorious Gallery",
+          "rarity": "Common",
+          "imageUrl": ""
+        }
+      ],
+      "code": "BLGG-EN012",
+      "ocrConfidence": 99,
+      "corrected": false,
+      "consensus": 0,
+      "lookupSource": "catalog-index"
+    }
+  },
+  {
+    "code": "RA05-EN027",
+    "evidence": "read-only DB snapshot replayed through previous isolated scanner",
+    "db_rows": 1,
+    "result": {
+      "status": "high_confidence",
+      "decision": "EXACT_UNIQUE",
+      "matches": [
+        {
+          "printingId": "9b06b35a-95a6-450e-9725-acececf1e8c7",
+          "game": "yugioh",
+          "catalogCardId": "84941194",
+          "cardName": "Imsety, Glory of Horus",
+          "setCode": "RA05-EN027",
+          "setName": "Rarity Collection 5",
+          "rarity": "Ultimate Rare",
+          "imageUrl": ""
+        }
+      ],
+      "code": "RA05-EN027",
+      "ocrConfidence": 99,
+      "corrected": false,
+      "consensus": 0,
+      "lookupSource": "catalog-index"
+    }
+  },
+  {
+    "code": "RA05-EN007",
+    "evidence": "read-only DB snapshot replayed through previous isolated scanner",
+    "db_rows": 0,
+    "result": {
+      "status": "not_found",
+      "code": "RA05-EN007",
+      "matches": [],
+      "ocrConfidence": 99,
+      "consensus": 0,
+      "fastMiss": true
+    }
+  },
+  {
+    "code": "RA05-EN007",
+    "evidence": "synthetic fixture: single Ultra row; not evidence of historical device input",
+    "result": {
+      "status": "high_confidence",
+      "decision": "EXACT_UNIQUE",
+      "matches": [
+        {
+          "printingId": "synthetic-ultra",
+          "game": "yugioh",
+          "catalogCardId": "123",
+          "cardName": "Delta synthetic collapsed source",
+          "setCode": "RA05-EN007",
+          "setName": "",
+          "rarity": "Ultra Rare",
+          "imageUrl": ""
+        }
+      ],
+      "code": "RA05-EN007",
+      "ocrConfidence": 99,
+      "corrected": false,
+      "consensus": 0,
+      "lookupSource": "catalog-index"
+    }
+  }
+]

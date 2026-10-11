@@ -1,2 +1,5 @@
 [functions.market-sync]
 verify_jwt = false
+
+[functions.market-refresh-queue-cached]
+verify_jwt = false

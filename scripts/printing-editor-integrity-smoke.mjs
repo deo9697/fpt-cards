@@ -34,7 +34,7 @@ globalThis.fetch = async url => {
   ]}]})};
 };
 const shizukuLookup = await lookupPrintingBySetCode('L26D-ENS26');
-assert.deepEqual(shizukuLookup.map(printing=>printing.rarity).sort(), ['Common','Secret Rare','Starlight Rare'], 'il lookup per set conserva soltanto la variante restituita da cardsetsinfo');
+assert.deepEqual(shizukuLookup.map(printing=>printing.rarity).sort(), ['Secret Rare','Starlight Rare'], 'numeric quantities cannot invent Common; preserve both independently listed rarities');
 
 const shizukuPrintings = [
   { setCode:'L26D-ENS26', setName:'Legendary Modern Decks 2026', rarity:'Starlight Rare' },

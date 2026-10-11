@@ -58,6 +58,9 @@ export class CollectionShareController {
     this.filters = { rarity: 'all', edition: 'all', condition: 'all', language: 'all', availability: 'all' };
     this.sort = 'name-asc';
     this.visibleCount = PAGE_SIZE;
+    this.searchIndex = new WeakMap();
+    this.gridBindings = new WeakSet();
+    this.sortedItemsCache = null;
     this.selected = new Map(); // printingId -> quantity
     this.reviewing = false;
     this.requesterName = '';
@@ -90,11 +93,17 @@ export class CollectionShareController {
     } catch {}
   }
   dispose() { clearTimeout(this._searchTimer); window.removeEventListener('popstate', this._onBack); }
-  async load() {
+  load() {
+    if (this.loadInFlight) return this.loadInFlight;
+    this.loadInFlight = this.loadData().finally(() => { this.loadInFlight = null; });
+    return this.loadInFlight;
+  }
+  async loadData() {
     this.loading = true;
     try {
       this.data = await this.api.getCollectionShare(this.shareId);
       this.data.items = (this.data.items || []).map(item => ({ ...item, rarity: typeof item.rarity === 'string' && /[a-z]/i.test(item.rarity) ? item.rarity.trim() : '' }));
+      for (const item of this.data.items) this.searchFields(item);
       for (const [id, quantity] of this.selected) {
         const item = this.data.items.find(row => row.printingId === id);
         const safeQuantity = Math.min(availableQuantity(item || {}), Math.max(0, Math.floor(Number(quantity) || 0)));
@@ -182,17 +191,29 @@ export class CollectionShareController {
   // es. "Sintonizzare" per una stampa posseduta come "Tuning" — non una
   // traduzione, solo nomi che il catalogo ha già registrato altrove per la
   // stessa carta).
+  searchFields(item) {
+    let fields = this.searchIndex.get(item);
+    if (!fields) {
+      fields = [item.cardName, item.setName, item.setCode, ...(item.alternateNames || [])].map(value => String(value || '').toLowerCase());
+      this.searchIndex.set(item, fields);
+    }
+    return fields;
+  }
   matchesQuery(item, query) {
-    if (!query) return true;
-    if (item.cardName.toLowerCase().includes(query)) return true;
-    if ((item.setName || '').toLowerCase().includes(query)) return true;
-    if ((item.setCode || '').toLowerCase().includes(query)) return true;
-    return (item.alternateNames || []).some(name => name.toLowerCase().includes(query));
+    return !query || this.searchFields(item).some(value => value.includes(query));
   }
   visibleItems() {
     const query = this.query.trim().toLowerCase();
     const { rarity, edition, condition, language, availability } = this.filters;
-    const items = (this.data?.items || []).filter(item => {
+    const source = this.data?.items;
+    if (!this.sortedItemsCache || this.sortedItemsCache.source !== source || this.sortedItemsCache.sort !== this.sort || this.sortedItemsCache.length !== source?.length) {
+      this.sortedItemsCache = { source, sort: this.sort, length: source?.length, items: sortItems(source || [], this.sort) };
+    }
+    // Loaded items are immutable snapshots; selection/quantity changes live
+    // in a separate Map. A reload replaces the source and invalidates caches.
+    const filterKey=JSON.stringify([query,rarity,edition,condition,language,availability]);
+    if(this.filteredItemsCache?.sorted===this.sortedItemsCache&&this.filteredItemsCache.key===filterKey)return this.filteredItemsCache.items;
+    const items = this.sortedItemsCache.items.filter(item => {
       if (!this.matchesQuery(item, query)) return false;
       if (rarity !== 'all' && (item.rarity || '') !== rarity) return false;
       if (edition !== 'all' && (item.edition || '') !== edition) return false;
@@ -201,7 +222,8 @@ export class CollectionShareController {
       if (availability === 'available' && availableQuantity(item) <= 0) return false;
       return true;
     });
-    return sortItems(items, this.sort);
+    this.filteredItemsCache={sorted:this.sortedItemsCache,key:filterKey,items};
+    return items;
   }
   view() {
     if (this.loading) return `<div class="share-guest-shell"><div class="share-guest-loading"><div class="loading-spinner"></div></div></div>`;
@@ -359,14 +381,23 @@ export class CollectionShareController {
       <button type="button" class="share-review-remove" data-share-remove="${esc(item.printingId)}" aria-label="Rimuovi">${icon('trash')}</button>
     </div>`;
   }
-  // Condiviso tra il bind iniziale (root=document) e refreshGrid()
-  // (root=solo [data-share-grid-content]): va ri-agganciato ogni volta che
-  // quel solo pezzo di HTML viene ricostruito.
+  // Delegation survives grid innerHTML replacement. Bind a fresh container
+  // only when a full page render replaces the container itself.
   bindGridContent(root) {
-    root.querySelectorAll('[data-share-toggle]').forEach(button => button.addEventListener('click', () => this.toggle(button.dataset.shareToggle)));
-    root.querySelectorAll('[data-share-filter]').forEach(select => select.addEventListener('change', () => this.setFilter(select.dataset.shareFilter, select.value)));
-    root.querySelector('[data-share-sort]')?.addEventListener('change', event => this.setSort(event.target.value));
-    root.querySelector('[data-share-show-more]')?.addEventListener('click', () => this.showMore());
+    const container = root.matches?.('[data-share-grid-content]') ? root : root.querySelector('[data-share-grid-content]');
+    if (!container || this.gridBindings.has(container)) return;
+    this.gridBindings.add(container);
+    container.addEventListener('click', event => {
+      const button = event.target.closest?.('[data-share-toggle], [data-share-show-more]');
+      if (!button || !container.contains(button) || button.disabled) return;
+      if (button.hasAttribute('data-share-toggle')) this.toggle(button.dataset.shareToggle);
+      else this.showMore();
+    });
+    container.addEventListener('change', event => {
+      const select = event.target;
+      if (select.matches('[data-share-filter]')) this.setFilter(select.dataset.shareFilter, select.value);
+      else if (select.matches('[data-share-sort]')) this.setSort(select.value);
+    });
   }
   bind(root = document) {
     this.bindGridContent(root);

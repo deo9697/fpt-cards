@@ -1,0 +1,3466 @@
+{
+  "row_count": 181,
+  "identity_groups": 163,
+  "groups": [
+    {
+      "set_code": "BLGG-EN007",
+      "catalog_card_id": "29981921",
+      "card_name": "Legendary Six Samurai - Shi En",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN009",
+      "catalog_card_id": "38495396",
+      "card_name": "Constellar Ptolemy M7",
+      "row_count": 1,
+      "rarities": [
+        "Starlight Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN012",
+      "catalog_card_id": "8039562",
+      "card_name": "Dragunity Falchion",
+      "row_count": 1,
+      "rarities": [
+        "Common"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN015",
+      "catalog_card_id": "7917970",
+      "card_name": "Dragunity Divine Wind",
+      "row_count": 1,
+      "rarities": [
+        "Common"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN019",
+      "catalog_card_id": "32289031",
+      "card_name": "Tellarknight Constellar Delteros",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN020",
+      "catalog_card_id": "69678646",
+      "card_name": "Stellarnova Binding",
+      "row_count": 2,
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN021",
+      "catalog_card_id": "95072744",
+      "card_name": "Tohushaddoll Grysta",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN022",
+      "catalog_card_id": "32467459",
+      "card_name": "El Shaddoll Meshachrer",
+      "row_count": 2,
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "unresolved",
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN026",
+      "catalog_card_id": "32126000",
+      "card_name": "Learning Elf",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN027",
+      "catalog_card_id": "53770666",
+      "card_name": "Armament Reincarnation",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN028",
+      "catalog_card_id": "95915457",
+      "card_name": "Mirror Barrier",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN030",
+      "catalog_card_id": "561300",
+      "card_name": "Poisonous Viper",
+      "row_count": 1,
+      "rarities": [
+        "Common"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN034",
+      "catalog_card_id": "613496",
+      "card_name": "Over Tuning",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN036",
+      "catalog_card_id": "73496100",
+      "card_name": "Gagaga Illusion",
+      "row_count": 1,
+      "rarities": [
+        "Common"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN037",
+      "catalog_card_id": "9591819",
+      "card_name": "Gagaga Escape",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN038",
+      "catalog_card_id": "35989913",
+      "card_name": "Endless Bond",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN040",
+      "catalog_card_id": "8778267",
+      "card_name": "Penetration Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN041",
+      "catalog_card_id": "35167375",
+      "card_name": "Surprise Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN043",
+      "catalog_card_id": "34041788",
+      "card_name": "Empire of Endymion",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN044",
+      "catalog_card_id": "60439482",
+      "card_name": "Arrow of Regulus",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN045",
+      "catalog_card_id": "59011257",
+      "card_name": "Fallin' Cheatah",
+      "row_count": 1,
+      "rarities": [
+        "Common"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN046",
+      "catalog_card_id": "95506252",
+      "card_name": "Shadowreaver Knight 21",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "unresolved"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN048",
+      "catalog_card_id": "58995660",
+      "card_name": "First Striker Advantage",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "unresolved"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN049",
+      "catalog_card_id": "94384774",
+      "card_name": "Ebisu Shinsen Matsuri",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        "manual_verified"
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN050",
+      "catalog_card_id": "96228804",
+      "card_name": "Regulus, the Prince of Endymion",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN051",
+      "catalog_card_id": "4035199",
+      "card_name": "Shapesnatch",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN052",
+      "catalog_card_id": "37265642",
+      "card_name": "Sabersaurus",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN053",
+      "catalog_card_id": "77044671",
+      "card_name": "Pyramid Turtle",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN054",
+      "catalog_card_id": "20663556",
+      "card_name": "Substitoad",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN055",
+      "catalog_card_id": "46239604",
+      "card_name": "Dupe Frog",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN056",
+      "catalog_card_id": "4335427",
+      "card_name": "Sophia, Goddess of Rebirth",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN058",
+      "catalog_card_id": "44663232",
+      "card_name": "Ghost Fairy Elfobia",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN060",
+      "catalog_card_id": "2273734",
+      "card_name": "Satellarknight Altair",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN061",
+      "catalog_card_id": "77723643",
+      "card_name": "Shaddoll Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN063",
+      "catalog_card_id": "20758643",
+      "card_name": "Graff, Malebranche of the Burning Abyss",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN064",
+      "catalog_card_id": "57143342",
+      "card_name": "Cir, Malebranche of the Burning Abyss",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN065",
+      "catalog_card_id": "31178212",
+      "card_name": "Majespecter Unicorn - Kirin",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN066",
+      "catalog_card_id": "29951323",
+      "card_name": "Zap Mustung",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN067",
+      "catalog_card_id": "55623480",
+      "card_name": "Fairy Tail - Snow",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN068",
+      "catalog_card_id": "21142671",
+      "card_name": "Red Nova",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN070",
+      "catalog_card_id": "52022648",
+      "card_name": "Fairy Tail - Rella",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN072",
+      "catalog_card_id": "32476603",
+      "card_name": "Silverrokket Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN073",
+      "catalog_card_id": "5969957",
+      "card_name": "Rokket Recharger",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN074",
+      "catalog_card_id": "51023024",
+      "card_name": "Reeshaddoll Wendi",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN076",
+      "catalog_card_id": "26577155",
+      "card_name": "Dragunity Remus",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN077",
+      "catalog_card_id": "22180094",
+      "card_name": "S-Force Rappa Chiyomaru",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN078",
+      "catalog_card_id": "65953423",
+      "card_name": "Fairy Tail - Rochka",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN079",
+      "catalog_card_id": "37343995",
+      "card_name": "Exosister Martha",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN080",
+      "catalog_card_id": "5852388",
+      "card_name": "Xeno Meteorus",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN081",
+      "catalog_card_id": "28803166",
+      "card_name": "Lacrima the Crimson Tears",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN082",
+      "catalog_card_id": "74822425",
+      "card_name": "El Shaddoll Shekhinaga",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN084",
+      "catalog_card_id": "13529466",
+      "card_name": "Invoked Caliga",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN086",
+      "catalog_card_id": "12307878",
+      "card_name": "Invoked Purgatrio",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN089",
+      "catalog_card_id": "96029574",
+      "card_name": "Black Brutdrago",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN090",
+      "catalog_card_id": "88033975",
+      "card_name": "Armades, Keeper of Boundaries",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN091",
+      "catalog_card_id": "48891960",
+      "card_name": "Dragunity Knight - Ascalon",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN092",
+      "catalog_card_id": "40939228",
+      "card_name": "Shooting Majestic Star Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN093",
+      "catalog_card_id": "95911373",
+      "card_name": "Zoroa, the Magistus Conflagrant Calamity",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN096",
+      "catalog_card_id": "94119480",
+      "card_name": "Adreus, Keeper of Armageddon",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN098",
+      "catalog_card_id": "42589641",
+      "card_name": "Stellarknight Triverr",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN100",
+      "catalog_card_id": "64276752",
+      "card_name": "Arc Rebellion Xyz Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN101",
+      "catalog_card_id": "28346136",
+      "card_name": "Galaxy-Eyes Cipher X Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN102",
+      "catalog_card_id": "13117073",
+      "card_name": "Barricadeborg Blocker",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN103",
+      "catalog_card_id": "2463794",
+      "card_name": "Fiendsmith's Requiem",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN105",
+      "catalog_card_id": "27970830",
+      "card_name": "Gateway of the Six",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN107",
+      "catalog_card_id": "27821104",
+      "card_name": "Asceticism of the Six Samurai",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN109",
+      "catalog_card_id": "60709218",
+      "card_name": "Bond Between Teacher and Student",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN111",
+      "catalog_card_id": "44394295",
+      "card_name": "Shaddoll Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN113",
+      "catalog_card_id": "60004971",
+      "card_name": "Dragunity Divine Lance",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN115",
+      "catalog_card_id": "5697558",
+      "card_name": "The Hidden City",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN116",
+      "catalog_card_id": "91405870",
+      "card_name": "Mayhem Fur Hire",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN117",
+      "catalog_card_id": "25845518",
+      "card_name": "Dragunity Glow",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN118",
+      "catalog_card_id": "23377425",
+      "card_name": "S-Force Bridgehead",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN119",
+      "catalog_card_id": "365213",
+      "card_name": "Arrive in Light",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN120",
+      "catalog_card_id": "37750912",
+      "card_name": "Stardust Illumination",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN122",
+      "catalog_card_id": "10125011",
+      "card_name": "Constellar Tellarknights",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN124",
+      "catalog_card_id": "23969415",
+      "card_name": "Beta Evolution Pill - Ultranscendance",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN125",
+      "catalog_card_id": "98567237",
+      "card_name": "Fiendsmith's Tract",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN126",
+      "catalog_card_id": "7477101",
+      "card_name": "Seventh Tachyon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN127",
+      "catalog_card_id": "48739627",
+      "card_name": "Theorealize",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN128",
+      "catalog_card_id": "94326720",
+      "card_name": "Theorealize Overdrive",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN129",
+      "catalog_card_id": "27285068",
+      "card_name": "Theorealize Liberation",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN130",
+      "catalog_card_id": "52335937",
+      "card_name": "Exosister Betrayal",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN131",
+      "catalog_card_id": "4178474",
+      "card_name": "Raigeki Break",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN132",
+      "catalog_card_id": "23626223",
+      "card_name": "Statue of Anguish Pattern",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN135",
+      "catalog_card_id": "96004535",
+      "card_name": "Unbreakable Xyz Barrier",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-EN136",
+      "catalog_card_id": "80208225",
+      "card_name": "Dracotail Sting",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT021",
+      "catalog_card_id": "95072744",
+      "card_name": "Tohushaddoll Grysta",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT023",
+      "catalog_card_id": "8852158",
+      "card_name": "Reeshaddoll Wendikurhu",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT046",
+      "catalog_card_id": "95506252",
+      "card_name": "Shadowreaver Knight 21",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "unresolved"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT061",
+      "catalog_card_id": "77723643",
+      "card_name": "Shaddoll Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT070",
+      "catalog_card_id": "52022648",
+      "card_name": "Fairy Tail - Rella",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT078",
+      "catalog_card_id": "65953423",
+      "card_name": "Fairy Tail - Rochka",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT081",
+      "catalog_card_id": "28803166",
+      "card_name": "Lacrima the Crimson Tears",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT084",
+      "catalog_card_id": "13529466",
+      "card_name": "Invoked Caliga",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT103",
+      "catalog_card_id": "2463794",
+      "card_name": "Fiendsmith's Requiem",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT107",
+      "catalog_card_id": "27821104",
+      "card_name": "Asceticism of the Six Samurai",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT111",
+      "catalog_card_id": "44394295",
+      "card_name": "Shaddoll Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT112",
+      "catalog_card_id": "6417578",
+      "card_name": "El Shaddoll Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT115",
+      "catalog_card_id": "5697558",
+      "card_name": "The Hidden City",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT126",
+      "catalog_card_id": "7477101",
+      "card_name": "Seventh Tachyon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "BLGG-IT132",
+      "catalog_card_id": "23626223",
+      "card_name": "Statue of Anguish Pattern",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN024",
+      "catalog_card_id": "32909498",
+      "card_name": "Kashtira Fenrir",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN027",
+      "catalog_card_id": "84941194",
+      "card_name": "Imsety, Glory of Horus",
+      "row_count": 1,
+      "rarities": [
+        "Ultimate Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN033",
+      "catalog_card_id": "63198739",
+      "card_name": "Primite Dragon Ether Beryl",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN039",
+      "catalog_card_id": "58071334",
+      "card_name": "Snake-Eyes Doomed Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Ultimate Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN041",
+      "catalog_card_id": "27572350",
+      "card_name": "Bystial Dis Pater",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN051",
+      "catalog_card_id": "74615388",
+      "card_name": "Laevatein, Generaider Boss of Shadows",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN053",
+      "catalog_card_id": "74997493",
+      "card_name": "Saryuja Skull Dread",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN058",
+      "catalog_card_id": "41739381",
+      "card_name": "Clockwork Knight",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN063",
+      "catalog_card_id": "64061284",
+      "card_name": "Ancient Gear Fusion",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN072",
+      "catalog_card_id": "56506740",
+      "card_name": "Primite Lordly Lode",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN103",
+      "catalog_card_id": "90448279",
+      "card_name": "Divine Arsenal AA-ZEUS - Sky Thunder",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN130",
+      "catalog_card_id": "10000010",
+      "card_name": "The Winged Dragon of Ra",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-EN132",
+      "catalog_card_id": "91800273",
+      "card_name": "Dimension Shifter",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT002",
+      "catalog_card_id": "49036338",
+      "card_name": "PSY-Frame Driver",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT006",
+      "catalog_card_id": "38814750",
+      "card_name": "PSY-Framegear Gamma",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT007",
+      "catalog_card_id": "74203495",
+      "card_name": "PSY-Framegear Delta",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT008",
+      "catalog_card_id": "59975920",
+      "card_name": "Super Quantum Red Layer",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT010",
+      "catalog_card_id": "52840267",
+      "card_name": "Darklord Ixchel",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT014",
+      "catalog_card_id": "35645105",
+      "card_name": "Infinitrack Harvester",
+      "row_count": 2,
+      "rarities": [
+        "Collector's Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT016",
+      "catalog_card_id": "94183877",
+      "card_name": "Loptr, Shadow of the Generaider Bosses",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT020",
+      "catalog_card_id": "20295753",
+      "card_name": "Night Sword Serpent",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT021",
+      "catalog_card_id": "76145933",
+      "card_name": "Spright Blue",
+      "row_count": 3,
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT022",
+      "catalog_card_id": "13533678",
+      "card_name": "Spright Jet",
+      "row_count": 2,
+      "rarities": [
+        "Secret Rare",
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT024",
+      "catalog_card_id": "32909498",
+      "card_name": "Kashtira Fenrir",
+      "row_count": 3,
+      "rarities": [
+        "Ultimate Rare",
+        "Super Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT025",
+      "catalog_card_id": "68304193",
+      "card_name": "Kashtira Unicorn",
+      "row_count": 3,
+      "rarities": [
+        "Ultra Rare",
+        "Super Rare",
+        "Ultimate Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT027",
+      "catalog_card_id": "84941194",
+      "card_name": "Imsety, Glory of Horus",
+      "row_count": 2,
+      "rarities": [
+        "Super Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT030",
+      "catalog_card_id": "15005145",
+      "card_name": "Centur-Ion Primera",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT033",
+      "catalog_card_id": "63198739",
+      "card_name": "Primite Dragon Ether Beryl",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT035",
+      "catalog_card_id": "1498449",
+      "card_name": "Dracotail Faimena",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT037",
+      "catalog_card_id": "38811586",
+      "card_name": "Albion the Sanctifire Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT038",
+      "catalog_card_id": "46640168",
+      "card_name": "Fiendsmith's Lacrima",
+      "row_count": 1,
+      "rarities": [
+        "Secret Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT039",
+      "catalog_card_id": "58071334",
+      "card_name": "Snake-Eyes Doomed Dragon",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT041",
+      "catalog_card_id": "27572350",
+      "card_name": "Bystial Dis Pater",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT043",
+      "catalog_card_id": "22850702",
+      "card_name": "Chaos Angel",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT045",
+      "catalog_card_id": "96402918",
+      "card_name": "Lancea, Ancestral Dragon of the Ice Mountain",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT046",
+      "catalog_card_id": "49456901",
+      "card_name": "Number C104: Umbral Horror Masquerade",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT047",
+      "catalog_card_id": "71612253",
+      "card_name": "D/D/D Marksman King Tell",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT051",
+      "catalog_card_id": "74615388",
+      "card_name": "Laevatein, Generaider Boss of Shadows",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT052",
+      "catalog_card_id": "64182380",
+      "card_name": "Garunix Eternity, Hyang of the Fire Kings",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT053",
+      "catalog_card_id": "74997493",
+      "card_name": "Saryuja Skull Dread",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT054",
+      "catalog_card_id": "40216089",
+      "card_name": "Platinum Gadget",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT056",
+      "catalog_card_id": "24842059",
+      "card_name": "Linguriboh",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT057",
+      "catalog_card_id": "2645637",
+      "card_name": "Yuki-Onna, the Absolute Zero Mayakashi",
+      "row_count": 2,
+      "rarities": [
+        "Secret Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT063",
+      "catalog_card_id": "64061284",
+      "card_name": "Ancient Gear Fusion",
+      "row_count": 2,
+      "rarities": [
+        "Secret Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT064",
+      "catalog_card_id": "25274141",
+      "card_name": "Urgent Schedule",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT065",
+      "catalog_card_id": "68829754",
+      "card_name": "Eldlixir of Black Awakening",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT068",
+      "catalog_card_id": "15443125",
+      "card_name": "Spright Starter",
+      "row_count": 4,
+      "rarities": [
+        "Ultimate Rare",
+        "Collector's Rare",
+        "Secret Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT069",
+      "catalog_card_id": "54562327",
+      "card_name": "Stake your Soul!",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT071",
+      "catalog_card_id": "58570206",
+      "card_name": "Heavy Polymerization",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT072",
+      "catalog_card_id": "56506740",
+      "card_name": "Primite Lordly Lode",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT073",
+      "catalog_card_id": "66975205",
+      "card_name": "Yummyusment☆Mignon",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT075",
+      "catalog_card_id": "20508881",
+      "card_name": "Radiant Typhoon Vision",
+      "row_count": 2,
+      "rarities": [
+        "Super Rare",
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT078",
+      "catalog_card_id": "20638610",
+      "card_name": "Dragon's Rebirth",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT081",
+      "catalog_card_id": "58053438",
+      "card_name": "Songs of the Dominators",
+      "row_count": 1,
+      "rarities": [
+        "Super Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT097",
+      "catalog_card_id": "95440946",
+      "card_name": "Eldlich the Golden Lord",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT100",
+      "catalog_card_id": "25592142",
+      "card_name": "Astellar of the White Forest",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT103",
+      "catalog_card_id": "90448279",
+      "card_name": "Divine Arsenal AA-ZEUS - Sky Thunder",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT119",
+      "catalog_card_id": "39568067",
+      "card_name": "Fateful Adventure",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT126",
+      "catalog_card_id": "84749824",
+      "card_name": "Avvertimento Solenne",
+      "row_count": 2,
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {},
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT132",
+      "catalog_card_id": "91800273",
+      "card_name": "Dimension Shifter",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    },
+    {
+      "set_code": "RA05-IT137",
+      "catalog_card_id": "76290637",
+      "card_name": "Gimmick Puppet Fantasix Machinix",
+      "row_count": 1,
+      "rarities": [
+        "Ultra Rare"
+      ],
+      "variant_ids": [
+        ""
+      ],
+      "sources": [
+        ""
+      ],
+      "verification": [
+        "verified"
+      ],
+      "metadata": [
+        {}
+      ]
+    }
+  ]
+}

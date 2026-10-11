@@ -154,6 +154,8 @@ assert.equal(savedEntry.imageUrl, ARTWORK_B_URL);
 assert.equal(savedEntry.rarity, RARITY, 'la rarità reale non deve cambiare per la scelta dell\'artwork');
 assert.equal(savedEntry.artworkLabel, 'Artwork alternativa');
 
+// Persist only against existing catalog variants; never implicitly insert.
+controller.api.lookupPrintings = async () => candidates.map((row,index)=>({...row,printingId:`artwork-${index}`}));
 let savedPayload = null;
 controller.api.saveCollectionBatch = async items => { savedPayload = items; return { savedItems: items.length, totalQuantity: items.length }; };
 controller.onToast = () => {};

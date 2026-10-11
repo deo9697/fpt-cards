@@ -16,7 +16,7 @@ for (const [read, expected] of [['PJNI-IT001','PHNI-IT001'],['NUMJ-EN001','NUMH-
 
 const calls=[];
 const controller = new FastScanController({camera:{},paddleOcr:{},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,
-  api:{lookupPrintings:async code=>{calls.push(['rpc',code]);return code==='PHNI-IT001'?[{printing_id:'phni',catalog_card_id:'1',set_code:code,game:'yugioh'}]:[];}},
+  api:{lookupPrintings:async code=>{calls.push(['rpc',code]);return code==='PHNI-IT001'?[{printing_id:'phni',catalog_card_id:'1',set_code:code,game:'yugioh',rarity:'Common'}]:[];}},
   externalLookup:async code=>{calls.push(['external',code]);return [];}});
 const first = await controller.resolve('PJNI-IT001',80,{exactOnly:true});
 assert.equal(first.status,'not_found');

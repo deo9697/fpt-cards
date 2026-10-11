@@ -1,0 +1,18 @@
+{
+  "environment": "Disposable PGlite, NOT a Supabase production schema",
+  "applied": [
+    "20260908152605_catalog_identity_localized_names.sql",
+    "20260908154257_market_refresh_queue_schedule.sql"
+  ],
+  "failure": {
+    "file": "20260908154639_market_verified_blgg_metadata.sql",
+    "message": "relation \"public.card_printings\" does not exist",
+    "code": "42P01"
+  },
+  "platform_failure": {
+    "file": "20260908154257_market_refresh_queue_schedule.sql",
+    "message": "relation \"vault.secrets\" does not exist",
+    "code": "42P01"
+  },
+  "note": "Vault/cron replaced with inert local stubs solely to expose application prerequisites. No HTTP calls or scheduled jobs execute."
+}

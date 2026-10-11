@@ -27,8 +27,8 @@ async function saveCachedCatalogIndex(game,record){
 // onRows(entries, complete): `complete` è lo stesso flag già calcolato da
 // syncSnapshot (record.complete) — passato attraverso, non ricalcolato.
 // Serve a fast-scan.js per esporre cacheState (?debugScan=1): un publish con
-// complete=true è un indice interrogabile con certezza di unicità del set
-// code, come già documentato sopra ("mai una pagina parziale").
+// complete=true means all database pages were downloaded. It does not prove
+// that all physical rarity or artwork variants exist in the upstream catalog.
 export async function syncCatalogIndex(api,game,{onRows}={}){
   let games=activeSyncs.get(api);if(!games){games=new Map();activeSyncs.set(api,games);}
   let job=games.get(game);

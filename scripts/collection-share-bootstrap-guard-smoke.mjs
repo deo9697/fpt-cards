@@ -11,7 +11,7 @@
 // per un link scaduto/non valido (copre anche quel caso), mai un crash, mai
 // un fallback a contenuto privato.
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -38,6 +38,19 @@ try {
   const evaluate = async expression => { const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; };
 
   await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
+  // Use the installed SDK: a stalled public CDN must not prevent this
+  // offline bootstrap regression from reaching app.js at all.
+  const sdk = (await readFile('node_modules/@supabase/supabase-js/dist/umd/supabase.js')).toString('base64');
+  let releaseSdk, sdkRequested=false;
+  const sdkGate=new Promise(resolve=>{releaseSdk=resolve;});
+  socket.addEventListener('message', async event => {
+    const message=JSON.parse(event.data);
+    if(message.method==='Fetch.requestPaused'){
+      sdkRequested=true;await sdkGate;
+      await send('Fetch.fulfillRequest',{requestId:message.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'application/javascript'}],body:sdk});
+    }
+  });
+  await send('Fetch.enable',{patterns:[{urlPattern:'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'}]});
   await send('Network.setBlockedURLs', { urls: ['*://*.supabase.co/*'] });
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 
@@ -54,8 +67,13 @@ try {
 
   // --- 1) Apertura diretta share da sessione anonima -----------------------
   await send('Page.navigate', { url: `http://localhost:8080/#/share/${shareId}` });
-  await delay(50); // il guard inline deve marcare la pagina PRIMA ancora che app.js finisca di caricare
+  // Hold the blocking SDK until the inline guard is observed. A fixed 50ms
+  // delay could inspect the previous/blank document before HTML was parsed.
+  for(let i=0;i<100&&!sdkRequested;i++)await delay(20);
+  if(!sdkRequested)throw new Error('Bootstrap did not reach the SDK request');
+  for(let i=0;i<100;i++){if(await evaluate("Boolean(document.querySelector('#app'))"))break;await delay(20);}
   const immediatelyAfterNavigate = await snapshot();
+  releaseSdk();
   await delay(800);
   const anonymous = await snapshot();
   if (immediatelyAfterNavigate.pageAttr !== 'share') throw Error('Il guard inline in index.html non marca subito body[data-page=share], prima ancora che app.js risponda: ' + JSON.stringify(immediatelyAfterNavigate));

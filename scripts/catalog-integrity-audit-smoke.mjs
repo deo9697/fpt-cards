@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { auditCatalog } from './catalog-integrity-audit.mjs';
+const source={data:[{id:75787708,name:'Fixture',card_images:[{id:75787708}],card_sets:[{set_code:'MAMO-EN013',set_rarity:'Ultra Rare',set_name:'Magnificent Monsters'},{set_code:'MAMO-EN013',set_rarity:'Starlight Rare',set_name:'Magnificent Monsters'}]}]};
+const db=[{id:'one',game:'yugioh',catalog_card_id:'75787708',set_code:'MAMO-EN013',set_name:'Wrong set',rarity:'Ultra Rare',image_url:'https://example.test/999.jpg'}];
+const audit=auditCatalog(source,[...db,{...db[0],id:'two'}]);
+for(const type of ['SOURCE_PRINTING_MISSING','DUPLICATE_PHYSICAL_IDENTITY_CANDIDATE','SET_NAME_MISMATCH','IMAGE_ID_MISMATCH_REVIEW','UNVERIFIED','MISSING_SOURCE_METADATA'])assert(audit.findings.some(row=>row.type===type),type);
+assert.equal(audit.repair_plan.executable,false);
+assert.equal(audit.repair_plan.entries.length,1);
+assert.equal(audit.report.length,2,'multiple rarities are distinct source identities');
+assert.equal(db.length,1,'audit never mutates input');
+const tagAudit=auditCatalog({data:[{...source.data[0],card_sets:[{set_code:'MAMO-EN013',set_rarity:'New',set_name:'Magnificent Monsters'}]}]},[]);
+assert.equal(tagAudit.report.length,0);
+assert.equal(tagAudit.repair_plan.entries.length,0);
+assert.equal(tagAudit.findings[0].type,'NON_RARITY_SOURCE_TAG');
+console.log('PASS local-only catalog audit and non-executable repair plan');

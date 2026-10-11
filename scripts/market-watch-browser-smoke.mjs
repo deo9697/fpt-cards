@@ -12,7 +12,12 @@ try{
   let id=0;const pending=new Map();socket.addEventListener('message',event=>{const message=JSON.parse(event.data),task=pending.get(message.id);if(!task)return;pending.delete(message.id);message.error?task.reject(new Error(message.error.message)):task.resolve(message.result);});
   const send=(method,params={})=>new Promise((resolve,reject)=>{const requestId=++id;pending.set(requestId,{resolve,reject});socket.send(JSON.stringify({id:requestId,method,params}));});
   const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value;};
-  await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});await send('Page.navigate',{url:'http://localhost:8080/'});await delay(700);
+  await send('Runtime.enable');await send('Page.enable');await send('Network.enable');
+  await send('Network.setBlockedURLs',{urls:['*supabase.co/*','*supabase.in/*']});
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});
+  // Isolated fixture: no app bootstrap/config/session or real backend RPCs.
+  await send('Page.navigate',{url:'http://localhost:8080/scripts/fixtures/collection-share-harness.html'});await delay(700);
+  await evaluate(`document.head.insertAdjacentHTML('afterbegin','<base href="/">')`);
   const now=new Date().toISOString();
   // 2026-09-11: list_market_watch (RPC unica, payload intero) sostituita da 4
   // RPC mirate — vedi supabase/migrations/20260911145101_market_watch_owned_pagination.sql

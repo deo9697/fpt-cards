@@ -1,4 +1,6 @@
 import { esc } from './core.js';
+import { classifyScanDiagnostic } from './fast-scan-core.js';
+import { printingEvidence, physicalKey } from './fast-scan-printing-identity.js';
 import { icon } from './icons.js';
 import { normalizeSetCode, extractSetCodeCandidates, setCodeCandidates, classifyPrintingMatch, classifyNearPrintingMatch, OcrConsensus, ScanGate, ScanSessionBuffer, defaultScanSettings } from './fast-scan-core.js';
 import { isFirstEdition } from './collection.js';
@@ -7,7 +9,7 @@ import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-
 import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
-import { resolveStoredCard, sanitizeYugiohRarity } from './cards.js';
+import { resolveStoredCard, sanitizeYugiohRarity, canonicalCatalogCardId } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
 // resolve() da solo può già sparare fino a ~12 RPC concorrenti per una
@@ -105,13 +107,13 @@ export class FastScanController {
     const event=this.currentScan;
     const matches=event?.reviewData?.matches;
     if(!event||event.status!=='REVIEW_REQUIRED'||!matches?.length)return '';
-    const options=matches.slice(0,4);
+    const options=matches;
     const title=options.length>1?'Quale carta è?':'Confermi questa carta?';
     // artworkLabel è presente SOLO quando l'ambiguità riguarda l'illustrazione
     // (stesso catalogCardId/set/rarità reali, il registro conferma più artwork
     // note): mai una seconda rarità inventata, solo l'etichetta Standard/
     // Artwork alternativa accanto ai dati reali già mostrati.
-    return `<article class="scan-ambiguous" aria-live="polite"><strong>${title}</strong><div class="scan-ambiguous-options">${options.map((match,index)=>`<button type="button" data-scan-choice="${index}" data-scan-id="${event.id}">${match.imageUrl?`<img src="${esc(match.imageUrl)}" alt="">`:''}<span><b>${esc(match.setCode||'')}</b><small>${esc(match.rarity||'Rarità non indicata')}</small>${match.artworkLabel?`<small class="scan-ambiguous-label">${esc(match.artworkLabel)}</small>`:''}</span></button>`).join('')}</div><button type="button" class="scan-ambiguous-retry" data-scan-retry="${event.id}">Riprova foto</button></article>`;
+    return `<article class="scan-ambiguous" aria-live="polite"><strong>${title}</strong><div class="scan-ambiguous-options">${options.map((match,index)=>`<button type="button" data-scan-choice="${index}" data-scan-id="${event.id}">${match.imageUrl?`<img src="${esc(match.imageUrl)}" alt="">`:''}<span><b>${esc(match.setCode||'')}</b><small>${esc(match.rarity||'Rarità non indicata')}</small>${match.requiresCatalogRepair||match.invalidPhysicalRarity?'<small>Richiede correzione catalogo</small>':''}${match.artworkLabel?`<small class="scan-ambiguous-label">${esc(match.artworkLabel)}</small>`:''}</span></button>`).join('')}</div><button type="button" class="scan-ambiguous-retry" data-scan-retry="${event.id}">Riprova foto</button></article>`;
   }
   historyView(all=false){
     const events=this.buffer.scanEvents.filter(event=>event.countsAsScan!==false),visible=all?events:events.slice(-5);
@@ -252,7 +254,7 @@ export class FastScanController {
     for(const row of rows||[]){const item=mapPrinting(row),code=String(item.setCode||'').toUpperCase();if(!code)continue;this.catalogIndex.set(code,dedupe([...(this.catalogIndex.get(code)||[]),item]));}
   }
   recentlyMissed(code){const at=this.missCache.get(code);return Boolean(at)&&Date.now()-at<MISS_CACHE_TTL;}
-  lookupMemory(code){const key=String(code||'').toUpperCase();if(this.resolutionCache.has(key))return {matches:this.resolutionCache.get(key),source:'session-cache'};const indexed=this.catalogIndex.get(key)||[];if(indexed.length)return {matches:indexed,source:'catalog-index'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
+  lookupMemory(code){const key=String(code||'').toUpperCase(),session=this.resolutionCache.get(key)||[],indexed=this.catalogIndex.get(key)||[];if(session.length||indexed.length)return {matches:dedupe([...indexed,...session]),source:session.length?'session-cache':'catalog-index'};const local=this.localCatalog.get(key)||[];return local.length?{matches:local,source:'collection-cache'}:{matches:[],source:''};}
   cacheResolution(code,matches){const clean=dedupe(matches||[]);if(clean.length)this.resolutionCache.set(String(code).toUpperCase(),clean);return clean;}
   async lookupDetailed(code,{allowRpc=true,allowExternal=true}={}){
     const key=String(code||'').toUpperCase(),memory=this.lookupMemory(key);
@@ -268,10 +270,11 @@ export class FastScanController {
     if(missedAt&&Date.now()-missedAt<MISS_CACHE_TTL)return memory.matches.length?memory:{matches:[],source:'recent-miss'};
     if(this.isOnline?.()===false)return memory.matches.length?memory:{matches:[],source:'offline'};
     const telemetry=this.cycleTelemetry;
-    if(allowRpc&&this.api?.lookupPrintings){const started=telemetry&&now();try{const rows=await boundedLookup(this.api.lookupPrintings(key,this.buffer.settings.game),this.lookupTimeoutMs);if(telemetry)telemetry.externalLookupMs+=now()-started;const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch(error){if(telemetry)telemetry.externalLookupMs+=now()-started;if(error?.code==='LOOKUP_TIMEOUT')throw error;}}
-    if(allowExternal&&this.externalLookup){const started=telemetry&&now();try{const matches=this.cacheResolution(key,await boundedLookup(this.externalLookup(key,this.buffer.settings.game),this.lookupTimeoutMs));if(telemetry)telemetry.externalLookupMs+=now()-started;if(matches.length)return {matches,source:'external'};}catch(error){if(telemetry)telemetry.externalLookupMs+=now()-started;if(error?.code==='LOOKUP_TIMEOUT')throw error;}}
-    if(fullAttempt)this.missCache.set(key,Date.now());
-    return memory.matches.length?memory:{matches:[],source:'not-found'};
+    let lookupSucceeded=false,lookupFailed=false;
+    if(allowRpc&&this.api?.lookupPrintings){const started=telemetry&&now();try{const rows=await boundedLookup(this.api.lookupPrintings(key,this.buffer.settings.game),this.lookupTimeoutMs);lookupSucceeded=true;if(telemetry)telemetry.externalLookupMs+=now()-started;const matches=this.cacheResolution(key,(rows||[]).map(mapPrinting));if(matches.length)return {matches,source:'rpc'};}catch(error){lookupFailed=true;if(telemetry)telemetry.externalLookupMs+=now()-started;if(error?.code==='LOOKUP_TIMEOUT')throw error;}}
+    if(allowExternal&&this.externalLookup){const started=telemetry&&now();try{const matches=this.cacheResolution(key,await boundedLookup(this.externalLookup(key,this.buffer.settings.game),this.lookupTimeoutMs));lookupSucceeded=true;if(telemetry)telemetry.externalLookupMs+=now()-started;if(matches.length)return {matches,source:'external'};}catch(error){lookupFailed=true;if(telemetry)telemetry.externalLookupMs+=now()-started;if(error?.code==='LOOKUP_TIMEOUT')throw error;}}
+    if(fullAttempt&&lookupSucceeded&&!lookupFailed)this.missCache.set(key,Date.now());
+    return memory.matches.length?memory:{matches:[],source:lookupSucceeded&&!lookupFailed?'not-found':'lookup-unavailable'};
   }
   async lookup(code,options){return (await this.lookupDetailed(code,options)).matches;}
   detectionContent(value){
@@ -305,6 +308,11 @@ export class FastScanController {
   }
   chooseReview(id,index){
     if(!this.canEditSession())return;const item=this.buffer.review.find(entry=>entry.id===id),match=item?.matches?.[index];if(!match)return;
+    if(match.requiresCatalogRepair||match.invalidPhysicalRarity||!sanitizeYugiohRarity(match.rarity)){
+      this.buffer.updateScan(id,{classification:'REQUIRES_CATALOG_REPAIR',failureReason:'REQUIRES_CATALOG_REPAIR'});
+      item.warning='Questa stampa richiede una correzione del catalogo prima del salvataggio';
+      this.onToast?.(item.warning);this.persist();this.refreshHud();if(this.phase==='review')this.onRender();return;
+    }
     this.invalidateSync();this.buffer.correctScan(id,match);this.persist();this.refreshHud();if(this.phase==='review')this.onRender();
   }
   async correctReview(id,code){
@@ -325,7 +333,7 @@ export class FastScanController {
     const entries=[...this.buffer.entries.values()];
     this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
     try{
-      const prepared=await canonicalizeFastScanEntries(entries);
+      const prepared=await canonicalizeFastScanEntries(entries,(code,game)=>this.api.lookupPrintings(code,game));
       const rejectedNames=prepared.rejected.map(row=>row.entry.cardName||row.entry.setCode||'carta sconosciuta');
       this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry),rejected:prepared.rejected.map(row=>({...saveDiagnosticEntry(row.entry),code:row.code,message:row.message}))});
       if(!prepared.items.length){
@@ -539,7 +547,7 @@ export class FastScanController {
     const scan=buffer.getScan(scanId)||buffer.createScan();this.currentScanId=scan.id;
     const version=scan.resolutionVersion,captureId=this.feedbackCaptureId||0;
     buffer.updateScan(scan.id,{rawCode:reading.text,normalizedCode:normalized.code,ocrConfidence:reading.confidence});
-    if(!normalized.valid){await this.recordFailure();buffer.failScan(scan.id,'NO_VALID_CODE');this.persist();this.refreshHud();return {status:'not_found'};}
+    if(!normalized.valid){await this.recordFailure();buffer.updateScan(scan.id,{classification:'OCR_INVALID'});buffer.failScan(scan.id,'NO_VALID_CODE');this.debugTrace('catalog:classification',{rawOcr:reading.text,classification:'OCR_INVALID'});this.persist();this.refreshHud();return {status:'not_found',classification:'OCR_INVALID'};}
     const code=normalized.code,memory=this.lookupMemory(code),current=()=>this.buffer===buffer&&buffer.isCurrent(scan.id,version);
     const finish=async(result,pendingId=null)=>{
       if(!current())return;
@@ -683,7 +691,17 @@ export class FastScanController {
     if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,fastMiss:true};const matches=dedupe(corrected.flatMap(item=>item.matches)),code=corrected.length===1?corrected[0].candidate.code:exact.code;
     const classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount});return {...classified,code:classified.code||code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
-  async resolve(raw,ocrConfidence,{consensus=0,manual=false,exactOnly=false}={}){
+  async resolve(raw,ocrConfidence,options={}){
+    try{
+      const result=await this.resolveCatalog(raw,ocrConfidence,options);
+      result.classification=classifyScanDiagnostic({raw,result,ocrConfidence,...options});
+      return result;
+    }catch(error){
+      this.debugTrace('catalog',{rawOcr:raw,classification:classifyScanDiagnostic({raw,error}),accepted:false,rejectionReason:error?.code||'LOOKUP_FAILED'});
+      throw error;
+    }
+  }
+  async resolveCatalog(raw,ocrConfidence,{consensus=0,manual=false,exactOnly=false}={}){
     const candidates=setCodeCandidates(raw),plausibleCandidateCount=Math.max(1,extractSetCodeCandidates(raw).length);if(!candidates.length)return {status:'not_found',code:'',matches:[],ocrConfidence};
     const fast=await this.resolveFast(raw,ocrConfidence,{consensus,manual});if(!fast.fastMiss&&!fast.corrected)return fast;
     // exact.corrected: stessa guardia di resolveFast() qui sopra — una
@@ -691,20 +709,23 @@ export class FastScanController {
     // rete/RPC, resta nel pool corrected qualche riga più sotto (slice(0)).
     const exact=candidates[0],exactLookup=exact.corrected?{matches:[],source:''}:await this.lookupDetailed(exact.code,{allowExternal:!exactOnly});
     if(exactLookup.matches.length){const classified=classifyPrintingMatch({normalized:normalizeSetCode(exact.code),matches:exactLookup.matches,ocrConfidence,consensus,manual});return {...classified,code:exact.code,ocrConfidence,corrected:false,consensus,lookupSource:exactLookup.source};}
-    if(exactOnly)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus}; if(!fast.fastMiss&&fast.corrected)return fast;
+    const lookupComplete=['not-found','recent-miss'].includes(exactLookup.source);
+    if(exactOnly)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,lookupComplete}; if(!fast.fastMiss&&fast.corrected)return fast;
     let corrected=(await Promise.all(candidates.slice(exact.corrected?0:1,9).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowExternal:false})})))).filter(item=>item.matches.length);
     if(!corrected.length&&this.externalLookup){const external=await Promise.all(candidates.slice(exact.corrected?0:1,5).map(async candidate=>({candidate,...await this.lookupDetailed(candidate.code,{allowRpc:false,allowExternal:true})})));corrected=external.filter(item=>item.matches.length);}
-    if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus};
+    if(!corrected.length)return {status:'not_found',code:exact.code,matches:[],ocrConfidence,consensus,lookupComplete};
     const matches=dedupe(corrected.flatMap(item=>item.matches)),classified=classifyNearPrintingMatch(corrected,{plausibleCandidateCount}),code=classified.code||(corrected.length===1?corrected[0].candidate.code:exact.code);
     return {...classified,code,matches,ocrConfidence,corrected:true,consensus,alternatives:classified.alternatives,lookupSource:corrected[0].source};
   }
   async commitResolution(result,raw,manual=false,pendingId=null,context={}){
+    result.classification = classifyScanDiagnostic({raw,result,ocrConfidence:result.ocrConfidence,consensus:result.consensus,manual});
+    this.debugTrace('catalog:classification',{rawOcr:raw,classification:result.classification});
     if(context.scanId&&!this.buffer.isCurrent(context.scanId,context.version))return;
     if(pendingId&&!this.buffer.review.some(item=>item.id===pendingId&&item.pending))return;
     const normalized=normalizeSetCode(raw),candidateCodes=setCodeCandidates(raw).map(item=>item.code),selected=result.matches?.[0]||null,accepted=result.status==='high_confidence'&&(result.decision==='EXACT_UNIQUE'||result.decision==='NEAR_UNIQUE'||manual),rejectionReason=result.status==='not_found'?'NO_CATALOG_MATCH':result.matches?.length>1?'MULTIPLE_CATALOG_MATCHES':accepted?'':result.corrected?'LOW_CONFIDENCE':'VALIDATION_FAILED';
     this.debugTrace('catalog',{rawOcr:raw,normalizedOcr:normalized.code,parsedCode:result.code||normalized.code,candidateCodes,catalogMatches:(result.matches||[]).map(saveDiagnosticEntry),selectedCatalogEntry:selected?saveDiagnosticEntry(selected):null,printingId:selected?.printingId||selected?.printing_id||'',printingKey:selected?[selected.game||'yugioh',selected.catalogCardId||selected.catalog_card_id||'',selected.setCode||selected.set_code||'',selected.rarity||''].join(':'):'',validationResult:result.decision||result.status,accepted,rejected:!accepted,rejectionReason,source:result.lookupSource||'',timingMs:Math.round((typeof performance!=='undefined'?performance.now():Date.now())-(this.debugStartedAt||0)),pending:Boolean(pendingId)});
     const scan=this.buffer.getScan(context.scanId||pendingId)||this.buffer.createScan({source:manual?'manual':'camera'});
-    this.buffer.updateScan(scan.id,{rawCode:raw,normalizedCode:result.code||normalized.code,ocrConfidence:result.ocrConfidence||scan.ocrConfidence,matchType:result.decision||'',source:result.lookupSource||scan.source});
+    this.buffer.updateScan(scan.id,{rawCode:raw,normalizedCode:result.code||normalized.code,ocrConfidence:result.ocrConfidence||scan.ocrConfidence,classification:result.classification,matchType:result.decision||'',source:result.lookupSource||scan.source});
     const mustAutoAdd=result.decision==='EXACT_UNIQUE'||(result.decision==='NEAR_UNIQUE'&&this.buffer.settings.autoAdd)||manual;
     const added=result.status==='high_confidence'&&mustAutoAdd;
     // Nessun codice/match reale: fallimento pulito, mai un elemento da
@@ -771,6 +792,8 @@ function hardValidationReason(base){
 
 export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null) {
   const items=[],decisions=[],rejected=[];let repaired=0;
+  const lookups=new Map();
+  const lookupOnce=(code,game)=>{const key=game+':'+code;if(!lookups.has(key))lookups.set(key,Promise.resolve().then(()=>lookupPrintings(code,game)));return lookups.get(key);};
   for(const entry of entries){
     // Ogni entry è isolata in un proprio try/catch: una singola identità
     // irrisolvibile (rarity contaminata sopravvissuta alla sanitizzazione,
@@ -785,19 +808,24 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       if(base.game==='yugioh')base.rarity=sanitizeYugiohRarity(base.rarity);
       const invalidReason=hardValidationReason(base);
       if(invalidReason)throw saveError('INVALID_RPC_PAYLOAD',`${base.cardName||base.setCode||'Carta'}: ${invalidReason}`,base);
-      if(base.printingId){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
+      if(base.game==='yugioh'&&(!base.rarity||entry.requiresCatalogRepair||printingEvidence([base])[0]?.invalidPhysicalRarity))throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
+      if(base.printingId&&base.game!=='yugioh'){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
+      if(base.printingId){
+        const rows=(await lookupOnce(base.setCode,base.game)||[]).map(mapPrinting);
+        const stored=rows.find(row=>row.printingId===base.printingId);
+        if(!stored||physicalKey(stored)!==physicalKey(base))throw saveError('REQUIRES_CATALOG_REPAIR','Printing ID e stampa selezionata non corrispondono',base);
+        items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;
+      }
       if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
-      let rows=[],lookupFailure='';try{rows=await lookupPrintings(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
+      let rows=[],lookupFailure='';try{rows=await lookupOnce(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
       const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
+      if(!candidates.length&&base.game==='yugioh')throw saveError('REQUIRES_CATALOG_REPAIR','Printing assente dal catalogo: nessuna creazione automatica',base);
       if(!candidates.length){
-        if(base.game==='yugioh'){
-          let card=null,resolverFailure='';try{card=await resolveCanonicalCard({id:'',name:base.cardName,setCode:base.setCode},base.game);}catch(error){resolverFailure=error?.message||'resolver_failed';}
-          if(card){const setMatch=(card.printings||[]).some(printing=>sameText(printing.setCode,base.setCode)),legacyArtwork=(card.imageIds||[]).includes(String(base.catalogCardId));if(!sameText(card.name,base.cardName)||(!setMatch&&!legacyArtwork))throw saveError('CATALOG_IDENTITY_MISMATCH',`Identità printing incoerente per ${base.setCode}: il catalogo non conferma la carta`,{base,cardId:card.id||'',cardName:card.name||''});const canonicalId=String(card.id||'');if(!canonicalId)throw saveError('PRINTING_CANONICALIZATION_FAILED',`Identità printing incompleta per ${base.setCode}`,base);const canonical={...base,catalogCardId:canonicalId,cardName:card.name,imageUrl:card.fullImage||card.image||base.imageUrl};items.push(canonical);decisions.push(canonicalDecision(canonical,'CANONICAL_CATALOG_ID',{lookupFailure}));if(canonicalId!==base.catalogCardId)repaired+=1;continue;}
-          items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure,resolverFailure:resolverFailure||'catalog_unavailable'}));continue;
-        }
         items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
       }
-      const ranked=candidates.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
+      const compatible=base.game==='yugioh'?candidates.filter(item=>sameText(item.rarity,base.rarity)&&String(item.variantId||'')===String(base.variantId||'')&&String(item.artworkId||'')===String(base.artworkId||'')):candidates;
+      if(!compatible.length)throw saveError('REQUIRES_CATALOG_REPAIR','La rarità scelta non è presente nel catalogo',base);
+      const ranked=compatible.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
       if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
       const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
     }catch(error){
@@ -815,14 +843,14 @@ export async function saveFastScanBatchWithRepair(items=[],saveBatch,repairEntri
   }
 }
 
-function batchItem(entry){return {printingId:entry.printingId||'',game:entry.game||'yugioh',catalogCardId:String(entry.catalogCardId||''),cardName:String(entry.cardName||''),setCode:String(entry.setCode||'').trim().toUpperCase(),setName:entry.setName||'',rarity:entry.rarity||'',imageUrl:entry.imageUrl||'',quantityDelta:Number(entry.quantity??entry.quantityDelta??0),language:entry.language||'Italiano',condition:entry.condition||'Near Mint',edition:entry.edition||''};}
+function batchItem(entry){return {variantId:entry.variantId||entry.variant_id||'',artworkId:entry.artworkId||entry.artwork_id||'',printingId:entry.printingId||'',game:entry.game||'yugioh',catalogCardId:String(entry.catalogCardId||''),cardName:String(entry.cardName||''),setCode:String(entry.setCode||'').trim().toUpperCase(),setName:entry.setName||'',rarity:entry.rarity||'',imageUrl:entry.imageUrl||'',quantityDelta:Number(entry.quantity??entry.quantityDelta??0),language:entry.language||'Italiano',condition:entry.condition||'Near Mint',edition:entry.edition||''};}
 function canonicalDecision(item,validationResult,extra={}){return {setCode:item.setCode,printingId:item.printingId||'',cardId:item.catalogCardId||'',catalogIdentity:[item.game,item.catalogCardId,item.setCode,item.rarity].join(':'),validationResult,...extra};}
 function saveDiagnosticEntry(item){return {printingId:item.printingId||'',cardId:item.catalogCardId||item.catalog_card_id||'',setCode:item.setCode||item.set_code||'',cardName:item.cardName||item.card_name||'',rarity:item.rarity||'',quantity:Number(item.quantity??item.quantityDelta??0),catalogIdentity:[item.game||'yugioh',item.catalogCardId||item.catalog_card_id||'',item.setCode||item.set_code||'',item.rarity||''].join(':')};}
 function saveError(code,message,details){const error=new Error(message);error.code=code;error.details=details;return error;}
-function saveRejectionReason(error,stage){if(error?.code&&['INVALID_RPC_PAYLOAD','PRINTING_CANONICALIZATION_FAILED','AMBIGUOUS_PRINTING','CATALOG_IDENTITY_MISMATCH'].includes(error.code))return error.code;if(stage==='rpc'){const message=String(error?.message||'');if(/inventory|collection_items|quantit/i.test(message))return 'INVENTORY_WRITE_FAILED';return 'RPC_REJECTED';}if(stage==='refresh')return 'UI_REFRESH_FAILED';return 'PRINTING_CANONICALIZATION_FAILED';}
+function saveRejectionReason(error,stage){if(error?.code&&['REQUIRES_CATALOG_REPAIR','INVALID_RPC_PAYLOAD','PRINTING_CANONICALIZATION_FAILED','AMBIGUOUS_PRINTING','CATALOG_IDENTITY_MISMATCH'].includes(error.code))return error.code;if(stage==='rpc'){const message=String(error?.message||'');if(/inventory|collection_items|quantit/i.test(message))return 'INVENTORY_WRITE_FAILED';return 'RPC_REJECTED';}if(stage==='refresh')return 'UI_REFRESH_FAILED';return 'PRINTING_CANONICALIZATION_FAILED';}
 function catalogMismatchSetCode(error){return String(error?.message||'').match(/Dati catalogo incoerenti per\s+([A-Z0-9-]+)/i)?.[1]?.toUpperCase()||'';}
 function canonicalIdentityChanged(before,after){return ['printingId','catalogCardId','cardName','setCode','setName','rarity','imageUrl'].some(field=>String(before?.[field]||'')!==String(after?.[field]||''));}
-function canonicalCompatibilityScore(entry,candidate){const sameId=String(entry.catalogCardId)===String(candidate.catalogCardId),sameName=sameText(entry.cardName,candidate.cardName),sameRarity=!entry.rarity||!candidate.rarity||sameText(entry.rarity,candidate.rarity);if(!sameName)return 0;return (sameId?8:0)+4+(sameRarity?2:0);}
+function canonicalCompatibilityScore(entry,candidate){const sameId=String(entry.catalogCardId)===String(candidate.catalogCardId),knownAlias=canonicalCatalogCardId(entry.catalogCardId,entry.game),sameName=sameText(entry.cardName,candidate.cardName),sameRarity=!entry.rarity||!candidate.rarity||sameText(entry.rarity,candidate.rarity);if(!sameName||(entry.game==='yugioh'&&!sameId&&(!knownAlias||knownAlias!==canonicalCatalogCardId(candidate.catalogCardId,candidate.game))))return 0;return (sameId?8:0)+4+(sameRarity?2:0);}
 function sameText(left,right){return String(left||'').normalize('NFKC').trim().toLocaleLowerCase('en')===String(right||'').normalize('NFKC').trim().toLocaleLowerCase('en');}
 
 export function selectSnapshotOcrResult(readings=[],{avoidCode=''}={}){
@@ -838,8 +866,8 @@ function reviewRow(item){
   if(item.pending)return `<article class="scan-review-row warning pending"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc(item.warning||'Verifica in corso…')}</small></span></div><button class="btn secondary small" data-review-ignore="${item.id}">Ignora</button></article>`;
   return `<article class="scan-review-row warning"><div>${icon('bell')}<span><strong>${esc(item.code||item.raw||'Codice non riconosciuto')}</strong><small>${esc(item.warning||'')}</small></span></div>${item.matches?.length?`<div class="review-choices">${item.matches.map((match,index)=>`<button class="btn secondary small" data-review-choice="${index}" data-review-id="${item.id}">${esc(match.cardName)} · ${esc(match.rarity||'Rarità non indicata')}${match.artworkLabel?` · ${esc(match.artworkLabel)}`:''}</button>`).join('')}</div>`:`<div class="review-correction"><input data-review-input="${item.id}" value="${esc(item.code||'')}" placeholder="Correggi codice"><button class="btn secondary small" data-review-correct="${item.id}">Cerca</button></div>`}<button class="btn secondary small" data-review-ignore="${item.id}">Ignora</button></article>`;
 }
-function mapPrinting(row){return {printingId:row.printing_id||row.printingId||'',game:row.game||'yugioh',catalogCardId:String(row.catalog_card_id||row.catalogCardId||''),cardName:row.card_name||row.cardName,setCode:row.set_code||row.setCode,setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||''};}
-function dedupe(items){return [...new Map(items.map(item=>[[item.printingId,item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];}
+function mapPrinting(row){return {...row,printingId:row.printing_id||row.printingId||row.id||'',game:row.game||'yugioh',catalogCardId:String(row.catalog_card_id||row.catalogCardId||''),cardName:row.card_name||row.cardName,setCode:row.set_code||row.setCode,setName:row.set_name||row.setName||'',rarity:(row.game||'yugioh')==='yugioh'?sanitizeYugiohRarity(row.rarity):row.rarity||'',variantId:row.variantId||row.variant_id||'',artworkId:row.artworkId||row.artwork_id||'',imageUrl:row.image_url||row.imageUrl||''};}
+function dedupe(items){return [...new Map(items.map(item=>[[item.printingId,physicalKey(item)].join(':'),item])).values()];}
 export const OCR_SUB_ROI={topRatio:.05,heightRatio:.9};
 export function createOcrInputPlan(snapshot){
   const raw=snapshot.rawCanvas||snapshot.canvas;if(!raw?.width||!raw?.height)throw new Error('ROI raw OCR non disponibile');

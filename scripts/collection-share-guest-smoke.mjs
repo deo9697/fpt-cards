@@ -259,7 +259,40 @@ try {
   await delay(150);
   const closed=await evaluate(`({calls:__backCalls,share:!!document.querySelector('.share-guest-shell'),modal:!!document.querySelector('.share-review-modal'),selected:document.querySelector('.share-guest-selection-text')?.textContent})`);
   if(closed.calls!==1||!closed.share||closed.modal||!closed.selected?.includes('1'))throw Error('X navigated away or lost draft: '+JSON.stringify(closed));
-  console.log('PASS Shared Collection guest restyle · mobile 390x844 · hero/stat pill reali · ricerca nome/alternateName/setCode · filtri rarità+disponibilità client-side · selezione con disponibilità netta · dimensioni uniformi e nessuna richiesta per sfondi in griglia · modal richiesta pronta (nome obbligatorio, quantità clampata, messaggio 250, invio con submitCollectionShareRequest esteso) · stato finale senza redirect login · link revocato gestito · nessun errore console');
+  for (const width of [360,390,768,1440]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<768});
+    const metrics=await evaluate(`(async()=>{
+      const c=window.__share; c.submitted=false;c.error='';c.reviewing=false;c.selected.clear();c.query='';c.filters={rarity:'all',edition:'all',condition:'all',language:'all',availability:'all'};c.sort='name-asc';c.visibleCount=60;
+      let requests=0,renders=0,toggles=0;
+      c.api.getCollectionShare=async()=>{requests++;await new Promise(r=>setTimeout(r,20));return {ownerName:'Benchmark',game:'yugioh',items:Array.from({length:3000},(_,i)=>({printingId:'bench-'+i,cardName:'Card '+String(i).padStart(4,'0'),setCode:'MAMO-EN'+i,setName:'Magnificent Monsters',rarity:i%2?'Common':'Ultra Rare',quantityOwned:3,quantityAvailable:3,imageUrl:'icon-192.png',alternateNames:['Alias '+i]}))};};
+      await Promise.all([c.load(),c.load()]);
+      const initial=document.querySelectorAll('.share-guest-tile').length;
+      const oldRefresh=c.refreshGrid.bind(c),oldToggle=c.toggle.bind(c);
+      c.refreshGrid=()=>{renders++;oldRefresh();};c.toggle=id=>{toggles++;oldToggle(id);};
+      for(const q of ['C','Ca','Card','Card 00']){const input=document.querySelector('[data-share-query]');input.value=q;input.dispatchEvent(new Event('input',{bubbles:true}));}
+      await new Promise(r=>setTimeout(r,230));
+      const rapidRenders=renders,searchCount=c.visibleItems().length;
+      document.querySelector('[data-share-filter="rarity"]').value='Ultra Rare';document.querySelector('[data-share-filter="rarity"]').dispatchEvent(new Event('change',{bubbles:true}));
+      document.querySelector('[data-share-sort]').value='name-desc';document.querySelector('[data-share-sort]').dispatchEvent(new Event('change',{bubbles:true}));
+      const correctFilter=c.visibleItems().every(row=>row.rarity==='Ultra Rare'&&row.cardName.includes('Card 00'));
+      c.search('');await new Promise(r=>setTimeout(r,230));
+      c.bindGridContent(document);c.bindGridContent(document);
+      document.querySelector('[data-share-show-more]').click();
+      const expanded=document.querySelectorAll('.share-guest-tile').length;
+      const button=document.querySelector('[data-share-toggle]'),selectedId=button.dataset.shareToggle;button.click();
+      c.openReview();const qty=document.querySelector('[data-share-qty]');qty.value='2';qty.dispatchEvent(new Event('change',{bubbles:true}));
+      const quantity=c.selected.get(selectedId);c.closeReview();
+      c.search('Card 00');await new Promise(r=>setTimeout(r,230));
+      const selectionRetained=c.selected.get(selectedId)===2;
+      const lazy=[...document.querySelectorAll('.share-guest-tile img')].every(img=>img.loading==='lazy');
+      const overflow=document.documentElement.scrollWidth>innerWidth;
+      c.refreshGrid=oldRefresh;c.toggle=oldToggle;
+      return {requests,initial,rapidRenders,searchCount,correctFilter,expanded,toggles,quantity,selectionRetained,lazy,overflow,nodes:document.querySelectorAll('*').length};
+    })()`);
+    if(metrics.requests!==1||metrics.initial!==60||metrics.rapidRenders!==1||metrics.searchCount!==100||!metrics.correctFilter||metrics.expanded!==120||metrics.toggles!==1||metrics.quantity!==2||!metrics.selectionRetained||!metrics.lazy||metrics.overflow)throw new Error(`Shared collection ${width}: ${JSON.stringify(metrics)}`);
+    console.log(`PASS Shared Collection ${width}px / 3000 rows: ${JSON.stringify(metrics)}`);
+  }
+  console.log('PASS Shared Collection guest: existing flow and four-viewport performance regression');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

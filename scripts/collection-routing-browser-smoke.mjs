@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -10,7 +10,7 @@ const chrome = spawn(chromePath, [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-extensions', '--no-first-run',
   `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=1280,900',
   'about:blank'
-], { stdio:'ignore' });
+], { stdio:'ignore', windowsHide:true });
 
 let socket;
 try {
@@ -45,6 +45,13 @@ try {
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Network.enable');
+  await send('Network.setBypassServiceWorker',{bypass:true});
+  const sdk=(await readFile('node_modules/@supabase/supabase-js/dist/umd/supabase.js')).toString('base64');
+  socket.addEventListener('message',event=>{
+    const message=JSON.parse(event.data);
+    if(message.method==='Fetch.requestPaused')void send('Fetch.fulfillRequest',{requestId:message.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'application/javascript'}],body:sdk});
+  });
+  await send('Fetch.enable',{patterns:[{urlPattern:'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'}]});
   await send('Network.setBlockedURLs', { urls:['*://*.supabase.co/*'] });
   await send('Page.navigate', { url:'http://localhost:8080/?smoke=collection' });
   await delay(1000);
@@ -134,7 +141,7 @@ async function waitForSelector(evaluate, selector, timeout) {
     if (await evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`)) return;
     await delay(100);
   }
-  throw new Error(`Elemento browser non trovato: ${selector}`);
+  throw new Error(`Elemento browser non trovato: ${selector}; ${JSON.stringify(await evaluate("({ready:document.readyState,text:document.body.innerText.slice(0,500),hash:location.hash})"))}`);
 }
 
 async function click(send, point) {

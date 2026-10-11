@@ -288,16 +288,28 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
     const mapped=[];
     for(const catalogCode of catalogSetCodeCandidates(code)){
       const response=await fetch(`${SET_ENDPOINT}?setcode=${encodeURIComponent(catalogCode)}`);
-      if(!response.ok)continue;
+      if(!response.ok){
+        if(response.status===400||response.status===404)continue;
+        throw Object.assign(new Error('Catalog lookup unavailable'),{code:'LOOKUP_FAILED'});
+      }
       const payload=await response.json(); const rows=Array.isArray(payload)?payload:payload?.data?payload.data:payload?.id?[payload]:[];
       const exact=rows.filter(row=>String(row.set_code||'').trim().toUpperCase()===catalogCode);
       const localized=catalogCode!==code;
       // Cards behind the same set code resolve independently, so fetch them
       // concurrently instead of one round trip at a time.
-      const cards=await Promise.all(exact.slice(0,8).map(row=>findCardById(row.id,row.name,'yugioh')));
-      exact.slice(0,8).forEach((row,index)=>{
-        const card=cards[index];if(!card)return;
-        const variants=card.printings.filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+      const cards=[];
+      for(let offset=0;offset<exact.length;offset+=8)cards.push(...await Promise.all(exact.slice(offset,offset+8).map(row=>findCardById(row.id,row.name,'yugioh'))));
+      exact.forEach((row,index)=>{
+        if(!row.id||!row.name)throw Object.assign(new Error('Catalog source identity incomplete'),{code:'CATALOG_SOURCE_INVALID'});
+        const card=cards[index];
+        const variants=(card?.printings||[]).filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+        // The set endpoint can be newer than cardinfo.card_sets. Preserve its
+        // explicitly supplied rarity; status/artwork tags are not evidence of
+        // a Common printing. Keep independent cardinfo variants when present.
+        const sourceRarity=sanitizeYugiohRarity(row.set_rarity);
+        if(sourceRarity&&!variants.some(printing=>printing.rarity===sourceRarity))variants.push({setCode:catalogCode,setName:row.set_name||'',rarity:sourceRarity});
+        if(!variants.length&&NON_RARITY_CATALOG_PATTERN.test(String(row.set_rarity||'').trim()))return;
+        if(!variants.length)throw Object.assign(new Error(`Catalog source rarity requires review: ${catalogCode}`),{code:'CATALOG_SOURCE_INVALID'});
         // row.id è l'id YGOPRODeck di QUESTA riga del set lookup: per le carte
         // con più artwork alternativi l'API assegna un id diverso per ogni
         // variante pur trattandosi della stessa identità carta (vedi
@@ -308,13 +320,13 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
         // questo id specifico, non inventata: canonicalizziamo solo l'identità.
         const canonicalId=canonicalCatalogCardId(row.id,'yugioh')||String(row.id);
         for(const printing of variants){
-          mapped.push({printingId:'',game:'yugioh',catalogCardId:canonicalId,cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card.fullImage||card.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
+          mapped.push({printingId:'',game:'yugioh',catalogCardId:canonicalId,cardName:row.name,setCode:code,setName:printing.setName||row.set_name||'',rarity:printing.rarity,imageUrl:card?.fullImage||card?.image||'',warning:localized?`Codice locale verificato tramite ${catalogCode}`:''});
         }
       });
       if(mapped.length)break;
     }
-    const unique=[...new Map(mapped.map(item=>[[item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];printingCache.set(code,unique);return unique;
-  } catch { return []; }
+    const unique=[...new Map(mapped.map(item=>[[item.catalogCardId,item.setCode,item.rarity].join(':'),item])).values()];if(unique.length)printingCache.set(code,unique);return unique;
+  } catch(error) { if(!error.code)error.code='LOOKUP_FAILED';throw error; }
 }
 
 function catalogSetCodeCandidates(code) {
@@ -400,17 +412,13 @@ export function normalizeCatalogRarity(value) {
   return rarity;
 }
 
-// A non-rarity tag ("New artwork"...) must not vanish entirely or the
-// printing becomes unmatchable by rarity — falls back to Common, same
-// treatment as a card with no distinguishing rarity at all. A field that was
-// simply empty to begin with stays empty (nothing to fall back from).
-// Shared by normalizeCatalogPrintings and Fast Scan's session buffer so a
-// contaminated value can never survive as a literal "rarity" anywhere in the
-// app, regardless of which lookup path produced it.
+// Physical identities require explicit rarity evidence. Status/artwork tags
+// and numeric quantities cannot manufacture a Common printing. The generic
+// normalizeCatalogRarity numeric compatibility rule remains separate.
 export function sanitizeYugiohRarity(value) {
   const raw = String(value || '').trim();
-  if (!raw) return '';
-  return normalizeCatalogRarity(raw) || (NON_RARITY_CATALOG_PATTERN.test(raw) ? 'Common' : '');
+  if (!raw || /^\d+$/.test(raw) || /^(unknown|null|n\/a)$/i.test(raw)) return '';
+  return normalizeCatalogRarity(raw);
 }
 
 export function normalizeCatalogPrintings(rows = []) {

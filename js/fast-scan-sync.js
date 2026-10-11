@@ -19,7 +19,7 @@ export function aggregateFastScanItems(items=[]){
   for(const source of items){
     const item={...source,quantityDelta:Number(source.quantityDelta??source.quantity??0)};
     if(!Number.isInteger(item.quantityDelta)||item.quantityDelta<1)continue;
-    const identity=[item.printingId||'',item.game||'yugioh',item.catalogCardId||'',item.setCode||'',item.rarity||'',item.language||'',item.condition||'',item.edition||''].join('\u001f');
+    const identity=[item.printingId||'',item.game||'yugioh',item.catalogCardId||'',item.setCode||'',item.rarity||'',item.variantId||'',item.artworkId||'',item.language||'',item.condition||'',item.edition||''].join('\u001f');
     const current=grouped.get(identity);
     if(current)current.quantityDelta+=item.quantityDelta;else grouped.set(identity,item);
   }

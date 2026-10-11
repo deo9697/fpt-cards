@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import { reviewMissing,parseOfficial } from './review-missing-catalog-identities.mjs';
+const report=JSON.parse(fs.readFileSync('docs/missing-catalog-identities-review.json','utf8'));
+assert.equal(report.rows.length,163);
+assert.equal(new Set(report.rows.map(row=>[row.catalog_card_id,row.set_code,row.rarity].join('|'))).size,163);
+assert.equal(Object.values(report.summary).reduce((a,b)=>a+b,0),163);
+assert(report.rows.filter(row=>row.rarity==='Common').every(row=>row.classification==='INVALID_SOURCE_RECORD'));
+assert(report.rows.filter(row=>row.classification==='TRUE_MISSING_PRINTING').every(row=>row.evidence.official_card.rarities.includes(row.rarity)));
+const missing=[{catalog_card_id:'94145022',source_id:'94145022',card_name:'Fixture',set_code:'MAMO-EN999',set_name:'Fixture',rarity:'Ultra Rare'}];
+const source={data:[{id:94145022,card_sets:[{set_code:'MAMO-EN999',set_name:'Fixture',set_rarity:'Ultra Rare'}]}]};
+const rows=reviewMissing(missing,source,[{id:'existing',catalog_card_id:'94145021',set_code:'MAMO-EN999',rarity:'Ultra Rare'}],[{alias_catalog_card_id:'94145022',canonical_catalog_card_id:'94145021'}],[]);
+assert.equal(rows[0].classification,'CATALOG_ALIAS');
+assert.deepEqual(parseOfficial('<div class="t_row open t_rid_4 t_rid_47"><span class="card_name">Fixture</span><input class="cid" value="123">'),[{name:'Fixture',cid:'123',rarities:['Ultra Rare','Starlight Rare']}]);
+const plan=JSON.parse(fs.readFileSync('docs/catalog-repair-plan.json','utf8'));
+assert.equal(plan.dry_run,true);assert.equal(plan.executable,false);assert.equal(plan.candidates.length,report.summary.TRUE_MISSING_PRINTING);
+assert(plan.candidates.every(row=>row.approved===false));
+console.log('PASS all 163 classified once, explicit alias evidence, non-rarity exclusions, official rarity matching, repair plan closed by default');

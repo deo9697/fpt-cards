@@ -43,14 +43,11 @@ const emptyOwnedPayload=()=>({items:[],total:0,limit:60,offset:0});
   console.log('PASS owned_page parte in parallelo a extra/summary (stesso tick), load() concorrenti condividono la richiesta');
 }
 
-// 2) owned_page può completare PRIMA di summary/extra e viene già mostrata
-//    (refreshBoardSection — il refresh mirato riusato, mai un renderRoute
-//    globale) senza aspettare gli altri due. document.querySelector è
-//    stubbato a null in questo harness (nessuna sezione mai montata), quindi
-//    refreshBoardSection() da sola non arriva a onRender() qui (fa solo un
-//    innerHTML su una sezione reale, verificato invece dal test browser
-//    market-watch-browser-smoke.mjs) — qui si verifica che VENGA CHIAMATA
-//    appena owned_page è pronta, non che produca un render pieno.
+// 2) owned_page completa PRIMA di summary/extra: refreshBoard aggiorna il
+//    contenuto, senza ricreare la toolbar (refreshBoardSection) e perdere
+//    il focus della ricerca. Verifica una nuova chiamata DOPO la risposta,
+//    distinta da quella fatta all'inizio del caricamento. Il browser smoke
+//    verifica il DOM; qui nessuna sezione è montata.
 {
   const extraD=deferred(),summaryD=deferred(),ownedD=deferred();
   const controller=new MarketWatchController({getGame:()=>'yugioh',onRender:()=>{},api:{
@@ -58,17 +55,21 @@ const emptyOwnedPayload=()=>({items:[],total:0,limit:60,offset:0});
     marketWatchOwnedPage:()=>ownedD.promise,
     marketDashboardMovers:async()=>[],marketPriceAnomalies:async()=>[]
   }});
-  let boardRefreshes=0;const originalRefresh=controller.refreshBoardSection.bind(controller);
-  controller.refreshBoardSection=()=>{boardRefreshes++;return originalRefresh();};
+  // The focused search toolbar must survive: refresh only board content.
+  let boardRefreshes=0,toolbarRefreshes=0;const originalRefresh=controller.refreshBoard.bind(controller);
+  controller.refreshBoard=()=>{boardRefreshes++;return originalRefresh();};
+  controller.refreshBoardSection=()=>{toolbarRefreshes++;};
   const loadPromise=controller.load();
+  const refreshesBeforeResponse=boardRefreshes;
   ownedD.resolve({items:[{printing_id:'fast',card_name:'Fast Owned'}],total:1,limit:60,offset:0});
   await flush();
   assert.equal(controller.ownedPage.items[0]?.cardName,'Fast Owned','owned_page applicata subito, senza aspettare extra/summary');
-  assert(boardRefreshes>0,'refreshBoardSection() (il refresh mirato riusato) deve scattare appena owned_page è pronta, non solo a fine load()');
+  assert(boardRefreshes>refreshesBeforeResponse,'refreshBoard() deve scattare dopo la risposta owned_page, non solo a inizio/fine load()');
+  assert.equal(toolbarRefreshes,0,'il refresh dei dati non deve ricostruire la toolbar di ricerca');
   assert.equal(controller.summary.lastSync,null,'summary non è ancora arrivata: nessun dato inventato nel frattempo');
   extraD.resolve(emptyExtraPayload());summaryD.resolve(emptySummaryPayload());
   await loadPromise;
-  console.log('PASS owned_page completata prima di summary viene visualizzata subito (refreshBoardSection), senza attendere');
+  console.log('PASS owned_page completata prima di summary aggiorna subito il contenuto senza ricostruire la toolbar');
 }
 
 // 3) summary/extra possono fallire senza cancellare una ownedPage valida

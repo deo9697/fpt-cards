@@ -12,61 +12,68 @@
     "test:fast-scan-performance": "node scripts/fast-scan-performance-benchmark.mjs",
     "test:fast-scan-ocr-pipeline": "node scripts/fast-scan-ocr-pipeline-smoke.mjs",
     "test:fast-scan-p0": "node scripts/fast-scan-p0-smoke.mjs",
-    "test:decks": "node scripts/decks-milestone-smoke.mjs"
-    ,"test:market": "node scripts/market-watch-core-smoke.mjs"
-    ,"test:market-browser": "node scripts/market-watch-browser-smoke.mjs"
-    ,"test:high-regressions": "node scripts/high-regression-smoke.mjs"
-    ,"test:printing-editor": "node scripts/printing-editor-integrity-smoke.mjs"
-    ,"test:share-guest": "node scripts/collection-share-guest-smoke.mjs"
-    ,"test:loan-idempotency": "node scripts/loan-request-idempotency-smoke.mjs"
-    ,"test:catalog-alt-art": "node scripts/catalog-alternate-artwork-smoke.mjs"
-    ,"test:collection-editor-printings": "node scripts/collection-editor-authoritative-printings-smoke.mjs"
-    ,"test:onepiece-normalizer": "node scripts/onepiece-catalog-normalizer-smoke.mjs"
-    ,"test:onepiece-deck-e2e": "node scripts/onepiece-deck-e2e-smoke.mjs"
-    ,"test:card-type-background": "node scripts/card-type-background-smoke.mjs"
-    ,"test:card-detail-background-flicker": "node scripts/card-detail-background-flicker-smoke.mjs"
-    ,"test:market-variant-resolver": "node scripts/market-variant-resolver-smoke.mjs"
-    ,"test:market-variant-canary-poller": "node scripts/market-variant-canary-poller-smoke.mjs"
-    ,"test:catalog-repair-bootstrap": "node scripts/catalog-repair-bootstrap-smoke.mjs"
-    ,"test:market-variant-admin-panel": "node scripts/market-variant-admin-panel-smoke.mjs"
-    ,"test:market-variant-exact-price-shadow": "node scripts/market-variant-exact-price-shadow-smoke.mjs"
-    ,"test:market-variant-candidate-metadata": "node scripts/market-variant-candidate-metadata-smoke.mjs"
-    ,"test:market-variant-set-template": "node scripts/market-variant-set-template-smoke.mjs"
-    ,"test:market-variant-mapping-source-check": "node scripts/market-variant-mapping-source-check-smoke.mjs"
-    ,"test:market-variant-exact-price-shadow-panel": "node scripts/market-variant-exact-price-shadow-panel-smoke.mjs"
-    ,"test:market-variant-backfill": "node scripts/market-variant-backfill-smoke.mjs"
-    ,"test:market-variant-backfill-panel": "node scripts/market-variant-backfill-panel-smoke.mjs"
-    ,"test:market-loading": "node scripts/market-watch-loading-smoke.mjs"
-    ,"test:market-owned-page-query": "node scripts/market-watch-owned-page-query-smoke.mjs"
-    ,"test:market-summary-perf": "node scripts/market-watch-summary-perf-smoke.mjs"
-    ,"test:market-current-price-layer": "node scripts/market-watch-current-price-layer-smoke.mjs"
-    ,"test:market-current-price-cutover": "node scripts/market-watch-current-price-cutover-smoke.mjs"
-    ,"test:deck-image-export": "node scripts/deck-image-export-smoke.mjs"
-    ,"test:deck-image-export-progressive": "node scripts/deck-image-export-progressive-smoke.mjs"
-    ,"test:deck-image-export-browser": "node scripts/deck-image-export-browser-smoke.mjs"
-    ,"test:card-image-proxy": "node scripts/card-image-proxy-hardening-smoke.mjs"
-    ,"test:mobile-focus-regression": "node scripts/mobile-focus-regression-smoke.mjs"
-    ,"test:collection-share-bootstrap-guard": "node scripts/collection-share-bootstrap-guard-smoke.mjs"
-    ,"test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs"
-    ,"test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs"
-    ,"test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs"
-    ,"test:market-dashboard-movers-cutover": "node scripts/market-dashboard-movers-cutover-smoke.mjs"
-    ,"test:mission-security-lockdown": "node scripts/mission-security-lockdown-smoke.mjs"
-    ,"test:share-request-hardening": "node scripts/collection-share-request-hardening-smoke.mjs"
-    ,"test:share-request-state-machine": "node scripts/collection-share-request-state-machine-smoke.mjs"
-    ,"test:share-request-state-machine-e2e": "node scripts/collection-share-requests-state-machine-e2e-smoke.mjs"
-    ,"test:ygo-printing-mapping-reconciliation": "node scripts/ygo-printing-mapping-reconciliation-smoke.mjs"
-    ,"test:collection-detail-price-lookup": "node scripts/collection-detail-price-lookup-smoke.mjs"
-    ,"test:fast-scan-telemetry": "node scripts/fast-scan-telemetry-smoke.mjs"
-    ,"test:fast-scan-save-hardening": "node scripts/fast-scan-save-hardening-smoke.mjs"
-    ,"test:fast-scan-camera-audit": "node scripts/fast-scan-camera-audit.mjs"
-    ,"test:fast-scan-events": "node scripts/fast-scan-events-smoke.mjs"
-    ,"test:fast-scan-assisted-browser": "node scripts/fast-scan-assisted-browser-smoke.mjs"
-    ,"test:fast-scan-benchmark-dataset": "node scripts/fast-scan-benchmark-dataset-regression-smoke.mjs"
-    ,"test:fast-scan-artwork-variant": "node scripts/fast-scan-artwork-variant-smoke.mjs"
+    "test:decks": "node scripts/decks-milestone-smoke.mjs",
+    "test:market": "node scripts/market-watch-core-smoke.mjs",
+    "test:market-browser": "node scripts/market-watch-browser-smoke.mjs",
+    "test:high-regressions": "node scripts/high-regression-smoke.mjs",
+    "test:printing-editor": "node scripts/printing-editor-integrity-smoke.mjs",
+    "test:share-guest": "node scripts/collection-share-guest-smoke.mjs",
+    "test:loan-idempotency": "node scripts/loan-request-idempotency-smoke.mjs",
+    "test:catalog-alt-art": "node scripts/catalog-alternate-artwork-smoke.mjs",
+    "test:collection-editor-printings": "node scripts/collection-editor-authoritative-printings-smoke.mjs",
+    "test:onepiece-normalizer": "node scripts/onepiece-catalog-normalizer-smoke.mjs",
+    "test:onepiece-deck-e2e": "node scripts/onepiece-deck-e2e-smoke.mjs",
+    "test:card-type-background": "node scripts/card-type-background-smoke.mjs",
+    "test:card-detail-background-flicker": "node scripts/card-detail-background-flicker-smoke.mjs",
+    "test:market-variant-resolver": "node scripts/market-variant-resolver-smoke.mjs",
+    "test:market-variant-canary-poller": "node scripts/market-variant-canary-poller-smoke.mjs",
+    "test:catalog-repair-bootstrap": "node scripts/catalog-repair-bootstrap-smoke.mjs",
+    "test:market-variant-admin-panel": "node scripts/market-variant-admin-panel-smoke.mjs",
+    "test:market-variant-exact-price-shadow": "node scripts/market-variant-exact-price-shadow-smoke.mjs",
+    "test:market-variant-candidate-metadata": "node scripts/market-variant-candidate-metadata-smoke.mjs",
+    "test:market-variant-set-template": "node scripts/market-variant-set-template-smoke.mjs",
+    "test:market-variant-mapping-source-check": "node scripts/market-variant-mapping-source-check-smoke.mjs",
+    "test:market-variant-exact-price-shadow-panel": "node scripts/market-variant-exact-price-shadow-panel-smoke.mjs",
+    "test:market-variant-backfill": "node scripts/market-variant-backfill-smoke.mjs",
+    "test:market-variant-backfill-panel": "node scripts/market-variant-backfill-panel-smoke.mjs",
+    "test:market-loading": "node scripts/market-watch-loading-smoke.mjs",
+    "test:market-owned-page-query": "node scripts/market-watch-owned-page-query-smoke.mjs",
+    "test:market-summary-perf": "node scripts/market-watch-summary-perf-smoke.mjs",
+    "test:market-current-price-layer": "node scripts/market-watch-current-price-layer-smoke.mjs",
+    "test:market-current-price-cutover": "node scripts/market-watch-current-price-cutover-smoke.mjs",
+    "test:deck-image-export": "node scripts/deck-image-export-smoke.mjs",
+    "test:deck-image-export-progressive": "node scripts/deck-image-export-progressive-smoke.mjs",
+    "test:deck-image-export-browser": "node scripts/deck-image-export-browser-smoke.mjs",
+    "test:card-image-proxy": "node scripts/card-image-proxy-hardening-smoke.mjs",
+    "test:mobile-focus-regression": "node scripts/mobile-focus-regression-smoke.mjs",
+    "test:collection-share-bootstrap-guard": "node scripts/collection-share-bootstrap-guard-smoke.mjs",
+    "test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs",
+    "test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs",
+    "test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs",
+    "test:market-dashboard-movers-cutover": "node scripts/market-dashboard-movers-cutover-smoke.mjs",
+    "test:mission-security-lockdown": "node scripts/mission-security-lockdown-smoke.mjs",
+    "test:share-request-hardening": "node scripts/collection-share-request-hardening-smoke.mjs",
+    "test:share-request-state-machine": "node scripts/collection-share-request-state-machine-smoke.mjs",
+    "test:share-request-state-machine-e2e": "node scripts/collection-share-requests-state-machine-e2e-smoke.mjs",
+    "test:ygo-printing-mapping-reconciliation": "node scripts/ygo-printing-mapping-reconciliation-smoke.mjs",
+    "test:collection-detail-price-lookup": "node scripts/collection-detail-price-lookup-smoke.mjs",
+    "test:fast-scan-telemetry": "node scripts/fast-scan-telemetry-smoke.mjs",
+    "test:fast-scan-save-hardening": "node scripts/fast-scan-save-hardening-smoke.mjs",
+    "test:fast-scan-camera-audit": "node scripts/fast-scan-camera-audit.mjs",
+    "test:fast-scan-events": "node scripts/fast-scan-events-smoke.mjs",
+    "test:fast-scan-assisted-browser": "node scripts/fast-scan-assisted-browser-smoke.mjs",
+    "test:fast-scan-benchmark-dataset": "node scripts/fast-scan-benchmark-dataset-regression-smoke.mjs",
+    "test:fast-scan-artwork-variant": "node scripts/fast-scan-artwork-variant-smoke.mjs",
+    "test:market-retention": "node scripts/market-snapshot-retention-smoke.mjs --strict",
+    "test:market-feed-hardening": "node scripts/market-feed-hardening-smoke.mjs",
+    "test:market-egress-rollout": "node scripts/market-egress-rollout-smoke.mjs",
+    "test:market-retention-sql-sync": "node scripts/build-market-retention-sql.mjs --check"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

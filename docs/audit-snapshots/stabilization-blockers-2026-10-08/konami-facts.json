@@ -1,0 +1,971 @@
+{
+  "url": "https://www.db.yugioh-card.com/yugiohdb/card_search.action?ope=1&pid=2000001680000&request_locale=en&rp=99999",
+  "cards": [
+    {
+      "name": "Dark Magician, the Pharaoh's Servant",
+      "cid": "22690",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Kuriboh - Multiply!",
+      "cid": "22691",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Dark Magical Curtain",
+      "cid": "22692",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Favorite HERO Shining Flare Wingman",
+      "cid": "22693",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Favorite HERO Flame Wingman",
+      "cid": "22694",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Winged Kuriboh Sabatiel LV10",
+      "cid": "22695",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Stardust Dragon - Victim Sanctuary",
+      "cid": "22696",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Starjunk Synchron",
+      "cid": "22697",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Synchro Emergency",
+      "cid": "22698",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Number 39: Utopia, Emissary of Light",
+      "cid": "22699",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Gagaga Magician - Gagaga Magic",
+      "cid": "22700",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Gagaga Girl - Cell Phone Subtraction",
+      "cid": "22701",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Odd-Eyes Pendulum Dragon, Four Heavenly Dragons",
+      "cid": "22702",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Horoscope Sorcerer, the Stargazer Magician",
+      "cid": "22703",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Astrograph Sorcerer, the Starfrost Magician",
+      "cid": "22704",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Decode Talker Integration",
+      "cid": "22705",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Cyberse Code Magician",
+      "cid": "22706",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Cyberse Contract Witch",
+      "cid": "22707",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare",
+        "Grand Master Rare"
+      ]
+    },
+    {
+      "name": "Sky Striker Mecha - Widow Anchor",
+      "cid": "13675",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Sky Striker Mobilize - Linkage!",
+      "cid": "17034",
+      "rarities": [
+        "Ultra Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Underworld Circle",
+      "cid": "22708",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Orichalcos Sword of Sealing",
+      "cid": "22709",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Rainbow Bridge Bifrost",
+      "cid": "22710",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Malefic Force",
+      "cid": "22711",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Malefic Paradigm Shift",
+      "cid": "22712",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Assault Blackwing - Kusanagi the Gathering Storm",
+      "cid": "22713",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Master Spirit Tech Force - Pendulum Ruler",
+      "cid": "22714",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "W:P Fancy Ball",
+      "cid": "22715",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "I:P Masquerena",
+      "cid": "14676",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "S:P Little Knight",
+      "cid": "19188",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Witchcrafter Madame Verre",
+      "cid": "14409",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Diabellstar the Black Witch",
+      "cid": "19148",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Visas Samsara",
+      "cid": "19146",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Ib the World Chalice Justiciar",
+      "cid": "14285",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Divine Arsenal AA-ZEUS - Sky Thunder",
+      "cid": "15524",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Exosisters Magnifica",
+      "cid": "17157",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Mekk-Knight Crusadia Avramax",
+      "cid": "14297",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "A Bao A Qu, the Lightless Shadow",
+      "cid": "20786",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Sky Striker Mobilize - Engage!",
+      "cid": "13671",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Dark Ruler No More",
+      "cid": "14742",
+      "rarities": [
+        "Ultra Rare",
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Infernity Necromancer",
+      "cid": "8443",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Performage Hat Tricker",
+      "cid": "11801",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Toon Cyber Dragon",
+      "cid": "11827",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Fluffal Wings",
+      "cid": "11953",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Performage Plushfire",
+      "cid": "11960",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Thunder King, the Lightningstrike Kaiju",
+      "cid": "12390",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Elemental HERO Liquid Soldier",
+      "cid": "14911",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Guardian Slime",
+      "cid": "15331",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Red-Eyes Black Meteor Dragon",
+      "cid": "17388",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Tearlaments Kashtira",
+      "cid": "18153",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Dark Magician the Magician of Black Magic",
+      "cid": "20185",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Elzette of the White Forest",
+      "cid": "20193",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Schwarzschild Infinity Dragon",
+      "cid": "20279",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Elzette, Azamina of the White Forest",
+      "cid": "20747",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Poseidra, the Storming Atlantean",
+      "cid": "20755",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Tenyi Spirit - Suruya",
+      "cid": "20760",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Gem-Knight Nepyrim",
+      "cid": "20932",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Noh-P.U.N.K. Rising Scale",
+      "cid": "20945",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Crowley, the Gifted Magistus",
+      "cid": "21072",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Regenesis Archfiend",
+      "cid": "21153",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Dracotail Lukias",
+      "cid": "21354",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "K9-17 Izuna",
+      "cid": "21376",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Medius the Pure",
+      "cid": "21419",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Onomatokage",
+      "cid": "21773",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Solfachord Solfegia",
+      "cid": "21786",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Solfachord Primoa",
+      "cid": "21787",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Darklord Gulgolet",
+      "cid": "22124",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "First Penguin",
+      "cid": "22133",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "GMX Associate Noma",
+      "cid": "22338",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Archfiend Matriarch",
+      "cid": "22539",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Sea Monster of Theseus",
+      "cid": "12871",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Dark Cavalry",
+      "cid": "14214",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Master of Chaos",
+      "cid": "16841",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Chimera the King of Phantom Beasts",
+      "cid": "18820",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Phantom of Yubel",
+      "cid": "20037",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Evil HERO Neos Lord",
+      "cid": "20768",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Saint Azamina",
+      "cid": "20773",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Secreterion Dragon",
+      "cid": "21448",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "D/D/D Alfred the Divine Sage King",
+      "cid": "22136",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "GMX - ALLOS",
+      "cid": "22340",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Iron Chain Dragon",
+      "cid": "7899",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Lightstorm Dragon",
+      "cid": "20780",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Ghostrick Alucard",
+      "cid": "10783",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Varudras, the Final Bringer of the End Times",
+      "cid": "19886",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Divine Golden Shadow Dragon Dragluxion",
+      "cid": "20280",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Dark Ceruvim Irisfil",
+      "cid": "22557",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Seraphim Papillion",
+      "cid": "14677",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Ancient Warriors Oath - Double Dragon Lords",
+      "cid": "15282",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Gladiator Beast Dareios",
+      "cid": "20785",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Galatea-I, the Orcust Automaton",
+      "cid": "20947",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Gorgon of Zilofthonia",
+      "cid": "21461",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Keel, Shipwright Fur Hire",
+      "cid": "22153",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Delinquent Duo",
+      "cid": "4901",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Neos Fusion",
+      "cid": "14137",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Fish Sonar",
+      "cid": "17050",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Shining Sarcophagus",
+      "cid": "19892",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Nightmare Throne",
+      "cid": "19902",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Deception of the Sinful Spoils",
+      "cid": "20531",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Sinful Spoils of the White Forest",
+      "cid": "20792",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Filia Diabell",
+      "cid": "21194",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Artmage Academic Arcane Arts Acropolis",
+      "cid": "21465",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Radiant Typhoon Manifestation",
+      "cid": "21828",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Solfachord Happiness",
+      "cid": "21831",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "DoomZ Change",
+      "cid": "22158",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Fandora, the Flying Fighting Furtress",
+      "cid": "22164",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Whirlwind Fur Hire",
+      "cid": "22165",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Radiant Typhoon Ascendance",
+      "cid": "22167",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Mischief of the Wolves",
+      "cid": "22329",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Crimson Call",
+      "cid": "22561",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Clown Crew Matinee Operatics",
+      "cid": "22569",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Subspace Battle",
+      "cid": "22687",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Waboku",
+      "cid": "4886",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Sixth Sense",
+      "cid": "5945",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Treacherous Trap Hole",
+      "cid": "8086",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Breakthrough Skill",
+      "cid": "10437",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Paleozoic Olenoides",
+      "cid": "12082",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "DoomZ Destruction",
+      "cid": "21840",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Radiant Typhoon Mandate",
+      "cid": "21842",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "King's Resonance",
+      "cid": "22580",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Artmage Impasto -Recapture-",
+      "cid": "22581",
+      "rarities": [
+        "Ultra Rare"
+      ]
+    },
+    {
+      "name": "Ruler of the End of the World",
+      "cid": "22211",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Nightmare-Eyes Restrict",
+      "cid": "22212",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Infernal Strike Fighter",
+      "cid": "22213",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Galaxy-Eyes Antimatter Dragon",
+      "cid": "22214",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Wind Unicorn Parallel, the Dracoslayer",
+      "cid": "22215",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    },
+    {
+      "name": "Crystron Halqifibrax Prism",
+      "cid": "22216",
+      "rarities": [
+        "Secret Rare",
+        "Starlight Rare"
+      ]
+    }
+  ]
+}
