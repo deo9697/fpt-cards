@@ -71,9 +71,13 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
-    "web-push": "^3.6.7"
+    "cropperjs": "1.6.2",
+    "web-push": "^3.6.7",
+    "web-vitals": "6.2.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.8"
+    "@electric-sql/pglite": "0.5.8",
+    "@lhci/cli": "0.15.1",
+    "@tanstack/virtual-core": "3.19.0"
   }
 }
