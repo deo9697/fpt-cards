@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { collectionSearchAliases, matchesCollectionQuery, normalizeCollectionSearch } from '../js/collection-search.js';
+import { collectionSearchAliases, matchesCollectionQuery, normalizeCollectionSearch, loadCollectionNameAliases } from '../js/collection-search.js';
+// Gli alias EN/IT ora si caricano su richiesta (fuori dal percorso critico del login).
+await loadCollectionNameAliases();
 
 globalThis.window = { addEventListener() {} };
 globalThis.localStorage = { getItem: () => null, setItem() {} };

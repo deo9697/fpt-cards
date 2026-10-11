@@ -1,4 +1,17 @@
-import { collectionNameAliases } from './collection-name-aliases.js';
+// I nomi alternativi EN/IT (collection-name-aliases.js, ~660 KB) non servono
+// alla schermata di accesso: prima erano un import statico e finivano nel
+// percorso critico del primo avvio. Ora si caricano solo su richiesta
+// (loadCollectionNameAliases, chiamata da app.js insieme al caricamento della
+// raccolta). Le funzioni restano sincrone: finché il file non è arrivato
+// usano una mappa vuota, cioè cercano solo per nome/codice come prima degli alias.
+let collectionNameAliases = {};
+let collectionNameAliasesPromise = null;
+export function loadCollectionNameAliases() {
+  collectionNameAliasesPromise ??= import('./collection-name-aliases.js')
+    .then(module => { collectionNameAliases = module.collectionNameAliases || {}; return collectionNameAliases; })
+    .catch(error => { collectionNameAliasesPromise = null; throw error; });
+  return collectionNameAliasesPromise;
+}
 
 // Collection text only: deliberately independent of identity/printing matching.
 export function normalizeCollectionSearch(value) {

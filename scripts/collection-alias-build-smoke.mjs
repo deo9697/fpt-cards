@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { buildCollectionAliases } from './collection-alias-build-core.mjs';
-import { enrichCollectionAliases, collectionAliasGaps, matchesCollectionQuery } from '../js/collection-search.js';
+import { enrichCollectionAliases, collectionAliasGaps, matchesCollectionQuery, loadCollectionNameAliases } from '../js/collection-search.js';
+// Gli alias EN/IT ora si caricano su richiesta (fuori dal percorso critico del login).
+await loadCollectionNameAliases();
 const en=new Map([['2511','Same'],['10000','English'],['20000','New']]);
 const it=new Map([['2511','Same'],['10000','Italiano']]);
 const reviewed=[{game:'yugioh',catalogCardId:'20000',expectedEnglishName:'New',aliases:['Nuova'],source:'review',reviewedAt:'2026-09-14'}];

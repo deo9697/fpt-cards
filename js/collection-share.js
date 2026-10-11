@@ -257,7 +257,7 @@ export class CollectionShareController {
     return `<header class="share-guest-hero">
       <div class="share-guest-hero-bg"${heroBg} aria-hidden="true"></div>
       <div class="share-guest-hero-top">
-        <div class="share-guest-brand"><img src="icon-512.png" alt="F.P.T Cards"><b>F.P.T<small>CARDS</small></b></div>
+        <div class="share-guest-brand"><img src="icon-384.webp" alt="F.P.T Cards" width="384" height="384"><b>F.P.T<small>CARDS</small></b></div>
 
       </div>
       <span class="eyebrow">Raccolta condivisa</span>

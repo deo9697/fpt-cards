@@ -42,6 +42,8 @@ try {
   const controls=app.slice(start,app.indexOf('\nfunction ',start+10));
   await evaluate(`(async()=>{
     const {collectionView,collectionResultsView}=await import('/js/collection.js');
+    // Come in app.js: gli alias EN/IT si caricano insieme alla raccolta (non più al login).
+    await (await import('/js/collection-search.js')).loadCollectionNameAliases();
     window.collectionFilters={scope:'mine',query:'',owner:'all',status:'all',sort:'name-asc',layout:'grid',facets:{}};
     window.__collection={mine:[{id:'fixture',game:'yugioh',catalogCardId:'44265115',cardName:'Brain Controller',setCode:'ALIN-IT033',quantityAvailable:1,quantityOwned:1,quantityLoaned:0,quantityReserved:0}],team:[]};
     window.collectionTypeObserver={disconnect(){}};window.collectionTypeTimer=null;window.visibleTypeQueue=new Set();window.collectionSearchTimer=null;window.collectionVisibleCount=60;window.COLLECTION_PAGE_SIZE=60;

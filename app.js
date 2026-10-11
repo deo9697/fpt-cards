@@ -1,5 +1,5 @@
 import {renderTeamPage, bindTeamPage} from './js/team.js';
-import { collectionSearchAliases, enrichCollectionAliases } from './js/collection-search.js';
+import { collectionSearchAliases, enrichCollectionAliases, loadCollectionNameAliases } from './js/collection-search.js';
 import {renderAdminPage, bindAdminPage} from './js/admin.js';
 import {renderMarketVariantPage, bindMarketVariantPage} from './js/market-variant-admin.js';
 import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
@@ -234,12 +234,12 @@ function renderRoute() {
 
 function loginView() {
   return `<main class="login-shell"><section class="login-visual" aria-label="F.P.T Cards">
-    <div class="brand login-brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1><p>Team card companion</p></div></div>
+    <div class="brand login-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1><p>Team card companion</p></div></div>
     <div class="login-copy"><span class="eyebrow">Il vault del team</span><h2>Carte e prestiti.<br><span>Una squadra sola.</span></h2><p>Gestisci gli scambi, ritrova le carte del team e mantieni ogni movimento sotto controllo.</p></div>
-    <div class="login-card-scene" aria-hidden="true"><div class="scene-card back"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="dark-magician" alt=""></div><div class="scene-card hero"><img src="assets/fpt-card-hero.png" alt=""></div><div class="scene-card front"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="blue-eyes" alt=""></div></div>
+    <div class="login-card-scene" aria-hidden="true"><div class="scene-card back"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="dark-magician" alt=""></div><div class="scene-card hero"><img src="assets/fpt-card-hero.webp" alt="" width="516" height="774" loading="lazy" decoding="async"></div><div class="scene-card front"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="blue-eyes" alt=""></div></div>
     <div class="value-pills"><span>${icon('collection')}<b>Raccolta</b><small>Archivio condiviso</small></span><span>${icon('swap')}<b>Prestiti</b><small>Tracciati dal team</small></span><span>${icon('chart')}<b>Market Watch</b><small>In arrivo</small></span></div>
   </section><section class="login-panel"><div class="login-form-wrap">
-    <div class="brand login-mobile-brand"><img src="icon-512.png" alt="Logo F.P.T Cards"><div><h1>F.P.T Cards</h1></div></div><span class="eyebrow">Area riservata</span><h2>Bentornato</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai il PIN personale.</p>
+    <div class="brand login-mobile-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1></div></div><span class="eyebrow">Area riservata</span><h2>Bentornato</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai il PIN personale.</p>
     <div class="surface login-card">
       <form id="login-form"><label for="member">Membro del team</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili</p>`}
       <label for="pin">PIN di 4 cifre</label><div class="password-field"><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${esc(loginDraft.pin)}" placeholder="••••" required><button type="button" id="toggle-pin" aria-label="Mostra PIN">${icon('eye')}</button></div>
@@ -280,7 +280,7 @@ function appView() {
   // intrappolato sotto quella stacking context, e la bottom nav (z-index:30,
   // fuori da .page-stage) ci finiva visivamente sopra tagliando la scheda.
   const selectedLoan = selectedLoanId ? loanBase().find(loan => loan.id === selectedLoanId) : null;
-  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-512.png" alt=""><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar>${profileAvatarMarkup(u, activeCosmetics())}<div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
+  return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-384.webp" alt="" width="384" height="384"><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar>${profileAvatarMarkup(u, activeCosmetics())}<div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
     <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div>${xpStripView(u)}<button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-open-avatar aria-label="Profilo">${profileAvatarMarkup(u, activeCosmetics())}</button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
       <section class="page-stage" aria-live="polite">${pageContent()}</section>
@@ -1857,7 +1857,10 @@ async function loadCollection({ force = false } = {}) {
   const controller=new AbortController();
   collectionLoadAbortController=controller;
   const request=(async()=>{
-    const [mine, team] = await Promise.all([api.myCollection({signal:controller.signal}), api.teamCollection({signal:controller.signal})]);
+    // Alias EN/IT caricati qui, in parallelo alle RPC (non più nel percorso
+    // critico del login). Non bloccante: se il file non arriva la raccolta si
+    // carica comunque, solo senza i nomi alternativi.
+    const [mine, team] = await Promise.all([api.myCollection({signal:controller.signal}), api.teamCollection({signal:controller.signal}), loadCollectionNameAliases().catch(()=>null)]);
     if(generation!==collectionLoadGeneration)return state.collection;
     state.collection = enrichCollectionAliases({
       mine:(mine || []).map(mapCollectionItem),
