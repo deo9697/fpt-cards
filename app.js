@@ -2,7 +2,9 @@
 // non sono più import statici: si caricano alla prima apertura della loro
 // pagina (vedi lazyPageModule / loadFastScan), fuori dal percorso critico del login.
 import { collectionSearchAliases, enrichCollectionAliases, loadCollectionNameAliases } from './js/collection-search.js';
-import { classifyYgoMarketVariantBackfillAction, summarizeYgoMarketVariantBackfillRun, resolveYgoMarketVariantBySetTemplate } from './market/providers.js';
+// market/providers.js (~56 KB) serve solo al backfill del pannello admin Market
+// variant: import dinamico dentro le due funzioni che lo usano.
+const loadMarketProviders = () => import('./market/providers.js');
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { findCardById, cardTypesByIds, backgroundForCardType, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
@@ -17,9 +19,7 @@ import { enablePushNotifications, pushSupported, pushConfigured } from './js/pus
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
-import { DeckController, deckUsageIndex } from './js/decks.js';
-import { MarketWatchController } from './js/market-watch.js';
-import { StatsController } from './js/stats.js';
+import { deckUsageIndex } from './js/deck-usage.js';
 import { progressForXp, titleForLevel } from './js/progression.js';
 import { cosmeticsByType, cosmeticPacks, findCosmetic, isCosmeticUnlocked } from './js/cosmetics.js';
 import { DAILY_MISSIONS_META } from './js/missions.js';
@@ -176,9 +176,51 @@ function scheduleRoutePrefetch() {
   if ('requestIdleCallback' in window) window.requestIdleCallback(prefetch, { timeout: 8000 });
   else setTimeout(prefetch, 4000);
 }
-const decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
-const marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>renderRoute(),onToast:message=>toast(message),onNavigate:target=>navigate(target)});
-const stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
+// Mazzi, Market Watch e Statistiche (~250 KB con le dipendenze) non servono
+// alla schermata di accesso: i tre controller nascono subito dopo il login (o
+// al ripristino della sessione), con le STESSE opzioni di prima. Sulla
+// schermata di login i moduli vengono solo prefetchati a browser inattivo.
+// Finché non sono pronti valgono null: la Dashboard usa i suoi stati di
+// caricamento già esistenti ("Caricamento trend…", profilo coi valori
+// iniziali) e ogni altro uso è protetto con ?.
+let decks = null, marketWatch = null, stats = null, appControllersLoading = null;
+// Market Watch ridisegna solo le pagine che lo mostrano (Market e Dashboard):
+// la fine di un suo caricamento non deve mai ricostruire la pagina corrente
+// se è un'altra (es. la Raccolta mentre si cerca). Fuori da lì gli
+// aggiornamenti sono mirati (prezzo nel dettaglio carta via ensureItemPrice).
+const MARKET_RENDER_PAGES = new Set(['market', 'home']);
+function loadAppControllers() {
+  appControllersLoading ??= Promise.all([import('./js/decks.js'), import('./js/market-watch.js'), import('./js/stats.js')])
+    .then(([{ DeckController }, { MarketWatchController }, { StatsController }]) => {
+      decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
+      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:message=>toast(message),onNavigate:target=>navigate(target)});
+      stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
+      // Ridisegna solo dove servono i controller (Dashboard e le loro pagine):
+      // mai sulla Raccolta, su Fast Scan o mentre si scrive, per non perdere
+      // testo digitato o stato della pagina.
+      if (state.currentUser && ['home','market','decks','stats'].includes(page) && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) renderRoute();
+    })
+    .catch(error => { appControllersLoading = null; throw error; });
+  return appControllersLoading;
+}
+// Pagina Mazzi/Market/Statistiche aperta prima che i controller siano pronti.
+function appControllerPageView(label) {
+  void loadAppControllers().catch(() => toast('Impossibile caricare la pagina: controlla la connessione e riprova'));
+  return lazyLoadingView(label);
+}
+// Schermata di login: a browser inattivo scarica (senza istanziarli) i moduli
+// dei tre controller, così dopo il PIN sono già in cache.
+let loginPrefetchScheduled = false;
+function scheduleLoginPrefetch() {
+  if (loginPrefetchScheduled || state.currentUser) return;
+  loginPrefetchScheduled = true;
+  const prefetch = () => { for (const url of ['./js/decks.js', './js/market-watch.js', './js/stats.js']) void import(url).catch(() => {}); };
+  // Dopo il load + 2 s (scegliere il profilo e digitare il PIN richiede
+  // comunque qualche secondo): così il prefetch non compete mai con il primo
+  // paint del login, nemmeno su rete lenta.
+  const schedule = () => setTimeout(() => { if ('requestIdleCallback' in window) window.requestIdleCallback(prefetch, { timeout: 4000 }); else prefetch(); }, 2000);
+  if (document.readyState === 'complete') schedule(); else window.addEventListener('load', schedule, { once: true });
+}
 let progressionDrawerOpen = false;
 let avatarPanelOpen = false;
 let profileCustomizeOpen = false;
@@ -208,7 +250,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan?.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks?.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan?.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
 
 // Niente più poll globale ogni 2 minuti: ogni pagina che non ha copertura
 // Realtime si aggiorna da sola quando l'utente la apre, invece di dipendere
@@ -218,9 +260,9 @@ function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 
 // aggiornano quindi qui, all'ingresso nella rispettiva pagina.
 function dispatchPageEnterRefresh(previous, next) {
   if (next === 'requests') void refreshCollectionShareRequests();
-  if (next === 'market') void marketWatch.load();
+  if (next === 'market') void loadAppControllers().then(() => marketWatch.load()).catch(() => {});
   if (next === 'decks') void loadDecks().then(() => renderRoute());
-  if (previous !== 'stats' && next === 'stats') void stats.load().then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); });
+  if (previous !== 'stats' && next === 'stats') void loadAppControllers().then(() => stats.load()).then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); }).catch(() => {});
   if (next === 'admin' && canManageArtwork()) void loadAdminArtworkQueue(true);
   if (next === 'market-variants' && state.role === 'admin') void loadMarketVariantQueue(true);
 }
@@ -248,6 +290,10 @@ function render(force = false) {
     && activeField?.closest?.('#loan-form')
     && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeField.tagName);
   if (!force && editingLoan) return;
+  // Stessa protezione per la ricerca della Raccolta: un render() completo
+  // arrivato a metà digitazione (es. fine sincronizzazione dopo il ripristino
+  // della sessione) sostituirebbe il campo prima che il debounce salvi il testo.
+  if (!force && page === 'collection' && activeField?.matches?.('[data-collection-query]')) return;
   if (!state.currentUser) {
     const memberField = document.querySelector('#member');
     const pinField = document.querySelector('#pin');
@@ -341,30 +387,30 @@ function appView() {
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
     ${selectedLoan ? loanDetailSheetView(selectedLoan) : ''}
-    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem), cardTypeReadyForDetail(selectedCollectionItem), resolveDetailPrice(selectedCollectionItem)) : ''}
+    ${selectedCollectionItem ? collectionDetailView(selectedCollectionItem, collectionFilters.scope, state.collection, online(), state.currentUser, marketWatch?.allLoadedItems?.() || [], cardTypeForDetail(selectedCollectionItem), cardTypeReadyForDetail(selectedCollectionItem), resolveDetailPrice(selectedCollectionItem)) : ''}
     ${collectionEditor ? collectionEditorView(collectionEditor, state.game, online()) : ''}
     ${collectionLoanRequest ? collectionLoanRequestView(collectionLoanRequest, online()) : ''}
     ${collectionShareModal ? collectionShareModalView() : ''}
     ${progressionDrawerOpen ? progressionDrawerView() : ''}
     ${avatarPanelOpen ? avatarPanelView(u) : ''}
-    <div data-stats-modal-root>${page === 'stats' ? `${stats.matchModalOpen ? stats.matchModalView() : ''}${stats.matchDetailOpen ? stats.matchDetailView() : ''}` : ''}</div>
+    <div data-stats-modal-root>${page === 'stats' && stats ? `${stats.matchModalOpen ? stats.matchModalView() : ''}${stats.matchDetailOpen ? stats.matchDetailView() : ''}` : ''}</div>
   </main>`;
 }
 
 function xpStripView(u) {
-  const progress = progressForXp(stats.progression?.totalXp || 0);
+  const progress = progressForXp(stats?.progression?.totalXp || 0);
   const titleLabel = findCosmetic(activeCosmetics().activeTitle)?.label || titleForLevel(progress.level);
   return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV ${progress.level}</span><span class="xp-bar"><i style="--progress:${progress.progress}"></i></span><span class="xp-strip-detail">${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</span></span><span class="xp-strip-identity">${esc(u.name)} · ${esc(titleLabel)}</span></button>`;
 }
 
 function progressionDrawerView() {
-  const progression = stats.progression || { totalXp:0, level:1, xpToday:0, dailyCap:100 };
+  const progression = stats?.progression || { totalXp:0, level:1, xpToday:0, dailyCap:100 };
   const progress = progressForXp(progression.totalXp), title = titleForLevel(progress.level);
   return `<div class="detail-backdrop" data-close-progression><aside class="card-detail progression-drawer" role="dialog" aria-modal="true" aria-label="Progressione">
     <button class="detail-close" data-close-progression aria-label="Chiudi">×</button>
     <span class="eyebrow">Progression</span><h2>LV ${progress.level}</h2>
     <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP · ${Math.max(0, (progress.nextLevelXp || 0) - progress.currentLevelXp)} XP al prossimo livello</small></div>
-    ${dailyMissionsView(stats.missions || [])}
+    ${dailyMissionsView(stats?.missions || [])}
     <p class="progression-title">Titolo attuale: <b>${esc(title)}</b></p>
   </aside></div>`;
 }
@@ -386,7 +432,7 @@ function missionRowView(mission) {
   </div>`;
 }
 
-function activeCosmetics() { return stats.cosmetics || { activeTitle:'', activeAvatar:'', unlocked:[] }; }
+function activeCosmetics() { return stats?.cosmetics || { activeTitle:'', activeAvatar:'', unlocked:[] }; }
 // L'avatar equipaggiato sostituisce il cerchio con le iniziali solo dove
 // mostriamo l'identità del membro CORRENTE (pannello profilo, header) — le
 // liste che mostrano altri membri del team restano con le iniziali, non è
@@ -399,7 +445,7 @@ function profileAvatarMarkup(u, cosmetics, size = '') {
 }
 function avatarPanelView(u) {
   const cosmetics = activeCosmetics();
-  const progression = stats.progression || { totalXp:0, level:1 };
+  const progression = stats?.progression || { totalXp:0, level:1 };
   const progress = progressForXp(progression.totalXp || 0);
   const unlockedTitles = cosmeticsByType('title').filter(item => cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress));
   const equippedTitle = findCosmetic(cosmetics.activeTitle);
@@ -462,7 +508,7 @@ async function equipCosmeticAndRefresh(type, id) {
   try {
     await api.equipCosmetic(type, id);
     const field = type === 'avatar' ? 'activeAvatar' : 'activeTitle';
-    stats.cosmetics = { ...activeCosmetics(), [field]: id };
+    if (stats) stats.cosmetics = { ...activeCosmetics(), [field]: id };
     // La sezione Team legge memberProfiles (fetchata da loadMembers, non da
     // stats.cosmetics): senza questo la propria riga lì resterebbe con
     // l'avatar/titolo vecchio finché l'app non ricarica i membri da zero.
@@ -498,15 +544,15 @@ function pageContent() {
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScanPageView();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
-  if (page === 'market') return marketWatch.view();
-  if (page === 'decks') return decks.view();
-  if (page === 'stats') return stats.view();
+  if (page === 'market') return marketWatch ? marketWatch.view() : appControllerPageView('Market Watch');
+  if (page === 'decks') return decks ? decks.view() : appControllerPageView('Mazzi');
+  if (page === 'stats') return stats ? stats.view() : appControllerPageView('Statistiche');
   if (page === 'requests') return requestsView();
   if (page === 'settings') return settingsView();
   if (page === 'admin') return adminView();
   if (page === 'market-variants') return marketVariantView();
   if (page === 'more') return moreView();
-  return dashboardView(state, state.game, marketWatch.dashboardState(), dashboardProfile());
+  return dashboardView(state, state.game, marketWatch ? marketWatch.dashboardState() : { trendsLoading: true }, dashboardProfile());
 }
 
 // Dati della carta del duellante in Dashboard: solo stato GIÀ caricato
@@ -515,18 +561,18 @@ function pageContent() {
 function dashboardProfile() {
   const u = member(state.currentUser);
   if (!u) return null;
-  const progress = progressForXp(stats.progression?.totalXp || 0);
+  const progress = progressForXp(stats?.progression?.totalXp || 0);
   const cosmetics = activeCosmetics();
-  const record = (stats.myRows || []).reduce((sum, row) => ({ matches: sum.matches + (Number(row.matches) || 0), wins: sum.wins + (Number(row.wins) || 0) }), { matches: 0, wins: 0 });
+  const record = (stats?.myRows || []).reduce((sum, row) => ({ matches: sum.matches + (Number(row.matches) || 0), wins: sum.wins + (Number(row.wins) || 0) }), { matches: 0, wins: 0 });
   const cardCount = (state.collection?.mine || []).filter(item => !item.game || item.game === state.game).reduce((sum, item) => sum + (Number(item.quantityOwned) || 0), 0);
   return {
     level: progress.level, progress: progress.progress, currentXp: progress.currentLevelXp, nextXp: progress.nextLevelXp,
     title: findCosmetic(cosmetics.activeTitle)?.label || titleForLevel(progress.level),
     avatarHtml: profileAvatarMarkup(u, cosmetics, 'large'),
-    portfolio: marketWatch.summary?.portfolioValue || null,
+    portfolio: marketWatch?.summary?.portfolioValue || null,
     cardCount,
     winRate: record.matches ? Math.round((record.wins / record.matches) * 100) : null,
-    missions: (stats.missions || []).map(mission => ({ ...mission, ...(DAILY_MISSIONS_META[mission.id] || { icon: 'star', label: mission.id }) }))
+    missions: (stats?.missions || []).map(mission => ({ ...mission, ...(DAILY_MISSIONS_META[mission.id] || { icon: 'star', label: mission.id }) }))
   };
 }
 
@@ -1176,6 +1222,7 @@ async function discoverMarketVariantBackfillCandidates() {
   marketVariantState.backfillLoading = true; marketVariantState.backfillError = '';
   marketVariantState.backfillReport = null; render();
   try {
+    const { classifyYgoMarketVariantBackfillAction, resolveYgoMarketVariantBySetTemplate } = await loadMarketProviders();
     const rows = await api.listYgoMarketVariantBackfillCandidates({ setPrefixes: MARKET_VARIANT_BACKFILL_SET_PREFIXES, usedOnly: true, limit: 100 });
     marketVariantState.backfillCandidates = rows.map(row => {
       const candidateProductIds = Array.isArray(row.candidate_product_ids) ? row.candidate_product_ids : [];
@@ -1219,6 +1266,7 @@ async function runMarketVariantBackfill() {
   marketVariantState.backfillRunning = true; marketVariantState.error = ''; render();
   const allRows = []; let errorCount = 0;
   try {
+    const { summarizeYgoMarketVariantBackfillRun } = await loadMarketProviders();
     for (let index = 0; index < ids.length; index += MARKET_VARIANT_BACKFILL_BATCH_SIZE) {
       const batch = ids.slice(index, index + MARKET_VARIANT_BACKFILL_BATCH_SIZE);
       try {
@@ -1241,6 +1289,7 @@ async function runMarketVariantBackfill() {
 }
 
 function bind() {
+  scheduleLoginPrefetch();
   scheduleRoutePrefetch();
   bindDashboardCarousel();
   document.querySelectorAll('[data-dashboard-progression]').forEach(button => button.addEventListener('click', () => { progressionDrawerOpen = true; render(); }));
@@ -1294,7 +1343,7 @@ function bind() {
   document.querySelectorAll('[data-close-collection-request]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); collectionLoanRequest = null; render(); }));
   document.querySelectorAll('[data-collection-edit]').forEach(button => button.addEventListener('click', () => openCollectionEditor(button.dataset.collectionEdit)));
   document.querySelectorAll('[data-collection-delete]').forEach(button => button.addEventListener('click', () => deleteCollectionItem(button.dataset.collectionDelete)));
-  document.querySelectorAll('[data-market-watch-add]').forEach(button => button.addEventListener('click', async () => { try { await api.setMarketWatchItem(button.dataset.marketWatchAdd,true); await marketWatch.load(); toast('Printing aggiunta alla Watchlist'); } catch (error) { toast(error.message||'Watchlist non disponibile'); } }));
+  document.querySelectorAll('[data-market-watch-add]').forEach(button => button.addEventListener('click', async () => { try { await api.setMarketWatchItem(button.dataset.marketWatchAdd,true); await loadAppControllers(); await marketWatch.load(); toast('Printing aggiunta alla Watchlist'); } catch (error) { toast(error.message||'Watchlist non disponibile'); } }));
   document.querySelectorAll('[data-collection-loan]').forEach(button => button.addEventListener('click', () => createLoanFromCollection(button.dataset.collectionLoan)));
   document.querySelectorAll('[data-request-collection-loan]').forEach(button => button.addEventListener('click', () => openCollectionLoanRequest(button.dataset.requestCollectionLoan)));
   document.querySelector('#collection-card-search')?.addEventListener('input', onCollectionCardSearch);
@@ -1392,10 +1441,10 @@ function bind() {
   });
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
-  if (page === 'decks') decks.bind(document);
-  if (page === 'market') marketWatch.bind(document);
+  if (page === 'decks' && decks) decks.bind(document);
+  if (page === 'market' && marketWatch) marketWatch.bind(document);
   if (page === 'fastscan') fastScan?.bind(document);
-  if (page === 'stats') stats.bind(document);
+  if (page === 'stats' && stats) stats.bind(document);
   bindProgressionHeader(document);
 }
 
@@ -1749,7 +1798,10 @@ function collectionEntryForDetail(id) {
 // non deve toccare il DOM di un'altra carta nel frattempo aperta.
 function ensurePriceForDetail(id) {
   const printingId = collectionEntryForDetail(id)?.printingId;
-  if (printingId) marketWatch.ensureItemPrice(printingId, () => { if (selectedCollectionItem === id) updateDetailPriceBox(id); });
+  if (printingId && marketWatch) marketWatch.ensureItemPrice(printingId, () => { if (selectedCollectionItem === id) updateDetailPriceBox(id); });
+  // Dettaglio aperto subito dopo il login, prima che Market Watch sia pronto:
+  // riprova appena il controller arriva (stesso aggiornamento mirato).
+  else if (printingId) void loadAppControllers().then(() => { if (selectedCollectionItem === id) ensurePriceForDetail(id); }).catch(() => {});
 }
 function updateDetailPriceBox(id) {
   const box = document.querySelector('.inventory-detail [data-inventory-market-summary]');
@@ -1767,7 +1819,7 @@ function updateDetailPriceBox(id) {
 function resolveDetailPrice(id) {
   const printingId = collectionEntryForDetail(id)?.printingId;
   if (!printingId) return { status: 'missing', price: null };
-  const entry = marketWatch.priceCacheEntry(printingId);
+  const entry = marketWatch ? marketWatch.priceCacheEntry(printingId) : null;
   if (!entry || entry.status === 'loading') return { status: 'loading', price: null };
   if (entry.status === 'ready') return { status: 'ready', price: entry.price };
   return { status: 'missing', price: null };
@@ -1933,30 +1985,50 @@ async function loadCollection({ force = false } = {}) {
 }
 
 async function loadDecks() {
-  try { await decks.load(); decks.error=''; }
-  catch (error) { decks.error=/list_my_decks/i.test(error.message||'')?'Applica la migrazione Mazzi su Supabase per attivare il salvataggio.':(error.message||'Mazzi non disponibili'); }
+  try { await loadAppControllers(); await decks.load(); decks.error=''; }
+  catch (error) { if (!decks) return; decks.error=/list_my_decks/i.test(error.message||'')?'Applica la migrazione Mazzi su Supabase per attivare il salvataggio.':(error.message||'Mazzi non disponibili'); }
+}
+
+// Caricamento dei dati secondari dopo il login, con aggiornamenti mirati:
+// - Mazzi: sulla Raccolta solo la griglia dei risultati (nomi dei mazzi), mai
+//   il campo di ricerca; ridisegno completo solo sulle pagine che li mostrano.
+// - Market Watch: ridisegna da sé solo Market/Dashboard (MARKET_RENDER_PAGES).
+// - Statistiche: Dashboard e Statistiche come prima; altrove solo la barra XP.
+const isTyping = () => ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+function loadSecondaryData() {
+  void loadDecks().then(() => {
+    if (page === 'collection') refreshCollectionResults(false);
+    else if ((page === 'decks' || page === 'market') && !isTyping()) renderRoute();
+  });
+  void loadAppControllers().then(() => marketWatch.load()).catch(() => {});
+  void loadAppControllers().then(() => stats.load()).then(() => {
+    if (page === 'home' || page === 'stats') { if (!isTyping()) render(); }
+    else refreshXpStrip();
+  }).catch(() => {});
+}
+// Aggiorna sul posto la sola barra XP del topbar (livello/titolo appena arrivati).
+function refreshXpStrip() {
+  const strip = document.querySelector('.topbar .xp-strip'), u = member(state.currentUser);
+  if (!strip || !u) return;
+  const template = document.createElement('template');
+  template.innerHTML = xpStripView(u).trim();
+  const next = template.content.firstElementChild;
+  strip.replaceWith(next);
+  next.addEventListener('click', () => { progressionDrawerOpen = true; render(); });
+  animateXpFill();
 }
 
 async function loadPrimaryData() {
+  // Dati primari (prestiti, Raccolta, richieste di condivisione): sono i soli
+  // che il primo render completo aspetta, così la Raccolta è pronta subito.
+  // Mazzi/Market/Statistiche partono in parallelo ma non lo ritardano: ognuno,
+  // quando arriva, fa solo aggiornamenti mirati (vedi loadSecondaryData),
+  // mai un render completo tardivo della Raccolta.
+  loadSecondaryData();
   const [loansResult, collectionResult] = await Promise.allSettled([
     loadCloudLoans(),
     loadCollection(),
-    loadDecks(),
-    marketWatch.load(),
-    loadCollectionShareRequests(),
-    // stats.load() (progression/avatar/statistiche) è quasi sempre il più
-    // veloce dei sei, ma restava invisibile fino al completamento anche del
-    // più lento (Raccolta/Market Watch) perché nessuno ridisegnava finché
-    // TUTTO Promise.allSettled non si risolveva. Ridisegna appena i SUOI
-    // dati sono pronti, senza aspettare gli altri — ma mai se nel frattempo
-    // l'utente ha già iniziato a scrivere da qualche parte (es. è passato
-    // alla Raccolta prima che il bootstrap finisse): render() sostituisce
-    // TUTTO #app, e lo farebbe a metà digitazione perdendo focus/tastiera
-    // per dati che non c'entrano nulla con quello che si sta scrivendo.
-    // Stesso guard già usato per il fallback periodico Mazzi e la sync
-    // realtime. I dati restano comunque salvati in stats, visibili al
-    // prossimo render naturale.
-    stats.load().then(() => { if (!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) render(); })
+    loadCollectionShareRequests()
   ]);
   if (collectionResult.status === 'rejected') collectionError = collectionResult.reason?.message || 'Raccolta non disponibile';
   if (loansResult.status === 'rejected') cloudError = loansResult.reason?.message || 'Sincronizzazione non riuscita';
@@ -2863,6 +2935,9 @@ async function start() {
     return;
   }
   render();
+  // Sessione ripristinata: avvia subito il caricamento dei controller post-login
+  // (Mazzi/Market/Statistiche), in parallelo a membri e dati.
+  if (state.currentUser && !state.standalone) void loadAppControllers().catch(() => {});
   try { await loadMembers(); render(); } catch {}
   if (state.currentUser) {
     try {
@@ -2933,7 +3008,7 @@ document.addEventListener('visibilitychange', () => {
 // aggiorna da sé dopo ogni match registrato), niente altre pagine.
 setInterval(() => {
   if (document.hidden || !state.currentUser || SHARE_HASH.test(location.hash)) return;
-  if (page === 'market') void marketWatch.load();
+  if (page === 'market') void marketWatch?.load();
   // Decks non ha (ancora) un aggiornamento mirato come refreshBoardSection()/
   // refreshBody(): un renderRoute() incondizionato qui potrebbe interrompere
   // l'utente a metà modifica di un mazzo (editor aperto, picker, import in
@@ -2942,9 +3017,9 @@ setInterval(() => {
   // altrimenti i dati freschi arrivano comunque al prossimo render naturale.
   else if (page === 'decks') void loadDecks().then(() => {
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
-    if (!editing && decks.screen === 'gallery') renderRoute();
+    if (!editing && decks?.screen === 'gallery') renderRoute();
   });
-  else if (page === 'stats' && stats.scope !== 'mine') void stats.load().then(() => stats.refreshBody());
+  else if (page === 'stats' && stats && stats.scope !== 'mine') void stats.load().then(() => stats.refreshBody());
 }, 15 * 60 * 1000);
 
 // Deep link dal tap su una notifica di sistema: sw.js manda un postMessage
@@ -2955,6 +3030,6 @@ navigator.serviceWorker?.addEventListener('message', event => {
   const url = new URL(event.data.url, location.href);
   const target = url.hash.replace(/^#\//, '').split('?')[0] || 'home';
   const params = new URLSearchParams(url.hash.split('?')[1] || '');
-  if (target === 'market' && params.get('printingId')) { navigate('market'); marketWatch.selected = params.get('printingId'); render(true); }
+  if (target === 'market' && params.get('printingId')) { navigate('market'); void loadAppControllers().then(() => { marketWatch.selected = params.get('printingId'); render(true); }).catch(() => {}); }
   else navigate(target);
 });

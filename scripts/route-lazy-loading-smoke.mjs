@@ -17,7 +17,10 @@ const root = process.cwd(), port = 8093, debugPort = 9353;
 const authSource = fs.readFileSync(path.join(root, 'scripts', 'auth-regression-smoke.mjs'), 'utf8');
 const mockBlock = authSource.slice(authSource.indexOf('const members = ['), authSource.indexOf('\nconst mime = {'));
 const fakeSupabaseSource = new Function(`${mockBlock}\nreturn fakeSupabaseSource;`)();
-const LAZY = ['js/fast-scan.js', 'js/team.js', 'js/admin.js', 'js/market-variant-admin.js', 'js/collection-share.js', 'js/collection-name-aliases.js'];
+const LAZY = ['js/fast-scan.js', 'js/team.js', 'js/admin.js', 'js/market-variant-admin.js', 'js/collection-share.js', 'js/collection-name-aliases.js', 'market/providers.js'];
+// Controller post-login: sulla schermata di accesso possono arrivare SOLO come
+// prefetch a browser inattivo, cioè dopo che il form di login è già disegnato.
+const POST_LOGIN = ['js/decks.js', 'js/market-watch.js', 'js/stats.js', 'js/deck-image-export.js'];
 
 const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.png':'image/png', '.webp':'image/webp', '.svg':'image/svg+xml', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json' };
 const server = http.createServer((req, res) => {
@@ -56,7 +59,10 @@ try {
 
   await call('Page.navigate', { url: `http://127.0.0.1:${port}/#/home` });
   await waitFor(`document.querySelectorAll('#member option').length === 3`, 'Schermata di login non pronta');
+  const loginShownAt = await evaluate(`performance.now()`);
   await delay(500);
+  const earlyPostLogin = await evaluate(`performance.getEntriesByType('resource').filter(e=>${JSON.stringify(POST_LOGIN)}.some(f=>e.name.endsWith('/'+f))&&e.startTime<${loginShownAt}-250).map(e=>e.name.split('/').slice(-2).join('/'))`);
+  assert(earlyPostLogin.length === 0, 'Controller post-login scaricati prima che il login fosse disegnato: ' + JSON.stringify(earlyPostLogin));
   const atLogin = LAZY.filter(loaded);
   assert(atLogin.length === 0, 'Moduli lazy scaricati già al login: ' + JSON.stringify(atLogin));
   console.log('PASS login: nessuno di ' + LAZY.length + ' moduli lazy scaricato (' + requested.filter(u => u.endsWith('.js')).length + ' script richiesti)');
@@ -68,6 +74,14 @@ try {
   assert(!loaded('js/team.js') && !loaded('js/admin.js'), 'Team/Admin non devono caricarsi prima di aprire la pagina');
   await waitFor(`performance.getEntriesByType('resource').some(e=>e.name.includes('/js/fast-scan.js'))`, 'Prefetch inattivo di fast-scan.js non avvenuto', 150);
   console.log('PASS dopo il login: alias caricati con la raccolta, Team/Admin ancora no, fast-scan.js prefetchato a browser inattivo');
+
+  assert(await evaluate(`Boolean(document.querySelector('.mm-dashboard .market-featured-carousel, .mm-dashboard .featured-empty'))`), 'Dashboard senza pannello Market dopo il login');
+  for (const [pageId, selector, label] of [['decks', '.deck-page', 'Mazzi'], ['market', '.market-hero', 'Market Watch'], ['stats', '.stats-page', 'Statistiche']]) {
+    await evaluate(`document.querySelector('.sidebar [data-page="${pageId}"]').click()`);
+    await waitFor(`Boolean(document.querySelector('${selector}'))`, `Pagina ${label} non renderizzata`);
+  }
+  assert(!loaded('market/providers.js'), 'market/providers.js deve restare fuori per un utente non admin');
+  console.log('PASS Mazzi, Market Watch e Statistiche si aprono dal router reale; market/providers.js mai scaricato da un non-admin');
 
   await evaluate(`document.querySelector('.sidebar [data-page="team"]').click()`);
   await waitFor(`Boolean(document.querySelector('.team-hero'))`, 'Pagina Team non renderizzata dopo il caricamento lazy');

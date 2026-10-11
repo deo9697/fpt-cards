@@ -1,6 +1,6 @@
 import { esc } from './core.js';
 import { icon } from './icons.js';
-import { deckNamesForCollectionItem } from './decks.js';
+import { deckNamesForCollectionItem } from './deck-usage.js';
 import { getGameAdapter } from './games/index.js';
 import { backgroundForCardType } from './cards.js';
 import { normalizeCollectionSearch, matchesCollectionQuery } from './collection-search.js';

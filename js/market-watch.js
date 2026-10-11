@@ -2,6 +2,8 @@ import {esc} from './core.js';
 import {icon} from './icons.js';
 import {renderDeckBoxCard,renderDeckBoxVisual,preferredDeckArtwork} from './deck-box.js';
 import {canonicalCatalogCardId} from './cards.js';
+import {positiveMovers,derivedPriceEligible,changePercent} from './market-movers.js';
+export {positiveMovers,derivedPriceEligible,changePercent};
 
 const TABS=['owned','deck','manual'];
 const LABELS={owned:'Raccolta',deck:'Mazzi',manual:'Watchlist'};
@@ -527,7 +529,6 @@ export function buildMarketDecks(decks=[],items=[],unresolved=[],catalogPriceFlo
   const grouped=new Map();for(const row of unresolved||[]){const id=String(row.deckId),deck=grouped.get(id)||{id,name:row.deckName||'Mazzo',game:'yugioh',deckTheme:'arcane-purple',cards:[],marketValue:null,marketIndicative:false,delta24:null,delta7:null,topMover:null,totalCopies:0,valuedCopies:0,indicativeValuedCopies:0,unresolvedCount:0};deck.cards.push({catalogCardId:row.catalogCardId,cardName:row.cardName,section:row.section,quantity:row.quantity,imageUrl:''});deck.totalCopies+=row.quantity;deck.unresolvedCount+=row.quantity;grouped.set(id,deck);}return [...grouped.values()];
 }
 export function deduplicateMonitored({owned=[],deck=[],manual=[]}={}){const map=new Map();for(const [source,rows] of Object.entries({owned,deck,manual}))for(const row of rows){if(!row.printingId)continue;const entry=map.get(row.printingId)||{printingId:row.printingId,sources:new Set(),quantity:0};entry.sources.add(source);if(source==='owned')entry.quantity+=Number(row.quantity||0);map.set(row.printingId,entry);}return [...map.values()].map(row=>({...row,sources:[...row.sources]}));}
-export function positiveMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice>item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>b.positiveChange-a.positiveChange||(b.referencePrice-b.price24h)-(a.referencePrice-a.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
 // Simmetrico a positiveMovers: nessuna RPC dedicata restituisce le carte in
 // discesa (list_market_dashboard_movers filtra SOLO trend>baseline, vedi
 // supabase-market-dashboard-movers.sql) — calcolato qui lato client sugli
@@ -573,7 +574,6 @@ function cardArt(imageUrl){
   return `<img src="${esc(imageUrl)}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(`<span class="market-art-empty">${icon('card')}</span>`)}">`;
 }
 export function isAggregatePrice(item){return item?.resolverStatus==='PROVIDER_AGGREGATE';}
-export function derivedPriceEligible(item){return item?.mappingStatus==='manual'||(item?.referencePrice!=null&&item?.resolverStatus!=='PROVIDER_AGGREGATE');}
 function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';
   // Cardmarket's own candidates carry no rarity here (that's WHY this is
   // aggregate, not a rarity mismatch) — but the user still needs a fixed
@@ -712,7 +712,6 @@ function normalizeProviders(value){if(!value||typeof value!=='object')return{};r
 function nullableNumber(value){if(value==null||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null;}
 function money(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',useGrouping:true}).format(Number(value)||0);}
 function changeMoney(value){const number=Number(value)||0;return `${number>=0?'+':'−'}${money(Math.abs(number))}`;}
-export function changePercent(value){if(value==null)return'—';const number=Number(value)||0;return `${number>=0?'+':'−'}${Math.abs(number).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}%`;}
 export function tone(value){return value==null?'muted':value>0?'positive':value<0?'negative':'muted';}
 function formatTimestamp(value){if(!value)return'—';const date=new Date(value);return Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('it-IT',{dateStyle:'short',timeStyle:'short'}).format(date);}
 function providerName(value){return value==='cardtrader'?'CardTrader':value==='cardmarket'?'Cardmarket':value;}

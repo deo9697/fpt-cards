@@ -1,6 +1,6 @@
 import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
-import { positiveMovers, changePercent } from './market-watch.js';
+import { positiveMovers, changePercent } from './market-movers.js';
 
 // Dashboard "Millennium totale" (2026-10-11, scelta dall'utente fra 3 mockup
 // mobile): bandiera del gioco che sventola, carta del duellante (anello XP

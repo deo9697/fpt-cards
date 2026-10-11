@@ -3,6 +3,8 @@ import { icon } from './icons.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deckThemeOptions, normalizeDeckBoxTemplate, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
 import { getGameAdapter } from './games/index.js';
+import { deckCardIdentityKey, normalizeDeckCardName, deckUsageIndex, deckNamesForCollectionItem } from './deck-usage.js';
+export { deckUsageIndex, deckNamesForCollectionItem };
 import { renderDeckImagePreview, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
 
 // Chiavi di DECK_BOX_TEMPLATES che richiedono uno sblocco (js/cosmetics.js,
@@ -995,27 +997,7 @@ function borrowedForCard(card, loans, reference, game) {
   return { quantity: sources.reduce((sum, source) => sum + source.quantity, 0), sources };
 }
 
-function deckCardIdentityKey(card) { const game = card?.game || 'yugioh', id = canonicalCatalogCardId(card?.catalogCardId, game), name = normalizeDeckCardName(card?.cardName); return id ? `id:${game}:${id}` : `name:${game}:${name}`; }
 
-// Reverse of deckAvailability: for a Raccolta card, which of the owner's own
-// mazzi already use it. Keyed with the same identity as deckAvailability so
-// a card matches a deck slot regardless of which printing is on file.
-export function deckUsageIndex(decks, ownerSlug, game) {
-  const index = new Map();
-  for (const deck of decks || []) {
-    if (deck.game !== game || (deck.ownerSlug || '') !== ownerSlug) continue;
-    for (const card of deck.cards || []) {
-      const key = deckCardIdentityKey({ ...card, game });
-      const names = index.get(key) || new Set();
-      names.add(deck.name);
-      index.set(key, names);
-    }
-  }
-  return index;
-}
-export function deckNamesForCollectionItem(index, item) {
-  return [...(index?.get(deckCardIdentityKey(item)) || [])];
-}
 export function sameDeckCardIdentity(card, item) {
   const game = card?.game || item?.game || 'yugioh';
   const cardHasId = validCatalogCardId(card?.catalogCardId, game), itemHasId = validCatalogCardId(item?.catalogCardId, game);
@@ -1023,7 +1005,6 @@ export function sameDeckCardIdentity(card, item) {
   const cardName = normalizeDeckCardName(card?.cardName), itemName = normalizeDeckCardName(item?.cardName);
   return Boolean(cardName && itemName) && cardName === itemName;
 }
-function normalizeDeckCardName(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, ' ').trim().toLowerCase(); }
 export function parseDeckList(text) { let section = 'main'; const merged = new Map(); for (const raw of String(text).split(/\r?\n/)) { const line = raw.trim(); if (!line) continue; const marker = line.toLowerCase(); if (marker === '#main' || marker === 'main deck' || marker === 'main:') { section = 'main'; continue; } if (marker === '#extra' || marker === 'extra deck' || marker === 'extra:') { section = 'extra'; continue; } if (marker === '!side' || marker === '#side' || marker === 'side deck' || marker === 'side:') { section = 'side'; continue; } if (line.startsWith('#') || line.startsWith('!')) continue; const match = line.match(/^(?:(\d{1,2})\s*[x×]?\s+)?(.+)$/), quantity = Math.max(1, Number(match?.[1] || 1)), value = (match?.[2] || line).trim(), id = /^\d{5,10}$/.test(value) ? value : ''; const key = `${section}:${id || value.toLowerCase()}`, existing = merged.get(key); if (existing) existing.quantity += quantity; else merged.set(key, { section, quantity, id, name: id ? '' : value }); } return [...merged.values()]; }
 function mapDeck(row) { return { id: String(row.id), persisted: true, dirty: false, ownerSlug: row.owner_slug || row.ownerSlug || '', name: row.name, format: row.format || 'TCG Avanzato', game: row.game, signatureCardId: row.signature_card_id || row.signatureCardId || null, deckTheme: row.deck_theme || row.deckTheme || DEFAULT_DECK_THEME, deckBoxTemplate: row.deck_box_template || row.deckBoxTemplate || DEFAULT_DECK_BOX_TEMPLATE, createdAt: row.created_at || row.createdAt || '', updatedAt: row.updated_at || row.updatedAt || '', cards: (row.cards || []).map(card => ({ catalogCardId: String(card.catalog_card_id || card.catalogCardId), cardName: card.card_name || card.cardName, imageUrl: card.image_url || card.imageUrl || '', croppedImageUrl: card.cropped_image_url || card.croppedImageUrl || '', banTcg: card.ban_tcg || card.banTcg || '', section: card.section || 'main', quantity: Number(card.quantity || 1), printingId: card.printing_id || card.printingId || null, printingSetCode: card.printing_set_code || card.printingSetCode || '', printingRarity: card.printing_rarity || card.printingRarity || '' })), cover: row.cover_image_url || row.coverImageUrl || '' }; }
 function mapTeamDeck(row) { return { ...mapDeck(row), ownerName: row.owner_name || row.ownerName || 'Membro del team' }; }
