@@ -453,7 +453,28 @@ function pageContent() {
   if (page === 'admin') return adminView();
   if (page === 'market-variants') return marketVariantView();
   if (page === 'more') return moreView();
-  return dashboardView(state, state.game, marketWatch.dashboardState());
+  return dashboardView(state, state.game, marketWatch.dashboardState(), dashboardProfile());
+}
+
+// Dati della carta del duellante in Dashboard: solo stato GIÀ caricato
+// (stats.load() all'avvio, cosmetici, riepilogo Market Watch, raccolta) —
+// nessuna query aggiuntiva. Null finché non c'è un utente.
+function dashboardProfile() {
+  const u = member(state.currentUser);
+  if (!u) return null;
+  const progress = progressForXp(stats.progression?.totalXp || 0);
+  const cosmetics = activeCosmetics();
+  const record = (stats.myRows || []).reduce((sum, row) => ({ matches: sum.matches + (Number(row.matches) || 0), wins: sum.wins + (Number(row.wins) || 0) }), { matches: 0, wins: 0 });
+  const cardCount = (state.collection?.mine || []).filter(item => !item.game || item.game === state.game).reduce((sum, item) => sum + (Number(item.quantityOwned) || 0), 0);
+  return {
+    level: progress.level, progress: progress.progress, currentXp: progress.currentLevelXp, nextXp: progress.nextLevelXp,
+    title: findCosmetic(cosmetics.activeTitle)?.label || titleForLevel(progress.level),
+    avatarHtml: profileAvatarMarkup(u, cosmetics, 'large'),
+    portfolio: marketWatch.summary?.portfolioValue || null,
+    cardCount,
+    winRate: record.matches ? Math.round((record.wins / record.matches) * 100) : null,
+    missions: (stats.missions || []).map(mission => ({ ...mission, ...(DAILY_MISSIONS_META[mission.id] || { icon: 'star', label: mission.id }) }))
+  };
 }
 
 function loadingView() {
@@ -1168,6 +1189,7 @@ async function runMarketVariantBackfill() {
 
 function bind() {
   bindDashboardCarousel();
+  document.querySelectorAll('[data-dashboard-progression]').forEach(button => button.addEventListener('click', () => { progressionDrawerOpen = true; render(); }));
   document.querySelector('#login-form')?.addEventListener('submit', login);
   document.querySelector('#member')?.addEventListener('change', event => {
     loginDraft.member = event.currentTarget.value;

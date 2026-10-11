@@ -148,9 +148,10 @@ try {
   if (!emptyResult.hasEmpty || emptyResult.hasSlide) throw Error('Stato vuoto del pannello senza movers positivi non valido: ' + JSON.stringify(emptyResult));
   console.log('PASS nessun mover positivo: stato vuoto elegante del pannello');
 
-  // --- Priorità artwork (fix 2026-09-15): YGOResources già presente > già
-  // cropped > YGOPRODeck full->cropped > catalogCardId (SOLO fallback finale,
-  // prima era la sorgente primaria e ignorava un imageUrl YGOResources valido).
+  // --- Priorità artwork (corretta 2026-10-11): gli image_url YGOResources sono
+  // la CARTA INTERA (256x372), non l'artwork — verificato su campioni reali.
+  // Ordine: già cropped > YGOPRODeck full->cropped > catalogCardId cropped >
+  // YGOResources solo come ultimo fallback, con il ritaglio CSS .is-full-card.
   const priorityResult = await evaluate(`(async()=>{
     const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
@@ -161,14 +162,19 @@ try {
     ];
     document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
     bindDashboardCarousel();
-    return [...document.querySelectorAll('img.market-featured-art')].map(img => ({src: img.getAttribute('src'), fallback: JSON.parse(img.dataset.artFallback||'[]')}));
+    const imgs = [...document.querySelectorAll('img.market-featured-art')];
+    const rows = imgs.map(img => ({src: img.getAttribute('src'), fallback: JSON.parse(img.dataset.artFallback||'[]'), fullCard: img.classList.contains('is-full-card')}));
+    imgs[0].dispatchEvent(new Event('error'));
+    rows[0].afterError = {src: imgs[0].getAttribute('src'), fullCard: imgs[0].classList.contains('is-full-card')};
+    return rows;
   })()`);
-  if (priorityResult[0].src !== 'https://artworks-abc123.ygoresources.com/foo/bar.jpg') throw Error('YGOResources deve avere priorità sul catalogCardId numerico: ' + JSON.stringify(priorityResult[0]));
-  if (priorityResult[0].fallback.length !== 1 || !priorityResult[0].fallback[0].includes('cards_cropped/111111.jpg')) throw Error('Il fallback di un artwork YGOResources deve essere il catalogCardId cropped: ' + JSON.stringify(priorityResult[0]));
+  if (priorityResult[0].src !== 'https://images.ygoprodeck.com/images/cards_cropped/111111.jpg' || priorityResult[0].fullCard) throw Error('Con un imageUrl YGOResources (carta intera) e un id numerico, la prima scelta deve essere il crop ufficiale cards_cropped: ' + JSON.stringify(priorityResult[0]));
+  if (priorityResult[0].fallback.length !== 1 || priorityResult[0].fallback[0] !== 'https://artworks-abc123.ygoresources.com/foo/bar.jpg') throw Error('Il fallback deve essere l\'immagine YGOResources: ' + JSON.stringify(priorityResult[0]));
+  if (!priorityResult[0].afterError.src.includes('ygoresources') || !priorityResult[0].afterError.fullCard) throw Error('Passando al fallback YGOResources deve attivarsi il ritaglio .is-full-card: ' + JSON.stringify(priorityResult[0].afterError));
   if (priorityResult[1].src !== 'https://images.ygoprodeck.com/images/cards_cropped/222222.jpg') throw Error('Una card intera YGOPRODeck deve diventare cropped: ' + JSON.stringify(priorityResult[1]));
   if (!priorityResult[1].fallback[0]?.startsWith('/api/card-image-proxy?url=')) throw Error('Il fallback di un cropped YGOPRODeck deve passare dal proxy: ' + JSON.stringify(priorityResult[1]));
   if (priorityResult[2].src !== 'https://images.ygoprodeck.com/images/cards_cropped/333333.jpg') throw Error('Senza imageUrl affidabile, catalogCardId deve restare l\'unico fallback disponibile: ' + JSON.stringify(priorityResult[2]));
-  console.log('PASS priorità artwork: YGOResources > già cropped > full->cropped > catalogCardId (solo fallback finale)');
+  console.log('PASS priorità artwork: già cropped > full->cropped > catalogCardId cropped > YGOResources (carta intera) ritagliata via CSS');
 
   // --- Fallback su errore immagine: primary -> fallback -> placeholder FPT,
   // mai un loop su errori ripetuti (data-art-fallback si accorcia e basta).

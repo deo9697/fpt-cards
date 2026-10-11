@@ -652,6 +652,27 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .featured-empty .inline-empty { flex: 1; }
 .featured-empty > .btn { align-self: center; }
 .market-movers-panel { min-height: 330px; background: radial-gradient(ellipse at top left,#793bc51a,transparent 65%),var(--surface,#11101b); }
+/* Stile "Millennium" del pannello Market Watch in Dashboard (scelto
+   2026-10-11 fra 3 mockup): doppia cornice e angoli dorati, oro letterale
+   (#f4b942/#b97818, come .fab) perché --accent è viola, vedi memoria del
+   progetto. Font Cinzel FPT esplicito: --display-font è ridefinito a Manrope. */
+.featured-card-panel.market-millennium { isolation: isolate; padding: 18px 16px 16px; border: 1px solid #5a4417; border-radius: 18px; background: radial-gradient(120% 70% at 50% 0%, #2a1f0a 0%, #12100b 45%, #0b0c11 100%); box-shadow: inset 0 0 0 4px #0b0c11, inset 0 0 0 5px #3a2c10; }
+.featured-card-panel.market-millennium::after { display: none; }
+.mm-corner { position: absolute; z-index: 2; width: 16px; height: 16px; border: 1.5px solid #c99a3b; pointer-events: none; }
+.mm-corner::before { content: ''; position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #f4b942; }
+.mm-tl { top: 9px; left: 9px; border-right: 0; border-bottom: 0; }
+.mm-tl::before { top: -3px; left: -3px; }
+.mm-tr { top: 9px; right: 9px; border-left: 0; border-bottom: 0; }
+.mm-tr::before { top: -3px; right: -3px; }
+.mm-bl { bottom: 9px; left: 9px; border-right: 0; border-top: 0; }
+.mm-bl::before { bottom: -3px; left: -3px; }
+.mm-br { bottom: 9px; right: 9px; border-left: 0; border-top: 0; }
+.mm-br::before { bottom: -3px; right: -3px; }
+.market-featured-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 8px 12px; }
+.market-featured-head h2 { margin: 0; color: #f4b942; font-family: 'Cinzel FPT', Georgia, serif; font-size: .95rem; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; }
+.market-featured-head .text-action { display: inline-flex; align-items: center; gap: 4px; width: auto; min-height: 44px; margin: 0; padding: 0 4px; background: none; color: #f4b942; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.market-featured-head .text-action .icon { width: 14px; height: 14px; }
+.market-millennium .inline-empty { color: #e9dcc0; }
 /* Hero carousel: solo artwork in stile cover (mai la carta intera), grande
    e dominante nella card, con overlay scuro per la leggibilità del testo e
    un grafico dell'andamento prezzo per slide. Scroll-snap nativo (niente
@@ -670,35 +691,45 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .market-featured-carousel { min-width: 0; margin: 4px 0 16px; }
 .market-featured-track { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; border-radius: 16px; }
 .market-featured-track::-webkit-scrollbar { display: none; }
-.market-featured-slide { position: relative; isolation: isolate; flex: 0 0 100%; min-width: 0; height: 400px; overflow: hidden; scroll-snap-align: start; border: 1px solid #b99cd13d; border-radius: 16px; background: #161124; color: #fff; padding: 20px; text-align: left; cursor: pointer; display: flex; flex-direction: column; justify-content: flex-end; }
-.market-featured-art { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: center 32%; }
-.market-featured-art-placeholder { display: grid; place-items: center; background: radial-gradient(ellipse, #553176, #13121c); color: #ffffff55; }
+.market-featured-slide { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; display: flex; flex-direction: column; gap: 12px; padding: 0; border: 0; border-radius: 12px; background: none; color: #f3f4f7; text-align: left; cursor: pointer; }
+.market-featured-slide:focus-visible { outline: 2px solid #f4b942; outline-offset: 3px; }
+.market-featured-frame { display: block; padding: 3px; border-radius: 10px; background: linear-gradient(135deg, #f8dc8a 0%, #b97818 35%, #f4b942 55%, #7a4d0c 100%); box-shadow: 0 14px 30px -18px #000; }
+.market-featured-window { position: relative; isolation: isolate; display: block; height: clamp(212px, 30vw, 300px); overflow: hidden; border-radius: 8px; background: #0b0c11; }
+.market-featured-art { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+/* Ritaglio della finestra dell'arte da un'immagine "carta intera" 256x372
+   (YGOResources): l'arte occupa ~x 33-223 / y 66-262 px. Larghezza e
+   margin-top in % della LARGHEZZA del contenitore: la finestra dell'arte
+   (quadrata) riempie la larghezza ed è centrata in verticale. */
+.market-featured-art.is-full-card { inset: auto; left: -17.4%; top: 50%; width: 134.7%; height: auto; max-width: none; margin-top: -86.3%; object-fit: fill; }
+.market-featured-art-placeholder { display: grid; place-items: center; background: radial-gradient(ellipse, #3a2c10, #0b0c11); color: #f4b94255; }
 .market-featured-art-placeholder[hidden] { display: none; }
 .market-featured-art-placeholder .icon { width: 72px; height: 72px; opacity: .5; }
-.market-featured-scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, #060710b8 0%, #06071012 34%, #060710a8 55%, #060710f5 100%); }
-.market-featured-slide:focus-visible { outline: 2px solid #c794ff; outline-offset: -3px; }
-.market-featured-copy { display: flex; flex-direction: column; gap: 6px; text-shadow: 0 2px 10px #000; }
-.market-featured-badge { align-self: flex-start; padding: 3px 9px; border-radius: 999px; background: #65df8426; color: #7ff0a0; font-size: .64rem; font-weight: 800; letter-spacing: .04em; }
-.market-featured-name { font-size: clamp(1.1rem, 2vw, 1.5rem); line-height: 1.2; overflow-wrap: anywhere; }
-.market-featured-price { display: flex; align-items: baseline; gap: 10px; }
-.market-featured-price b { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
-.market-featured-price small { color: #d4cddd; font-size: .68rem; font-weight: 500; }
-.market-featured-chart { display: block; margin-top: 6px; color: #76ebac; }
+.market-featured-scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, #07080d00 55%, #07080dbf 100%); }
+.market-featured-badge { position: absolute; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #c99a3b; border-radius: 999px; background: #0c0a06d1; color: #ffd77a; font-size: .72rem; font-weight: 800; }
+.market-featured-badge svg { width: 10px; height: 10px; fill: currentColor; }
+.market-featured-set { position: absolute; right: 12px; bottom: 10px; left: 12px; overflow: hidden; color: #e9dcc0; font-size: .68rem; font-weight: 600; text-align: right; text-overflow: ellipsis; text-shadow: 0 1px 4px #000; white-space: nowrap; }
+.market-featured-copy { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
+.market-featured-name { color: #f7e7c0; font-family: 'Cinzel FPT', Georgia, serif; font-size: clamp(1.05rem, 2vw, 1.35rem); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.market-featured-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.market-featured-price b { color: #f4b942; font-size: 1.85rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.market-featured-price small { color: #b9ae96; font-size: .74rem; font-weight: 500; }
+.market-featured-chart { display: block; margin-top: 6px; padding: 10px 8px 6px; border: 1px solid #3a2c10; border-radius: 12px; background: #f4b9420d; color: #f4b942; }
 .market-featured-chart svg { display: block; width: 100%; height: 70px; overflow: visible; }
-.market-featured-chart-grid { fill: none; stroke: #ffffff20; stroke-dasharray: 3 5; }
-.market-featured-chart-line { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.market-featured-chart-area { fill: currentColor; opacity: .1; }
-.market-featured-chart circle { fill: currentColor; stroke: #fff; stroke-width: 1.5; }
-.market-featured-chart-dates { display: flex; justify-content: space-between; margin-top: 2px; color: #d4cddd; font-size: .62rem; }
-.market-featured-chart-dates small:nth-child(2) { color: #9c93a8; font-style: italic; }
-.market-featured-chart-empty { display: block; margin-top: 8px; font-size: .68rem; color: #d4cddd; }
-.market-featured-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
-.market-featured-nav-btn { width: 36px; height: 36px; border: 1px solid #9765c655; border-radius: 10px; background: #251634; color: #eee1ff; cursor: pointer; font-size: 1.1rem; line-height: 1; }
+.market-featured-chart-grid { fill: none; stroke: #2c2412; vector-effect: non-scaling-stroke; }
+.market-featured-chart-line { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.market-featured-chart-area { fill: currentColor; opacity: .14; }
+.market-featured-chart-dot { fill: none; stroke: #ffd77a; stroke-width: 7; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.market-featured-chart-dates { display: flex; justify-content: space-between; margin-top: 4px; padding: 0 2px; color: #8f8670; font-size: .62rem; }
+.market-featured-chart-dates small:nth-child(2) { letter-spacing: .16em; text-transform: uppercase; }
+.market-featured-chart-empty { display: block; margin-top: 6px; padding: 14px 10px; border: 1px dashed #3a2c10; border-radius: 12px; color: #b9ae96; font-size: .7rem; text-align: center; }
+.market-featured-nav { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 14px; }
+.market-featured-nav-btn { width: 44px; height: 44px; border: 1px solid #8a6420; border-radius: 50%; background: #15110a; color: #f4b942; cursor: pointer; font-size: 1.25rem; line-height: 1; }
 .market-featured-nav-btn:disabled { opacity: .3; cursor: default; }
-.market-featured-nav-btn:focus-visible { outline: 2px solid #c794ff; outline-offset: 2px; }
-.market-featured-dots { display: flex; align-items: center; gap: 8px; }
-.market-featured-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 999px; background: #ffffff30; cursor: pointer; }
-.market-featured-dot.active { background: #c794ff; }
+.market-featured-nav-btn:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+.market-featured-dots { display: flex; align-items: center; gap: 12px; }
+.market-featured-dot { width: 12px; height: 12px; padding: 0; border: 1px solid #c99a3b; border-radius: 0; background: transparent; cursor: pointer; transform: rotate(45deg); }
+.market-featured-dot.active { background: #f4b942; }
+.market-featured-dot:focus-visible { outline: 2px solid #f4b942; outline-offset: 3px; }
 .loan-overview-panel { display: flex; min-height: 330px; flex-direction: column; }
 .duel-alert { display: flex; align-items: center; gap: 10px; margin: -2px 0 8px; padding: 9px 10px; border: 1px solid #d19c3550; border-radius: 7px; background: #c2811812; color: #efbd57; }
 .duel-alert .icon { flex: none; width: 18px; }
@@ -1508,7 +1539,8 @@ img.card-image-unavailable { opacity: 0; }
   .featured-card-content { grid-template-columns: 112px minmax(0, 1fr); gap: 16px; padding: 0 0 4px; }
   .featured-card-ghost { width: 64%; opacity: .09; }
   .featured-card-copy h3 { font-size: 1.05rem; white-space: normal; }
-  .market-featured-slide { height: 320px; padding: 16px; }
+  .featured-card-panel.market-millennium { padding: 16px 14px 14px; }
+  .market-featured-window { height: 212px; }
   .market-featured-chart svg { height: 56px; }
   .feature-chips { gap: 4px; margin-bottom: 8px; }
   .feature-owner { display: none; }
@@ -2430,28 +2462,96 @@ button.market-row:hover { background:#15121d; }
   .deck-page.is-gallery .deck-box-card { transition:none; }
 }
 
-/* Full-width game standard; keep the official mark flat and readable. */
-.duel-welcome-logo { align-items:stretch;gap:14px;padding-inline:0; }
-.duel-welcome-logo .duel-game-logo {
-  position:relative;isolation:isolate;display:flex;width:100%;height:clamp(100px,12vw,154px);
-  padding:16px 28px;border-radius:5px 5px 18px 18px;overflow:hidden;
-  border-block:1px solid rgba(var(--accent-rgb),.45);
-  background:linear-gradient(90deg,#100d18,#302033 25%,#171421 50%,#302033 75%,#100d18);
-  box-shadow:0 12px 24px #0005,inset 0 2px 0 #ffffff14,inset 0 -3px 10px #0006;
+/* Bandiera del gioco attivo (Dashboard "Millennium", 2026-10-11): drappo
+   appeso a un'asta d'oro, coda di rondine, logo ufficiale su targa chiara
+   (i loghi sono pensati per fondo chiaro). Diviso in --n strisce: ognuna
+   mostra la sua porzione del drappo (100cqw = larghezza bandiera) ed è
+   animata con uno sfasamento, fissata in alto. Solo transform/opacity. */
+.duel-welcome.game-flag-wrap { position:relative; display:block; min-height:0; padding:0 6px; }
+.game-flag-rod { position:absolute; z-index:2; top:4px; left:0; right:0; height:8px; border-radius:4px; background:linear-gradient(180deg,#ffe7a3 0%,#c99a3b 45%,#7a4d0c 100%); box-shadow:0 3px 6px #000a; pointer-events:none; }
+.game-flag-rod::before, .game-flag-rod::after { content:''; position:absolute; top:-5px; width:18px; height:18px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#fff1c2,#c99a3b 55%,#6b420a); }
+.game-flag-rod::before { left:-6px; }
+.game-flag-rod::after { right:-6px; }
+.game-flag-wrap .game-flag { position:relative; container-type:inline-size; display:block; width:100%; height:clamp(170px, 24vw, 220px); margin:8px 0 6px; padding:0; border:0; border-radius:0; background:none; box-shadow:none; overflow:visible; }
+/* --n strisce (impostato dal markup); lo sfasamento distribuisce ~1,3 onde
+   su tutta la larghezza, così strisce vicine differiscono di poco e il
+   movimento si legge come stoffa continua, non come una veneziana. */
+.game-flag-strip { position:absolute; top:0; bottom:0; left:calc(var(--i) * 100cqw / var(--n)); width:calc(100cqw / var(--n) + 1px); overflow:hidden; transform-origin:50% 0; animation:game-flag-wave 3.2s ease-in-out infinite; animation-delay:calc(var(--i) * -4.2s / var(--n)); will-change:transform; }
+.game-flag-cloth { position:absolute; top:0; bottom:0; left:calc(var(--i) * -100cqw / var(--n)); width:100cqw; clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%); background:linear-gradient(180deg,#3d2168 0%,#24123f 55%,#150a26 100%); }
+.game-flag-onepiece .game-flag-cloth { background:linear-gradient(180deg,#9a2323 0%,#651313 55%,#3a0909 100%); }
+.game-flag-trim { position:absolute; inset:0; width:100%; height:100%; }
+.game-flag-trim polygon { fill:none; stroke:#c99a3b; stroke-width:1.5; vector-effect:non-scaling-stroke; }
+.game-flag-trim polygon.inner { stroke:#5a4417; stroke-width:1; }
+.game-flag-plate { position:absolute; left:50%; top:13%; display:flex; align-items:center; justify-content:center; box-sizing:border-box; width:min(64cqw, 300px); height:38%; padding:8px 14px; border:2px solid #c99a3b; border-radius:12px; background:#f4f2ea; box-shadow:0 6px 14px #0007; transform:translateX(-50%); }
+.game-flag-plate img { max-width:100%; max-height:100%; object-fit:contain; }
+.game-flag-tagline { position:absolute; top:58%; left:5%; right:5%; color:#f7e7c0; font-family:'Cinzel FPT', Georgia, serif; font-size:clamp(.64rem, 2.9cqw, .82rem); font-weight:700; letter-spacing:.02em; text-align:center; text-shadow:0 1px 3px #000; }
+/* L'ombra sta DENTRO il drappo (ritagliata dalla coda di rondine), solo
+   sulla porzione della propria striscia. */
+.game-flag-shade { position:absolute; top:0; bottom:0; left:calc(var(--i) * 100cqw / var(--n)); width:calc(100cqw / var(--n) + 1px); background:#000; opacity:0; animation:game-flag-shade 3.2s ease-in-out infinite; animation-delay:calc(var(--i) * -4.2s / var(--n)); }
+@keyframes game-flag-wave {
+  0%, 100% { transform:scaleY(1); }
+  50% { transform:scaleY(1.028); }
 }
-.duel-welcome-logo .duel-game-logo::before {
-  content:'';position:absolute;z-index:-1;inset:-15% -8%;
-  background:linear-gradient(100deg,transparent 7%,#0008 20%,#ffffff13 30%,transparent 43%,#0006 59%,#ffffff12 72%,transparent 90%);
-  transform-origin:center;animation:game-standard-folds 9s ease-in-out infinite alternate;
+@keyframes game-flag-shade {
+  0%, 100% { opacity:0; }
+  50% { opacity:.28; }
 }
-.duel-welcome-logo .duel-game-logo::after {
-  content:'';position:absolute;inset:7px 0;border-block:1px solid #d8b57a38;pointer-events:none;
+@media (prefers-reduced-motion: reduce) {
+  .game-flag-strip, .game-flag-shade { animation:none; }
 }
-.duel-welcome-logo .duel-game-logo img { width:min(65%,300px);height:100%;max-width:300px;object-fit:contain;filter:drop-shadow(0 4px 6px #000b); }
-.duel-welcome-logo>p { text-align:center; }
-@keyframes game-standard-folds {
-  from { transform:translateX(-3%) skewY(-.7deg) scaleY(1.03);opacity:.7; }
-  to { transform:translateX(3%) skewY(.7deg) scaleY(.97);opacity:1; }
+
+/* Dashboard "Millennium totale": carta del duellante, prove del giorno,
+   intestazioni a filo d'oro, prestiti e attività con dettagli dorati. */
+.mm-top { display:grid; gap:18px; min-width:0; }
+.mm-heading { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
+.mm-heading > span { flex:1; height:1px; background:linear-gradient(90deg, transparent, #8a6420); }
+.mm-heading > span + h2 + span { background:linear-gradient(90deg, #8a6420, transparent); }
+.mm-heading h2 { margin:0; color:#f4b942; font-family:'Cinzel FPT', Georgia, serif; font-size:.82rem; font-weight:700; letter-spacing:.24em; text-transform:uppercase; white-space:nowrap; }
+.mm-heading .text-action { display:inline-flex; align-items:center; gap:4px; width:auto; min-height:44px; margin:0; padding:0 2px; background:none; color:#f4b942; font-size:.72rem; font-weight:700; white-space:nowrap; }
+.mm-heading .text-action .icon { width:13px; height:13px; }
+.surface.mm-panel { position:relative; isolation:isolate; padding:22px 16px 18px; border:1px solid #5a4417; border-radius:20px; background:radial-gradient(120% 80% at 50% 0%, #2e2109 0%, #13100a 50%, #0b0c11 100%); box-shadow:inset 0 0 0 4px #0b0c11, inset 0 0 0 5px #3a2c10; }
+.mm-duelist { display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
+.mm-duelist-ring { position:relative; width:132px; height:132px; padding:0; border:0; border-radius:50%; background:none; cursor:pointer; }
+.mm-duelist-ring:focus-visible { outline:2px solid #f4b942; outline-offset:4px; }
+.mm-duelist-ring .mm-ring-svg { position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); }
+.mm-duelist-ring circle { fill:none; }
+.mm-duelist-ring .track { stroke:#2c2412; stroke-width:8; }
+.mm-duelist-ring .fill { stroke:#f4b942; stroke-width:8; stroke-linecap:round; }
+.mm-duelist-ring .inner { stroke:#5a4417; stroke-width:1; }
+.mm-duelist-ring .avatar { position:absolute; top:20px; left:20px; display:grid; place-items:center; width:92px; height:92px; overflow:hidden; border-radius:50%; background:radial-gradient(circle at 35% 30%, #3a2c10, #15110a); color:#f4b942; font-family:'Cinzel FPT', Georgia, serif; font-size:1.9rem; font-weight:700; }
+.mm-duelist-ring .avatar img { width:100%; height:100%; object-fit:cover; }
+.mm-duelist-level { position:absolute; bottom:-6px; left:50%; padding:3px 10px; border-radius:999px; background:linear-gradient(90deg, #f8dc8a, #b97818); color:#1a1205; font-size:.7rem; font-weight:800; letter-spacing:.08em; white-space:nowrap; transform:translateX(-50%); }
+.mm-duelist-title { margin-top:6px; color:#f7e7c0; font-family:'Cinzel FPT', Georgia, serif; font-size:1.35rem; font-weight:700; line-height:1.2; overflow-wrap:anywhere; }
+.mm-duelist-xp { color:#b9ae96; font-size:.74rem; }
+.mm-divider { width:100%; height:1px; background:linear-gradient(90deg, transparent, #8a6420, transparent); }
+.mm-duelist-stats { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); width:100%; }
+.mm-duelist-stats button { display:flex; flex-direction:column; align-items:center; gap:2px; min-height:52px; padding:4px; border:0; background:none; color:inherit; cursor:pointer; }
+.mm-duelist-stats button + button { border-left:1px solid #3a2c10; }
+.mm-duelist-stats b { color:#f4b942; font-size:1.1rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.mm-duelist-stats small { color:#b9ae96; font-size:.62rem; letter-spacing:.12em; text-transform:uppercase; }
+.mm-duelist-stats button:focus-visible { outline:2px solid #f4b942; outline-offset:-2px; border-radius:8px; }
+.mm-missions-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+.mm-mission { display:flex; flex-direction:column; align-items:center; gap:8px; min-width:0; padding:12px 6px; border:1px solid #3a2c10; border-radius:14px; background:#100e0a; color:inherit; text-align:center; cursor:pointer; }
+.mm-mission.done { border-color:#8a6420; }
+.mm-mission:focus-visible { outline:2px solid #f4b942; outline-offset:2px; }
+.mm-mission-ring { position:relative; display:grid; place-items:center; width:58px; height:58px; color:#f7e7c0; }
+.mm-mission.done .mm-mission-ring { color:#f4b942; }
+.mm-mission-ring .mm-ring-svg { position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); }
+.mm-mission-ring circle { fill:none; stroke-width:4; }
+.mm-mission-ring .track { stroke:#2c2412; }
+.mm-mission-ring .fill { stroke:#f4b942; stroke-linecap:round; }
+.mm-mission-ring .icon { width:22px; height:22px; }
+.mm-mission strong { color:#f7e7c0; font-size:.72rem; line-height:1.25; }
+.mm-mission small { color:#b9ae96; font-size:.66rem; }
+.surface.mm-loans, .surface.mm-activity { border-color:#3a2c10; background:radial-gradient(120% 60% at 50% 0%, #1a1409 0%, #0d0d10 60%); }
+.mm-loans .loan-snapshot { border-top-color:#2c2412; }
+.mm-loans .loan-snapshot-art { padding:2px; border-radius:6px; background:linear-gradient(135deg, #f8dc8a, #b97818); }
+.mm-loans .loan-snapshot-art img { border-radius:4px; }
+.mm-loans .loan-snapshot strong { color:#f7e7c0; }
+.mm-activity .activity-icon { background:#f4b94214; color:#f4b942; }
+.mm-activity .activity-row { border-bottom-color:#2c2412; }
+@media (min-width: 900px) {
+  .mm-top { grid-template-columns:minmax(0, 1fr) minmax(0, 1.2fr); align-items:start; }
 }
 /* XP juice: a glossy body, slow internal currents, and a rounded meniscus. */
 .xp-bar { height:10px;background:#10190f;box-shadow:inset 0 1px 4px #000b,0 0 0 1px #a2dd4930; }
@@ -2481,7 +2581,7 @@ button.market-row:hover { background:#15121d; }
   to { transform:translateX(5%) scaleY(1.15);opacity:.85; }
 }
 @media(prefers-reduced-motion:reduce) {
-  .duel-welcome-logo .duel-game-logo::before,.xp-bar>i::before,.xp-bar>i::after { animation:none; }
+  .xp-bar>i::before,.xp-bar>i::after { animation:none; }
   .xp-bar>i { transition:none; }
 }
 /* Team management: shared roster, real account roles and existing admin actions. */

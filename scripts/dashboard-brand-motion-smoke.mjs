@@ -45,8 +45,8 @@ try {
   await delay(400);
   for (const width of [390,1280]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<600});
-    const check=await evaluate(`(()=>{const banner=document.querySelector('.duel-game-logo'),img=banner.querySelector('img'),fill=document.querySelector('.xp-bar>i');return{overflow:document.documentElement.scrollWidth>innerWidth,logo:img.getAttribute('src'),loaded:img.complete&&img.naturalWidth>0,banner:banner.getBoundingClientRect().width,parent:banner.parentElement.getBoundingClientRect().width,liquid:getComputedStyle(fill,'::before').animationName,flag:getComputedStyle(banner,'::before').animationName}})()`);
-    if(check.overflow||!check.loaded||!check.logo.endsWith('yugioh-tcg.png')||Math.abs(check.banner-check.parent)>2||check.liquid!=='xp-juice-current'||check.flag!=='game-standard-folds')throw Error(JSON.stringify(check));
+    const check=await evaluate(`(()=>{const banner=document.querySelector('.duel-game-logo'),img=banner.querySelector('img'),fill=document.querySelector('.xp-bar>i');return{overflow:document.documentElement.scrollWidth>innerWidth,logo:img.getAttribute('src'),loaded:img.complete&&img.naturalWidth>0,banner:banner.getBoundingClientRect().width,parent:banner.parentElement.getBoundingClientRect().width,liquid:getComputedStyle(fill,'::before').animationName,flag:getComputedStyle(banner.querySelector('.game-flag-strip')).animationName,strips:banner.querySelectorAll('.game-flag-strip').length}})()`);
+    if(check.overflow||!check.loaded||!check.logo.endsWith('yugioh-tcg.png')||check.banner<check.parent-16||check.liquid!=='xp-juice-current'||check.flag!=='game-flag-wave'||check.strips!==24)throw Error(JSON.stringify(check));
   }
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   const capture=await send('Page.captureScreenshot',{format:'png'});
@@ -55,8 +55,9 @@ try {
   console.log('Screenshot: '+screenshot);
   await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   const reduced=await evaluate(`getComputedStyle(document.querySelector('.xp-bar>i'),'::before').animationName`);
-  if(reduced!=='none')throw Error('Reduced motion not respected');
-  console.log('PASS official TCG logo, full-width banner, fluid XP, mobile/desktop overflow, reduced motion');
+  const flagReduced=await evaluate(`getComputedStyle(document.querySelector('.game-flag-strip')).animationName`);
+  if(reduced!=='none'||flagReduced!=='none')throw Error('Reduced motion not respected');
+  console.log('PASS official TCG logo, full-width waving game flag (24 strips), fluid XP, mobile/desktop overflow, reduced motion');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

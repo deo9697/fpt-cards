@@ -2,32 +2,28 @@ import { member, esc, formatDate, GAMES } from './core.js';
 import { icon } from './icons.js';
 import { positiveMovers, changePercent } from './market-watch.js';
 
-export function dashboardView(state, game = 'yugioh', market = {}) {
+// Dashboard "Millennium totale" (2026-10-11, scelta dall'utente fra 3 mockup
+// mobile): bandiera del gioco che sventola, carta del duellante (anello XP
+// attorno all'avatar, titolo, raccolta/carte/vittorie), prove del giorno a
+// sigilli, poi Market Watch, prestiti e attività. `profile` è costruito da
+// app.js con dati GIÀ caricati (stats, cosmetici, Market Watch, raccolta):
+// nessuna query nuova. Senza profile (test, utente non ancora caricato) la
+// carta del duellante e le prove semplicemente non compaiono.
+export function dashboardView(state, game = 'yugioh', market = {}, profile = null) {
   const me = member(state.currentUser);
   const teamLoans = state.loans.filter(loan => loan.game === game);
   const personal = teamLoans.filter(loan => loan.owner === me?.id || loan.borrower === me?.id);
-  const active = personal.filter(loan => !['returned','completed','rejected'].includes(loan.status));
   const attention = personal.filter(loan =>
     (loan.borrower === me?.id && ['pending','reserved'].includes(loan.status)) ||
     (loan.owner === me?.id && ['requested','return_pending'].includes(loan.status))
   );
-  const tracked = trackedCards(teamLoans);
   const recent = [...teamLoans].reverse().slice(0, 4);
   const teamActive = [...teamLoans].reverse().filter(loan => !['returned','completed','rejected'].includes(loan.status)).slice(0, 4);
-  const activeMembers = new Set(teamLoans.flatMap(loan => [loan.owner, loan.borrower]).filter(Boolean)).size;
 
-  return `<section class="dashboard duel-dashboard page-stack">
-    <header class="duel-welcome duel-welcome-logo">
-      <div class="duel-game-logo"><img src="${GAMES[game].logo}" alt="${esc(GAMES[game].name)}"></div>
-      <p>${esc(dashboardTagline(game))}</p>
-    </header>
+  return `<section class="dashboard duel-dashboard page-stack mm-dashboard">
+    ${gameFlag(game)}
 
-    <section class="stat-grid duel-stat-grid" aria-label="Riepilogo team">
-      ${metric(icon('collection'), tracked.length, 'Carte tracciate', 'purple', 'Nello storico del team')}
-      ${metric(icon('swap'), active.length, 'Prestiti attivi', 'blue', 'Che ti coinvolgono')}
-      ${metric(icon('bell'), attention.length, 'Richieste', 'amber', attention.length ? 'In attesa di una tua azione' : 'Tutto sotto controllo')}
-      ${metric(icon('team'), activeMembers, 'Membri attivi', 'green', 'Nello storico corrente')}
-    </section>
+    ${profile ? `<div class="mm-top">${duelistPanel(profile)}${missionsPanel(profile.missions)}</div>` : ''}
 
     <div class="duel-dashboard-main">
       ${featuredPanel(market)}
@@ -35,32 +31,77 @@ export function dashboardView(state, game = 'yugioh', market = {}) {
     </div>
 
     <div class="dashboard-columns duel-dashboard-lower activity-only">
-      <section class="surface duel-panel activity-panel">
-        <div class="section-title"><div><span class="eyebrow">Team log</span><h2>Attività recenti</h2></div><button class="text-action" data-page="loans">Vedi tutte ${icon('arrow')}</button></div>
+      <section class="surface duel-panel activity-panel mm-activity">
+        ${mmHeading('Attività del team', `<button class="text-action" data-page="loans">Vedi tutte ${icon('arrow')}</button>`)}
         ${recent.length ? recent.map(activityRow).join('') : `<div class="inline-empty">${icon('swap')}<div><strong>Nessuna attività</strong><span>I movimenti del team compariranno qui.</span></div></div>`}
       </section>
     </div>
   </section>`;
 }
 
-function trackedCards(loans) {
-  const records = new Map();
-  loans.forEach(loan => {
-    const key = String(loan.externalId || loan.cardName).toLowerCase();
-    if (!records.has(key)) records.set(key, {
-      key,
-      name: loan.cardName,
-      image: loan.image || '',
-      externalId: loan.externalId || '',
-      loans: [],
-      owners: new Set()
-    });
-    const card = records.get(key);
-    card.loans.push(loan);
-    card.owners.add(loan.owner);
-    if (!card.image && loan.image) card.image = loan.image;
-  });
-  return [...records.values()];
+// Bandiera del gioco attivo: un unico drappo diviso in FLAG_STRIPS strisce
+// verticali, ognuna con una copia del drappo spostata (container query units,
+// 100cqw = larghezza della bandiera) e animata con uno sfasamento: fissata
+// all'asta in alto, ondeggia verso la coda di rondine. Solo transform/opacity
+// (niente filtri SVG): leggero anche su telefoni economici. Con
+// prefers-reduced-motion resta ferma. .duel-game-logo resta la classe del
+// banner (stessa larghezza piena di prima).
+const FLAG_STRIPS = 24;
+function gameFlag(game) {
+  const g = GAMES[game] || GAMES.yugioh, tagline = dashboardTagline(game);
+  const cloth = '<svg class="game-flag-trim" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="2.4,4 97.6,4 97.6,90 50,76 2.4,90"/><polygon class="inner" points="4,7 96,7 96,85.5 50,72.5 4,85.5"/></svg>'+
+    '<span class="game-flag-plate"><img src="'+esc(g.logo)+'" alt="" decoding="async"></span>'+
+    '<span class="game-flag-tagline">'+esc(tagline)+'</span>';
+  const strips = Array.from({ length: FLAG_STRIPS }, (_, i) => '<span class="game-flag-strip" style="--i:'+i+'"><span class="game-flag-cloth">'+cloth+'<span class="game-flag-shade"></span></span></span>').join('');
+  return '<header class="duel-welcome duel-welcome-logo game-flag-wrap game-flag-'+esc(g.id)+'">'+
+    '<span class="game-flag-rod" aria-hidden="true"></span>'+
+    '<div class="duel-game-logo game-flag" style="--n:'+FLAG_STRIPS+'" role="img" aria-label="'+esc(g.name+' · '+tagline)+'">'+strips+'</div>'+
+  '</header>';
+}
+
+function mmHeading(title, action = '') {
+  return '<div class="mm-heading"><span aria-hidden="true"></span><h2>'+esc(title)+'</h2><span aria-hidden="true"></span>'+action+'</div>';
+}
+
+const RING = 2 * Math.PI * 60, SEAL = 2 * Math.PI * 25;
+// useGrouping 'always': in it-IT i numeri a 4 cifre non avrebbero il
+// separatore delle migliaia ("2314" invece di "2.314").
+const wholeNumber = value => new Intl.NumberFormat('it-IT', { useGrouping:'always' }).format(Math.round(Number(value) || 0));
+function duelistPanel(p) {
+  const pct = Math.max(0, Math.min(100, Number(p.progress) || 0));
+  const maxLevel = !p.nextXp;
+  const xpLine = maxLevel ? 'Livello massimo raggiunto' : wholeNumber(p.currentXp)+' / '+wholeNumber(p.nextXp)+' XP · '+wholeNumber(p.nextXp - p.currentXp)+' al prossimo livello';
+  const portfolio = p.portfolio && p.portfolio.complete ? new Intl.NumberFormat('it-IT', { style:'currency', currency:'EUR', maximumFractionDigits:0, useGrouping:'always' }).format(p.portfolio.current || 0) : '—';
+  const winRate = p.winRate == null ? '—' : p.winRate+'%';
+  return '<section class="surface duel-panel mm-panel mm-duelist">'+MILLENNIUM_CORNERS+
+    '<button type="button" class="mm-duelist-ring" data-dashboard-progression aria-label="Livello '+p.level+': apri la progressione">'+
+      '<svg class="mm-ring-svg" viewBox="0 0 132 132" aria-hidden="true"><circle class="track" cx="66" cy="66" r="60"/><circle class="fill" cx="66" cy="66" r="60" stroke-dasharray="'+(pct / 100 * RING).toFixed(1)+' '+RING.toFixed(1)+'"/><circle class="inner" cx="66" cy="66" r="50"/></svg>'+
+      p.avatarHtml+
+      '<span class="mm-duelist-level">LV '+p.level+'</span>'+
+    '</button>'+
+    '<strong class="mm-duelist-title">'+esc(p.title)+'</strong>'+
+    '<small class="mm-duelist-xp">'+xpLine+'</small>'+
+    '<span class="mm-divider" aria-hidden="true"></span>'+
+    '<div class="mm-duelist-stats">'+
+      '<button type="button" data-page="market"><b>'+portfolio+'</b><small>Raccolta</small></button>'+
+      '<button type="button" data-page="collection"><b>'+wholeNumber(p.cardCount)+'</b><small>Carte</small></button>'+
+      '<button type="button" data-page="stats"><b>'+winRate+'</b><small>Vittorie</small></button>'+
+    '</div>'+
+  '</section>';
+}
+
+function missionsPanel(missions = []) {
+  if (!missions.length) return '';
+  return '<section class="mm-missions" aria-label="Prove del giorno">'+mmHeading('Prove del giorno')+
+    '<div class="mm-missions-grid">'+missions.slice(0, 3).map(m => {
+      const pct = m.completed ? 100 : Math.max(0, Math.min(100, (Number(m.progress) || 0) / (Number(m.target) || 1) * 100));
+      return '<button type="button" class="mm-mission'+(m.completed?' done':'')+'" data-dashboard-progression aria-label="'+esc(m.label)+': '+(m.completed?'completata':m.progress+' su '+m.target)+'">'+
+        '<span class="mm-mission-ring"><svg class="mm-ring-svg" viewBox="0 0 58 58" aria-hidden="true"><circle class="track" cx="29" cy="29" r="25"/><circle class="fill" cx="29" cy="29" r="25" stroke-dasharray="'+(pct / 100 * SEAL).toFixed(1)+' '+SEAL.toFixed(1)+'"/></svg>'+icon(m.completed ? 'check' : (m.icon || 'star'))+'</span>'+
+        '<strong>'+esc(m.label)+'</strong>'+
+        '<small>'+(m.completed ? 'Completata' : wholeNumber(m.progress)+' / '+wholeNumber(m.target))+'</small>'+
+      '</button>';
+    }).join('')+'</div>'+
+  '</section>';
 }
 
 // Hero carousel dominante (solo artwork, in stile cover — mai la carta
@@ -87,17 +128,23 @@ function trackedCards(loans) {
 // positiveMovers(market.items,3) in quel caso significherebbe classificare
 // da un sottoinsieme PARZIALE (ownedPage è paginata) invece di fidarsi
 // della risposta completa già arrivata.
+// Stile "Millennium" (2026-10-11, scelto dall'utente fra 3 mockup): pannello
+// scuro con doppia cornice e angoli dorati, artwork in una cornice d'oro,
+// nome in Cinzel, prezzo e grafico oro, pallini a rombo. Solo l'etichetta
+// "Market Watch" in testata (il vecchio titolo "Il mercato, nelle tue carte"
+// è stato rimosso su richiesta).
+const MILLENNIUM_CORNERS = '<span class="mm-corner mm-tl" aria-hidden="true"></span><span class="mm-corner mm-tr" aria-hidden="true"></span><span class="mm-corner mm-bl" aria-hidden="true"></span><span class="mm-corner mm-br" aria-hidden="true"></span>';
 function featuredPanel(market) {
   const upMovers = Array.isArray(market.featuredMovers) ? market.featuredMovers.slice(0, 3) : positiveMovers(market.items || [], 3);
-  const heading = '<div class="section-title"><div><span class="eyebrow">Market Watch</span><h2>Il mercato, nelle tue carte</h2></div><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
+  const heading = MILLENNIUM_CORNERS+'<div class="market-featured-head"><h2>Market Watch</h2><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
   if (!upMovers.length) {
     const title = market.trendsError ? 'Trend non disponibili' : market.trendsLoading ? 'Caricamento trend…' : 'Nessuna variazione da mostrare';
     const message = market.trendsError ? 'Apri Market Watch per riprovare il caricamento.' : market.trendsLoading ? 'Controlliamo le carte della tua raccolta.' : 'Le carte con un prezzo recente e un confronto a 24h appariranno qui.';
-    return '<section class="surface duel-panel featured-card-panel featured-empty">'+heading+'<div class="inline-empty">'+icon('chart')+'<div><strong>'+title+'</strong><span>'+message+'</span></div></div></section>';
+    return '<section class="surface duel-panel featured-card-panel featured-empty market-millennium">'+heading+'<div class="inline-empty">'+icon('chart')+'<div><strong>'+title+'</strong><span>'+message+'</span></div></div></section>';
   }
   const history = market.featuredHistory instanceof Map ? market.featuredHistory : new Map();
   const multi = upMovers.length > 1;
-  return '<section class="surface duel-panel featured-card-panel market-movers-panel">'+heading+
+  return '<section class="surface duel-panel featured-card-panel market-movers-panel market-millennium">'+heading+
     '<div class="market-featured-carousel">'+
       '<div class="market-featured-track" data-featured-track role="listbox" aria-label="Carte in evidenza">'+upMovers.map((item, index) => heroSlide(item, index, history.get(item.printingId)||[])).join('')+'</div>'+
       (multi ? '<div class="market-featured-nav">'+
@@ -117,13 +164,17 @@ function heroSlide(item, index, history) {
   // regola [hidden] che vince su .market-featured-art-placeholder{display:grid}.
   const placeholder = '<span class="market-featured-art market-featured-art-placeholder"'+(candidates.length?' hidden':'')+'>'+icon('card')+'</span>';
   const art = candidates.length
-    ? '<img class="market-featured-art" data-art-fallback="'+esc(JSON.stringify(candidates.slice(1)))+'" src="'+esc(candidates[0])+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">'+placeholder
+    ? '<img class="market-featured-art'+(isFullCardImage(candidates[0])?' is-full-card':'')+'" data-art-fallback="'+esc(JSON.stringify(candidates.slice(1)))+'" src="'+esc(candidates[0])+'" alt="" loading="'+(index===0?'eager':'lazy')+'" decoding="async">'+placeholder
     : placeholder;
+  const setLine = [item.setCode, item.rarity].filter(Boolean).map(esc).join(' &#183; ');
   return '<button type="button" class="market-featured-slide" data-page="market" data-featured-slide="'+index+'" aria-label="Apri Market Watch: '+esc(item.cardName)+'">'+
-    art+
-    '<span class="market-featured-scrim" aria-hidden="true"></span>'+
+    '<span class="market-featured-frame"><span class="market-featured-window">'+
+      art+
+      '<span class="market-featured-scrim" aria-hidden="true"></span>'+
+      '<span class="market-featured-badge"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1l4 7H1z"/></svg>'+changePercent(change)+'</span>'+
+      (setLine?'<span class="market-featured-set">'+setLine+'</span>':'')+
+    '</span></span>'+
     '<span class="market-featured-copy">'+
-      '<span class="market-featured-badge">In salita &#183; '+changePercent(change)+'</span>'+
       '<strong class="market-featured-name">'+esc(item.cardName)+'</strong>'+
       '<span class="market-featured-price"><b>'+marketMoney(item.referencePrice)+'</b>'+(previous!=null?'<small>'+marketMoney(previous)+' &#8594; '+marketMoney(item.referencePrice)+'</small>':'')+'</span>'+
       heroChart(history)+
@@ -142,11 +193,14 @@ function heroChart(history) {
   const coords = points.map(p => [8+(Date.parse(p.capturedAt)-first)/duration*304, 58-((p.price-low)/range)*44]);
   const path = coords.map(([x,y],i)=>(i?'L':'M')+x.toFixed(2)+' '+y.toFixed(2)).join(' '), lastPoint = coords.at(-1);
   const dateLabel = ts => new Date(ts).toLocaleDateString('it-IT', yearly ? {month:'short',year:'2-digit'} : {day:'2-digit',month:'short'});
-  return '<span class="market-featured-chart"><svg viewBox="0 0 320 70" role="img" aria-label="Andamento prezzo '+(yearly?'annuale':'mensile')+'">'+
+  // preserveAspectRatio="none": il grafico riempie tutta la larghezza del
+  // riquadro. Il punto finale è un tratto di lunghezza zero con
+  // vector-effect non-scaling-stroke, così resta rotondo anche stirato.
+  return '<span class="market-featured-chart"><svg viewBox="0 0 320 70" preserveAspectRatio="none" role="img" aria-label="Andamento prezzo '+(yearly?'annuale':'mensile')+'">'+
     '<path class="market-featured-chart-grid" d="M8 12H312 M8 35H312 M8 58H312"/>'+
     '<path class="market-featured-chart-area" d="'+path+' L'+lastPoint[0].toFixed(2)+' 70 L8 70Z"/>'+
     '<path class="market-featured-chart-line" d="'+path+'"/>'+
-    '<circle cx="'+lastPoint[0].toFixed(2)+'" cy="'+lastPoint[1].toFixed(2)+'" r="3"/>'+
+    '<path class="market-featured-chart-dot" d="M'+lastPoint[0].toFixed(2)+' '+lastPoint[1].toFixed(2)+'h0"/>'+
   '</svg><span class="market-featured-chart-dates"><small>'+dateLabel(first)+'</small><small>'+(yearly?'Andamento annuale':'Andamento mensile')+'</small><small>'+dateLabel(last)+'</small></span></span>';
 }
 // Navigazione semplice (frecce + indicatori a pallino), niente autoplay:
@@ -172,45 +226,45 @@ export function bindDashboardCarousel(root=document) {
   track.addEventListener('keydown',event=>{if(event.key==='ArrowRight'){event.preventDefault();goTo(currentIndex()+1);}else if(event.key==='ArrowLeft'){event.preventDefault();goTo(currentIndex()-1);}});
   update();
 }
-// Priorità artwork per Yu-Gi-Oh! (fix 2026-09-15: nel DB reale ~2798/2994
-// printing hanno già un image_url YGOResources, artwork-only e senza bisogno
-// di crop — la versione precedente lo ignorava ogni volta che catalogCardId
-// era numerico, cioè quasi sempre, forzando YGOPRODeck sulla stragrande
-// maggioranza delle carte):
-//   1) YGOResources (artworks-*.ygoresources.com) già presente: usato diretto.
-//   2) imageUrl già in /images/cards_cropped/ (qualunque origine l'abbia
-//      prodotto): usato diretto.
-//   3) YGOPRODeck "carta intera" (/images/cards/<id>.jpg): mai nell'hero,
-//      trasformato nel crop.
-//   4) catalogCardId numerico: SOLO fallback finale se non c'è nessun
-//      artwork affidabile sopra (era la sorgente primaria, ora è l'ultima).
-// Ogni candidato ha al massimo UN fallback (mai un secondo tentativo dopo
-// quello): per un ygoprodeck diretto, il fallback è la stessa immagine via
+// Priorità artwork per Yu-Gi-Oh! — CORRETTA 2026-10-11. Il fix del
+// 2026-09-15 dava la precedenza agli image_url YGOResources credendoli
+// "artwork-only": verificato scaricandone diversi a caso, sono invece la
+// CARTA INTERA (256x372, cornice + nome + box testo) ed è per questo che
+// l'hero mostrava la carta completa per ~84% del catalogo. Nuovo ordine:
+//   1) imageUrl già in /images/cards_cropped/: usato diretto.
+//   2) YGOPRODeck "carta intera" (/images/cards/<id>.jpg): trasformato nel crop.
+//   3) catalogCardId numerico -> cards_cropped/<id>.jpg (il crop ufficiale,
+//      disponibile per tutte le carte campionate). Se l'imageUrl è
+//      YGOResources resta come ultimo fallback, mostrato con un ritaglio
+//      CSS sulla finestra dell'arte (.is-full-card), mai la carta intera.
+//   4) Solo YGOResources senza id numerico: ritaglio CSS.
+// Per un ygoprodeck diretto il fallback è la stessa immagine via
 // /api/card-image-proxy (fetch server-side con cache 7gg, utile se l'hotlink
 // diretto fallisce); YGOResources non passa dal proxy — la whitelist server
 // non lo include e il browser la mostra già senza problemi diretto.
 // bindHeroArtworkFallback() consuma questa lista in ordine sull'evento
 // error dell'<img>; se anche l'ultimo candidato fallisce, resta il
 // placeholder FPT già nel markup — mai un <img> rotto o uno spazio vuoto.
+function isFullCardImage(url){return /artworks-[^/]*\.ygoresources\.com/i.test(String(url||''));}
 function moverArtworkCandidates(item){
   const source=String(item.imageUrl||''), id=String(item.catalogCardId||'');
   const idFallback=/^\d+$/.test(id)?`https://images.ygoprodeck.com/images/cards_cropped/${id}.jpg`:'';
   const proxied=url=>'/api/card-image-proxy?url='+encodeURIComponent(url);
-  if(/artworks-[^/]*\.ygoresources\.com/i.test(source))return idFallback?[source,idFallback]:[source];
   if(/\/images\/cards_cropped\//i.test(source))return /images\.ygoprodeck\.com/i.test(source)?[source,proxied(source)]:[source];
   if(/\/images\/cards\/\d+\.jpg(?:\?|$)/i.test(source)){const cropped=source.replace(/\/images\/cards\//i,'/images/cards_cropped/');return[cropped,proxied(cropped)];}
+  if(isFullCardImage(source))return idFallback?[idFallback,source]:[source];
   if(idFallback)return[idFallback,proxied(idFallback)];
   return source?[source]:[];
 }
-// Consuma un candidato alla volta sull'evento error dell'<img>: al massimo
-// un fallback per sorgente (data-art-fallback parte già con un solo
-// elemento al più), poi resta il placeholder già presente nel markup.
-// Nessun retry infinito: la lista si accorcia e non si ricrea mai.
+// Consuma un candidato alla volta sull'evento error dell'<img>, poi resta il
+// placeholder già presente nel markup. Nessun retry infinito: la lista si
+// accorcia e non si ricrea mai. Passando a un'immagine YGOResources (carta
+// intera) attiva il ritaglio CSS .is-full-card.
 function bindHeroArtworkFallback(track){
   for(const img of track.querySelectorAll('.market-featured-art[data-art-fallback]')){
     img.addEventListener('error',()=>{
       let remaining=[];try{remaining=JSON.parse(img.dataset.artFallback||'[]');}catch{remaining=[];}
-      if(remaining.length){const next=remaining.shift();img.dataset.artFallback=JSON.stringify(remaining);img.src=next;return;}
+      if(remaining.length){const next=remaining.shift();img.dataset.artFallback=JSON.stringify(remaining);img.classList.toggle('is-full-card',isFullCardImage(next));img.src=next;return;}
       img.hidden=true;const placeholder=img.nextElementSibling;if(placeholder)placeholder.hidden=false;
     });
   }
@@ -219,8 +273,8 @@ function marketMoney(value){return new Intl.NumberFormat('it-IT',{style:'currenc
 
 function loanOverview(loans, attention) {
   const list = attention.length ? [...attention, ...loans.filter(loan => !attention.includes(loan))].slice(0, 4) : loans;
-  return `<section class="surface duel-panel loan-overview-panel">
-    <div class="section-title"><div><span class="eyebrow">Sala operativa</span><h2>Prestiti del team</h2></div><button class="text-action" data-page="loans">Gestisci ${icon('arrow')}</button></div>
+  return `<section class="surface duel-panel loan-overview-panel mm-loans">
+    ${mmHeading('Prestiti', `<button class="text-action" data-page="loans">Gestisci ${icon('arrow')}</button>`)}
     ${attention.length ? `<div class="duel-alert">${icon('bell')} <span><strong>${attention.length} ${attention.length === 1 ? 'azione richiede' : 'azioni richiedono'} attenzione</strong><small>Apri Prestiti per completarle.</small></span></div>` : ''}
     <div class="loan-overview-list">${list.length ? list.map(loanSnapshot).join('') : `<div class="inline-empty">${icon('swap')}<div><strong>Nessun prestito attivo</strong><span>Il prossimo movimento comparirà qui.</span></div></div>`}</div>
     <button class="btn loan-overview-cta" data-page="new">${icon('plus')} Nuovo prestito</button>
@@ -239,10 +293,6 @@ function loanSnapshot(loan) {
 
 function dashboardTagline(game) {
   return game === 'onepiece' ? 'Il tuo equipaggio è pronto a salpare.' : 'Il tuo team è pronto per un altro duello.';
-}
-
-function metric(symbol, value, label, color, detail) {
-  return `<article class="stat-card ${color}"><div class="stat-icon">${symbol}</div><div><span>${label}</span><strong>${value}</strong><small>${detail}</small></div></article>`;
 }
 
 function activityRow(loan) {
