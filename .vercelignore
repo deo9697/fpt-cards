@@ -11,3 +11,5 @@ node_modules/
 *.log
 design-qa.md
 package-lock.json
+lighthouserc.cjs
+.lighthouseci/

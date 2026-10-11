@@ -10,3 +10,6 @@ preview-server*.log
 # Dump locali di backup del database Supabase (possono contenere dati utente
 # reali) — mai committare, mai sincronizzare.
 backups/
+
+# Report locali di Lighthouse CI (npm run perf:lighthouse)
+.lighthouseci/

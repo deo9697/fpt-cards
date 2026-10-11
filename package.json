@@ -68,7 +68,8 @@
     "test:market-feed-hardening": "node scripts/market-feed-hardening-smoke.mjs",
     "test:market-egress-rollout": "node scripts/market-egress-rollout-smoke.mjs",
     "test:market-retention-sql-sync": "node scripts/build-market-retention-sql.mjs --check",
-    "perf:vitals": "node scripts/performance-vitals-smoke.mjs"
+    "perf:vitals": "node scripts/performance-vitals-smoke.mjs",
+    "perf:lighthouse": "lhci autorun --config=lighthouserc.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
