@@ -427,6 +427,29 @@ export function isExactPriceEligible(variant){
   return Boolean(variant.verified)||variant.mapping_status==='resolved';
 }
 
+// --- Exact Variant Pricing (cutover live) ----------------------------------
+// Un mapping PROVIDER_AGGREGATE ha più candidate_product_ids (V.1, V.2, ...)
+// e getCurrentPrice() ne prende il minimo: una Starlight finisce col prezzo
+// della Super. Quando ygo_market_variants ha già individuato con certezza il
+// prodotto della rarità giusta, il target live viene ristretto a quel SOLO
+// product_id. Più severo di isExactPriceEligible() (shadow): un resolved
+// deve avere confidence 1 (template verificato / rarità esatta), mai lo 0.6
+// di 'single_candidate_no_rarity_signal'. Il product_id deve essere tra i
+// candidati del mapping: altrimenti il target resta invariato (minimo).
+export function isLiveExactVariantEligible(variant){
+  if(!variant?.cardmarket_product_id)return false;
+  if(variant.verified)return true;
+  return variant.mapping_status==='resolved'&&Number(variant.mapping_confidence)>=1;
+}
+export function narrowTargetToExactVariant(target,variant){
+  if(!isLiveExactVariantEligible(variant))return target;
+  const ids=mappingProductIds(target),productId=String(variant.cardmarket_product_id);
+  if(ids.length<2||!ids.includes(productId))return target;
+  const metadata=target.provider_metadata||{};
+  return {...target,provider_product_id:productId,providerProductId:productId,candidateProductIds:[productId],
+    provider_metadata:{...metadata,candidateProductIds:[productId],priceScope:{...(metadata.priceScope||{}),product:'exact_variant',rarity:'specific'},exactVariant:{productId,mappingSource:variant.mapping_source||null,verified:Boolean(variant.verified)}}};
+}
+
 // Soglie conservative concordate: <1 centesimo = same, <5% = close, il resto
 // = different. exact_missing/legacy_missing hanno precedenza su qualunque
 // calcolo numerico (non ha senso una percentuale senza uno dei due lati).
