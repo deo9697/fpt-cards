@@ -229,12 +229,19 @@ function extractYgoSetPrefix(setCode:any):string{
   const match=String(setCode||'').trim().toUpperCase().match(/^([A-Z0-9]+)-/);
   return match?match[1]:'';
 }
+// candidateCount null = qualunque numero di candidati (RA01/RA02); altrimenti
+// la riga vale solo per prodotti con esattamente quel numero di candidati.
+function templateAppliesToCandidateCount(row:any,count:number):boolean{
+  const expected=row?.candidateCount;
+  if(expected===null||expected===undefined||expected==='')return true;
+  return Number(expected)===count;
+}
 function resolveYgoMarketVariantBySetTemplate({setCode=null as any,rarityCanonical=null as string|null,candidateProductIds=[] as string[],setTemplates=[] as any[]}={}):any{
   const setPrefix=extractYgoSetPrefix(setCode);
   if(!setPrefix||!rarityCanonical)return null;
   const ids=Array.isArray(candidateProductIds)?candidateProductIds:[];
   if(!ids.length)return null;
-  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical);
+  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical&&templateAppliesToCandidateCount(row,ids.length));
   if(matches.length!==1)return null;
   const template=matches[0];
   if(!template.verified)return null;
@@ -380,14 +387,14 @@ async function fetchYgoRarityAliasMap():Promise<Map<string,string>>{
   const page=await restPages('ygo_rarity_aliases?select=alias_key,canonical_code',{key:(row:any)=>row.alias_key});
   return new Map(page.rows.map((row:any)=>[row.alias_key,row.canonical_code]));
 }
-// Un solo GET per l'intera tabella (piccola: solo RA01/RA02 per ora) per run
+// Un solo GET per l'intera tabella (piccola: RA01-RA05) per run
 // di sync, mai per printing. Prende TUTTE le righe, non solo verified=true —
 // resolveYgoMarketVariantBySetTemplate() fa da sola il controllo verified,
 // non si fida del chiamante per pre-filtrare (vedi test "template non
 // verified -> no resolution" in market-variant-set-template-smoke.mjs).
 async function fetchYgoMarketVariantSetTemplates():Promise<any[]>{
-  const page=await restPages('ygo_market_variant_set_templates?select=set_prefix,variant_number,rarity_canonical,verified',{key:(row:any)=>`${row.set_prefix}:${row.variant_number}`});
-  return page.rows.map((row:any)=>({setPrefix:row.set_prefix,variantNumber:row.variant_number,rarityCanonical:row.rarity_canonical,verified:row.verified}));
+  const page=await restPages('ygo_market_variant_set_templates?select=set_prefix,variant_number,rarity_canonical,verified,candidate_count',{key:(row:any)=>`${row.set_prefix}:${row.candidate_count??'*'}:${row.variant_number}`});
+  return page.rows.map((row:any)=>({setPrefix:row.set_prefix,variantNumber:row.variant_number,rarityCanonical:row.rarity_canonical,verified:row.verified,candidateCount:row.candidate_count??null}));
 }
 // Un solo GET a blocchi (mai per printing) per sapere quali printing hanno
 // già una riga ygo_market_variants — indispensabile per non riscrivere mai
