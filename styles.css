@@ -2837,3 +2837,41 @@ button.market-row:hover { background:#15121d; }
 .team-invite code { display:block;margin-top:6px;font-size:.68rem;color:var(--muted);overflow-wrap:anywhere; }
 .team-invite.is-inactive { opacity:.55; }
 .team-invite .team-person-actions { grid-column:auto; }
+
+/* --- Tutorial Blattaman (js/tutorial.js) --------------------------------- */
+body.blatta-tutorial-open { overflow:hidden; }
+.blatta-tutorial { position:fixed; inset:0; z-index:9000; display:grid; place-items:center; padding:16px; animation:blatta-in .22s ease-out; }
+.blatta-tutorial.is-leaving { animation:blatta-out .18s ease-in forwards; }
+.blatta-backdrop { position:absolute; inset:0; background:radial-gradient(circle at 50% 30%, rgba(155,92,255,.28), rgba(5,7,17,.92) 70%); backdrop-filter:blur(3px); }
+.blatta-card { position:relative; width:min(100%, 440px); max-height:calc(100dvh - 32px); overflow:auto; display:grid; gap:14px; padding:16px; border-radius:22px; background:linear-gradient(160deg, #1a1030, #0b0d1a 65%); border:1px solid rgba(155,92,255,.55); box-shadow:0 24px 70px rgba(0,0,0,.6), 0 0 0 1px rgba(238,189,84,.12) inset; }
+.blatta-skip { position:absolute; top:12px; right:12px; z-index:2; border:0; border-radius:999px; padding:6px 12px; background:rgba(5,7,17,.72); color:var(--muted); font:inherit; font-size:.8rem; cursor:pointer; }
+.blatta-skip:hover { color:var(--text); }
+.blatta-figure { margin:0; border-radius:16px; overflow:hidden; aspect-ratio:1; max-height:42dvh; justify-self:center; width:100%; max-width:42dvh; border:2px solid #eebd54; box-shadow:0 0 28px rgba(155,92,255,.45); }
+.blatta-figure img { display:block; width:100%; height:100%; object-fit:cover; }
+.blatta-card[data-step] .blatta-figure img { animation:blatta-pop .35s cubic-bezier(.2,1.4,.4,1); }
+.blatta-bubble { position:relative; margin-top:4px; padding:14px 16px 16px; border-radius:18px; background:#f7f4eb; color:#14101f; border:3px solid #050711; box-shadow:5px 5px 0 #050711; transform:rotate(-.6deg); }
+.blatta-bubble::before { content:''; position:absolute; top:-15px; left:38px; border:12px solid transparent; border-bottom-color:#050711; border-top:0; }
+.blatta-bubble::after { content:''; position:absolute; top:-9px; left:41px; border:9px solid transparent; border-bottom-color:#f7f4eb; border-top:0; }
+.blatta-tag { display:inline-block; margin-bottom:6px; padding:3px 10px; border-radius:999px; background:#eebd54; color:#050711; font-family:var(--display-font); font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; transform:rotate(-2deg); }
+.blatta-bubble h2 { margin:0 0 6px; color:#14101f; font-size:1.28rem; line-height:1.15; text-transform:uppercase; }
+.blatta-bubble p { margin:0; font-size:.98rem; line-height:1.45; }
+.blatta-bubble b { color:#6a2fd6; }
+.blatta-bubble i { color:#8a5a00; font-weight:700; }
+.blatta-nav { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.blatta-nav .btn { min-width:96px; }
+.blatta-dots { display:flex; gap:6px; margin:0; padding:0; list-style:none; }
+.blatta-dots li { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.22); transition:width .2s, background .2s; }
+.blatta-dots li.active { width:22px; border-radius:6px; background:#eebd54; }
+@media (min-width: 760px) {
+  .blatta-card { width:min(100%, 780px); grid-template-columns:300px 1fr; grid-template-rows:1fr auto; align-items:center; gap:18px 22px; padding:22px; }
+  .blatta-figure { grid-row:1; max-height:none; max-width:none; }
+  .blatta-bubble { grid-row:1; }
+  .blatta-bubble::before { top:34px; left:-15px; border:12px solid transparent; border-right-color:#050711; border-left:0; }
+  .blatta-bubble::after { top:37px; left:-9px; border:9px solid transparent; border-right-color:#f7f4eb; border-left:0; }
+  .blatta-nav { grid-column:1 / -1; }
+  .blatta-bubble h2 { font-size:1.5rem; }
+}
+@keyframes blatta-in { from { opacity:0; } to { opacity:1; } }
+@keyframes blatta-out { to { opacity:0; } }
+@keyframes blatta-pop { from { transform:scale(.92) rotate(-2deg); opacity:.4; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .blatta-tutorial, .blatta-card[data-step] .blatta-figure img { animation:none; } }

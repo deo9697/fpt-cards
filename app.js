@@ -630,7 +630,7 @@ function futureView(title, iconName, description) {
 
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="surface settings-list"><div><span>${icon('bell')}<b>Notifiche push</b><small>${!supported ? 'Non supportate' : configured ? 'Attive su questo dispositivo' : 'Non ancora attive'}</small></span><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></div><div><span>${icon('logout')}<b>Sessione</b><small>Esci in sicurezza da F.P.T Cards</small></span><button class="btn secondary small" data-logout>Esci</button></div></section></section>`;
+  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="surface settings-list"><div><span>${icon('bell')}<b>Notifiche push</b><small>${!supported ? 'Non supportate' : configured ? 'Attive su questo dispositivo' : 'Non ancora attive'}</small></span><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></div><div><span>${icon('info')}<b>Tutorial</b><small>Blattaman ti rispiega come funziona l'app</small></span><button class="btn secondary small" data-tutorial-open>Rivedi</button></div><div><span>${icon('logout')}<b>Sessione</b><small>Esci in sicurezza da F.P.T Cards</small></span><button class="btn secondary small" data-logout>Esci</button></div></section></section>`;
 }
 
 function moreView() {
@@ -1363,6 +1363,7 @@ function bind() {
     event.currentTarget.setAttribute('aria-label', input.type === 'password' ? 'Mostra PIN' : 'Nascondi PIN');
   });
   document.querySelectorAll('[data-logout]').forEach(button => button.addEventListener('click', logout));
+  document.querySelector('[data-tutorial-open]')?.addEventListener('click', openTutorial);
   const gameSwitcher = document.querySelector('.game-switcher');
   gameSwitcher?.querySelector('.menu-trigger')?.addEventListener('click', event => {
     event.stopPropagation();
@@ -2483,7 +2484,23 @@ async function loadMembers() {
   state.members = items;
   state.team = team;
   setMembers(items);
-  memberProfiles = new Map(profiles.map(row => [row.member_slug, { activeAvatar:row.active_avatar || '', activeTitle:row.active_title || '', level:row.level || 1 }]));
+  if (loggedIn) maybeAutoTutorial();
+  memberProfiles = new Map((profiles || []).map(row => [row.member_slug, { activeAvatar:row.active_avatar || '', activeTitle:row.active_title || '', level:row.level || 1 }]));
+}
+
+// Tutorial Blattaman: parte da solo una volta per dispositivo per chi entra
+// con un invito (team beta); dalle Impostazioni lo riapre chiunque.
+const tutorialKey = slug => `fpt-tutorial-seen:${slug}`;
+function openTutorial() {
+  const slug = state.currentUser;
+  void import('./js/tutorial.js')
+    .then(module => module.openTutorial({ onClose: () => { try { localStorage.setItem(tutorialKey(slug), '1'); } catch {} } }))
+    .catch(() => toast('Tutorial non disponibile: controlla la connessione'));
+}
+function maybeAutoTutorial() {
+  if (!state.currentUser || state.team?.kind !== 'beta') return;
+  try { if (localStorage.getItem(tutorialKey(state.currentUser))) return; } catch { return; }
+  openTutorial();
 }
 
 async function addMember(event) {
