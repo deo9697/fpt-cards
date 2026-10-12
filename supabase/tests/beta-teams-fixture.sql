@@ -5,6 +5,12 @@ create schema realtime;
 create table realtime.sent(payload jsonb, event text, topic text);
 create function realtime.send(p jsonb, e text, t text, priv boolean) returns void language sql as $$ insert into realtime.sent values(p,e,t) $$;
 create table public.team_members(slug text primary key, full_name text not null, user_id uuid, role text not null default 'guest', pin_hash text, active boolean not null default true, can_verify_ygo_artwork boolean default false);
+-- `teams` come la crea 20260919100000_user_architecture_profiles_teams (stato di produzione: la sola riga fpt).
+create table public.teams(id uuid primary key default gen_random_uuid(), slug text not null check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(slug) <= 40), name text not null check (char_length(btrim(name)) between 1 and 80), owner_user_id uuid, active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create unique index teams_slug_lower_uidx on public.teams(lower(slug));
+alter table public.teams enable row level security;
+grant select on public.teams to authenticated;
+insert into public.teams(slug, name) values ('fpt', 'F.P.T');
 create table public.app_sessions(token_hash bytea primary key, member_slug text not null references public.team_members(slug) on delete cascade, expires_at timestamptz not null, created_at timestamptz default now());
 create table public.member_progression(member_slug text primary key references public.team_members(slug), total_xp int not null default 0, level int not null default 1, active_title text not null default '', active_avatar text, updated_at timestamptz default now());
 create table public.card_printings(id uuid primary key default gen_random_uuid(), game text default 'yugioh', catalog_card_id text, card_name text, set_code text, set_name text, rarity text, image_url text, variant_id text, game_metadata jsonb);

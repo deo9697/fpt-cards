@@ -1,8 +1,9 @@
 -- F.P.T Cards — Beta per utenti esterni: team separati, inviti e realtime per team.
 --
 -- Cosa fa:
---   1. Tabella `teams` (F.P.T. = team `core`, i team della beta = `beta`) e
---      `team_members.team_id`. Tutti i membri esistenti finiscono nel team core.
+--   1. Colonne `kind`/`owner_slug` sulla tabella `teams` esistente (F.P.T. =
+--      team `core`, i team della beta = `beta`) e `team_members.team_id`.
+--      Tutti i membri esistenti finiscono nel team core.
 --   2. `team_invites` + `beta_settings`: link di invito (nuovo team o team
 --      esistente), limite di iscritti, interruttore iscrizioni aperte/chiuse.
 --   3. Isolamento: le RPC "di team" che oggi leggono i dati di tutti i membri
@@ -30,19 +31,36 @@ create extension if not exists pgcrypto with schema extensions;
 -- 1. Team
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.teams (
-  id uuid primary key default gen_random_uuid(),
-  name text not null check (char_length(trim(name)) between 2 and 40),
-  kind text not null default 'beta' check (kind in ('core', 'beta')),
-  owner_slug text references public.team_members(slug) on delete set null,
-  created_at timestamptz not null default now()
-);
+-- `teams` esiste già: l'ha creata 20260919100000_user_architecture_profiles_teams
+-- (slug obbligatorio e unico, owner_user_id per gli account email, policy
+-- "teams read as member", in produzione la sola riga `fpt`). La beta la
+-- riusa: aggiunge solo le sue colonne, non la ricrea e non tocca le colonne,
+-- i grant o la policy esistenti. I team creati da create_user_team prendono
+-- il default 'beta' (team esterni a F.P.T.).
+alter table public.teams add column if not exists kind text not null default 'beta';
+alter table public.teams add column if not exists owner_slug text references public.team_members(slug) on delete set null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.teams'::regclass and conname = 'teams_kind_check') then
+    alter table public.teams add constraint teams_kind_check check (kind in ('core', 'beta'));
+  end if;
+end $$;
 create unique index if not exists teams_single_core_idx on public.teams(kind) where kind = 'core';
 alter table public.teams enable row level security;
 
-insert into public.teams(name, kind)
-select 'F.P.T.', 'core'
-where not exists (select 1 from public.teams where kind = 'core');
+-- Il team F.P.T. già presente diventa il team core; lo crea solo se manca.
+update public.teams set kind = 'core'
+where lower(slug) = 'fpt' and not exists (select 1 from public.teams where kind = 'core');
+insert into public.teams(slug, name, kind)
+select 'fpt', 'F.P.T', 'core'
+where not exists (select 1 from public.teams where kind = 'core')
+  and not exists (select 1 from public.teams where lower(slug) = 'fpt');
+do $$
+begin
+  if (select count(*) from public.teams where kind = 'core') <> 1 then
+    raise exception 'Beta teams: impossibile individuare il team core F.P.T. (slug fpt): controllare public.teams prima di applicare';
+  end if;
+end $$;
 
 create or replace function public.core_team_id()
 returns uuid language sql stable security definer set search_path = public as $$
@@ -100,7 +118,10 @@ create index if not exists team_invites_creator_idx on public.team_invites(creat
 create index if not exists team_invites_team_idx on public.team_invites(team_id, created_at desc);
 alter table public.team_invites enable row level security;
 
-revoke all on public.teams, public.beta_settings, public.team_invites from anon, authenticated;
+-- `teams` mantiene il SELECT di authenticated filtrato dalla policy esistente
+-- (i team beta non hanno righe in team_memberships, quindi restano invisibili):
+-- revocarlo romperebbe get_my_identity e gli account email.
+revoke all on public.beta_settings, public.team_invites from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. RPC nuove
@@ -259,7 +280,7 @@ create or replace function public.register_with_invite(
 declare inv public.team_invites; settings public.beta_settings; target public.teams;
   clean_name text := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
   clean_team text := regexp_replace(trim(coalesce(p_team_name, '')), '\s+', ' ', 'g');
-  base text; new_slug text;
+  base text; new_slug text; team_slug text;
 begin
   if coalesce(p_pin, '') !~ '^[0-9]{4}$' or char_length(coalesce(p_token, '')) < 32 then
     raise exception 'Dati di accesso non validi';
@@ -298,7 +319,12 @@ begin
   end loop;
 
   if inv.team_id is null then
-    insert into public.teams(name, kind) values (clean_team, 'beta') returning * into target;
+    -- teams.slug è obbligatorio e unico (formato a-z0-9 con trattini).
+    loop
+      team_slug := 'beta-' || encode(gen_random_bytes(4), 'hex');
+      exit when not exists(select 1 from public.teams where lower(slug) = team_slug);
+    end loop;
+    insert into public.teams(slug, name, kind) values (team_slug, clean_team, 'beta') returning * into target;
   end if;
   insert into public.team_members(slug, full_name, role, active, pin_hash, team_id)
     values (new_slug, clean_name, 'guest', true, crypt(p_pin, gen_salt('bf', 10)), target.id);
@@ -350,24 +376,40 @@ end;
 $$;
 
 -- `join public.team_members X on X.slug = <colonna> and X.active` → stesso team di chi chiama.
-select pg_temp.fpt_patch_function(fn::regprocedure,
+-- list_member_avatars è facoltativa: esiste nel repository ma non in
+-- produzione (il frontend non la chiama), quindi si filtra solo se c'è.
+select pg_temp.fpt_patch_function(to_regprocedure(fn),
   'join\s+public\.team_members\s+(\w+)\s+on\s+\1\.slug\s*=\s*(\w+\.\w+)\s+and\s+\1\.active',
   'join public.team_members \1 on \1.slug = \2 and \1.active and \1.team_id = public.member_team(me)',
   expected)
 from (values
-  ('public.list_member_profiles(text)', 1),
-  ('public.list_member_avatars(text)', 1),
-  ('public.list_team_collection(text)', 1),
-  ('public.list_team_decks(text)', 1),
-  ('public.get_team_stats(text, text, text)', 1),
-  ('public.get_head_to_head(text, text, text)', 2)
-) as targets(fn, expected);
+  ('public.list_member_profiles(text)', 1, true),
+  ('public.list_member_avatars(text)', 1, false),
+  ('public.list_team_collection(text)', 1, true),
+  ('public.list_team_decks(text)', 1, true),
+  ('public.get_team_stats(text, text, text)', 1, true),
+  ('public.get_head_to_head(text, text, text)', 2, true)
+) as targets(fn, expected, required)
+where required or to_regprocedure(fn) is not null;
 
--- L'admin vedeva i prestiti di tutti: ora solo quelli del proprio team.
-select pg_temp.fpt_patch_function('public.list_team_loans(text)'::regprocedure,
-  'where\s+admin\s+or\s+l\.owner_slug',
-  'where (admin and public.member_team(l.owner_slug) = public.member_team(me)) or l.owner_slug',
-  1);
+-- list_team_loans: nella versione del repository l'admin vede i prestiti di
+-- tutti (→ solo quelli del proprio team); la versione live restituisce già
+-- soltanto i prestiti di chi chiama, quindi è isolata e non va toccata.
+-- Qualunque altra forma ferma la migration.
+do $$
+declare def text := pg_get_functiondef('public.list_team_loans(text)'::regprocedure);
+begin
+  if def ~* 'where\s+admin\s+or\s+l\.owner_slug' then
+    perform pg_temp.fpt_patch_function('public.list_team_loans(text)'::regprocedure,
+      'where\s+admin\s+or\s+l\.owner_slug',
+      'where (admin and public.member_team(l.owner_slug) = public.member_team(me)) or l.owner_slug',
+      1);
+  elsif def ~* 'where\s+l\.owner_slug\s*=\s*me\s+or\s+l\.borrower_slug\s*=\s*me' and def !~* '\madmin\M' then
+    raise notice 'Beta teams: list_team_loans restituisce già solo i prestiti di chi chiama, salto';
+  elsif def !~ '(member_team|core_team_id)\(' then
+    raise exception 'Beta teams: list_team_loans non ha la forma attesa: aggiornare questa migration prima di applicarla';
+  end if;
+end $$;
 
 -- La schermata di login (pubblica) elenca solo il team F.P.T.;
 -- i profili beta entrano con il nome utente.
@@ -504,4 +546,7 @@ commit;
 --   ripristinare le funzioni patchate da un backup di pg_get_functiondef,
 --   drop trigger loans_same_team / matches_same_team,
 --   ricreare broadcast_collection_change() e il trigger statement-level storico,
---   drop table team_invites, beta_settings; alter table team_members drop column team_id; drop table teams.
+--   drop table team_invites, beta_settings; alter table team_members drop column team_id;
+--   delete from teams where kind = 'beta'; drop index teams_single_core_idx;
+--   alter table teams drop constraint teams_kind_check, drop column kind, drop column owner_slug.
+--   NON fare drop table teams: è la tabella degli account email (20260919100000).
