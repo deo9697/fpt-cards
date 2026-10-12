@@ -1047,7 +1047,8 @@ async function loadMarketVariantSetTemplates() {
     // resolveYgoMarketVariantBySetTemplate() vuole camelCase (stessa forma
     // usata server-side) — remap dal risultato snake_case della RPC.
     marketVariantState.setTemplates = rows.map(row => ({
-      setPrefix: row.set_prefix, variantNumber: row.variant_number, rarityCanonical: row.rarity_canonical, verified: row.verified
+      setPrefix: row.set_prefix, variantNumber: row.variant_number, rarityCanonical: row.rarity_canonical, verified: row.verified,
+      candidateCount: row.candidate_count ?? null
     }));
     render();
   } catch { /* diagnostica opzionale: un fallimento qui non deve bloccare la coda */ }

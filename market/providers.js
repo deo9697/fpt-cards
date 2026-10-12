@@ -187,12 +187,21 @@ export function canonicalYgoRarity(rawRarity,aliasMap){
 // (righe verified=true in ygo_market_variant_set_templates — MAI un pattern
 // tipo startsWith('RA'), il whitelisting emerge solo dai dati). Pura,
 // testabile in isolamento. setTemplates: array di
-// {setPrefix,variantNumber,rarityCanonical,verified} — tutte le righe note,
-// verificate o no: la funzione stessa scarta quelle non verified, non si fida
-// del chiamante per pre-filtrare.
+// {setPrefix,variantNumber,rarityCanonical,verified,candidateCount} — tutte
+// le righe note, verificate o no: la funzione stessa scarta quelle non
+// verified, non si fida del chiamante per pre-filtrare. candidateCount (null =
+// qualunque, comportamento RA01/RA02 originale) limita la riga ai prodotti
+// con ESATTAMENTE quel numero di candidati: da RA03 in poi lo stesso set
+// mescola carte a 7 rarità e carte a 2 (o 1), e la posizione V.n cambia
+// significato (es. RA05 a 2 candidati: V.2 è la Starlight, non la Ultra).
 function extractYgoSetPrefix(setCode){
   const match=String(setCode||'').trim().toUpperCase().match(/^([A-Z0-9]+)-/);
   return match?match[1]:'';
+}
+function templateAppliesToCandidateCount(row,count){
+  const expected=row?.candidateCount;
+  if(expected===null||expected===undefined||expected==='')return true;
+  return Number(expected)===count;
 }
 export function resolveYgoMarketVariantBySetTemplate({setCode=null,rarityCanonical=null,candidateProductIds=[],setTemplates=[]}={}){
   const setPrefix=extractYgoSetPrefix(setCode);
@@ -200,7 +209,7 @@ export function resolveYgoMarketVariantBySetTemplate({setCode=null,rarityCanonic
   const ids=Array.isArray(candidateProductIds)?candidateProductIds:[];
   if(!ids.length)return null; // candidate array vuoto
 
-  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical);
+  const matches=(setTemplates||[]).filter(row=>row?.setPrefix===setPrefix&&row?.rarityCanonical===rarityCanonical&&templateAppliesToCandidateCount(row,ids.length));
   if(matches.length!==1)return null; // template mancante (0) O duplicate/ambiguous (>1) -> mai una scelta
   const template=matches[0];
   if(!template.verified)return null; // set non ancora whitelisted per questa rarity
