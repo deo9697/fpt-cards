@@ -887,7 +887,9 @@ async function loadTeamInvites() {
   const team = state.team;
   if (!team?.canInviteToTeam && !team?.canInviteNewTeam) return;
   teamInvitesLoading = true;
-  try { teamInvites = await api.teamInvites(); } catch { teamInvites = teamInvites || []; }
+  // Mai lasciare teamInvites a null dopo il caricamento: teamModel() lo
+  // richiederebbe a ogni render, in un ciclo che congela la pagina Team.
+  try { teamInvites = (await api.teamInvites()) || []; } catch { teamInvites = teamInvites || []; }
   finally { teamInvitesLoading = false; }
   if (page === 'team') renderRoute();
 }
@@ -2494,7 +2496,7 @@ const tutorialKey = slug => `fpt-tutorial-seen:${slug}`;
 function openTutorial() {
   const slug = state.currentUser;
   void import('./js/tutorial.js')
-    .then(module => module.openTutorial({ onClose: () => { try { localStorage.setItem(tutorialKey(slug), '1'); } catch {} } }))
+    .then(module => module.openTutorial({ navigate, onClose: () => { try { localStorage.setItem(tutorialKey(slug), '1'); } catch {} } }))
     .catch(() => toast('Tutorial non disponibile: controlla la connessione'));
 }
 function maybeAutoTutorial() {

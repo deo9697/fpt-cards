@@ -2838,40 +2838,53 @@ button.market-row:hover { background:#15121d; }
 .team-invite.is-inactive { opacity:.55; }
 .team-invite .team-person-actions { grid-column:auto; }
 
-/* --- Tutorial Blattaman (js/tutorial.js) --------------------------------- */
-body.blatta-tutorial-open { overflow:hidden; }
-.blatta-tutorial { position:fixed; inset:0; z-index:9000; display:grid; place-items:center; padding:16px; animation:blatta-in .22s ease-out; }
-.blatta-tutorial.is-leaving { animation:blatta-out .18s ease-in forwards; }
-.blatta-backdrop { position:absolute; inset:0; background:radial-gradient(circle at 50% 30%, rgba(155,92,255,.28), rgba(5,7,17,.92) 70%); backdrop-filter:blur(3px); }
-.blatta-card { position:relative; width:min(100%, 440px); max-height:calc(100dvh - 32px); overflow:auto; display:grid; gap:14px; padding:16px; border-radius:22px; background:linear-gradient(160deg, #1a1030, #0b0d1a 65%); border:1px solid rgba(155,92,255,.55); box-shadow:0 24px 70px rgba(0,0,0,.6), 0 0 0 1px rgba(238,189,84,.12) inset; }
-.blatta-skip { position:absolute; top:12px; right:12px; z-index:2; border:0; border-radius:999px; padding:6px 12px; background:rgba(5,7,17,.72); color:var(--muted); font:inherit; font-size:.8rem; cursor:pointer; }
-.blatta-skip:hover { color:var(--text); }
-.blatta-figure { margin:0; border-radius:16px; overflow:hidden; aspect-ratio:1; max-height:42dvh; justify-self:center; width:100%; max-width:42dvh; border:2px solid #eebd54; box-shadow:0 0 28px rgba(155,92,255,.45); }
-.blatta-figure img { display:block; width:100%; height:100%; object-fit:cover; }
-.blatta-card[data-step] .blatta-figure img { animation:blatta-pop .35s cubic-bezier(.2,1.4,.4,1); }
-.blatta-bubble { position:relative; margin-top:4px; padding:14px 16px 16px; border-radius:18px; background:#f7f4eb; color:#14101f; border:3px solid #050711; box-shadow:5px 5px 0 #050711; transform:rotate(-.6deg); }
-.blatta-bubble::before { content:''; position:absolute; top:-15px; left:38px; border:12px solid transparent; border-bottom-color:#050711; border-top:0; }
-.blatta-bubble::after { content:''; position:absolute; top:-9px; left:41px; border:9px solid transparent; border-bottom-color:#f7f4eb; border-top:0; }
-.blatta-tag { display:inline-block; margin-bottom:6px; padding:3px 10px; border-radius:999px; background:#eebd54; color:#050711; font-family:var(--display-font); font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; transform:rotate(-2deg); }
-.blatta-bubble h2 { margin:0 0 6px; color:#14101f; font-size:1.28rem; line-height:1.15; text-transform:uppercase; }
-.blatta-bubble p { margin:0; font-size:.98rem; line-height:1.45; }
-.blatta-bubble b { color:#6a2fd6; }
-.blatta-bubble i { color:#8a5a00; font-weight:700; }
-.blatta-nav { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.blatta-nav .btn { min-width:96px; }
-.blatta-dots { display:flex; gap:6px; margin:0; padding:0; list-style:none; }
-.blatta-dots li { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.22); transition:width .2s, background .2s; }
-.blatta-dots li.active { width:22px; border-radius:6px; background:#eebd54; }
+/* --- Tutorial Blattaman: tour guidato (js/tutorial.js) ------------------- */
+body.blatta-tour-open { overflow:hidden; }
+.blatta-tour { position:fixed; inset:0; z-index:9000; cursor:pointer; -webkit-tap-highlight-color:transparent; user-select:none; animation:blatta-fade .25s ease-out; }
+.blatta-tour.is-leaving { animation:blatta-fade-out .2s ease-in forwards; }
+.blatta-shade { position:absolute; inset:0; background:rgba(5,7,17,.78); transition:background .3s; }
+.blatta-shade.is-clear { background:transparent; }
+.blatta-spot { position:fixed; border-radius:14px; box-shadow:0 0 0 9999px rgba(5,7,17,.78), 0 0 0 3px #eebd54, 0 0 26px 6px rgba(238,189,84,.55); transition:left .35s cubic-bezier(.3,1.2,.4,1), top .35s cubic-bezier(.3,1.2,.4,1), width .35s, height .35s; pointer-events:none; animation:blatta-spot-pulse 1.6s ease-in-out infinite; }
+.blatta-skip { position:absolute; top:max(12px, env(safe-area-inset-top)); right:12px; z-index:3; border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:7px 14px; background:rgba(5,7,17,.8); color:var(--muted); font:inherit; font-size:.82rem; cursor:pointer; }
+.blatta-skip:hover, .blatta-skip:focus-visible { color:var(--text); border-color:#eebd54; }
+.blatta-stage { position:absolute; left:0; right:0; bottom:0; display:flex; flex-direction:column; align-items:center; gap:4px; padding:0 16px max(10px, env(safe-area-inset-bottom)); pointer-events:none; transition:bottom .35s cubic-bezier(.3,1.2,.4,1); }
+.blatta-speech { position:relative; width:min(100%, 520px); padding:14px 16px 12px; border-radius:20px; background:#f7f4eb; color:#14101f; border:3px solid #050711; box-shadow:6px 6px 0 #050711, 0 18px 50px rgba(0,0,0,.45); transform-origin:50% 100%; }
+.blatta-speech.is-pop { animation:blatta-pop .38s cubic-bezier(.2,1.5,.4,1); }
+.blatta-speech::before { content:''; position:absolute; bottom:-17px; left:50%; margin-left:-14px; border:14px solid transparent; border-top-color:#050711; border-bottom:0; }
+.blatta-speech::after { content:''; position:absolute; bottom:-10px; left:50%; margin-left:-10px; border:10px solid transparent; border-top-color:#f7f4eb; border-bottom:0; }
+.blatta-line { margin:0; font-size:1.02rem; line-height:1.45; font-weight:600; }
+.blatta-punch { margin:10px 0 0; padding:8px 12px; border-radius:12px; background:#eebd54; color:#050711; font-weight:800; font-style:italic; line-height:1.35; transform:rotate(-1deg); box-shadow:3px 3px 0 #050711; }
+.blatta-punch[hidden] { display:none; }
+.blatta-word { display:inline-block; opacity:0; transform:translateY(6px); animation:blatta-word .22s ease-out forwards; animation-delay:calc(var(--i) * 45ms); }
+.is-revealed .blatta-word { opacity:1; transform:none; }
+.blatta-word.is-ui { color:#6a2fd6; font-weight:800; }
+.blatta-punch .blatta-word.is-ui { color:#3d1a86; }
+.blatta-hint { display:block; margin-top:8px; text-align:right; font-size:.72rem; color:#6b6580; opacity:0; transition:opacity .3s; }
+.is-revealed .blatta-hint { opacity:1; animation:blatta-blink 1.4s ease-in-out infinite; }
+.blatta-count { font-weight:800; color:#14101f; }
+.blatta-mascot { width:clamp(120px, 34vw, 176px); aspect-ratio:1; margin-top:14px; border-radius:50%; overflow:hidden; border:3px solid #eebd54; background:#1a1030; box-shadow:0 0 0 4px #050711, 0 0 34px rgba(155,92,255,.65); transform-origin:50% 100%; animation:blatta-breathe 3.2s ease-in-out infinite; }
+.blatta-mascot img { display:block; width:100%; height:100%; object-fit:cover; }
+.blatta-stage.is-raised .blatta-mascot { width:clamp(96px, 26vw, 140px); }
+.blatta-mascot.is-jolt { animation:blatta-jolt .5s cubic-bezier(.3,1.6,.5,1), blatta-breathe 3.2s ease-in-out .5s infinite; }
+.blatta-mascot[data-mood="panicking"] { animation:blatta-jolt .5s cubic-bezier(.3,1.6,.5,1), blatta-tremble .16s linear .5s infinite; }
+.blatta-mascot[data-mood="who-laughs"] { animation:blatta-jolt .5s cubic-bezier(.3,1.6,.5,1), blatta-laugh .55s ease-in-out .5s infinite; }
+.blatta-mascot[data-mood="sexy"] { animation:blatta-jolt .5s cubic-bezier(.3,1.6,.5,1), blatta-wiggle 1.8s ease-in-out .5s infinite; }
 @media (min-width: 760px) {
-  .blatta-card { width:min(100%, 780px); grid-template-columns:300px 1fr; grid-template-rows:1fr auto; align-items:center; gap:18px 22px; padding:22px; }
-  .blatta-figure { grid-row:1; max-height:none; max-width:none; }
-  .blatta-bubble { grid-row:1; }
-  .blatta-bubble::before { top:34px; left:-15px; border:12px solid transparent; border-right-color:#050711; border-left:0; }
-  .blatta-bubble::after { top:37px; left:-9px; border:9px solid transparent; border-right-color:#f7f4eb; border-left:0; }
-  .blatta-nav { grid-column:1 / -1; }
-  .blatta-bubble h2 { font-size:1.5rem; }
+  .blatta-stage { padding-bottom:22px; }
+  .blatta-speech { width:min(100%, 600px); padding:18px 22px 14px; }
+  .blatta-line { font-size:1.1rem; }
+  .blatta-mascot { width:180px; }
 }
-@keyframes blatta-in { from { opacity:0; } to { opacity:1; } }
-@keyframes blatta-out { to { opacity:0; } }
-@keyframes blatta-pop { from { transform:scale(.92) rotate(-2deg); opacity:.4; } to { transform:none; opacity:1; } }
-@media (prefers-reduced-motion: reduce) { .blatta-tutorial, .blatta-card[data-step] .blatta-figure img { animation:none; } }
+@keyframes blatta-pop { 0% { transform:scale(.7) rotate(-3deg); opacity:0; } 70% { transform:scale(1.04) rotate(.6deg); opacity:1; } 100% { transform:none; } }
+@keyframes blatta-word { to { opacity:1; transform:none; } }
+@keyframes blatta-blink { 50% { opacity:.35; } }
+@keyframes blatta-spot-pulse { 50% { box-shadow:0 0 0 9999px rgba(5,7,17,.78), 0 0 0 4px #eebd54, 0 0 40px 12px rgba(238,189,84,.75); } }
+@keyframes blatta-breathe { 0%, 100% { transform:scale(1); } 50% { transform:scale(1.035) translateY(-2px); } }
+@keyframes blatta-jolt { 0% { transform:translateY(0) scale(1); } 25% { transform:translateY(-18px) scale(1.08) rotate(-6deg); } 50% { transform:translateY(3px) scale(.96) rotate(4deg); } 75% { transform:translateY(-5px) rotate(-2deg); } 100% { transform:none; } }
+@keyframes blatta-tremble { 0% { transform:translate(0, 0) rotate(0); } 25% { transform:translate(-3px, 1px) rotate(-2deg); } 50% { transform:translate(2px, -2px) rotate(1.5deg); } 75% { transform:translate(-2px, -1px) rotate(-1deg); } 100% { transform:translate(0, 0) rotate(0); } }
+@keyframes blatta-laugh { 0%, 100% { transform:translateY(0) scale(1); } 40% { transform:translateY(-9px) scale(1.04, .97) rotate(3deg); } 70% { transform:translateY(0) scale(.97, 1.03) rotate(-2deg); } }
+@keyframes blatta-wiggle { 0%, 100% { transform:rotate(0); } 30% { transform:rotate(-5deg) translateY(-3px); } 60% { transform:rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .blatta-tour, .blatta-speech.is-pop, .blatta-spot, .blatta-mascot, .blatta-mascot[data-mood], .is-revealed .blatta-hint { animation:none !important; }
+  .blatta-word { opacity:1; transform:none; animation:none; }
+}
