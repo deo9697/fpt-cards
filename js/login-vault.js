@@ -5,7 +5,8 @@
 // - fillShowcase(): mette le carte nella vetrina (prima quelle in cache, poi
 //   quelle fresche della RPC pubblica list_login_showcase).
 // - openPinPad(): al tocco del campo PIN apre, al posto della tastiera del
-//   telefono, un pannello con le carte coperte sullo sfondo: ogni cifra gira
+//   telefono, un pannello con la cascata delle carte della raccolta sullo
+//   sfondo (carte coperte se la cascata non è disponibile): ogni cifra gira
 //   una carta e Blattaman reagisce. Il valore va nel vero <input id="pin">,
 //   quindi il form di login resta quello di sempre.
 
@@ -19,6 +20,35 @@ function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) |
 function writeCache(cards) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(cards)); } catch {} }
 
 let showcase = readCache();
+
+// Cascata del tastierino: codici carta della raccolta (RPC list_login_cascade),
+// miniature ufficiali YGOPRODeck. Stesso insieme per tutta la giornata, così le
+// immagini restano nella cache del browser.
+const CASCADE_KEY = 'fpt-login-cascade';
+const today = () => new Date().toISOString().slice(0, 10);
+const thumb = id => (/^\d{4,10}$/.test(String(id)) ? `https://images.ygoprodeck.com/images/cards_small/${id}.jpg` : '');
+function readCascade() { try { const saved = JSON.parse(localStorage.getItem(CASCADE_KEY) || 'null'); return saved?.day === today() ? saved.ids : []; } catch { return []; } }
+let cascade = readCascade();
+async function loadCascade(api) {
+  if (cascade.length) return;
+  try {
+    const ids = ((await api.loginCascade(30)) || []).map(row => row.catalog_card_id).filter(id => thumb(id));
+    if (!ids.length) return;
+    cascade = ids;
+    try { localStorage.setItem(CASCADE_KEY, JSON.stringify({ day:today(), ids })); } catch {}
+  } catch {}
+}
+function cascadeHtml() {
+  const ids = cascade;
+  const columns = Math.min(12, Math.max(4, Math.ceil(window.innerWidth / 96)));
+  const cardHeight = Math.min(96, window.innerWidth / columns) * 1.46 + 12;
+  const perColumn = Math.max(4, Math.ceil((window.innerHeight + 240) / cardHeight));
+  return `<div class="pinpad-cascade" aria-hidden="true">${Array.from({ length: columns }, (_, c) => {
+    const cards = Array.from({ length: perColumn }, (_, j) => `<img src="${esc(thumb(ids[(c * 7 + j) % ids.length]))}" alt="" decoding="async" onerror="this.remove()">`).join('');
+    // Contenuto ripetuto due volte: la traslazione del 50% si ricongiunge senza salti.
+    return `<div class="pinpad-col"><div class="pinpad-track" style="--t:${22 + (c * 5) % 13}s;--d:-${(c * 3.7) % 20}s">${cards}${cards}</div></div>`;
+  }).join('')}</div>`;
+}
 
 function paint(cards) {
   const fan = document.querySelector('[data-vault-fan]');
@@ -46,6 +76,7 @@ function paint(cards) {
 
 export async function fillShowcase(api) {
   paint(showcase);
+  void loadCascade(api);
   try {
     const fresh = (await api.loginShowcase(6)) || [];
     if (fresh.length) { showcase = fresh; writeCache(fresh); paint(fresh); }
@@ -70,7 +101,8 @@ export function openPinPad({ input, onSubmit }) {
   const slots = [0, 1, 2, 3].map(i => `<div class="pinpad-slot"><div class="pinpad-flip"><div class="pinpad-face pinpad-back"></div><div class="pinpad-face pinpad-front">${fronts[i] ? `<img src="${esc(fronts[i])}" alt="">` : ''}<b class="pinpad-digit"></b></div></div></div>`).join('');
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => `<button type="button" class="pinpad-key" data-digit="${d}">${d}</button>`).join('')
     + '<button type="button" class="pinpad-key is-soft" data-pad="del">Cancella</button><button type="button" class="pinpad-key" data-digit="0">0</button><button type="button" class="pinpad-key is-go" data-pad="go" disabled>Entra</button>';
-  root.innerHTML = `<div class="pinpad-tiles" aria-hidden="true">${tiles}</div><div class="pinpad-shade"></div>
+  const background = cascade.length ? cascadeHtml() : `<div class="pinpad-tiles" aria-hidden="true">${tiles}</div>`;
+  root.innerHTML = `${background}<div class="pinpad-shade"></div>
     <div class="pinpad-body">
       <div class="pinpad-top"><button type="button" class="pinpad-close" data-pad="close">Chiudi</button></div>
       <div class="pinpad-talk"><div class="pinpad-mascot"><img alt="Blattaman" width="200" height="200"></div><p class="pinpad-line" aria-live="polite"></p></div>
@@ -92,7 +124,7 @@ export function openPinPad({ input, onSubmit }) {
     });
     const [mood, text] = pin.length === 0 ? ['sexy', 'Mo gira i carti cu u PIN, compà.']
       : pin.length < 4 ? ['panicking', ['Chianu chianu...', 'N’atra, dai!', 'Ancora una e trasi!'][pin.length - 1]]
-      : ['who-laughs', 'Trasisti! Rivelu Abakiri!'];
+      : ['who-laughs', 'MEH! COMPLIMENTI! SI TRASUTU!'];
     if (!face.src.endsWith(FACE(mood))) face.src = FACE(mood);
     line.textContent = text;
     root.querySelector('.pinpad-count').textContent = `${pin.length} cifre su 4`;

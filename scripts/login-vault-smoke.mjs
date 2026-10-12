@@ -20,7 +20,7 @@ const authSource = fs.readFileSync(path.join(root, 'scripts', 'auth-regression-s
 const mockBlock = authSource.slice(authSource.indexOf('const members = ['), authSource.indexOf('\nconst mime = {'));
 const membersLine = "if(name==='list_login_members') return {data:members,error:null};";
 const fakeSupabaseSource = new Function(`${mockBlock}\nreturn fakeSupabaseSource;`)()
-  .replace(membersLine, `if(name==='list_login_showcase'){window.__showcaseCalls=(window.__showcaseCalls||0)+1;return {data:window.__showcase||[],error:null};}\n      ${membersLine}`);
+  .replace(membersLine, `if(name==='list_login_cascade') return {data:(window.__cascade||[]).map(id=>({catalog_card_id:id})),error:null};\n      if(name==='list_login_showcase'){window.__showcaseCalls=(window.__showcaseCalls||0)+1;return {data:window.__showcase||[],error:null};}\n      ${membersLine}`);
 if (!fakeSupabaseSource.includes('list_login_showcase')) throw new Error('Mock list_login_members non trovato in auth-regression-smoke.mjs');
 
 const shots = process.env.LOGIN_SHOTS;
@@ -71,7 +71,8 @@ try {
   const padState = () => evaluate(`({open:Boolean(document.querySelector('.pinpad')), up:document.querySelectorAll('.pinpad-slot.is-up').length, go:!document.querySelector('[data-pad="go"]')?.disabled, line:document.querySelector('.pinpad-line')?.textContent||'', pin:document.querySelector('#pin')?.value})`);
 
   await call('Runtime.enable'); await call('Network.enable'); await call('Page.enable');
-  await call('Page.addScriptToEvaluateOnNewDocument', { source: `window.__showcase = ${JSON.stringify(showcase)};` });
+  const cascadeIds = ['46986414', '89631139', '35272499', '1861630', '10002346', '38033121', '74677422', '55144522'];
+  await call('Page.addScriptToEvaluateOnNewDocument', { source: `window.__showcase = ${JSON.stringify(showcase)}; window.__cascade = ${JSON.stringify(cascadeIds)};` });
   await viewport(390, 844, true);
   await call('Page.navigate', { url: `http://127.0.0.1:${port}/#/home` });
   await waitFor(`document.querySelectorAll('#member option').length === 3`, 'Schermata di login non pronta');
@@ -101,6 +102,8 @@ try {
   await waitFor(`Boolean(document.querySelector('.pinpad .pinpad-keys'))`, 'Il tastierino non si apre al tocco del PIN');
   let s = await padState();
   assert(s.up === 0 && !s.go, 'Il tastierino deve partire vuoto: ' + JSON.stringify(s));
+  const fall = await evaluate(`(()=>{const cols=document.querySelectorAll('.pinpad-cascade .pinpad-col'),track=document.querySelector('.pinpad-track'),src=track?.querySelector('img')?.getAttribute('src')||'';return {cols:cols.length,tiles:Boolean(document.querySelector('.pinpad-tiles')),anim:track?getComputedStyle(track).animationName:'',src}})()`);
+  assert(fall.cols >= 4 && !fall.tiles && fall.anim === 'pinpad-fall' && /images\.ygoprodeck\.com\/images\/cards_small\/\d+\.jpg$/.test(fall.src), 'Sfondo a cascata delle carte della raccolta assente: ' + JSON.stringify(fall));
   for (const digit of ['1', '2', '3']) await tap(`.pinpad-key[data-digit="${digit}"]`);
   s = await padState();
   assert(s.up === 3 && !s.go && s.pin === '123', 'Dopo 3 cifre: ' + JSON.stringify(s));
@@ -109,7 +112,7 @@ try {
   await tap('[data-pad="del"]');
   s = await padState(); assert(s.up === 2 && s.pin === '12', 'Cancella non rigira la carta: ' + JSON.stringify(s));
   await key('3', 'Digit3', 51); await key('4', 'Digit4', 52);
-  s = await padState(); assert(s.up === 4 && s.go && s.pin === '1234' && s.line.includes('Trasisti'), 'Tastiera fisica / 4 cifre: ' + JSON.stringify(s));
+  s = await padState(); assert(s.up === 4 && s.go && s.pin === '1234' && s.line.includes('SI TRASUTU'), 'Tastiera fisica / 4 cifre: ' + JSON.stringify(s));
   await delay(700); await shot('pinpad-390');
   await key('Escape', 'Escape', 27);
   await waitFor(`!document.querySelector('.pinpad')`, 'Esc non chiude il tastierino');
@@ -118,7 +121,7 @@ try {
   s = await padState(); assert(s.up === 0 && s.pin === '', 'La riapertura deve ripartire da zero: ' + JSON.stringify(s));
   await tap('[data-pad="close"]');
   await waitFor(`!document.querySelector('.pinpad')`, 'Chiudi non chiude il tastierino');
-  console.log('PASS tastierino: carte girate per cifra, Cancella, tastiera fisica, Entra a 4 cifre, Esc/Chiudi, riapertura da zero');
+  console.log('PASS tastierino: sfondo a cascata, carte girate per cifra, Cancella, tastiera fisica, Entra a 4 cifre, Esc/Chiudi, riapertura da zero');
 
   await evaluate(`window.__authTest.wrongPinMode=true`);
   await evaluate(`(()=>{const s=document.querySelector('#member');s.value='existing-member';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);

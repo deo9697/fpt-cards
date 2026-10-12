@@ -26,6 +26,13 @@ export const api = {
     if (['PGRST202','42883'].includes(result.error.code)) return [];
     throw result.error;
   },
+  // Codici carta per la cascata del tastierino PIN (pubblica, solo codici).
+  async loginCascade(limit = 30) {
+    ensure(); const result = await client.rpc('list_login_cascade', { p_limit:limit });
+    if (!result.error) return result.data || [];
+    if (['PGRST202','42883'].includes(result.error.code)) return [];
+    throw result.error;
+  },
   async memberProfiles() { ensure(); return unwrap(await client.rpc('list_member_profiles', { p_token:token() })); },
   // login_member restituisce {ok:false, code, message, retryAfterSeconds?} sui fallimenti (rate-limit server-side: un RAISE annullerebbe il contatore).
   async login(slug, pin) {

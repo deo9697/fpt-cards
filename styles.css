@@ -2951,6 +2951,11 @@ body.pinpad-open { overflow:hidden; }
 .pinpad-tiles { position:absolute; inset:-40px; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:14px; padding:10px; transform:rotate(-8deg); opacity:.55; pointer-events:none; }
 .pinpad-tiles i, .pinpad-back { background:radial-gradient(ellipse 34% 26% at 50% 50%, #1a0d06 0 40%, #6b3a12 41% 52%, #2a1508 53% 62%, transparent 63%), linear-gradient(135deg, #7a4416, #3c1e08 60%, #8a5420); border:2px solid #b07a35; border-radius:6px; box-sizing:border-box; }
 .pinpad-tiles i { aspect-ratio:59 / 86; transform:rotate(var(--r)) translateY(var(--y)); box-shadow:0 6px 14px rgba(0,0,0,.5); }
+.pinpad-cascade { position:absolute; inset:-60px -40px; display:flex; justify-content:center; gap:12px; transform:rotate(-6deg); opacity:.62; pointer-events:none; }
+.pinpad-col { flex:1 1 0; max-width:96px; min-width:0; }
+.pinpad-track { display:flex; flex-direction:column; gap:12px; animation:pinpad-fall var(--t) linear infinite; animation-delay:var(--d); will-change:transform; }
+.pinpad-track img { display:block; width:100%; aspect-ratio:59 / 86; object-fit:cover; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,.55); background:#1a1030; }
+@keyframes pinpad-fall { from { transform:translateY(-50%); } to { transform:translateY(0); } }
 .pinpad-shade { position:absolute; inset:0; background:radial-gradient(80% 55% at 50% 45%, rgba(10,6,18,.35), rgba(5,7,17,.92) 85%); pointer-events:none; }
 .pinpad-body { position:relative; height:100%; max-width:460px; margin:0 auto; box-sizing:border-box; padding:max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:16px; }
 .pinpad-top { display:flex; justify-content:flex-end; }
@@ -2982,6 +2987,6 @@ body.pinpad-open { overflow:hidden; }
 @keyframes pinpad-jolt-a { 25% { transform:translateY(-14px) scale(1.08) rotate(-6deg); } 50% { transform:translateY(3px) scale(.96) rotate(4deg); } }
 @keyframes pinpad-jolt-b { 25% { transform:translateY(-14px) scale(1.08) rotate(6deg); } 50% { transform:translateY(3px) scale(.96) rotate(-4deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .vault-card, .vault-card.is-loaded::after, .vault-sparks i, .vault-mascot, .pinpad, .pinpad-mascot.is-jolt-a, .pinpad-mascot.is-jolt-b { animation:none !important; }
+  .vault-card, .vault-card.is-loaded::after, .vault-sparks i, .vault-mascot, .pinpad, .pinpad-track, .pinpad-mascot.is-jolt-a, .pinpad-mascot.is-jolt-b { animation:none !important; }
   .pinpad-flip { transition:none; }
 }
