@@ -13,9 +13,10 @@
        pagarli alla prima chiamata. crossorigin: le fetch di Supabase sono CORS. -->
   <link rel="preconnect" href="https://gonycawupahawocqafcf.supabase.co" crossorigin>
   <link rel="preload" href="assets/fonts/manrope-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
-  <!-- Cinzel serve solo dopo il login (titoli Dashboard/Market): prefetch a
-       bassa priorità invece di preload, così non compete col primo paint. -->
-  <link rel="prefetch" href="assets/fonts/cinzel-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Cinzel disegna il titolo "F.P.T CARDS" del login, che è l'elemento LCP:
+       preload, altrimenti il titolo aspetta il font a bassa priorità
+       (misurato: LCP 4,69 s con prefetch, 4,23 s con preload). -->
+  <link rel="preload" href="assets/fonts/cinzel-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
   <!--
     Critical launch CSS: deve rendere il primo frame di #app-launch identico
     allo splash nativo Android/PWA (stesso sfondo, stesso logo centrato,
