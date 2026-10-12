@@ -16,6 +16,12 @@
 --
 -- Additiva: ridefinisce solo la funzione del trigger, nessuna tabella/vista.
 
+-- Numerata 20261012180000 (non 120000 come nel commit originale): deve
+-- venire dopo le migration già applicate il 2026-10-12, altrimenti lo
+-- storico finirebbe fuori ordine.
+
+begin;
+
 create or replace function public.trg_flag_price_anomaly()
 returns trigger language plpgsql set search_path = public, extensions as $$
 declare prior_price numeric(14,4); prior_scope text; new_scope text; new_value numeric(14,4); ratio numeric(10,4);
@@ -46,3 +52,5 @@ begin
   return new;
 end;
 $$;
+
+commit;

@@ -55,7 +55,7 @@ console.log('PASS narrowTargetToExactVariant: restringe solo aggregate con varia
   assert.match(edge, /mapping_status==='resolved'&&Number\(variant\.mapping_confidence\)>=1/);
   assert.match(edge, /applyExactVariantPricing\(resolvedTargets\)/);
   assert.match(edge, /MARKET_EXACT_VARIANT_PRICING/);
-  const migration = readFileSync(new URL('../supabase/migrations/20261012120000_market_exact_variant_pricing_anomaly_scope.sql', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../supabase/migrations/20261012180000_market_exact_variant_pricing_anomaly_scope.sql', import.meta.url), 'utf8');
   assert.match(migration, /'exact_variant' in/);
 }
 console.log('PASS market-sync: copia allineata, cutover cablato prima degli snapshot');
