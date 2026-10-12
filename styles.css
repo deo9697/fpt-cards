@@ -2888,3 +2888,88 @@ body.blatta-tour-open { overflow:hidden; }
   .blatta-tour, .blatta-speech.is-pop, .blatta-spot, .blatta-mascot, .blatta-mascot[data-mood], .is-revealed .blatta-hint { animation:none !important; }
   .blatta-word { opacity:1; transform:none; animation:none; }
 }
+
+/* --- Login "Vetrina dei Rari" (app.js loginView + js/login-vault.js) ---- */
+.login-shell.login-vault { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:100dvh; padding:20px 16px max(16px, env(safe-area-inset-bottom)); box-sizing:border-box; overflow:hidden; background:radial-gradient(120% 70% at 50% 14%, #2a1356 0%, #0f0a24 46%, #050711 100%); }
+.vault-sparks { position:absolute; inset:0; pointer-events:none; }
+.vault-sparks i { position:absolute; width:4px; height:4px; border-radius:50%; background:#eebd54; box-shadow:0 0 8px #eebd54; opacity:.2; animation:vault-twinkle 2.4s ease-in-out infinite; }
+.vault-sparks i:nth-child(1) { left:8%; top:7%; } .vault-sparks i:nth-child(2) { left:88%; top:11%; animation-delay:.3s; } .vault-sparks i:nth-child(3) { left:15%; top:30%; animation-delay:.6s; }
+.vault-sparks i:nth-child(4) { left:82%; top:28%; animation-delay:.9s; } .vault-sparks i:nth-child(5) { left:50%; top:3%; animation-delay:1.2s; } .vault-sparks i:nth-child(6) { left:5%; top:52%; animation-delay:1.5s; }
+.vault-sparks i:nth-child(7) { left:93%; top:48%; animation-delay:1.8s; } .vault-sparks i:nth-child(8) { left:28%; top:36%; animation-delay:2.1s; } .vault-sparks i:nth-child(9) { left:72%; top:35%; animation-delay:.45s; } .vault-sparks i:nth-child(10) { left:60%; top:20%; animation-delay:1.05s; }
+.vault-stage { position:relative; width:100%; max-width:420px; height:228px; flex:none; }
+.vault-card { --w:108px; position:absolute; left:calc(50% - var(--w) / 2); top:0; width:var(--w); aspect-ratio:59 / 86; border-radius:7px; overflow:hidden; transform:translate(var(--x), var(--y)) rotate(var(--r)) scale(var(--s)); z-index:var(--z); box-shadow:0 14px 34px rgba(0,0,0,.6), 0 0 22px rgba(155,92,255,.45); background:radial-gradient(ellipse 34% 26% at 50% 50%, #1a0d06 0 40%, #6b3a12 41% 52%, #2a1508 53% 62%, transparent 63%), linear-gradient(135deg, #7a4416, #3c1e08 60%, #8a5420); border:2px solid #b07a35; box-sizing:border-box; animation:vault-float 5s ease-in-out infinite; animation-delay:var(--d); }
+.vault-card:nth-child(1) { --x:-150px; --y:46px; --r:-16deg; --s:.86; --z:1; --d:0s; }
+.vault-card:nth-child(2) { --x:-78px; --y:20px; --r:-8deg; --s:.94; --z:2; --d:-.9s; }
+.vault-card:nth-child(3) { --x:0px; --y:4px; --r:0deg; --s:1.08; --z:4; --d:-1.8s; }
+.vault-card:nth-child(4) { --x:78px; --y:20px; --r:8deg; --s:.94; --z:2; --d:-2.7s; }
+.vault-card:nth-child(5) { --x:150px; --y:46px; --r:16deg; --s:.86; --z:1; --d:-3.6s; }
+.vault-card img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .5s ease; }
+.vault-card.is-loaded { border-color:transparent; }
+.vault-card.is-loaded img { opacity:1; }
+.vault-card.is-loaded::after { content:''; position:absolute; inset:0; background:linear-gradient(100deg, transparent 30%, rgba(255,255,255,.5) 48%, rgba(160,120,255,.35) 54%, transparent 70%); mix-blend-mode:screen; animation:vault-holo 4.2s ease-in-out infinite; animation-delay:var(--d); }
+.vault-head { position:relative; display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; max-width:100%; }
+.vault-badge { max-width:100%; padding:5px 12px; border-radius:999px; background:rgba(238,189,84,.14); border:1px solid rgba(238,189,84,.45); color:#eebd54; font-size:.68rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+.vault-badge[hidden] { display:none; }
+.vault-head h1 { margin:6px 0 0; font-family:'Cinzel FPT', Georgia, serif; font-weight:800; font-size:2.1rem; letter-spacing:.06em; color:#f7f1df; }
+.vault-head p { margin:0; }
+.vault-panel { position:relative; width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px; }
+.login-vault .vault-form { margin-top:0; padding:18px; border-radius:22px; background:rgba(13,11,28,.8); border:1px solid rgba(155,92,255,.35); box-shadow:0 20px 50px rgba(0,0,0,.5); backdrop-filter:blur(6px); }
+.login-vault .vault-form label { text-transform:uppercase; letter-spacing:.1em; font-size:.74rem; font-weight:800; color:#a59dca; }
+.vault-pin { width:100%; box-sizing:border-box; height:50px; border-radius:14px; border:1px solid #3b3260; background:#0d0b1c; color:#eebd54; font-family:inherit; font-size:1.4rem; font-weight:800; letter-spacing:.5em; text-align:center; caret-color:transparent; cursor:pointer; }
+.vault-pin:focus-visible { outline:2px solid #eebd54; outline-offset:2px; }
+.login-vault .login-security { text-align:center; margin:0; }
+.vault-blatta { position:relative; width:100%; max-width:420px; display:flex; justify-content:flex-end; align-items:flex-end; gap:8px; pointer-events:none; }
+.vault-blatta p { max-width:190px; margin:0 0 40px; padding:8px 12px; border-radius:14px 14px 4px 14px; background:#f7f4eb; color:#14101f; border:2px solid #050711; box-shadow:3px 3px 0 #050711; font-size:.82rem; font-weight:700; line-height:1.3; }
+.vault-mascot { width:84px; height:84px; flex:none; border-radius:50%; overflow:hidden; border:3px solid #eebd54; box-shadow:0 0 0 3px #050711, 0 0 26px rgba(155,92,255,.7); transform-origin:50% 100%; animation:vault-peek 3.4s ease-in-out infinite; }
+.vault-mascot img { display:block; width:100%; height:100%; object-fit:cover; }
+@media (min-width: 900px) {
+  .vault-stage { max-width:560px; height:min(290px, 33vh); }
+  .vault-card { --w:min(138px, 16vh); }
+  .vault-card:nth-child(1) { --x:-210px; --y:58px; } .vault-card:nth-child(2) { --x:-108px; --y:24px; } .vault-card:nth-child(4) { --x:108px; --y:24px; } .vault-card:nth-child(5) { --x:210px; --y:58px; }
+  .vault-blatta { position:absolute; right:32px; bottom:28px; width:auto; }
+  .vault-mascot { width:110px; height:110px; }
+}
+@keyframes vault-float { 0%, 100% { translate:0 0; } 50% { translate:0 -10px; } }
+@keyframes vault-holo { 0% { transform:translateX(-140%) skewX(-18deg); } 60%, 100% { transform:translateX(240%) skewX(-18deg); } }
+@keyframes vault-twinkle { 0%, 100% { opacity:.15; } 50% { opacity:.9; } }
+@keyframes vault-peek { 0%, 100% { transform:rotate(-8deg); } 50% { transform:rotate(-3deg) translateY(-6px); } }
+
+/* Tastierino del PIN a carte coperte (js/login-vault.js) */
+body.pinpad-open { overflow:hidden; }
+.pinpad { position:fixed; inset:0; z-index:9500; overflow:hidden; background:#0a0612; animation:pinpad-in .3s cubic-bezier(.2,1.2,.4,1); }
+.pinpad.is-leaving { animation:pinpad-out .18s ease-in forwards; }
+.pinpad-tiles { position:absolute; inset:-40px; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:14px; padding:10px; transform:rotate(-8deg); opacity:.55; pointer-events:none; }
+.pinpad-tiles i, .pinpad-back { background:radial-gradient(ellipse 34% 26% at 50% 50%, #1a0d06 0 40%, #6b3a12 41% 52%, #2a1508 53% 62%, transparent 63%), linear-gradient(135deg, #7a4416, #3c1e08 60%, #8a5420); border:2px solid #b07a35; border-radius:6px; box-sizing:border-box; }
+.pinpad-tiles i { aspect-ratio:59 / 86; transform:rotate(var(--r)) translateY(var(--y)); box-shadow:0 6px 14px rgba(0,0,0,.5); }
+.pinpad-shade { position:absolute; inset:0; background:radial-gradient(80% 55% at 50% 45%, rgba(10,6,18,.35), rgba(5,7,17,.92) 85%); pointer-events:none; }
+.pinpad-body { position:relative; height:100%; max-width:460px; margin:0 auto; box-sizing:border-box; padding:max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:16px; }
+.pinpad-top { display:flex; justify-content:flex-end; }
+.pinpad-close { height:40px; padding:0 16px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(5,7,17,.7); color:#d9d4ee; font-family:inherit; font-size:.82rem; font-weight:700; cursor:pointer; }
+.pinpad-talk { display:flex; align-items:center; gap:12px; }
+.pinpad-mascot { width:84px; height:84px; flex:none; border-radius:50%; overflow:hidden; border:3px solid #eebd54; box-shadow:0 0 0 3px #050711, 0 0 26px rgba(155,92,255,.7); }
+.pinpad-mascot img { display:block; width:100%; height:100%; object-fit:cover; }
+.pinpad-mascot.is-jolt-a { animation:pinpad-jolt-a .5s cubic-bezier(.3,1.6,.5,1); }
+.pinpad-mascot.is-jolt-b { animation:pinpad-jolt-b .5s cubic-bezier(.3,1.6,.5,1); }
+.pinpad-line { flex:1; margin:0; padding:11px 13px; border-radius:4px 16px 16px 16px; background:#f7f4eb; color:#14101f; border:2px solid #050711; box-shadow:3px 3px 0 #050711; font-size:.9rem; font-weight:700; line-height:1.35; }
+.pinpad-slots { display:flex; justify-content:center; gap:12px; padding:10px 0; }
+.pinpad-slot { width:68px; aspect-ratio:59 / 86; perspective:600px; }
+.pinpad-flip { position:relative; width:100%; height:100%; transform-style:preserve-3d; transition:transform .55s cubic-bezier(.3,1.4,.5,1); }
+.pinpad-slot.is-up .pinpad-flip { transform:rotateY(180deg); }
+.pinpad-face { position:absolute; inset:0; backface-visibility:hidden; overflow:hidden; box-shadow:0 8px 20px rgba(0,0,0,.55); }
+.pinpad-front { transform:rotateY(180deg); border:2px solid #eebd54; border-radius:6px; background:linear-gradient(160deg, #3a1a7a, #7c46e8 45%, #eebd54); }
+.pinpad-front img { width:100%; height:100%; object-fit:cover; display:block; }
+.pinpad-keys { margin-top:auto; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+.pinpad-key { height:58px; border-radius:16px; border:1px solid rgba(238,189,84,.25); background:rgba(20,16,48,.88); color:#f3f1fa; font-family:inherit; font-size:1.35rem; font-weight:800; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.pinpad-key:active { transform:scale(.96); }
+.pinpad-key:focus-visible, .pinpad-close:focus-visible { outline:2px solid #eebd54; outline-offset:2px; }
+.pinpad-key.is-soft { font-size:.82rem; color:#b9b2d6; }
+.pinpad-key.is-go { background:linear-gradient(180deg, #a874ff, #7c46e8); border:0; font-size:.95rem; }
+.pinpad-key.is-go:disabled { opacity:.4; cursor:default; }
+@keyframes pinpad-in { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
+@keyframes pinpad-out { to { opacity:0; } }
+@keyframes pinpad-jolt-a { 25% { transform:translateY(-14px) scale(1.08) rotate(-6deg); } 50% { transform:translateY(3px) scale(.96) rotate(4deg); } }
+@keyframes pinpad-jolt-b { 25% { transform:translateY(-14px) scale(1.08) rotate(6deg); } 50% { transform:translateY(3px) scale(.96) rotate(-4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .vault-card, .vault-card.is-loaded::after, .vault-sparks i, .vault-mascot, .pinpad, .pinpad-mascot.is-jolt-a, .pinpad-mascot.is-jolt-b { animation:none !important; }
+  .pinpad-flip { transition:none; }
+}

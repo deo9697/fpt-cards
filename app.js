@@ -80,7 +80,6 @@ let cloudError = '';
 let loginPending = false;
 let loginDraft = { member:'', pin:'', mode:'pick' };
 let memberLoadError = '';
-let loginFeatureCards;
 let realtimeSyncTimer;
 let realtimeSyncRunning = false;
 const realtimeSyncSources = new Set();
@@ -308,7 +307,7 @@ function render(force = false) {
   document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
   bind();
   animateXpFill();
-  if (!state.currentUser) void loadLoginFeaturedCards();
+  if (!state.currentUser) fillLoginShowcase();
 }
 
 function renderRoute() {
@@ -335,41 +334,45 @@ function renderRoute() {
   animateXpFill();
 }
 
+// Login "Vetrina dei Rari": vetrina delle carte più rare del team (riempita
+// da js/login-vault.js dopo il primo disegno), form di sempre (#member, #pin,
+// #login-form) e Blattaman. Il campo PIN non apre la tastiera del telefono:
+// al tocco apre il tastierino a carte coperte (openLoginPinPad).
+const VAULT_FAN = '<div class="vault-card"><img alt="" decoding="async"></div>'.repeat(5);
+function vaultFrame(panel) {
+  return `<main class="login-shell login-vault"><div class="vault-sparks" aria-hidden="true">${'<i></i>'.repeat(10)}</div>
+    <section class="vault-stage" aria-hidden="true"><div class="vault-fan" data-vault-fan>${VAULT_FAN}</div></section>
+    <header class="vault-head"><span class="vault-badge" data-vault-badge hidden></span><h1>F.P.T CARDS</h1><p class="muted">Il tuo team. Le tue carte.</p></header>
+    ${panel}
+    <aside class="vault-blatta" aria-hidden="true"><p>Uè compà! Scegli u profilu e trasi.</p><div class="vault-mascot"><img src="assets/tutorial/blattaman-welcome-sm.webp" alt="" width="200" height="200" decoding="async"></div></aside>
+  </main>`;
+}
+
 function loginView() {
-  return `<main class="login-shell"><section class="login-visual" aria-label="F.P.T Cards">
-    <div class="brand login-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1><p>Team card companion</p></div></div>
-    <div class="login-copy"><span class="eyebrow">Il vault del team</span><h2>Carte e prestiti.<br><span>Una squadra sola.</span></h2><p>Gestisci gli scambi, ritrova le carte del team e mantieni ogni movimento sotto controllo.</p></div>
-    <div class="login-card-scene" aria-hidden="true"><div class="scene-card back"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="dark-magician" alt=""></div><div class="scene-card hero"><img src="assets/fpt-card-hero.webp" alt="" width="516" height="774" loading="lazy" decoding="async"></div><div class="scene-card front"><span class="scene-placeholder">${icon('card')}</span><img data-login-feature="blue-eyes" alt=""></div></div>
-    <div class="value-pills"><span>${icon('collection')}<b>Raccolta</b><small>Archivio condiviso</small></span><span>${icon('swap')}<b>Prestiti</b><small>Tracciati dal team</small></span><span>${icon('chart')}<b>Market Watch</b><small>In arrivo</small></span></div>
-  </section><section class="login-panel"><div class="login-form-wrap">
-    <div class="brand login-mobile-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1></div></div><span class="eyebrow">Area riservata</span><h2>Bentornato</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai il PIN personale.</p>
-    <div class="surface login-card">
+  return vaultFrame(`<section class="vault-panel"><div class="surface login-card vault-form">
       <form id="login-form">${loginDraft.mode === 'username'
         ? `<label for="member">Nome utente</label><div class="member-select-wrap">${icon('team')}<input id="member" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="80" value="${esc(loginDraft.member)}" placeholder="es. mario-rossi-3f2a" aria-describedby="member-load-status"></div><p class="member-load-status" id="member-load-status">Il nome utente ti è stato mostrato quando hai creato il profilo. <button type="button" class="link-button" data-login-mode="pick">Sono del team F.P.T.</button></p>`
-        : `<label for="member">Membro del team</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili · <button type="button" class="link-button" data-login-mode="username">Accedi con nome utente</button></p>`}`}
-      <label for="pin">PIN di 4 cifre</label><div class="password-field"><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${esc(loginDraft.pin)}" placeholder="••••" required><button type="button" id="toggle-pin" aria-label="Mostra PIN">${icon('eye')}</button></div>
-      <button class="btn wide" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : `${icon('logout')} Accedi`}</button></form>
-    </div><p class="login-security">${icon('settings')} ${api.configured ? 'PIN protetto e sincronizzazione del team attivi' : 'Supabase non configurato'}</p>
-  </div></section></main>`;
+        : `<label for="member">Chi sei?</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili · <button type="button" class="link-button" data-login-mode="username">Accedi con nome utente</button></p>`}`}
+      <label for="pin">PIN</label><input id="pin" class="vault-pin" type="password" inputmode="none" readonly aria-haspopup="dialog" autocomplete="off" maxlength="4" value="${esc(loginDraft.pin)}">
+      <button class="btn wide vault-submit" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : 'Entra nel team'}</button></form>
+    </div><p class="login-security">${icon('settings')} ${api.configured ? 'PIN protetto e sincronizzazione del team attivi' : 'Supabase non configurato'}</p></section>`);
 }
 
 function loginLoadingView() {
-  return `<main class="login-shell"><section class="login-visual"></section><section class="login-panel"><div class="login-form-wrap login-loading" aria-live="polite"><span class="eyebrow">Area riservata</span><h2>Bentornato</h2><div class="surface login-card member-loading-row"><div class="loading-spinner" aria-hidden="true"></div><div><strong>Caricamento membri...</strong><p>Sto sincronizzando i profili del team.</p></div></div></div></section></main>`;
+  return vaultFrame(`<section class="vault-panel"><div class="login-form-wrap login-loading" aria-live="polite"><div class="surface login-card member-loading-row"><div class="loading-spinner" aria-hidden="true"></div><div><strong>Caricamento membri...</strong><p>Sto sincronizzando i profili del team.</p></div></div></div></section>`);
 }
 
-async function loadLoginFeaturedCards() {
-  loginFeatureCards ||= Promise.all([
-    findCard('Dark Magician', 'yugioh'),
-    findCard('Blue-Eyes White Dragon', 'yugioh')
-  ]).catch(() => []);
-  const [darkMagician, blueEyes] = await loginFeatureCards;
-  const cards = { 'dark-magician':darkMagician, 'blue-eyes':blueEyes };
-  Object.entries(cards).forEach(([slot, card]) => {
-    const image = document.querySelector(`[data-login-feature="${slot}"]`);
-    if (!image || !card?.image) return;
-    image.addEventListener('load', () => image.closest('.scene-card')?.classList.add('loaded'), { once:true });
-    image.src = card.fullImage || card.image;
-  });
+// Vetrina e tastierino vivono in js/login-vault.js, caricato dopo il primo
+// disegno del login (mai nel percorso critico dell'avvio).
+let loginVaultModule = null;
+const loadLoginVault = () => (loginVaultModule ||= import('./js/login-vault.js').catch(error => { loginVaultModule = null; throw error; }));
+function fillLoginShowcase() { void loadLoginVault().then(module => module.fillShowcase(api)).catch(() => {}); }
+function openLoginPinPad() {
+  const input = document.querySelector('#pin');
+  if (!input) return;
+  void loadLoginVault()
+    .then(module => module.openPinPad({ input, onSubmit: () => document.querySelector('#login-form')?.requestSubmit(document.querySelector('#login-form button[type="submit"]')) }))
+    .catch(() => toast('Tastierino non disponibile: controlla la connessione'));
 }
 
 function appView() {
@@ -1358,12 +1361,9 @@ function bind() {
     document.querySelector('#member')?.focus();
   }));
   document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
-  document.querySelector('#toggle-pin')?.addEventListener('click', event => {
-    const input = document.querySelector('#pin');
-    if (!input) return;
-    input.type = input.type === 'password' ? 'text' : 'password';
-    event.currentTarget.setAttribute('aria-label', input.type === 'password' ? 'Mostra PIN' : 'Nascondi PIN');
-  });
+  const pinField = document.querySelector('#pin.vault-pin');
+  pinField?.addEventListener('click', openLoginPinPad);
+  pinField?.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key) || /^[0-9]$/.test(event.key)) { event.preventDefault(); openLoginPinPad(); } });
   document.querySelectorAll('[data-logout]').forEach(button => button.addEventListener('click', logout));
   document.querySelector('[data-tutorial-open]')?.addEventListener('click', openTutorial);
   const gameSwitcher = document.querySelector('.game-switcher');
@@ -2541,7 +2541,7 @@ async function login(e) {
   const id = document.querySelector('#member').value.trim().toLowerCase();
   const pin = document.querySelector('#pin').value;
   if (!id) return toast(loginDraft.mode === 'username' ? 'Inserisci il tuo nome utente' : 'Seleziona il tuo profilo');
-  if (!/^\d{4}$/.test(pin)) return toast('Inserisci un PIN di 4 cifre');
+  if (!/^\d{4}$/.test(pin)) { if (document.querySelector('#pin.vault-pin')) openLoginPinPad(); return toast('Inserisci un PIN di 4 cifre'); }
   loginDraft = { ...loginDraft, member:id, pin };
   loginPending = true;
   try {

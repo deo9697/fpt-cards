@@ -18,6 +18,14 @@ function unwrap(result) { if (result.error) throw result.error; return result.da
 export const api = {
   configured,
   async members() { ensure(); return unwrap(await client.rpc('list_login_members')); },
+  // Vetrina pubblica del login (solo nome/rarità/immagine/copie, mai i proprietari).
+  // Prima della migration login_showcase la RPC non esiste: vetrina vuota.
+  async loginShowcase(limit = 6) {
+    ensure(); const result = await client.rpc('list_login_showcase', { p_limit:limit });
+    if (!result.error) return result.data || [];
+    if (['PGRST202','42883'].includes(result.error.code)) return [];
+    throw result.error;
+  },
   async memberProfiles() { ensure(); return unwrap(await client.rpc('list_member_profiles', { p_token:token() })); },
   // login_member restituisce {ok:false, code, message, retryAfterSeconds?} sui fallimenti (rate-limit server-side: un RAISE annullerebbe il contatore).
   async login(slug, pin) {
