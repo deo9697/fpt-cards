@@ -2926,8 +2926,18 @@ body.blatta-tour-open { overflow:hidden; }
   .vault-stage { max-width:560px; height:min(290px, 33vh); }
   .vault-card { --w:min(138px, 16vh); }
   .vault-card:nth-child(1) { --x:-210px; --y:58px; } .vault-card:nth-child(2) { --x:-108px; --y:24px; } .vault-card:nth-child(4) { --x:108px; --y:24px; } .vault-card:nth-child(5) { --x:210px; --y:58px; }
-  .vault-blatta { position:absolute; right:32px; bottom:28px; width:auto; }
+  /* Fissato all'angolo della finestra: con lo zoom di Windows (es. 125%) la
+     pagina può essere più alta della finestra e Blattaman finiva tagliato. */
+  .vault-blatta { position:fixed; right:28px; bottom:24px; width:auto; z-index:5; }
   .vault-mascot { width:110px; height:110px; }
+}
+@media (min-width: 900px) and (max-height: 760px) {
+  .login-shell.login-vault { gap:8px; padding-top:12px; padding-bottom:12px; }
+  .vault-stage { height:min(230px, 30vh); }
+  .vault-card { --w:min(118px, 14vh); }
+  .vault-head h1 { font-size:1.8rem; margin-top:2px; }
+  .login-vault .vault-form { padding:14px 18px; }
+  .vault-mascot { width:92px; height:92px; }
 }
 @keyframes vault-float { 0%, 100% { translate:0 0; } 50% { translate:0 -10px; } }
 @keyframes vault-holo { 0% { transform:translateX(-140%) skewX(-18deg); } 60%, 100% { transform:translateX(240%) skewX(-18deg); } }
