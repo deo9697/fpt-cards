@@ -48,6 +48,9 @@ const fakeSupabaseSource = `(()=>{
       if(name==='get_stats') return {data:[],error:null};
       if(name==='get_team_stats') return {data:[],error:null};
       if(name==='list_login_members') return {data:members,error:null};
+      // Beta teams: dopo il login l'elenco membri arriva da list_team_members (stesso team core qui).
+      if(name==='list_team_members') return {data:members,error:null};
+      if(name==='get_my_team') return {data:null,error:null};
       if(name==='login_member'){
         window.__authTest.lastLoginSlug=args.p_slug||'';
         if(window.__authTest.wrongPinMode) return {data:null,error:{message:'PIN non corretto'}};
