@@ -26,6 +26,29 @@ export const api = {
     return result;
   },
   async logout() { if (client) await client.rpc('logout_member', { p_token:token() }); localStorage.removeItem(TOKEN_KEY); },
+  // Beta: team separati e inviti. Prima della migration beta_teams le RPC non
+  // esistono (PGRST202): teamMembers ripiega sull'elenco del login, myTeam su null.
+  async teamMembers() {
+    ensure(); const result = await client.rpc('list_team_members', { p_token:token() });
+    if (!result.error) return result.data;
+    if (['PGRST202','42883'].includes(result.error.code)) return this.members();
+    throw result.error;
+  },
+  async myTeam() {
+    ensure(); const result = await client.rpc('get_my_team', { p_token:token() });
+    if (!result.error) return result.data;
+    if (['PGRST202','42883'].includes(result.error.code)) return null;
+    throw result.error;
+  },
+  async inviteInfo(code) { ensure(); return unwrap(await client.rpc('get_invite_info', { p_code:code })); },
+  async registerWithInvite(code, name, pin, teamName) {
+    ensure(); return unwrap(await client.rpc('register_with_invite', { p_code:code, p_name:name, p_pin:pin, p_team_name:teamName || '', p_token:token() }));
+  },
+  async createTeamInvite(mode, maxUses, days) { ensure(); return unwrap(await client.rpc('create_team_invite', { p_token:token(), p_mode:mode, p_max_uses:maxUses, p_days:days })); },
+  async teamInvites() { ensure(); return unwrap(await client.rpc('list_team_invites', { p_token:token() })); },
+  async revokeTeamInvite(code) { ensure(); unwrap(await client.rpc('revoke_team_invite', { p_token:token(), p_code:code })); },
+  async renameMyTeam(name) { ensure(); unwrap(await client.rpc('rename_my_team', { p_token:token(), p_name:name })); },
+  async setBetaSignups(open) { ensure(); unwrap(await client.rpc('set_beta_signups', { p_token:token(), p_open:Boolean(open) })); },
   async loans({signal}={}) { ensure(); return pagedRpc(client,'list_team_loans',{p_token:token()},{signal,orders:[{column:'created_at'},{column:'id'}]}); },
   async myCollection({signal}={}) { ensure(); return pagedRpc(client,'list_my_collection',{p_token:token()},{signal,orders:[{column:'card_name'},{column:'set_code'},{column:'condition'},{column:'id'}]}); },
   async teamCollection({signal}={}) { ensure(); return pagedRpc(client,'list_team_collection',{p_token:token()},{signal,orders:[{column:'card_name'},{column:'owner_name'},{column:'set_code'},{column:'id'}]}); },
@@ -397,15 +420,18 @@ export const api = {
       p_p256dh:subscription.keys?.p256dh, p_auth:subscription.keys?.auth
     }));
   },
-  subscribe(callback, collectionCallback = callback) {
+  // Canali per team (`fpt-loans:<teamId>`): chi è in un altro team non riceve
+  // nulla. Senza teamId (migration non applicata) restano i canali storici.
+  subscribe(callback, collectionCallback = callback, teamId = null) {
     ensure();
     if (realtimeChannel) client.removeChannel(realtimeChannel);
     if (collectionChannel) client.removeChannel(collectionChannel);
-    realtimeChannel = client.channel('fpt-loans')
+    const suffix = teamId ? `:${teamId}` : '';
+    realtimeChannel = client.channel(`fpt-loans${suffix}`)
       .on('broadcast', { event:'loans_changed' }, callback)
       .subscribe();
-    collectionChannel = client.channel('fpt-collection')
-      .on('broadcast', { event:'collection_changed' }, collectionCallback)
+    collectionChannel = client.channel(`fpt-collection${suffix}`)
+      .on('broadcast', { event:'collection_changed' }, message => collectionCallback(message?.payload || {}))
       .subscribe();
   },
   unsubscribe() {

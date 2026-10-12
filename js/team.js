@@ -18,24 +18,51 @@ export function teamMemberRows({members,currentUser,admin,avatar,title}) {
   return `<p class="team-result-count" role="status">${visible.length} ${visible.length===1?'membro':'membri'}${query?' trovati':''}</p><div class="team-roster">${rows||`<div class="team-no-results">${icon('search')}<h3>Nessun membro trovato</h3><p>Prova un altro nome o cambia filtro.</p></div>`}</div>`;
 }
 
+function formatInviteDate(value){return new Intl.DateTimeFormat('it-IT',{day:'numeric',month:'short'}).format(new Date(value));}
+
+// Beta: link di invito. Il creatore di un team beta invita nel proprio team;
+// l'admin può anche generare link che creano un team nuovo.
+export function teamInvitesSection(model){
+  const {team,invites,invitesLoading,inviteUrl}=model;
+  if(!team||(!team.canInviteToTeam&&!team.canInviteNewTeam))return '';
+  const now=Date.now();
+  const rows=invites.map(invite=>{
+    const expired=new Date(invite.expires_at).getTime()<=now,full=invite.uses>=invite.max_uses,active=!invite.revoked&&!expired&&!full;
+    const status=invite.revoked?'Revocato':expired?'Scaduto':full?'Esaurito':`Scade il ${formatInviteDate(invite.expires_at)}`;
+    return `<article class="team-invite ${active?'':'is-inactive'}"><div><h3>${invite.mode==='new_team'?'Nuovo team':`Entra in ${esc(invite.team_name||'questo team')}`}</h3><p>${invite.uses}/${invite.max_uses} usi · ${status}</p>${active?`<code>${esc(inviteUrl(invite.code))}</code>`:''}</div>
+      ${active?`<div class="team-person-actions"><button type="button" class="btn secondary small" data-invite-share="${esc(invite.code)}">${icon('share')} Condividi</button><button type="button" class="btn secondary danger small" data-invite-revoke="${esc(invite.code)}">${icon('trash')} Revoca</button></div>`:''}</article>`;
+  }).join('');
+  const beta=team.beta;
+  return `<section class="team-invites" aria-labelledby="team-invites-title"><div class="team-section-heading">${icon('send')}<div><h2 id="team-invites-title">Inviti</h2><p>${team.kind==='beta'?'Manda il link ai tuoi amici: entrano nel tuo team con un profilo loro.':'Link per far provare F.P.T Cards a chi non è del team. Ogni gruppo ha dati separati.'}</p></div></div>
+    ${beta?`<div class="team-beta-status"><p><strong>Beta</strong> · ${beta.members}/${beta.maxMembers} iscritti in ${beta.teams} team · iscrizioni ${beta.signupsOpen?'aperte':'chiuse'}</p><button type="button" class="btn secondary small" data-beta-signups="${beta.signupsOpen?'close':'open'}">${beta.signupsOpen?'Chiudi iscrizioni':'Apri iscrizioni'}</button></div>`:''}
+    <div class="team-toolbar">${team.canInviteNewTeam?`<button type="button" class="btn" data-invite-create="new_team">${icon('plus')} Link per un nuovo team</button>`:''}${team.kind==='beta'&&team.canInviteToTeam?`<button type="button" class="btn" data-invite-create="my_team">${icon('plus')} Invita nel mio team</button>`:''}</div>
+    <div class="team-invite-list">${rows||`<p class="muted">${invitesLoading?'Carico gli inviti…':'Nessun invito ancora.'}</p>`}</div>
+  </section>`;
+}
+
 export function renderTeamPage(model) {
-  const {members,admin,supported,configured,openLoans}=model;
+  const {members,admin,supported,configured,openLoans,team}=model;
   const admins=members.filter(m=>m.role==='admin').length;
   const stats=[['team',members.length,'Membri'],['lock',admins,'Admin'],['swap',openLoans,'Prestiti aperti'],['bell',configured?'On':'Off','Notifiche']];
+  const beta=team?.kind==='beta';
+  const hero=beta
+    ?`<div><span class="eyebrow">F.P.T Cards · Team beta</span><h1>${esc(team.name)}</h1><p>${team.isOwner?'Hai creato tu questo team.<br><button type="button" class="link-button" data-team-rename>Rinomina il team</button>':'La tua squadra su F.P.T Cards.'}</p></div>`
+    :`<div><span class="eyebrow">F.P.T Cards · La tua squadra</span><h1>Il DREAM team</h1><p>chi squadrune...<br>Il team fa la differenza.</p></div>`;
   return `<section class="team-page page-stack">
-    <header class="team-hero"><div><span class="eyebrow">F.P.T Cards · La tua squadra</span><h1>Il DREAM team</h1><p>chi squadrune...<br>Il team fa la differenza.</p></div><img src="assets/fpt-card-hero.webp" alt="" aria-hidden="true" width="516" height="774" loading="lazy" decoding="async"></header>
+    <header class="team-hero">${hero}<img src="assets/fpt-card-hero.webp" alt="" aria-hidden="true" width="516" height="774" loading="lazy" decoding="async"></header>
     <div class="team-summary" aria-label="Riepilogo team">${stats.map(([symbol,value,label])=>`<div>${icon(symbol)}<strong>${value}</strong><small>${label}</small></div>`).join('')}</div>
     <section class="team-notifications"><span class="team-notification-icon">${icon('bell')}</span><div><h2>Notifiche richieste</h2><p>${!supported?'Le notifiche push non sono supportate su questo browser.':configured?'Push configurate su questo dispositivo.':'Ricevi le richieste di prestito anche quando l’app è chiusa.'}</p></div><button type="button" class="btn secondary" id="enable-notifications" ${!supported?'disabled':''}>${configured?'Riconfigura':'Configura'} ${icon('arrow')}</button></section>
-    <section class="team-members" aria-labelledby="team-members-title"><div class="team-section-heading">${icon('team')}<div><h2 id="team-members-title">${admin?'Gestione membri':'La squadra'}</h2><p>${admin?'Tutti i tuoi compagni, in un solo posto.':'Conosci i membri del tuo team F.P.T.'}</p></div></div>
+    <section class="team-members" aria-labelledby="team-members-title"><div class="team-section-heading">${icon('team')}<div><h2 id="team-members-title">${admin?'Gestione membri':'La squadra'}</h2><p>${admin?'Tutti i tuoi compagni, in un solo posto.':(beta?'Chi fa parte del tuo team.':'Conosci i membri del tuo team F.P.T.')}</p></div></div>
       <div class="team-toolbar"><label class="team-search">${icon('search')}<input type="search" data-team-search aria-label="Cerca un membro" placeholder="Cerca un membro…" value="${esc(teamFilters.query)}"></label>${admin?`<button type="button" class="btn team-add-toggle" data-team-add-toggle aria-expanded="false" aria-controls="team-add-panel">${icon('plus')} Aggiungi</button>`:''}</div>
       ${admin?`<div id="team-add-panel" class="team-add-panel" hidden><form id="member-form"><label for="new-member-name">Nome e cognome</label><div><input id="new-member-name" autocomplete="name" maxlength="100" placeholder="Nome del nuovo membro" required><button class="btn" type="submit">Crea membro</button></div><small>Il membro imposterà il suo PIN al primo accesso.</small></form></div>`:''}
       <div class="team-filters" role="group" aria-label="Filtra membri">${[['all','Tutti',members.length],['admin','Admin',admins],['member','Membri',members.length-admins]].map(([value,label,count])=>`<button type="button" data-team-filter="${value}" aria-pressed="${teamFilters.role===value}" class="${teamFilters.role===value?'active':''}">${label} <span>${count}</span></button>`).join('')}</div>
       <div data-team-results>${teamMemberRows(model)}</div>
     </section>
+    ${teamInvitesSection(model)}
   </section>`;
 }
 
-export function bindTeamPage(root,model,onMemberAction) {
+export function bindTeamPage(root,model,onMemberAction,teamActions={}) {
   const page=root.querySelector('.team-page');if(!page)return;
   const refresh=()=>{page.querySelector('[data-team-results]').innerHTML=teamMemberRows(model);};
   page.querySelector('[data-team-search]').addEventListener('input',event=>{teamFilters.query=event.target.value;refresh();});
@@ -46,5 +73,14 @@ export function bindTeamPage(root,model,onMemberAction) {
     if(add){const panel=page.querySelector('#team-add-panel');panel.hidden=!panel.hidden;add.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)panel.querySelector('input').focus();}
     const action=event.target.closest('[data-member-action]');
     if(action&&model.admin)onMemberAction(action.dataset.memberAction,action.dataset.memberId);
+    const create=event.target.closest('[data-invite-create]');
+    if(create)teamActions.createInvite?.(create.dataset.inviteCreate);
+    const share=event.target.closest('[data-invite-share]');
+    if(share)teamActions.shareInvite?.(share.dataset.inviteShare);
+    const revoke=event.target.closest('[data-invite-revoke]');
+    if(revoke)teamActions.revokeInvite?.(revoke.dataset.inviteRevoke);
+    const signups=event.target.closest('[data-beta-signups]');
+    if(signups)teamActions.toggleSignups?.(signups.dataset.betaSignups==='open');
+    if(event.target.closest('[data-team-rename]'))teamActions.renameTeam?.();
   });
 }

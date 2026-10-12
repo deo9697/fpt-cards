@@ -32,6 +32,7 @@ function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(
 
 const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
+const JOIN_HASH = /^#\/join\/([0-9a-f]{16})$/i;
 let guestShare;
 const displayedXpProgress = new Map();
 let page = routeFromHash();
@@ -77,7 +78,7 @@ let secretTapTimer;
 let appLoading = false;
 let cloudError = '';
 let loginPending = false;
-let loginDraft = { member:'', pin:'' };
+let loginDraft = { member:'', pin:'', mode:'pick' };
 let memberLoadError = '';
 let loginFeatureCards;
 let realtimeSyncTimer;
@@ -260,6 +261,7 @@ function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 
 // aggiornano quindi qui, all'ingresso nella rispettiva pagina.
 function dispatchPageEnterRefresh(previous, next) {
   if (next === 'requests') void refreshCollectionShareRequests();
+  if (next === 'team') void loadTeamInvites();
   if (next === 'market') void loadAppControllers().then(() => marketWatch.load()).catch(() => {});
   if (next === 'decks') void loadDecks().then(() => renderRoute());
   if (previous !== 'stats' && next === 'stats') void loadAppControllers().then(() => stats.load()).then(() => { stats.refreshBody(); stats.checkLossStreakEasterEgg(); }).catch(() => {});
@@ -284,6 +286,7 @@ function animateXpFill() {
 }
 function render(force = false) {
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
+  if (joinFlow) { renderJoin(); return; }
   if (!force && !state.currentUser && document.querySelector('.login-shell #login-form')) return;
   const activeField = document.activeElement;
   const editingLoan = state.currentUser && page === 'new'
@@ -311,6 +314,7 @@ function render(force = false) {
 function renderRoute() {
   if (isLossStreakZoomActive()) { onLossStreakZoomEnd(renderRoute); return; }
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
+  if (joinFlow) { renderJoin(); return; }
   const shell = document.querySelector('.app-shell');
   const stage = shell?.querySelector('.page-stage');
   if (!state.currentUser || !shell || !stage) { render(); return; }
@@ -340,7 +344,9 @@ function loginView() {
   </section><section class="login-panel"><div class="login-form-wrap">
     <div class="brand login-mobile-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1></div></div><span class="eyebrow">Area riservata</span><h2>Bentornato</h2><p class="muted">Seleziona il tuo profilo. Al primo accesso creerai il PIN personale.</p>
     <div class="surface login-card">
-      <form id="login-form"><label for="member">Membro del team</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili</p>`}
+      <form id="login-form">${loginDraft.mode === 'username'
+        ? `<label for="member">Nome utente</label><div class="member-select-wrap">${icon('team')}<input id="member" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="80" value="${esc(loginDraft.member)}" placeholder="es. mario-rossi-3f2a" aria-describedby="member-load-status"></div><p class="member-load-status" id="member-load-status">Il nome utente ti è stato mostrato quando hai creato il profilo. <button type="button" class="link-button" data-login-mode="pick">Sono del team F.P.T.</button></p>`
+        : `<label for="member">Membro del team</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili · <button type="button" class="link-button" data-login-mode="username">Accedi con nome utente</button></p>`}`}
       <label for="pin">PIN di 4 cifre</label><div class="password-field"><input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${esc(loginDraft.pin)}" placeholder="••••" required><button type="button" id="toggle-pin" aria-label="Mostra PIN">${icon('eye')}</button></div>
       <button class="btn wide" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : `${icon('logout')} Accedi`}</button></form>
     </div><p class="login-security">${icon('settings')} ${api.configured ? 'PIN protetto e sincronizzazione del team attivi' : 'Supabase non configurato'}</p>
@@ -873,9 +879,56 @@ function loanCard(l) {
   return `<article class="card loan"><div><p><strong>${esc(l.cardName)}</strong> × ${l.quantity}</p><div class="meta">${isOwner ? `A ${member(l.borrower).name}` : `Da ${member(l.owner).name}`} · ${formatDate(l.createdAt)}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ''}</div><span class="badge ${l.status === 'returned' ? 'ok' : l.status.includes('pending') ? 'wait' : ''}">${statusLabel(l.status)}</span>${buttons ? `<div class="actions">${buttons}</div>` : ''}</article>`;
 }
 
+// Beta: inviti del team. null = non ancora caricati.
+let teamInvites = null;
+let teamInvitesLoading = false;
+async function loadTeamInvites() {
+  if (teamInvitesLoading || !state.currentUser) return;
+  const team = state.team;
+  if (!team?.canInviteToTeam && !team?.canInviteNewTeam) return;
+  teamInvitesLoading = true;
+  try { teamInvites = await api.teamInvites(); } catch { teamInvites = teamInvites || []; }
+  finally { teamInvitesLoading = false; }
+  if (page === 'team') renderRoute();
+}
+function inviteUrl(code) { return `${location.origin}${location.pathname}#/join/${code}`; }
+async function shareInviteLink(code) {
+  const url = inviteUrl(code);
+  try {
+    if (navigator.share) await navigator.share({ title:'F.P.T Cards', text:'Crea il tuo profilo su F.P.T Cards', url });
+    else { await navigator.clipboard.writeText(url); toast('Link copiato'); }
+  } catch (error) { if (error?.name !== 'AbortError') toast(url); }
+}
+const teamActions = {
+  async createInvite(mode) {
+    try {
+      const invite = await api.createTeamInvite(mode, mode === 'new_team' ? 1 : 10, 14);
+      await loadTeamInvites(); await shareInviteLink(invite.code);
+    } catch (error) { toast(error.message || 'Invito non creato'); }
+  },
+  async revokeInvite(code) {
+    if (!confirm('Revocare questo invito? Il link smetterà di funzionare.')) return;
+    try { await api.revokeTeamInvite(code); await loadTeamInvites(); toast('Invito revocato'); }
+    catch (error) { toast(error.message || 'Revoca non riuscita'); }
+  },
+  shareInvite:shareInviteLink,
+  async toggleSignups(open) {
+    try { await api.setBetaSignups(open); await loadMembers(); renderRoute(); toast(open ? 'Iscrizioni beta aperte' : 'Iscrizioni beta chiuse'); }
+    catch (error) { toast(error.message || 'Operazione non riuscita'); }
+  },
+  async renameTeam() {
+    const name = prompt('Nuovo nome del team', state.team?.name || '');
+    if (name == null || !name.trim()) return;
+    try { await api.renameMyTeam(name.trim()); await loadMembers(); renderRoute(); toast('Team rinominato'); }
+    catch (error) { toast(error.message || 'Rinomina non riuscita'); }
+  }
+};
+
 function teamModel() {
   const supported=pushSupported();
+  if (teamInvites === null && !teamInvitesLoading) void loadTeamInvites();
   return {members:MEMBERS,currentUser:state.currentUser,admin:state.role==='admin',supported,configured:supported&&pushConfigured(),
+    team:state.team||null,invites:teamInvites||[],invitesLoading:teamInvitesLoading,inviteUrl,
     openLoans:state.loans.filter(loan=>!['returned','completed','rejected'].includes(loan.status)).length,
     avatar:m=>profileAvatarMarkup(m,memberProfiles.get(m.id)||{}),
     title:m=>{const profile=memberProfiles.get(m.id)||{};return findCosmetic(profile.activeTitle)?.label||titleForLevel(profile.level||1);}
@@ -1297,6 +1350,11 @@ function bind() {
   document.querySelector('#member')?.addEventListener('change', event => {
     loginDraft.member = event.currentTarget.value;
   });
+  document.querySelectorAll('[data-login-mode]').forEach(button => button.addEventListener('click', () => {
+    loginDraft = { ...loginDraft, mode:button.dataset.loginMode, member:'' };
+    render(true);
+    document.querySelector('#member')?.focus();
+  }));
   document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
   document.querySelector('#toggle-pin')?.addEventListener('click', event => {
     const input = document.querySelector('#pin');
@@ -1424,7 +1482,7 @@ function bind() {
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
-  loadedPageModule('team')?.bindTeamPage(document, teamModel(), manageMember);
+  loadedPageModule('team')?.bindTeamPage(document, teamModel(), manageMember, teamActions);
   loadedPageModule('admin')?.bindAdminPage(document, adminModel(), {
     onSelectCandidate: selectAdminArtworkCandidate, onConfirm: confirmAdminArtworkSelection,
     onLoadMore: () => loadAdminArtworkQueue(false), onFilterChange: setAdminArtworkFilter,
@@ -1952,13 +2010,19 @@ function mapCollectionItem(item) {
   };
 }
 
-async function loadCollection({ force = false } = {}) {
+// scope: 'all' (default), 'mine' o 'team'. Il realtime usa 'team' quando a
+// cambiare è stata solo la raccolta di altri membri, così non riscarica la
+// propria: è la voce di egress più pesante per utente.
+let collectionLoadScope = 'all';
+async function loadCollection({ force = false, scope = 'all' } = {}) {
   if(collectionLoadInFlight){
-    if(!force)return collectionLoadInFlight;
-    collectionLoadGeneration+=1;
-    collectionLoadAbortController?.abort();
+    const covered=collectionLoadScope==='all'||collectionLoadScope===scope;
+    if(!force&&covered)return collectionLoadInFlight;
+    if(force){collectionLoadGeneration+=1;collectionLoadAbortController?.abort();}
     try{await collectionLoadInFlight;}catch{}
+    if(!force&&collectionLoadInFlight)return loadCollection({ scope });
   }
+  collectionLoadScope=scope;
   const generation=++collectionLoadGeneration;
   const controller=new AbortController();
   collectionLoadAbortController=controller;
@@ -1966,11 +2030,15 @@ async function loadCollection({ force = false } = {}) {
     // Alias EN/IT caricati qui, in parallelo alle RPC (non più nel percorso
     // critico del login). Non bloccante: se il file non arriva la raccolta si
     // carica comunque, solo senza i nomi alternativi.
-    const [mine, team] = await Promise.all([api.myCollection({signal:controller.signal}), api.teamCollection({signal:controller.signal}), loadCollectionNameAliases().catch(()=>null)]);
+    const [mine, team] = await Promise.all([
+      scope==='team'?null:api.myCollection({signal:controller.signal}),
+      scope==='mine'?null:api.teamCollection({signal:controller.signal}),
+      loadCollectionNameAliases().catch(()=>null)
+    ]);
     if(generation!==collectionLoadGeneration)return state.collection;
     state.collection = enrichCollectionAliases({
-      mine:(mine || []).map(mapCollectionItem),
-      team:(team || []).map(mapCollectionItem),
+      mine:mine?mine.map(mapCollectionItem):state.collection.mine,
+      team:team?team.map(mapCollectionItem):state.collection.team,
       syncedAt:new Date().toISOString()
     });
     syncLoanImagesFromCollection();
@@ -2403,8 +2471,17 @@ async function submitCollectionLoanRequest(event) {
 
 let memberProfiles = new Map();
 async function loadMembers() {
-  const [items, profiles] = await Promise.all([api.members(), api.memberProfiles().catch(() => [])]);
+  // Da loggato: solo il proprio team (F.P.T. o un team della beta).
+  // Prima del login: l'elenco pubblico del team F.P.T. per la schermata di accesso.
+  const loggedIn = Boolean(state.currentUser);
+  const [items, profiles, team] = await Promise.all([
+    loggedIn ? api.teamMembers() : api.members(),
+    loggedIn ? api.memberProfiles().catch(() => []) : [],
+    loggedIn ? api.myTeam().catch(() => state.team || null) : null
+  ]);
+  if (loggedIn !== Boolean(state.currentUser)) return;
   state.members = items;
+  state.team = team;
   setMembers(items);
   memberProfiles = new Map(profiles.map(row => [row.member_slug, { activeAvatar:row.active_avatar || '', activeTitle:row.active_title || '', level:row.level || 1 }]));
 }
@@ -2442,11 +2519,11 @@ async function retryCloud() {
 async function login(e) {
   e.preventDefault();
   if (loginPending) return;
-  const id = document.querySelector('#member').value;
+  const id = document.querySelector('#member').value.trim().toLowerCase();
   const pin = document.querySelector('#pin').value;
-  if (!id) return toast('Seleziona il tuo profilo');
+  if (!id) return toast(loginDraft.mode === 'username' ? 'Inserisci il tuo nome utente' : 'Seleziona il tuo profilo');
   if (!/^\d{4}$/.test(pin)) return toast('Inserisci un PIN di 4 cifre');
-  loginDraft = { member:id, pin };
+  loginDraft = { ...loginDraft, member:id, pin };
   loginPending = true;
   try {
     const submit = e.submitter;
@@ -2455,10 +2532,10 @@ async function login(e) {
     state.currentUser = profile.slug;
     state.role = profile.role;
     state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
-    loginDraft = { member:'', pin:'' };
+    loginDraft = { member:'', pin:'', mode:loginDraft.mode };
     saveState();
     render();
-    await loadPrimaryData();
+    await Promise.all([loadMembers().catch(() => {}), loadPrimaryData()]);
     startRealtime();
     saveState();
   } catch (error) {
@@ -2480,7 +2557,9 @@ async function logout() {
   await fastScan?.leave();
   api.unsubscribe();
   await api.logout();
-  state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
+  state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; state.team = null; teamInvites = null; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
+  // L'elenco in memoria è quello del team appena chiuso: torna a quello del login.
+  void loadMembers().then(() => { if (!state.currentUser) render(true); }).catch(() => {});
 }
 
 async function enableNotifications() {
@@ -2498,11 +2577,18 @@ function actionableIds() {
 }
 
 function startRealtime() {
-  api.subscribe(() => scheduleRealtimeSync('loans'), () => scheduleRealtimeSync('collection'));
+  api.subscribe(() => scheduleRealtimeSync('loans'), payload => scheduleRealtimeSync('collection', payload?.members), state.team?.id || null);
 }
 
-function scheduleRealtimeSync(source) {
+// Membri la cui raccolta è cambiata dall'ultimo sync; null = non noto
+// (broadcast storico senza elenco), quindi si ricarica tutto.
+let realtimeChangedMembers = new Set();
+function scheduleRealtimeSync(source, members) {
   if (source) realtimeSyncSources.add(source);
+  if (source === 'collection' && realtimeChangedMembers) {
+    if (Array.isArray(members)) members.forEach(slug => realtimeChangedMembers.add(slug));
+    else realtimeChangedMembers = null;
+  }
   clearTimeout(realtimeSyncTimer);
   realtimeSyncTimer = setTimeout(() => runRealtimeSync(), 250);
 }
@@ -2512,9 +2598,14 @@ async function runRealtimeSync() {
   realtimeSyncRunning = true;
   const sources=new Set(realtimeSyncSources);
   realtimeSyncSources.clear();
+  const changedMembers=realtimeChangedMembers;
+  realtimeChangedMembers=new Set();
+  // La lista del team include anche le mie carte: se a cambiare sono stati
+  // solo altri membri basta ricaricare quella.
+  const collectionScope=!changedMembers||changedMembers.has(state.currentUser)||!changedMembers.size?'all':'team';
   const before = actionableIds();
   try {
-    if (!sources.has('loans')) await loadCollection();
+    if (!sources.has('loans')) await loadCollection({ scope:collectionScope });
     else await Promise.allSettled([loadCloudLoans(),loadCollection()]);
     saveState();
     const added = [...actionableIds()].filter(id => !before.has(id));
@@ -2900,6 +2991,12 @@ async function start() {
   // someone who was never meant to need an account.
   const shareMatch = location.hash.match(SHARE_HASH);
   if (shareMatch) { await startGuestShare(shareMatch[1]); return; }
+  const joinMatch = location.hash.match(JOIN_HASH);
+  if (joinMatch) {
+    if (!state.currentUser) { await startJoin(joinMatch[1]); return; }
+    history.replaceState(null, '', '#/home');
+    setTimeout(() => toast('Sei già connesso: esci per usare un invito'), 600);
+  }
   installCardImageRecovery();
   installCollectionControls();
   // fastScan.restore() ora gira dentro loadFastScan(), alla prima apertura della pagina Scan.
@@ -2953,10 +3050,89 @@ async function start() {
   void registerAutoUpdates();
   render();
 }
+// --- Beta: "crea il tuo profilo" da un link di invito (#/join/CODICE) ------
+let joinFlow = null;
+async function startJoin(code) {
+  joinFlow = { code:code.toUpperCase(), info:null, pending:false, done:null, draft:{ name:'', team:'' } };
+  document.body.dataset.page = 'login';
+  renderJoin();
+  try { joinFlow.info = await api.inviteInfo(joinFlow.code); }
+  catch (error) { joinFlow.info = { valid:false, reason:/fetch|network/i.test(error.message || '') ? 'Database non raggiungibile, riprova tra poco.' : 'Inviti non ancora disponibili.' }; }
+  renderJoin();
+}
+
+function joinView() {
+  const { info, pending, done, draft } = joinFlow;
+  const visual = `<section class="login-visual" aria-label="F.P.T Cards"><div class="brand login-brand"><img src="icon-384.webp" alt="Logo F.P.T Cards" width="384" height="384"><div><h1>F.P.T Cards</h1><p>Beta</p></div></div>
+    <div class="login-copy"><span class="eyebrow">Beta aperta su invito</span><h2>La tua collezione.<br><span>Il tuo team.</span></h2><p>Raccolta, mazzi, prezzi Cardmarket e prestiti tra amici, in un'unica app.</p></div></section>`;
+  let body;
+  if (done) {
+    body = `<span class="eyebrow">Profilo creato</span><h2>Benvenuto, ${esc(done.name)}</h2>
+      <div class="surface login-card join-done"><p>Il tuo nome utente è</p><p class="join-username"><strong>${esc(done.slug)}</strong> <button type="button" class="btn secondary small" data-join-copy>${icon('share')} Copia</button></p>
+      <p class="muted">Salvalo insieme al PIN: ti servono per accedere da un altro dispositivo, con “Accedi con nome utente”.</p>
+      <button type="button" class="btn wide" data-join-enter>Entra in F.P.T Cards</button></div>`;
+  } else if (!info) {
+    body = `<div class="surface login-card member-loading-row"><div class="loading-spinner" aria-hidden="true"></div><div><strong>Controllo l'invito…</strong></div></div>`;
+  } else if (!info.valid) {
+    body = `<span class="eyebrow">Invito</span><h2>Invito non disponibile</h2><div class="surface login-card"><p>${esc(info.reason || 'Questo invito non è valido.')}</p><a class="btn wide" href="#/home" data-join-exit>Vai all'accesso</a></div>`;
+  } else {
+    const newTeam = info.mode === 'new_team';
+    body = `<span class="eyebrow">${newTeam ? 'Crea il tuo team' : 'Sei stato invitato'}</span><h2>${newTeam ? 'Crea il tuo profilo' : `Entra in ${esc(info.teamName || 'un team')}`}</h2>
+      <p class="muted">${newTeam ? 'Crei un profilo guest e un team tutto tuo: poi potrai invitare i tuoi amici.' : 'Crei un profilo guest dentro questo team.'} I dati del team F.P.T. restano separati.</p>
+      <div class="surface login-card"><form id="join-form">
+        <label for="join-name">Il tuo nome</label><input id="join-name" autocomplete="nickname" maxlength="60" required value="${esc(draft.name)}" placeholder="Come ti chiamano al tavolo">
+        ${newTeam ? `<label for="join-team">Nome del team</label><input id="join-team" maxlength="40" required value="${esc(draft.team)}" placeholder="es. I Duellanti del Venerdì">` : ''}
+        <label for="join-pin">PIN di 4 cifre</label><input id="join-pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="••••" autocomplete="new-password">
+        <label for="join-pin2">Ripeti il PIN</label><input id="join-pin2" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="••••" autocomplete="new-password">
+        <button class="btn wide" type="submit" ${pending ? 'disabled' : ''}>${pending ? 'Creazione…' : 'Crea profilo'}</button>
+      </form></div>`;
+  }
+  return `<main class="login-shell join-shell">${visual}<section class="login-panel"><div class="login-form-wrap">${body}</div></section></main>`;
+}
+
+function renderJoin() {
+  document.querySelector('#app').innerHTML = joinView();
+  const form = document.querySelector('#join-form');
+  form?.addEventListener('input', () => {
+    joinFlow.draft.name = form.querySelector('#join-name')?.value || '';
+    joinFlow.draft.team = form.querySelector('#join-team')?.value || '';
+  });
+  form?.addEventListener('submit', submitJoin);
+  document.querySelector('[data-join-copy]')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(joinFlow.done.slug); toast('Nome utente copiato'); } catch { toast(joinFlow.done.slug); }
+  });
+  document.querySelector('[data-join-enter]')?.addEventListener('click', () => { joinFlow = null; location.hash = '#/home'; location.reload(); });
+  document.querySelector('[data-join-exit]')?.addEventListener('click', event => { event.preventDefault(); joinFlow = null; location.hash = '#/home'; location.reload(); });
+}
+
+async function submitJoin(event) {
+  event.preventDefault();
+  if (joinFlow.pending) return;
+  const name = document.querySelector('#join-name').value.trim();
+  const team = document.querySelector('#join-team')?.value.trim() || '';
+  const pin = document.querySelector('#join-pin').value, pin2 = document.querySelector('#join-pin2').value;
+  if (name.length < 2) return toast('Inserisci il tuo nome');
+  if (joinFlow.info.mode === 'new_team' && team.length < 2) return toast('Dai un nome al tuo team');
+  if (!/^\d{4}$/.test(pin)) return toast('Il PIN deve avere 4 cifre');
+  if (pin !== pin2) return toast('I due PIN non coincidono');
+  joinFlow.pending = true; renderJoin();
+  try {
+    const profile = await api.registerWithInvite(joinFlow.code, name, pin, team);
+    state.currentUser = profile.slug; state.role = profile.role; state.canVerifyYgoArtwork = false;
+    state.team = profile.teamId ? { id:profile.teamId, name:profile.teamName } : null;
+    state.members = [{ slug:profile.slug, full_name:profile.name, role:profile.role }];
+    page = 'home'; saveState();
+    joinFlow.done = { slug:profile.slug, name:profile.name };
+  } catch (error) { toast(error.message || 'Registrazione non riuscita'); }
+  finally { if (joinFlow) { joinFlow.pending = false; renderJoin(); } }
+}
+
 start();
 window.addEventListener('hashchange', () => {
   const shareMatch = location.hash.match(SHARE_HASH);
   if (shareMatch) { void startGuestShare(shareMatch[1]); return; }
+  const joinMatch = location.hash.match(JOIN_HASH);
+  if (joinMatch && !state.currentUser) { void startJoin(joinMatch[1]); return; }
   const next = routeFromHash();
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();

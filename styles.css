@@ -2817,3 +2817,23 @@ button.market-row:hover { background:#15121d; }
 .admin-variant-backfill-table { width:100%;border-collapse:collapse;font-size:.82rem;white-space:nowrap; }
 .admin-variant-backfill-table th, .admin-variant-backfill-table td { padding:6px 10px;border-bottom:1px solid var(--line);text-align:left; }
 .admin-variant-backfill-table th { color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em; }
+
+/* Beta: accesso con nome utente, pagina invito, inviti del team */
+.link-button { padding:0;border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer; }
+.member-select-wrap input#member { width:100%; }
+.join-shell #join-form { display:grid;gap:8px; }
+.join-shell #join-form label { margin-top:6px; }
+.join-shell #join-form .btn { margin-top:10px; }
+.join-done { display:grid;gap:10px; }
+.join-username { display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0; }
+.join-username strong { font-size:1.2rem;letter-spacing:.02em;color:var(--accent);overflow-wrap:anywhere; }
+.team-invites { display:grid;gap:12px; }
+.team-beta-status { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px; }
+.team-beta-status p { margin:0;color:var(--muted);font-size:.8rem; }
+.team-invite-list { display:grid;gap:10px; }
+.team-invite { display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px; }
+.team-invite h3 { margin:0;font-size:.9rem; }
+.team-invite p { margin:4px 0 0;color:var(--muted);font-size:.74rem; }
+.team-invite code { display:block;margin-top:6px;font-size:.68rem;color:var(--muted);overflow-wrap:anywhere; }
+.team-invite.is-inactive { opacity:.55; }
+.team-invite .team-person-actions { grid-column:auto; }
