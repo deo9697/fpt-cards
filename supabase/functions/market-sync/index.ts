@@ -326,6 +326,35 @@ function isExactPriceEligible(variant:any):boolean{
   if(!variant?.cardmarket_product_id)return false;
   return Boolean(variant.verified)||variant.mapping_status==='resolved';
 }
+// Copia manuale di isLiveExactVariantEligible()/narrowTargetToExactVariant()
+// da market/providers.js (stesso motivo delle altre copie sopra): restringe
+// un mapping aggregate al SOLO product_id della variante risolta, così il
+// prezzo live non è più il minimo tra le rarità. Disattivabile con
+// MARKET_EXACT_VARIANT_PRICING=off (torna al minimo di sempre).
+function isLiveExactVariantEligible(variant:any):boolean{
+  if(!variant?.cardmarket_product_id)return false;
+  if(variant.verified)return true;
+  return variant.mapping_status==='resolved'&&Number(variant.mapping_confidence)>=1;
+}
+function narrowTargetToExactVariant(target:any,variant:any):any{
+  if(!isLiveExactVariantEligible(variant))return target;
+  const ids=mappingProductIds(target),productId=String(variant.cardmarket_product_id);
+  if(ids.length<2||!ids.includes(productId))return target;
+  const metadata=target.provider_metadata||{};
+  return {...target,provider_product_id:productId,providerProductId:productId,candidateProductIds:[productId],
+    provider_metadata:{...metadata,candidateProductIds:[productId],priceScope:{...(metadata.priceScope||{}),product:'exact_variant',rarity:'specific'},exactVariant:{productId,mappingSource:variant.mapping_source||null,verified:Boolean(variant.verified)}}};
+}
+async function applyExactVariantPricing(targets:any[]):Promise<{targets:any[],narrowed:number}>{
+  if(String(Deno.env.get('MARKET_EXACT_VARIANT_PRICING')||'').toLowerCase()==='off')return {targets,narrowed:0};
+  const aggregate=targets.filter((target:any)=>mappingProductIds(target).length>1);
+  if(!aggregate.length)return {targets,narrowed:0};
+  let variants:Map<string,any>;
+  try{variants=await fetchExistingYgoMarketVariants(aggregate.map((target:any)=>String(target.printing_id)));}
+  catch(error:any){console.error('[market-sync] exact variant pricing: lettura varianti fallita, uso il minimo',{error:String(error?.message||error)});return {targets,narrowed:0};}
+  let narrowed=0;
+  const result=targets.map((target:any)=>{const next=narrowTargetToExactVariant(target,variants.get(String(target.printing_id))||null);if(next!==target)narrowed++;return next;});
+  return {targets:result,narrowed};
+}
 function classifyPriceComparison(legacyPrice:any,exactPrice:any):any{
   const legacy=typeof legacyPrice==='number'&&Number.isFinite(legacyPrice)?legacyPrice:null;
   const exact=typeof exactPrice==='number'&&Number.isFinite(exactPrice)?exactPrice:null;
@@ -682,6 +711,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
         feedStats={...catalogStats,...priceStats};
       }
     }
+    let exactVariantTargets=0;
+    if(provider.name==='cardmarket'){const exact=await applyExactVariantPricing(resolvedTargets);resolvedTargets=exact.targets;exactVariantTargets=exact.narrowed;}
     const pendingSnapshots=[];
     for(const target of resolvedTargets){
       try{
@@ -715,8 +746,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     }
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
-    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots}});
-    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,failures,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
+    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots,exactVariantTargets}});
+    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,exactVariantTargets,failures,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
   }catch(error:any){await finish(runId,'failed',{request_count:requestCount,attempt_count:1,error_code:error?.code||'sync_failed',error_message:String(error?.message||error).slice(0,500)});return {provider:provider.name,status:'failed',error:String(error?.message||error)};}
 }
 
