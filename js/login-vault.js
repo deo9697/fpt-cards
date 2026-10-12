@@ -11,6 +11,7 @@
 
 const CACHE_KEY = 'fpt-login-showcase';
 const FACE = mood => `assets/tutorial/blattaman-${mood}-sm.webp`;
+const EURO = new Intl.NumberFormat('it-IT', { style:'currency', currency:'EUR' });
 const safeUrl = value => (/^https?:\/\//i.test(String(value || '')) ? String(value) : '');
 const esc = value => String(value ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
 
@@ -36,7 +37,9 @@ function paint(cards) {
   });
   const top = cards[0], badge = document.querySelector('[data-vault-badge]');
   if (badge && top) {
-    badge.textContent = `${top.rarity} · ${top.card_name}${top.copies > 1 ? ` · ${top.copies} copie nel team` : ''}`;
+    const price = Number(top.price);
+    const detail = price > 0 ? EURO.format(price) : top.copies > 1 ? `${top.copies} copie nel team` : '';
+    badge.textContent = [top.rarity, top.card_name, detail].filter(Boolean).join(' · ');
     badge.hidden = false;
   }
 }
@@ -64,7 +67,7 @@ export function openPinPad({ input, onSubmit }) {
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', 'Inserisci il PIN');
   const tiles = Array.from({ length: 35 }, (_, i) => `<i style="--r:${((i * 37) % 11) - 5}deg;--y:${(i % 2) * 18}px"></i>`).join('');
-  const slots = [0, 1, 2, 3].map(i => `<div class="pinpad-slot"><div class="pinpad-flip"><div class="pinpad-face pinpad-back"></div><div class="pinpad-face pinpad-front">${fronts[i] ? `<img src="${esc(fronts[i])}" alt="">` : ''}</div></div></div>`).join('');
+  const slots = [0, 1, 2, 3].map(i => `<div class="pinpad-slot"><div class="pinpad-flip"><div class="pinpad-face pinpad-back"></div><div class="pinpad-face pinpad-front">${fronts[i] ? `<img src="${esc(fronts[i])}" alt="">` : ''}<b class="pinpad-digit"></b></div></div></div>`).join('');
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => `<button type="button" class="pinpad-key" data-digit="${d}">${d}</button>`).join('')
     + '<button type="button" class="pinpad-key is-soft" data-pad="del">Cancella</button><button type="button" class="pinpad-key" data-digit="0">0</button><button type="button" class="pinpad-key is-go" data-pad="go" disabled>Entra</button>';
   root.innerHTML = `<div class="pinpad-tiles" aria-hidden="true">${tiles}</div><div class="pinpad-shade"></div>
@@ -82,7 +85,11 @@ export function openPinPad({ input, onSubmit }) {
   const sync = () => {
     input.value = pin;
     input.dispatchEvent(new Event('input', { bubbles:true }));
-    root.querySelectorAll('.pinpad-slot').forEach((slot, i) => slot.classList.toggle('is-up', i < pin.length));
+    // Ogni carta girata mostra la cifra inserita in quella posizione.
+    root.querySelectorAll('.pinpad-slot').forEach((slot, i) => {
+      slot.classList.toggle('is-up', i < pin.length);
+      slot.querySelector('.pinpad-digit').textContent = pin[i] || '';
+    });
     const [mood, text] = pin.length === 0 ? ['sexy', 'Mo gira i carti cu u PIN, compà.']
       : pin.length < 4 ? ['panicking', ['Chianu chianu...', 'N’atra, dai!', 'Ancora una e trasi!'][pin.length - 1]]
       : ['who-laughs', 'Trasisti! Rivelu Abakiri!'];

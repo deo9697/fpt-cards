@@ -30,7 +30,7 @@ const images = shots
   ? ['https://artworks-en-n.ygoresources.com/2/10/57_1.png', 'https://artworks-en-n.ygoresources.com/0/53/28_1.png', 'https://artworks-en-n.ygoresources.com/0/86/55_1.png', 'https://artworks-en-n.ygoresources.com/2/13/47_1.png', 'https://artworks-en-n.ygoresources.com/1/4/42_1.png', 'https://artworks-en-n.ygoresources.com/0/75/49_1.png']
   : Array.from({ length: 6 }, () => local('assets/fpt-card-hero.webp'));
 const showcase = ['Mitsurugi no Mikoto, Saji', 'Reinforcement of the Army', 'XX-Saber Hyunlei', 'Mitsurugi no Mikoto, Aramasa', 'Coach King Giantrainer', 'Mist Wurm']
-  .map((card_name, i) => ({ card_name, rarity: i === 4 ? 'Quarter Century Secret Rare' : 'Starlight Rare', set_code: 'L26D-ENM05', image_url: images[i], copies: [11, 4, 4, 3, 2, 2][i] }));
+  .map((card_name, i) => ({ card_name, rarity: i === 4 ? 'Quarter Century Secret Rare' : 'Starlight Rare', set_code: 'L26D-ENM05', image_url: images[i], copies: [11, 4, 4, 3, 2, 2][i], price: [53.72, 20.29, 17.8, 15.47, 12.79, 12.65][i] }));
 
 const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.png':'image/png', '.webp':'image/webp', '.svg':'image/svg+xml', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json' };
 const server = http.createServer((req, res) => {
@@ -79,13 +79,13 @@ try {
   await waitFor(`document.querySelectorAll('.vault-card.is-loaded').length === 5`, 'Le carte della vetrina non sono comparse');
   await waitFor(`!document.querySelector('[data-vault-badge]').hidden`, 'Badge della carta più rara assente');
   const badge = await evaluate(`document.querySelector('[data-vault-badge]').textContent`);
-  assert(badge.includes('Mitsurugi no Mikoto, Saji') && badge.includes('11 copie'), 'Badge inatteso: ' + badge);
+  assert(badge.includes('Mitsurugi no Mikoto, Saji') && /53,72\s*€/.test(badge), 'Il badge deve mostrare la carta più costosa col prezzo: ' + badge);
   const centre = await evaluate(`document.querySelector('.vault-card:nth-child(3) img').alt`);
-  assert(centre === 'Mitsurugi no Mikoto, Saji', 'La carta più rara deve stare al centro: ' + centre);
+  assert(centre === 'Mitsurugi no Mikoto, Saji', 'La carta più costosa deve stare al centro: ' + centre);
   const pinAttrs = await evaluate(`(()=>{const p=document.querySelector('#pin');return {readonly:p.readOnly, inputmode:p.getAttribute('inputmode'), type:p.type}})()`);
   assert(pinAttrs.readonly && pinAttrs.inputmode === 'none' && pinAttrs.type === 'password', 'Il campo PIN non deve aprire la tastiera del telefono: ' + JSON.stringify(pinAttrs));
   await delay(1200); await shot('login-390');
-  console.log('PASS vetrina: 5 carte dalla RPC, la più rara al centro, badge "' + badge + '"');
+  console.log('PASS vetrina: 5 carte dalla RPC, la più costosa al centro, badge "' + badge + '"');
 
   for (const [width, height, mobile] of [[360, 780, true], [390, 844, true], [1280, 800, false]]) {
     await viewport(width, height, mobile); await delay(150);
@@ -104,6 +104,8 @@ try {
   for (const digit of ['1', '2', '3']) await tap(`.pinpad-key[data-digit="${digit}"]`);
   s = await padState();
   assert(s.up === 3 && !s.go && s.pin === '123', 'Dopo 3 cifre: ' + JSON.stringify(s));
+  const shown = await evaluate(`[...document.querySelectorAll('.pinpad-slot')].map(slot=>slot.classList.contains('is-up')?slot.querySelector('.pinpad-digit').textContent:'').join('|')`);
+  assert(shown === '1|2|3|', 'Ogni carta girata deve mostrare la sua cifra: ' + shown);
   await tap('[data-pad="del"]');
   s = await padState(); assert(s.up === 2 && s.pin === '12', 'Cancella non rigira la carta: ' + JSON.stringify(s));
   await key('3', 'Digit3', 51); await key('4', 'Digit4', 52);

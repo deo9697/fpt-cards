@@ -2957,7 +2957,9 @@ body.pinpad-open { overflow:hidden; }
 .pinpad-slot.is-up .pinpad-flip { transform:rotateY(180deg); }
 .pinpad-face { position:absolute; inset:0; backface-visibility:hidden; overflow:hidden; box-shadow:0 8px 20px rgba(0,0,0,.55); }
 .pinpad-front { transform:rotateY(180deg); border:2px solid #eebd54; border-radius:6px; background:linear-gradient(160deg, #3a1a7a, #7c46e8 45%, #eebd54); }
-.pinpad-front img { width:100%; height:100%; object-fit:cover; display:block; }
+.pinpad-front img { width:100%; height:100%; object-fit:cover; display:block; filter:brightness(.72); }
+.pinpad-digit { position:absolute; left:50%; top:50%; display:grid; place-items:center; width:46px; height:46px; margin:-23px 0 0 -23px; border-radius:50%; background:rgba(5,7,17,.82); border:2px solid #eebd54; color:#eebd54; font-size:1.6rem; font-weight:800; line-height:1; box-shadow:0 0 18px rgba(238,189,84,.55); }
+.pinpad-digit:empty { display:none; }
 .pinpad-keys { margin-top:auto; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
 .pinpad-key { height:58px; border-radius:16px; border:1px solid rgba(238,189,84,.25); background:rgba(20,16,48,.88); color:#f3f1fa; font-family:inherit; font-size:1.35rem; font-weight:800; cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .pinpad-key:active { transform:scale(.96); }
