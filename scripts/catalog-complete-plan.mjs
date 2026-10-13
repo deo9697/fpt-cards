@@ -20,7 +20,8 @@ globalThis.localStorage ??= { getItem() { return null; }, setItem() {}, removeIt
 import fs from 'node:fs';
 import path from 'node:path';
 const [root, dir, ygoFile] = process.argv.slice(2);
-const { planCatalogIngest } = await import(`file:///${root}/scripts/lib/catalog-ingest-plan.mjs`);
+const { pathToFileURL } = await import('node:url');
+const { planCatalogIngest } = await import(pathToFileURL(path.resolve(root, 'scripts/lib/catalog-ingest-plan.mjs')).href);
 const read = name => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
 const existing = read('existing.json'), registry = read('registry.json');
 const cards = JSON.parse(fs.readFileSync(ygoFile, 'utf8')).data;
