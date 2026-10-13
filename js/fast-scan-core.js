@@ -12,6 +12,19 @@ const OCR_SWAPS = {J:['H'],H:['J'],O:['0'],0:['O'],I:['1','L','T'],1:['I','L','T
 // completezza dell'alfabeto: ogni voce qui è un target che una lettura
 // ambigua può "vincere" fino a un auto-accept (classifyNearPrintingMatch).
 const REGION_CODES = ['IT','EN','DE','FR','SP','PT','ENC','ITV'];
+// Grammatica dei codici Konami (verificata 2026-10-13 sui 39.200 codici di
+// ygo_printcode_entries e sui 3.301 di card_printings): prefisso di 3-4
+// caratteri alfanumerici con almeno una lettera, trattino, lingua di 2 lettere,
+// poi SEMPRE 3 caratteri: 999 (96,6%), A99 (es. ENC01, ITV04), AA9 (es. ITSP1).
+// Eccezioni storiche: lingua europea a 1 lettera (MIK-I022) o nessuna lingua
+// (LOB-001), sempre con 3 cifre. Serve solo a ordinare e generare candidati:
+// non cambia mai da sola le soglie di accettazione automatica.
+const GRAMMAR_LANGUAGES = ['EN','IT','FR','DE','SP','PT'];
+const SET_CODE_GRAMMAR = /^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{3,4}-(?:(?:EN|IT|FR|DE|SP|PT|JP|KR|AE)(?:\d{3}|[A-Z]\d{2}|[A-Z]{2}\d)|[EIFGDSP]\d{3}|\d{3})$/;
+export function conformsToSetCodeGrammar(code){return SET_CODE_GRAMMAR.test(String(code||''));}
+// Lettere che l'OCR legge al posto di una cifra, usate solo dove la grammatica
+// impone una cifra (coda del codice).
+const LETTER_TO_DIGIT = {O:'0',Q:'0',D:'0',I:'1',L:'1',T:'1',Z:'2',S:'5',G:'6',B:'8'};
 export const SCAN_DECISION = Object.freeze({EXACT_UNIQUE:'EXACT_UNIQUE',NEAR_UNIQUE:'NEAR_UNIQUE',AMBIGUOUS:'AMBIGUOUS',NOT_FOUND:'NOT_FOUND'});
 
 function plausibleSetCode(code) {
@@ -88,6 +101,24 @@ export function setCodeCandidates(raw,limit=24) {
   if(numericTail)variants.push(...edgeDeletionVariants(numericTail,80).map(item=>({...item,edits:item.edits+characterDistance(base.code,numericTail)})));
   const separator=base.code.indexOf('-'),observedRegion=base.code.slice(separator+1,separator+3),protectRegion=REGION_CODES.includes(observedRegion)||structural.length>0,indexes=[...base.code].map((char,index)=>OCR_SWAPS[char]?index:-1).filter(index=>index>=0&&!(protectRegion&&index>separator&&index-separator-1<2)).slice(0,6);
   for(const index of indexes)for(const replacement of OCR_SWAPS[base.code[index]]){const chars=[...base.code];chars[index]=replacement;const code=chars.join('');if(plausibleSetCode(code))variants.push({code,corrected:true,ambiguous:true,confusion:`${base.code[index]}/${replacement}`,edits:1,requiresReview:['J','H'].includes(base.code[index])&&['J','H'].includes(replacement),priority:confusionPriority(base.code,index,replacement)});}
+  // Solo codici nuovi: il dedup finale tiene l'ULTIMA occorrenza di un codice,
+  // quindi un duplicato della grammatica sovrascriverebbe i flag (es.
+  // requiresReview) di una correzione esistente già più sicura.
+  // Se il codice è già proposto, la grammatica ne alza solo la priorità
+  // (mai i flag): es. una cancellazione di bordo che produce un codice valido.
+  const byCode=new Map(variants.map(item=>[item.code,item]));
+  for(const item of grammarVariants(base.code)){
+    if(item.code===base.code)continue;
+    const existing=byCode.get(item.code);
+    if(existing){for(const twin of variants)if(twin.code===item.code)twin.priority=Math.max(twin.priority,item.priority);continue;}
+    variants.push(item);byCode.set(item.code,item);
+  }
+  // Grammatica Konami: una correzione OCR controllata (nessun requiresReview)
+  // che ha la forma di un codice reale (prefisso 3-4, lingua, coda di 3) sale.
+  // Le correzioni "indovinate" (requiresReview: bordi tagliati, lingua
+  // agganciata) non salgono mai sopra quelle controllate: l'ordine sicuro
+  // voluto da fast-scan-milestone-smoke resta. Cambia solo l'ordine, mai i flag.
+  for(const item of variants)if(!item.requiresReview&&conformsToSetCodeGrammar(item.code))item.priority+=12;
   variants.sort((left,right)=>right.priority-left.priority);
   // base.code stesso è un'ipotesi (mai una lettura) quando reconstructedSeparator
   // è vero: corrected/requiresReview lo segnalano ai chiamanti (resolve()/
@@ -130,6 +161,15 @@ function reconstructMissingSeparatorCandidates(cleaned){
       if(plausibleSetCode(code))codes.push({code,edits});
     }
   }
+  // Grammatica Konami, solo se la ricostruzione sopra non ha trovato nulla
+  // (es. "PGL3ITO13": la coda letta "O13" non è numerica, quindi il ponte
+  // sopra non parte): prefisso 3-4 + lingua + coda di 3 caratteri. Non tocca
+  // mai le letture già ricostruite, così un trattino perso su un codice pulito
+  // resta una lettura sicura come prima.
+  if(!codes.length)for(const prefixLength of [4,3]){
+    if(cleaned.length<prefixLength+5)continue;
+    for(const item of grammarVariants(`${cleaned.slice(0,prefixLength)}-${cleaned.slice(prefixLength)}`))if(item.edits<=2)codes.push({code:item.code,edits:item.edits});
+  }
   // Un codice può in teoria emergere da più di un region length/target: tiene
   // l'edit-distance migliore, mai un duplicato con edits peggiore.
   const byCode=new Map();
@@ -146,6 +186,42 @@ function structuralRegionVariants(code){
     }
   }
   return variants.filter(item=>plausibleSetCode(item.code));
+}
+// Candidati ricavati dalla grammatica Konami (vedi SET_CODE_GRAMMAR):
+// - coda di 3 caratteri: le lettere dove serve una cifra diventano cifre
+//   (O→0, S→5, B→8, Z→2…), provando le forme 999, A99, AA9;
+// - lingua letta male (es. "EH") agganciata alla lingua valida più vicina;
+// - caratteri in più: coda oltre i 3 caratteri o prefisso oltre i 4.
+// Solo la sostituzione lettera→cifra a 1 edit è trattata come una normale
+// confusione OCR; tutto il resto (lingua agganciata, caratteri tolti, più
+// edit) è requiresReview: mai un'accettazione automatica.
+function hammingDistance(left,right){if(left.length!==right.length)return Infinity;let count=0;for(let index=0;index<left.length;index++)if(left[index]!==right[index])count+=1;return count;}
+function grammarVariants(code){
+  const dash=code.indexOf('-');if(dash<1)return[];
+  const prefix=code.slice(0,dash),suffix=code.slice(dash+1),variants=[];
+  const prefixes=[[prefix,0]];if(prefix.length>4)prefixes.push([prefix.slice(-4),prefix.length-4],[prefix.slice(-3),prefix.length-3]);
+  const observed=suffix.slice(0,2);
+  const languages=GRAMMAR_LANGUAGES.includes(observed)?[[observed,0]]:GRAMMAR_LANGUAGES.filter(language=>hammingDistance(language,observed)===1).map(language=>[language,1]);
+  let rest=suffix.slice(2),restTrim=0;if(rest.length>3){restTrim=rest.length-3;rest=rest.slice(0,3);}
+  if(rest.length!==3)return[];
+  for(const [head,trim] of prefixes)for(const [language,languageEdits] of languages)for(const shape of ['999','A99','AA9']){
+    let tail='',digitEdits=0,ok=true;
+    for(let index=0;index<3&&ok;index++){
+      const char=rest[index];
+      if(shape[index]==='9'){if(/\d/.test(char))tail+=char;else if(LETTER_TO_DIGIT[char]){tail+=LETTER_TO_DIGIT[char];digitEdits+=1;}else ok=false;}
+      else if(/[A-Z]/.test(char))tail+=char;else ok=false;
+    }
+    const edits=digitEdits+languageEdits+trim+restTrim,candidate=`${head}-${language}${tail}`;
+    if(!ok||!edits||edits>3||candidate===code||!conformsToSetCodeGrammar(candidate))continue;
+    const guessed=languageEdits>0||trim>0||restTrim>0;
+    const requiresReview=guessed||edits>1;
+    // Controllate: in cima (come le sostituzioni OCR_SWAPS). Indovinate:
+    // sopra le combinazioni impossibili ma sotto le cancellazioni di bordo
+    // già previste (edgeDeletionVariants, fino a 79).
+    const priority=requiresReview?(shape==='999'?78:74)-edits*4:(shape==='999'?102:96)-edits*4;
+    variants.push({code:candidate,corrected:true,ambiguous:true,requiresReview,grammar:true,confusion:`grammatica Konami (${[digitEdits?`${digitEdits} lettera/cifra`:'',languageEdits?`lingua ${observed}/${language}`:'',trim?`${trim} car. iniziali`:'',restTrim?`${restTrim} car. finali`:''].filter(Boolean).join(', ')})`,edits,priority});
+  }
+  return variants;
 }
 function controlledConfusionDistance(observed,expected){if(observed.length!==expected.length)return Infinity;let edits=0;for(let index=0;index<observed.length;index++){if(observed[index]===expected[index])continue;if(!OCR_SWAPS[observed[index]]?.includes(expected[index]))return Infinity;edits+=1;}return edits;}
 function correctNumericTailZeros(code){const [prefix,suffix]=code.split('-');if(!/^(?:IT|EN|DE|FR|SP|PT)[A-Z0-9]{2,8}$/.test(suffix))return'';const language=suffix.slice(0,2),tail=suffix.slice(2),corrected=tail.replace(/O/g,'0');return corrected!==tail?`${prefix}-${language}${corrected}`:'';}
