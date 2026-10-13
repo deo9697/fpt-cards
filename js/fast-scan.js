@@ -9,7 +9,7 @@ import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-
 import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
-import { resolveStoredCard, sanitizeYugiohRarity, canonicalCatalogCardId } from './cards.js';
+import { resolveStoredCard, sanitizeYugiohRarity, canonicalCatalogCardId, findCardById, localizeSetCode } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
 // resolve() da solo può già sparare fino a ~12 RPC concorrenti per una
@@ -333,8 +333,9 @@ export class FastScanController {
     const entries=[...this.buffer.entries.values()];
     this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
     try{
-      const prepared=await canonicalizeFastScanEntries(entries,(code,game)=>this.api.lookupPrintings(code,game));
-      const rejectedNames=prepared.rejected.map(row=>row.entry.cardName||row.entry.setCode||'carta sconosciuta');
+      const prepared=await canonicalizeFastScanEntries(entries,(code,game)=>this.api.lookupPrintings(code,game),async()=>null,base=>confirmPrintingFromCatalogSource(base));
+      // Nome + motivo (prima solo il nome: impossibile capire cosa correggere).
+      const rejectedNames=prepared.rejected.map(row=>{const name=row.entry.cardName||row.entry.setCode||'carta sconosciuta',message=String(row.message||'').trim();return message?`${name} (${message.startsWith(name)?message.slice(name.length).replace(/^[:\s]+/,''):message})`:name;});
       this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry),rejected:prepared.rejected.map(row=>({...saveDiagnosticEntry(row.entry),code:row.code,message:row.message}))});
       if(!prepared.items.length){
         // Ogni entry è stata isolata: nessuna RPC, sessione locale intatta,
@@ -790,8 +791,14 @@ function hardValidationReason(base){
   return '';
 }
 
-export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null) {
+// confirmSourcePrinting (facoltativa, 2026-10-13): quando la stampa non è nel
+// catalogo (card_printings), il salvataggio la può far creare al server SOLO se
+// questa funzione conferma esplicitamente che la fonte ufficiale (YGOPRODeck)
+// ha esattamente quel codice e quella rarità per quella carta. Senza la
+// funzione il comportamento resta quello di sempre: nessuna creazione implicita.
+export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null,confirmSourcePrinting=async()=>false) {
   const items=[],decisions=[],rejected=[];let repaired=0;
+  const sourceConfirms=async base=>{try{return base.game==='yugioh'&&!base.variantId&&!base.artworkId&&Boolean(await confirmSourcePrinting(base));}catch{return false;}};
   const lookups=new Map();
   const lookupOnce=(code,game)=>{const key=game+':'+code;if(!lookups.has(key))lookups.set(key,Promise.resolve().then(()=>lookupPrintings(code,game)));return lookups.get(key);};
   for(const entry of entries){
@@ -819,12 +826,19 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
       let rows=[],lookupFailure='';try{rows=await lookupOnce(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
       const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
-      if(!candidates.length&&base.game==='yugioh')throw saveError('REQUIRES_CATALOG_REPAIR','Printing assente dal catalogo: nessuna creazione automatica',base);
+      if(!candidates.length&&base.game==='yugioh'){
+        if(await sourceConfirms(base)){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_VERIFIED_SOURCE'));continue;}
+        throw saveError('REQUIRES_CATALOG_REPAIR','stampa non ancora nel catalogo e non confermata da YGOPRODeck',base);
+      }
       if(!candidates.length){
         items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
       }
       const compatible=base.game==='yugioh'?candidates.filter(item=>sameText(item.rarity,base.rarity)&&String(item.variantId||'')===String(base.variantId||'')&&String(item.artworkId||'')===String(base.artworkId||'')):candidates;
-      if(!compatible.length)throw saveError('REQUIRES_CATALOG_REPAIR','La rarità scelta non è presente nel catalogo',base);
+      if(!compatible.length){
+        // Codice noto ma senza questa rarità (es. c'è l'Ultra, manca la Starlight).
+        if(await sourceConfirms(base)){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_VERIFIED_SOURCE'));continue;}
+        throw saveError('REQUIRES_CATALOG_REPAIR','rarità non presente nel catalogo per questo codice',base);
+      }
       const ranked=compatible.map(item=>({item,score:canonicalCompatibilityScore(base,item)})).filter(item=>item.score>0).sort((left,right)=>right.score-left.score),best=ranked[0],ties=best?ranked.filter(item=>item.score===best.score):[];
       if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
       const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
@@ -833,6 +847,17 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
     }
   }
   return {items,repaired,decisions,rejected};
+}
+
+// Conferma dalla fonte ufficiale per creare una stampa mancante: la scheda
+// YGOPRODeck della carta (stesso id) deve elencare esattamente quel codice (o il
+// suo gemello inglese per IT/FR/DE/SP/PT: stessa numerazione) con quella rarità.
+export async function confirmPrintingFromCatalogSource(base,findCard=findCardById){
+  if(base?.game!=='yugioh'||!base.catalogCardId||!base.setCode||!base.rarity)return false;
+  const card=await findCard(base.catalogCardId,base.cardName,'yugioh');
+  if(!card?.printings?.length)return false;
+  const wanted=String(base.setCode).trim().toUpperCase(),english=localizeSetCode(wanted,'EN');
+  return card.printings.some(printing=>[wanted,english].includes(String(printing.setCode||'').trim().toUpperCase())&&sameText(printing.rarity,base.rarity));
 }
 
 export async function saveFastScanBatchWithRepair(items=[],saveBatch,repairEntries,{maxRepairs=8}={}){

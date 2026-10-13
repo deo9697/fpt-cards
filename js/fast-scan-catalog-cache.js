@@ -8,7 +8,11 @@
 const DB_NAME='fpt-fast-scan-catalog';
 const STORE='index';
 const PAGE_LIMIT=1000;
-const MAX_SNAPSHOT_AGE=24*60*60*1000;
+// Rebuild completo settimanale (prima 24 h): col catalogo completo (~63k righe,
+// 2026-10-13) un rebuild quotidiano costava troppo traffico. Le righe nuove
+// arrivano comunque subito con l'append incrementale; il rebuild serve solo a
+// raccogliere modifiche/cancellazioni, rare.
+const MAX_SNAPSHOT_AGE=7*24*60*60*1000;
 const activeSyncs=new WeakMap();
 
 export async function loadCachedCatalogIndex(game){

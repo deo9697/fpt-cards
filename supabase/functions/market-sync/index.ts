@@ -709,7 +709,7 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     if(provider.name==='cardmarket'){
       if(pricesOnly){feedStats=await withDeadline(provider.loadPrices(resolvedTargets),PRICES_DEADLINE_MS,'loadPrices');requestCount+=1;}
       else{
-        const printingResult=await listCardPrintings(),internalPrintings=await withCanonicalCardNames(printingResult.rows,resolvedTargets);
+        const printingResult=await listCardPrintings(resolvedTargets.map((target:any)=>String(target.printing_id||""))),internalPrintings=await withCanonicalCardNames(printingResult.rows,resolvedTargets);
         printingPages=printingResult.requests;printingRows=printingResult.rows.length;
         const catalogStats=await withDeadline(provider.loadCatalog(resolvedTargets,{internalPrintings}),CATALOG_DEADLINE_MS,'loadCatalog');requestCount+=3;
         resolvedTargets=await resolveCardmarketTargets(provider,resolvedTargets,internalPrintings);
@@ -760,7 +760,7 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
 
 async function dryTargetCardmarket(provider:any,ids:string[]){
   if(provider.getPriceMetadata().status==='unavailable')return {ok:false,mode:'dry_target',provider:'cardmarket',status:'unavailable',reason:'secret_or_feed_missing'};
-  const printingResult=await listCardPrintings(),wanted=new Set(ids),targets=printingResult.rows.filter((row:any)=>wanted.has(String(row.id))).map(printingTarget),allPrintings=await withCanonicalCardNames(printingResult.rows,targets);
+  const printingResult=await listCardPrintings(ids),wanted=new Set(ids),targets=printingResult.rows.filter((row:any)=>wanted.has(String(row.id))).map(printingTarget),allPrintings=await withCanonicalCardNames(printingResult.rows,targets);
   const catalogStats=await provider.loadCatalog(targets,{internalPrintings:allPrintings}),resolved:any[]=[],expansionHints=provider.expansionHints;
   for(const target of targets)resolved.push({target,resolution:await provider.resolvePrinting(target,{internalPrintings:allPrintings,expansionHints})});
   const authorized=resolved.filter((row:any)=>[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(row.resolution.status)).map((row:any)=>({
@@ -1120,7 +1120,24 @@ function cardmarketResolutionBody(target:any,resolution:any){
       supersededProductId:!active&&previousProductId?previousProductId:null}};
 }
 
-async function listCardPrintings(){return restPages('card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&order=id.asc',{key:(row:any)=>row.id});}
+// Stampe "interne" per il resolver Cardmarket (alias, famiglia, indizi di
+// espansione): SOLO quelle monitorate (possedute, nei mazzi, in watchlist) più
+// gli id richiesti, scaricate a blocchi. Prima scaricava l'intero card_printings:
+// col catalogo completato (2026-10-13, ~63k righe) superava il limite di
+// sicurezza di fetchPages (20.000 righe) e il sync falliva. Fino ad allora il
+// catalogo coincideva quasi con le stampe monitorate (3.724 contro 3.670), quindi
+// il comportamento del resolver resta lo stesso, ma non dipende più dalla
+// dimensione del catalogo (né il traffico).
+async function listCardPrintings(extraIds:string[]=[]){
+  const monitored=await restPages('market_monitored_printings?select=printing_id&order=printing_id.asc',{key:(row:any)=>row.printing_id});
+  const ids=[...new Set([...monitored.rows.map((row:any)=>String(row.printing_id||'')),...extraIds.map(String)].filter(Boolean))].sort();
+  const rows:any[]=[];let requests=monitored.requests;
+  for(let index=0;index<ids.length;index+=150){
+    const page=await restPages(`card_printings?select=id,game,catalog_card_id,card_name,set_code,set_name,rarity&game=eq.yugioh&id=in.(${ids.slice(index,index+150).map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
+    rows.push(...page.rows);requests+=page.requests;
+  }
+  return {rows,requests};
+}
 async function withCanonicalCardNames(printings:any[],targets:any[]){
   const ids=[...new Set((targets||[]).map(row=>String(row.catalog_card_id||row.catalogCardId||'').trim()).filter(id=>/^\d{5,10}$/.test(id)))];if(!ids.length)return printings;
   // Un solo URL con TUTTI gli id (una richiesta per l'intero batch resolver

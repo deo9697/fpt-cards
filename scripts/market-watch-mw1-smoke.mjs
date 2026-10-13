@@ -129,7 +129,10 @@ const safetyCeilingMatch=edgeSource.match(/const RESOLVER_SAFETY_CEILING=(\d+);/
 assert(safetyCeilingMatch&&Number(safetyCeilingMatch[1])>=10000,'RESOLVER_SAFETY_CEILING troppo basso: deve restare un vero paracadute, non un tetto giornaliero da ritoccare a mano');
 assert(edgeSource.includes('queryPagination:true'),'La paginazione RPC Edge deve usare limit/offset espliciti');
 assert(edgeSource.includes('limit=${pageSize}&offset=${from}'),'Offset RPC PostgREST non applicato');
-for(const required of ["rpcPages('market_sync_targets'","restPages('card_printings?",'Range:`${from}-${to}`',"'Range-Unit':'items'",'from<=maxRows','from===maxRows&&page.length','seen.has(normalized)'])assert(edgeSource.includes(required),`Paginazione Edge incompleta: ${required}`);
+for(const required of ["rpcPages('market_sync_targets'",'Range:`${from}-${to}`',"'Range-Unit':'items'",'from<=maxRows','from===maxRows&&page.length','seen.has(normalized)'])assert(edgeSource.includes(required),`Paginazione Edge incompleta: ${required}`);
+// card_printings resta paginato via restPages; dal 2026-10-13 a blocchi di id
+// (template literal) invece che sull'intera tabella.
+assert(edgeSource.includes("restPages('card_printings?")||edgeSource.includes('restPages(`card_printings?'),'Paginazione Edge incompleta: card_printings deve passare da restPages');
 assert(!/console\.(log|debug|info).*secret/i.test(edgeSource),'possibile log di secret');
 assert(!/market_price_snapshots[^\n]*(DELETE|PATCH)/i.test(edgeSource),'lo storico snapshot viene modificato');
 assert(integritySql.includes('market_active_price_snapshots')&&integritySql.includes("'EXACT','PROVIDER_AGGREGATE'"),'filtro mapping attivi assente');
