@@ -19,6 +19,7 @@ export const RARITY_ALIAS_SEED = [
   ['Platinum Secret Rare', 'PLATINUM_SECRET_RARE'],
   ['Quarter Century Secret Rare', 'QUARTER_CENTURY_SECRET_RARE'],
   ['Quarter Century', 'QUARTER_CENTURY_SECRET_RARE'], ['QCSR', 'QUARTER_CENTURY_SECRET_RARE'], ['QCSE', 'QUARTER_CENTURY_SECRET_RARE'],
+  ['Grand Master Rare', 'GRAND_MASTER_RARE'], ['GMR', 'GRAND_MASTER_RARE'],
   ['Collector\'s Rare', 'COLLECTORS_RARE'], ['CR', 'COLLECTORS_RARE'],
   ['Prismatic Collector\'s Rare', 'PRISMATIC_COLLECTORS_RARE'],
   ['Ultimate Rare', 'ULTIMATE_RARE'], ['UTR', 'ULTIMATE_RARE'], ['UL', 'ULTIMATE_RARE'],

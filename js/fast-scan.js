@@ -9,7 +9,7 @@ import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-
 import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
 import { PaddleOcrEngine } from './fast-scan-ocr-engine-b.js';
-import { resolveStoredCard, sanitizeYugiohRarity, canonicalCatalogCardId, findCardById, localizeSetCode } from './cards.js';
+import { resolveStoredCard, sanitizeYugiohRarity, canonicalCatalogCardId, findCardById, localizeSetCode, konamiRaritiesForSetCode } from './cards.js';
 
 const MISS_CACHE_TTL=20000;
 // resolve() da solo può già sparare fino a ~12 RPC concorrenti per una
@@ -852,12 +852,16 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
 // Conferma dalla fonte ufficiale per creare una stampa mancante: la scheda
 // YGOPRODeck della carta (stesso id) deve elencare esattamente quel codice (o il
 // suo gemello inglese per IT/FR/DE/SP/PT: stessa numerazione) con quella rarità.
-export async function confirmPrintingFromCatalogSource(base,findCard=findCardById){
+export async function confirmPrintingFromCatalogSource(base,findCard=findCardById,konamiLookup=konamiRaritiesForSetCode){
   if(base?.game!=='yugioh'||!base.catalogCardId||!base.setCode||!base.rarity)return false;
   const card=await findCard(base.catalogCardId,base.cardName,'yugioh');
-  if(!card?.printings?.length)return false;
+  if(!card)return false;
   const wanted=String(base.setCode).trim().toUpperCase(),english=localizeSetCode(wanted,'EN');
-  return card.printings.some(printing=>[wanted,english].includes(String(printing.setCode||'').trim().toUpperCase())&&sameText(printing.rarity,base.rarity));
+  if((card.printings||[]).some(printing=>[wanted,english].includes(String(printing.setCode||'').trim().toUpperCase())&&sameText(printing.rarity,base.rarity)))return true;
+  // YGOPRODeck con "New"/"Reprint" al posto della rarità: conferma dalla scheda
+  // ufficiale Konami (stesso codice inglese, stesso nome carta, stessa rarità).
+  const official=await Promise.resolve(konamiLookup(english,card.name||base.cardName)).catch(()=>null);
+  return Boolean(official?.some(rarity=>sameText(rarity,base.rarity)));
 }
 
 export async function saveFastScanBatchWithRepair(items=[],saveBatch,repairEntries,{maxRepairs=8}={}){

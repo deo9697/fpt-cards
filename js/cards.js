@@ -31,6 +31,29 @@ const LOCALIZED_SET_NAMES = new Map([
 // the canonical list start with "new"/"reprint" — see market/rarity-canon-seed.js).
 const NON_RARITY_CATALOG_PATTERN = /^(new|reprint)\b/i;
 
+// Quando YGOPRODeck dà solo "New"/"Reprint", la rarità vera è sulla scheda
+// ufficiale Konami: la legge la funzione konami-card-rarities (Konami non ha
+// CORS). Vale solo se il nome della carta coincide; in errore → null e si
+// resta al comportamento di prima (carta non proposta).
+const konamiRarityCache = new Map();
+const comparableCardName = value => String(value || '').toLocaleLowerCase('en').replace(/[^a-z0-9]/g, '');
+export async function konamiRaritiesForSetCode(setCode, cardName, fetchImpl = (...args) => fetch(...args)) {
+  const code = String(setCode || '').trim().toUpperCase();
+  const config = globalThis.window?.FPT_CONFIG, base = config?.supabaseUrl;
+  if (!/^[A-Z0-9]{2,5}-EN[A-Z0-9]{1,4}$/.test(code) || !base) return null;
+  if (!konamiRarityCache.has(code)) {
+    konamiRarityCache.set(code, (async () => {
+      const response = await fetchImpl(`${base}/functions/v1/konami-card-rarities?setCode=${encodeURIComponent(code)}`, { headers: { apikey: config?.supabaseKey || '' } });
+      if (!response.ok) throw new Error('konami lookup failed');
+      return response.json();
+    })().catch(() => { konamiRarityCache.delete(code); return null; }));
+  }
+  const result = await konamiRarityCache.get(code);
+  if (!result?.rarities?.length || !comparableCardName(cardName) || comparableCardName(result.cardName) !== comparableCardName(cardName)) return null;
+  const rarities = [...new Set(result.rarities.map(sanitizeYugiohRarity).filter(Boolean))];
+  return rarities.length ? rarities : null;
+}
+
 export function validCatalogCardId(value, game = 'yugioh') {
   const id = String(value || '').trim();
   if (!id || ['0','null','undefined','unknown'].includes(id.toLowerCase())) return false;
@@ -320,10 +343,13 @@ export async function lookupPrintingBySetCode(setCode, game = 'yugioh') {
       // concurrently instead of one round trip at a time.
       const cards=[];
       for(let offset=0;offset<exact.length;offset+=8)cards.push(...await Promise.all(exact.slice(offset,offset+8).map(row=>findCardById(row.id,row.name,'yugioh'))));
+      const sourceVariants=index=>(cards[index]?.printings||[]).filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+      const konami=await Promise.all(exact.map((row,index)=>!sourceVariants(index).length&&!sanitizeYugiohRarity(row.set_rarity)&&NON_RARITY_CATALOG_PATTERN.test(String(row.set_rarity||'').trim())?konamiRaritiesForSetCode(catalogCode,row.name):null));
       exact.forEach((row,index)=>{
         if(!row.id||!row.name)throw Object.assign(new Error('Catalog source identity incomplete'),{code:'CATALOG_SOURCE_INVALID'});
         const card=cards[index];
-        const variants=(card?.printings||[]).filter(printing=>normalizeSetCode(printing.setCode)===catalogCode);
+        const variants=sourceVariants(index);
+        for(const rarity of konami[index]||[])variants.push({setCode:catalogCode,setName:decodeSourceEntities(row.set_name),rarity});
         // The set endpoint can be newer than cardinfo.card_sets. Preserve its
         // explicitly supplied rarity; status/artwork tags are not evidence of
         // a Common printing. Keep independent cardinfo variants when present.
@@ -442,13 +468,16 @@ export function sanitizeYugiohRarity(value) {
   return normalizeCatalogRarity(raw);
 }
 
+// YGOPRODeck a volte restituisce entità HTML nei nomi set (es. "Legendary 5D&apos;s Decks").
+const decodeSourceEntities = value => String(value || '').replace(/&#0*39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+
 export function normalizeCatalogPrintings(rows = []) {
   const printings = new Map();
   for (const printing of rows) {
     const rawRarity = String(printing?.set_rarity || printing?.rarity || '').trim();
     const normalized = {
       setCode:String(printing?.set_code || printing?.setCode || '').trim().toUpperCase(),
-      setName:String(printing?.set_name || printing?.setName || '').trim(),
+      setName:decodeSourceEntities(printing?.set_name || printing?.setName).trim(),
       rarity:sanitizeYugiohRarity(rawRarity)
     };
     if (!normalized.setCode || !normalized.rarity) continue;

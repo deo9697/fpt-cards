@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.market-refresh-queue-cached]
 verify_jwt = false
+
+[functions.konami-card-rarities]
+verify_jwt = false

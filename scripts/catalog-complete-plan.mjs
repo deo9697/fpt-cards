@@ -68,7 +68,8 @@ for (const entry of registry) {
 // 3. Report di audit per set (prima/dopo) e SQL a blocchi.
 // Etichette che il guardiano rarità del DB non riconosce o che sarebbero
 // interpretate male (verificate con canonicalize_ygo_rarity_label): fuori.
-const BAD_RARITY = new Set(['2', '3', 'force-SMW', 'Grand Master Rare', '10000 Secret Rare', 'New', 'Cr']);
+// Grand Master Rare è nel canone dal 2026-10-13 (seriale per copia, non per stampa).
+const BAD_RARITY = new Set(['2', '3', 'force-SMW', '10000 Secret Rare', 'New', 'Cr']);
 const candidatesAll = [...enPlan.rows.map(row => ({ ...row, origin: 'ygoprodeck' })), ...localized.map(row => ({ ...row, origin: 'localized' }))];
 const excludedRarity = {}; for (const row of candidatesAll) if (BAD_RARITY.has(row.rarity)) excludedRarity[row.rarity] = (excludedRarity[row.rarity] || 0) + 1;
 const allNew = candidatesAll.filter(row => !BAD_RARITY.has(row.rarity));
@@ -82,10 +83,12 @@ const tally = {}; for (const d of enPlan.decisions) tally[d.classification + ':'
 const stillMissing = Object.entries(perSet).map(([prefix, p]) => ({ prefix, missing: p.registry - p.after })).filter(row => row.missing > 0).sort((a, b) => b.missing - a.missing);
 fs.writeFileSync(path.join(dir, 'report.json'), JSON.stringify({ totals, excludedRarity, newRows: allNew.length, english: enPlan.rows.length, localized: localized.length, englishDecisions: tally, localizedSkipped: skipped, stillMissingTop: stillMissing.slice(0, 25), perSet }, null, 1));
 
+// YGOPRODeck a volte restituisce entità HTML nei nomi (es. "Legendary 5D&apos;s Decks").
+const decodeEntities = value => String(value ?? '').replace(/&#0*39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const esc = value => `'${String(value ?? '').replace(/'/g, "''")}'`;
 const chunk = 2000; let files = 0;
 for (let index = 0; index < allNew.length; index += chunk) {
-  const values = allNew.slice(index, index + chunk).map(row => `(${esc(row.game)},${esc(row.catalog_card_id)},${esc(row.card_name)},${esc(row.set_code)},${esc(row.set_name)},${esc(row.rarity)},${esc(imageFor.get(String(row.source_ids?.[0] || row.catalog_card_id)) || '')},${esc(row.variant_id)})`);
+  const values = allNew.slice(index, index + chunk).map(row => `(${esc(row.game)},${esc(row.catalog_card_id)},${esc(decodeEntities(row.card_name))},${esc(row.set_code)},${esc(decodeEntities(row.set_name))},${esc(row.rarity)},${esc(imageFor.get(String(row.source_ids?.[0] || row.catalog_card_id)) || '')},${esc(row.variant_id)})`);
   fs.writeFileSync(path.join(dir, `insert-${String(++files).padStart(2, '0')}.sql`), `insert into public.card_printings(game, catalog_card_id, card_name, set_code, set_name, rarity, image_url, variant_id)\nvalues\n${values.join(',\n')}\non conflict on constraint card_printings_identity_key do nothing;\n`);
 }
 console.log(JSON.stringify({ totals, excludedRarity, newRows: allNew.length, english: enPlan.rows.length, localized: localized.length, englishDecisions: tally, localizedSkipped: skipped, sqlFiles: files, stillMissingTop: stillMissing.slice(0, 8) }, null, 1));
