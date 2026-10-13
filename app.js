@@ -7,7 +7,7 @@ import { collectionSearchAliases, enrichCollectionAliases, loadCollectionNameAli
 const loadMarketProviders = () => import('./market/providers.js');
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
-import { findCardById, cardTypesByIds, backgroundForCardType, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
+import { findCardById, cardTypesByIds, backgroundForCardType, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, printingSetCodeForLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
 import { externalLookupViaRegistry } from './js/ygo-printing-registry.js';
 import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
@@ -1444,6 +1444,7 @@ function bind() {
   document.querySelector('#collection-language')?.addEventListener('change', event => {
     if (!collectionEditor) return;
     (collectionEditor.draft ??= {}).language = event.currentTarget.value;
+    relocalizeCollectionEditor(event.currentTarget.value);
   });
   document.querySelector('#collection-condition')?.addEventListener('change', event => {
     if (!collectionEditor) return;
@@ -2268,9 +2269,30 @@ async function openCollectionEditor(id) {
     ? String(printing.printingId) === String(currentPrinting.printingId)
     : (sameCollectionSet(printing.setCode,item.setCode) && sameCollectionRarity(printing.rarity,currentPrinting.rarity)));
   if (!alreadyListed) catalog.printings.unshift(currentPrinting);
+  collectionEditor.baseCard = catalog;
   collectionEditor.card = collectionCardWithLocalizedPrintings(catalog, item.language || 'Italiano');
   collectionEditor.printing = selectCollectionEditorPrinting(collectionEditor.card, item.setCode, normalizedCurrentRarity, item.printingId);
   collectionEditor.setCode = collectionEditor.printing?.setCode || item.setCode;
+  render();
+}
+
+// Le stampe localizzate (PGLD-EN021 → PGLD-IT021) dipendono dalla lingua:
+// al cambio lingua l'elenco si ricalcola dalla carta di catalogo originale.
+// Carta nuova: la selezione passa alla stessa stampa nella nuova lingua.
+// Carta già in raccolta: la stampa salvata resta selezionata (cambiare
+// insieme lingua e stampa è bloccato da saveCollectionItem per sicurezza).
+function relocalizeCollectionEditor(language) {
+  const base = collectionEditor?.baseCard;
+  if (!base || state.game !== 'yugioh') return;
+  const previous = collectionEditor.printing;
+  collectionEditor.card = collectionCardWithLocalizedPrintings(base, language);
+  if (!collectionEditor.item && previous) {
+    const options = collectionPrintingOptions(collectionEditor.card);
+    const wanted = printingSetCodeForLanguage(previous, language);
+    const sameSet = options.filter(printing => sameCollectionSet(printing.setCode, wanted));
+    collectionEditor.printing = sameSet.find(printing => sameCollectionRarity(printing.rarity, previous.rarity)) || (sameSet.length === 1 ? sameSet[0] : null);
+    collectionEditor.setCode = sameSet.length ? wanted : collectionEditor.setCode;
+  }
   render();
 }
 
@@ -2291,6 +2313,7 @@ function onCollectionCardSearch(event) {
       if (!card || !collectionEditor) return;
       const applyCard = catalogCard => {
         if (!collectionEditor) return;
+        collectionEditor.baseCard = catalogCard;
         collectionEditor.card = collectionCardWithLocalizedPrintings(catalogCard, document.querySelector('#collection-language')?.value || 'Italiano');
         const options = collectionPrintingOptions(collectionEditor.card);
         collectionEditor.setCode = options[0]?.setCode || '';

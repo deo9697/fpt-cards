@@ -242,12 +242,27 @@ export function findExactCatalogPrinting(printings = [], setCode = '', rarity = 
 export function collectionCardWithLocalizedPrintings(card, language = 'Italiano') {
   if (!card || !Array.isArray(card.printings) || !SET_LANGUAGE_CODES.has(language)) return card;
   const targetCode = SET_LANGUAGE_CODES.get(language);
+  // Una stampa già presente nel catalogo (es. PGLD-IT021 salvata in passato)
+  // vince sulla sua versione ricavata dall'inglese: niente doppioni.
+  const known = new Set(card.printings.map(printing => `${normalizeSetCode(printing.setCode)} ${String(printing.rarity || '').trim().toLocaleLowerCase('it')}`));
   const localized = card.printings.map(printing => {
     const setCode = localizeSetCode(printing.setCode, targetCode);
-    return setCode === normalizeSetCode(printing.setCode) ? null : localizeCatalogPrinting(printing, setCode);
+    if (setCode === normalizeSetCode(printing.setCode)) return null;
+    if (known.has(`${setCode} ${String(printing.rarity || '').trim().toLocaleLowerCase('it')}`)) return null;
+    return localizeCatalogPrinting(printing, setCode);
   }).filter(Boolean);
   if (!localized.length) return card;
   return {...card, printings:[...localized, ...card.printings]};
+}
+
+// Codice set della stessa stampa nella lingua indicata: PGLD-IT021 +
+// "Inglese" → PGLD-EN021 (riparte dal codice d'origine del catalogo).
+// Lingue senza codice europeo (es. Giapponese) tornano al codice inglese,
+// l'unico che il catalogo (YGOPRODeck) conosce sempre.
+export function printingSetCodeForLanguage(printing, language) {
+  const origin = normalizeSetCode(printing?.catalogSetCode || printing?.setCode);
+  const code = SET_LANGUAGE_CODES.get(String(language || '').trim()) || 'EN';
+  return localizeSetCode(origin, code);
 }
 
 export function localizeSetCode(setCode, targetLanguageCode = 'IT') {
@@ -274,6 +289,12 @@ function localizeCatalogPrinting(printing, localizedSetCode) {
   const language = setCode.match(/-([A-Z]{2})[A-Z]{0,2}\d/)?.[1] || '';
   return {
     ...printing,
+    // printingId identifica la riga del database della stampa d'origine (es.
+    // PGLD-EN021): ereditarlo faceva salvare l'inglese al posto dell'italiano e
+    // fondeva le due opzioni nell'elenco (dedup per printingId). Con un set code
+    // diverso la stampa è un'altra: senza id, save_collection_item crea o
+    // ritrova la riga giusta per set code e rarità.
+    printingId:setCode === normalizeSetCode(printing.setCode) ? printing.printingId : null,
     setCode,
     setName:LOCALIZED_SET_NAMES.get(`${prefix}:${language}`) || printing.setName || '',
     catalogSetCode:normalizeSetCode(printing.catalogSetCode || printing.setCode)
