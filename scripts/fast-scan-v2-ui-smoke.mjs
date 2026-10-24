@@ -44,7 +44,15 @@ assert.match(c.detectionContent({ tone: 'ok', code: card.setCode, detail: 'Aggiu
 // Revisione: righe con quantità/1ª Ed./rimozione, testo del salvataggio.
 c.phase = 'review';
 const review = c.reviewView();
-for (const hook of ['data-scan-qty-inc', 'data-scan-qty-dec', 'data-scan-first-edition', 'data-scan-remove', 'data-scan-save', 'data-scan-continue', 'scan-review-row']) assert.ok(review.includes(hook), `revisione senza ${hook}`);
+for (const hook of ['data-scan-entry-open', 'data-scan-save', 'data-scan-continue', 'scan-review-row', 'fsx-grid']) assert.ok(review.includes(hook), `revisione senza ${hook}`);
+assert.ok(!review.includes('data-scan-entry-sheet'), 'il dettaglio è chiuso finché non si tocca una carta');
+c.reviewSheetKey = [...c.buffer.entries.keys()][0];
+const detail = c.reviewView();
+for (const hook of ['data-scan-entry-sheet', 'data-scan-qty-inc', 'data-scan-qty-dec', 'data-scan-first-edition', 'data-scan-remove', 'data-scan-entry-close']) assert.ok(detail.includes(hook), `dettaglio senza ${hook}`);
+c.reviewSheetKey = 'chiave-inesistente'; c.reviewView();
+assert.equal(c.reviewSheetKey, null, 'carta rimossa: il dettaglio si chiude');
+// Animazioni di esito: occhio per la carta riconosciuta, X per la lettura fallita.
+assert.ok(live.includes('data-scan-burst'), 'contenitore delle animazioni nello scanner');
 assert.match(review, /Aggiungi 1 carta alla raccolta/);
 
 // Foglio impostazioni aperto: nessuno scatto parte dietro al foglio, e il tasto

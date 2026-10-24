@@ -25,7 +25,7 @@ assert.match(view, /BETB-IT1O4<\/strong><small>Codice non trovato nel catalogo/)
 assert.match(view, /Scatto interrotto/);
 assert.equal((view.match(/data-scan-edit=/g) || []).length, 3, 'ognuno si può correggere a mano');
 assert.equal((view.match(/data-scan-cancel=/g) || []).length, 3, 'ognuno si può togliere');
-assert.match(view, /<b>3<\/b> non riuscite/, 'il riepilogo dice cosa sono, non "3 scansioni"');
+assert.match(view, /0 stampe · 3 non riuscite/, 'il riepilogo dice cosa sono, non "3 scansioni"');
 assert.match(view, /data-scan-review-discard/, 'sessione senza nulla da salvare: si può chiudere');
 
 // Togliere uno scatto lo fa sparire dall'elenco.
