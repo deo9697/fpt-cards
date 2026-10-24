@@ -31,30 +31,36 @@ Deno.serve(async request => {
   const report: Record<string, unknown>[] = [];
   let inserted = 0, status = 'ok', errorMessage = '';
   try {
-    const sets = await candidateSets(Array.isArray(body?.sets) ? body.sets : null, days);
-    let filled = 0, nameIndex: Map<string, Set<string>> | null = null;
-    for (const { code: set, name: setName } of sets) {
-      const printcodes = await fetchPrintcodes(set);
-      if (!Object.keys(printcodes).length) { report.push({ set, status: 'not_in_ygoresources' }); continue; }
-      const existingRows = await existingPrintings(set);
-      const missing = missingCodes(set, printcodes, new Set(existingRows.map(row => row.set_code)));
-      if (!missing.length) { report.push({ set, status: 'complete' }); continue; }
-      if (filled >= maxSets) { report.push({ set, status: 'deferred', missing: missing.length }); continue; }
-      filled++;
-      nameIndex ??= konamiIdsByName(await getJson(`${YGORES}/data/idx/card/name/en`, 20000));
-      const ygoCards = (await getJson(`${YGO}/cardinfo.php?cardset=${encodeURIComponent(setName)}`).catch(() => ({ data: [] })))?.data || [];
-      const extras = await resolveExtras(set, ygoCards, printcodes);
-      const labels = [...new Set([...ygoCards.flatMap((card: any) => (card.card_sets || []).filter((row: any) => String(row.set_code || '').toUpperCase().startsWith(`${set}-EN`)).map((row: any) => String(row.set_rarity || '').trim())), ...Object.values(extras).flatMap(extra => extra.rarities)])];
-      const allowedRarities = await canonicalRarities(labels);
-      const existing = new Set(existingRows.map(identityKey));
-      let plan = planNewSet({ set, setName, ygoCards, printcodes, namesToKonami: nameIndex, existing, allowedRarities, extras });
-      // YGOPRODeck con sole etichette non valide ("2", "3", "New"…) su un
-      // codice: rarità dalla scheda Konami, poi stesso piano (stesse verifiche).
-      if (await addKonamiRarities(set, ygoCards, printcodes, plan, extras, allowedRarities)) plan = planNewSet({ set, setName, ygoCards, printcodes, namesToKonami: nameIndex, existing, allowedRarities, extras });
-      if (!dryRun && plan.rows.length) await insertRows(plan.rows);
-      if (!dryRun) inserted += plan.rows.length;
-      const byLanguage = Object.fromEntries(LANGUAGES.map(language => [language, plan.rows.filter(row => row.set_code.startsWith(`${set}-${language}`)).length]).filter(([, count]) => count));
-      report.push({ set, setName, status: dryRun ? 'planned' : 'filled', missingBefore: missing.length, newRows: plan.rows.length, byLanguage, sample: plan.rows.filter((_, index) => index % Math.max(1, Math.floor(plan.rows.length / 4)) === 0).slice(0, 4).map(row => `${row.set_code} ${row.rarity} · ${row.card_name}`), issues: plan.issues.slice(0, 40), issueCount: plan.issues.length });
+      const sets = await candidateSets(Array.isArray(body?.sets) ? body.sets : null, days);
+      let filled = 0, nameIndex: Map<string, Set<string>> | null = null;
+      for (const { code: set, name: setName } of sets) {
+        try {
+        const printcodes = await fetchPrintcodes(set);
+        if (!Object.keys(printcodes).length) { report.push({ set, status: 'not_in_ygoresources' }); continue; }
+        const existingRows = await existingPrintings(set);
+        const missing = missingCodes(set, printcodes, new Set(existingRows.map(row => row.set_code)));
+        if (!missing.length) { report.push({ set, status: 'complete' }); continue; }
+        if (filled >= maxSets) { report.push({ set, status: 'deferred', missing: missing.length }); continue; }
+        filled++;
+        nameIndex ??= konamiIdsByName(await getJson(`${YGORES}/data/idx/card/name/en`, 20000));
+        const ygoCards = (await getJson(`${YGO}/cardinfo.php?cardset=${encodeURIComponent(setName)}`).catch(() => ({ data: [] })))?.data || [];
+        const extras = await resolveExtras(set, ygoCards, printcodes);
+        const labels = [...new Set([...ygoCards.flatMap((card: any) => (card.card_sets || []).filter((row: any) => String(row.set_code || '').toUpperCase().startsWith(`${set}-EN`)).map((row: any) => String(row.set_rarity || '').trim())), ...Object.values(extras).flatMap(extra => extra.rarities)])];
+        const allowedRarities = await canonicalRarities(labels);
+        const existing = new Set(existingRows.map(identityKey));
+        let plan = planNewSet({ set, setName, ygoCards, printcodes, namesToKonami: nameIndex, existing, allowedRarities, extras });
+        // YGOPRODeck con sole etichette non valide ("2", "3", "New"…) su un
+        // codice: rarità dalla scheda Konami, poi stesso piano (stesse verifiche).
+        if (await addKonamiRarities(set, ygoCards, printcodes, plan, extras, allowedRarities)) plan = planNewSet({ set, setName, ygoCards, printcodes, namesToKonami: nameIndex, existing, allowedRarities, extras });
+        if (!dryRun && plan.rows.length) await insertRows(plan.rows);
+        if (!dryRun) inserted += plan.rows.length;
+        const byLanguage = Object.fromEntries(LANGUAGES.map(language => [language, plan.rows.filter(row => row.set_code.startsWith(`${set}-${language}`)).length]).filter(([, count]) => count));
+        report.push({ set, setName, status: dryRun ? 'planned' : 'filled', missingBefore: missing.length, newRows: plan.rows.length, byLanguage, sample: plan.rows.filter((_, index) => index % Math.max(1, Math.floor(plan.rows.length / 4)) === 0).slice(0, 4).map(row => `${row.set_code} ${row.rarity} · ${row.card_name}`), issues: plan.issues.slice(0, 40), issueCount: plan.issues.length });
+      } catch (error) {
+        // Un set con una fonte giù non deve fermare gli altri: resta nel report.
+        report.push({ set, status: 'error', error: String((error as Error)?.message || error).slice(0, 200) });
+        status = 'error';
+      }
     }
   } catch (error) {
     status = 'error'; errorMessage = String((error as Error)?.message || error).slice(0, 500);

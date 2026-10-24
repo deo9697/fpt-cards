@@ -47,6 +47,16 @@ const review = c.reviewView();
 for (const hook of ['data-scan-qty-inc', 'data-scan-qty-dec', 'data-scan-first-edition', 'data-scan-remove', 'data-scan-save', 'data-scan-continue', 'scan-review-row']) assert.ok(review.includes(hook), `revisione senza ${hook}`);
 assert.match(review, /Aggiungi 1 carta alla raccolta/);
 
+// Foglio impostazioni aperto: nessuno scatto parte dietro al foglio, e il tasto
+// indietro lo chiude invece di aprirci sopra "Hai finito?".
+c.phase = 'scanning'; c.toggleSettings(true);
+assert.equal(c.settingsOpen, true);
+c.requestSnapshot();
+assert.equal(c.status, 'Chiudi la finestra aperta prima dello scatto', 'scatto bloccato con le impostazioni aperte');
+await c.requestExit();
+assert.equal(c.settingsOpen, false, 'indietro chiude le impostazioni');
+assert.equal(c.exitOpen, true, 'poi chiede se hai finito');
+
 // Suggerimenti sugli scatti vuoti.
 assert.equal(captureHint({ meanLuma: 30, sharpness: 9 }, true), 'Troppo buio · accendi il flash');
 assert.equal(captureHint({ meanLuma: 30, sharpness: 9 }, false), 'Troppo buio · avvicinati alla luce');
