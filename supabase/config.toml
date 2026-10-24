@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.konami-card-rarities]
 verify_jwt = false
+
+[functions.catalog-new-sets]
+verify_jwt = false
