@@ -3063,3 +3063,9 @@ body.pinpad-open { overflow:hidden; }
 .fast-scan-live:has([data-scan-assistant]:not(:empty)) .live-roi-label,.fast-scan-live:has([data-scan-assistant]:not(:empty)) .live-ocr-state { opacity:0; }
 .fsx-row-card { overflow:hidden;color:#e7e2ee;font-size:.8rem;font-weight:700;text-overflow:ellipsis;white-space:nowrap; }
 .fsx-round:focus-visible,.fsx-tray:focus-visible,.fsx-side:focus-visible,.fsx-session-chip:focus-visible,.fsx-undo:focus-visible,.fsx-remove:focus-visible,.fsx-link:focus-visible,.scan-qty-stepper button:focus-visible,.scan-first-edition-toggle:focus-visible,.review-choices button:focus-visible,.sheet-danger:focus-visible { outline:2px solid var(--fsx-accent-soft);outline-offset:2px; }
+.fsx-stats .bad { border-color:#ff6b8166;background:#ff6b8114;color:#ffb3c0; }
+.fsx-failed h2 span { background:#ff6b8126;color:var(--fsx-error); }
+.fsx-row.warning.failed { border-color:#ff6b8140;background:linear-gradient(180deg,#1c0e12,#0f121a); }
+.fsx-row-actions { display:flex;flex-wrap:wrap;align-items:center;gap:12px; }
+.fsx-empty-session { display:grid;justify-items:start;gap:10px;padding:14px;border:1px dashed #2a3042;border-radius:16px; }
+.fsx-empty-session p { margin:0;color:var(--muted);font-size:.84rem; }
