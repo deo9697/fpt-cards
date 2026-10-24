@@ -64,7 +64,7 @@ try{
  // Sezione 7-8 (produzione, non ambiente dev): la cronologia tecnica NON deve
  // apparire nella schermata di sessione normale, solo carte/quantità/rimozione.
  assert.equal(await evaluate(`document.querySelector('[data-scan-history]')`),null,'nessuna cronologia tecnica nella sessione normale');
- assert.equal(await evaluate(`document.querySelectorAll('.scan-review-row').length>0`),true,'le carte confermate restano visibili senza la cronologia tecnica');
+ for(let i=0;i<40&&!(await evaluate(`document.querySelectorAll('.scan-review-row').length`));i++)await delay(50);assert.equal(await evaluate(`document.querySelectorAll('.scan-review-row').length>0`),true,'le carte confermate restano visibili senza la cronologia tecnica');
  await screenshot('03-history-mobile');
  // Sezione 9: la stessa cronologia compare SOLO sotto ?debugScan=1.
  await evaluate(`c.debugMode=true;render();`);

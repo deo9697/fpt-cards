@@ -761,7 +761,7 @@ async function run() {
   await cdp.call('Emulation.setDeviceMetricsOverride', { width:1280, height:900, deviceScaleFactor:1, mobile:false, screenWidth:1280, screenHeight:900 });
   await evaluate(`(()=>{document.querySelector('#scan-manual-code').value='sdy - 006';document.querySelector('#scan-manual-form').requestSubmit()})()`);
   await waitFor(`document.querySelector('[data-scan-total-number]')?.textContent==='1'`, 'Fast Scan non ha accumulato la printing');
-  await waitFor(`document.querySelector('[data-scan-detection]')?.textContent.includes('SDY-006')&&document.querySelector('[data-scan-history-review]')?.textContent.trim()==='1 carte'`, 'Fast Scan live non mostra il feedback essenziale');
+  await waitFor(`document.querySelector('[data-scan-detection]')?.textContent.includes('SDY-006')&&document.querySelector('[data-scan-history-review]')?.textContent.trim()==='1 carta'`, 'Fast Scan live non mostra il feedback essenziale');
   await evaluate(`document.querySelector('[data-scan-manual-close]').click();history.back()`);
   await waitFor(`!document.querySelector('[data-scan-exit-sheet]').classList.contains('hidden')`, 'Browser back Fast Scan non mostra il dialog di uscita');
   await evaluate(`document.querySelector('[data-scan-cancel-exit]').click()`);
