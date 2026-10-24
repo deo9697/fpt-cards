@@ -11,6 +11,17 @@ const RANGES=[{days:7,label:'7g'},{days:30,label:'30g'},{days:90,label:'90g'},{d
 const FRESH_MS=48*60*60*1000;
 const ROW_BATCH_SIZE=60;
 const isStatementTimeout=error=>error?.code==='57014'||/statement timeout/i.test(error?.message||'');
+// Copia locale dell'ultimo caricamento riuscito (2026-10-24). I prezzi
+// cambiano una volta al giorno (sync notturno), ma le RPC del Market Watch su
+// questa istanza piccola possono sforare i 3 s del ruolo anon quando partono
+// insieme (errore 57014 "Il caricamento dei prezzi sta impiegando..."). Con la
+// copia l'apertura è immediata e un timeout lascia a schermo i dati di prima.
+const MARKET_CACHE_PREFIX='fpt-market-watch-cache-v1';
+const marketCacheKey=(game,member)=>`${MARKET_CACHE_PREFIX}:${member||'anon'}:${game}`;
+function readMarketCache(key){try{const raw=globalThis.localStorage?.getItem(key);return raw?JSON.parse(raw):null;}catch{return null;}}
+function writeMarketCache(key,patch){try{globalThis.localStorage?.setItem(key,JSON.stringify({...(readMarketCache(key)||{}),...patch,savedAt:new Date().toISOString()}));}catch{}}
+// Un secondo tentativo dopo un timeout del database (come già faceva owned_page).
+async function withTimeoutRetry(task,delayMs=600){try{return await task();}catch(error){if(!isStatementTimeout(error))throw error;await new Promise(resolve=>setTimeout(resolve,delayMs));return task();}}
 const emptyOwnedPage=()=>({items:[],total:0,limit:ROW_BATCH_SIZE,offset:0});
 const emptyExtra=()=>({items:[],deckUnresolved:[],featuredMovers:undefined});
 const emptySummary=()=>({portfolioValue:{current:0,complete:false},confirmCount:0,aggregatePendingCount:0,catalogPriceFloor:{},lastSync:null});
@@ -31,7 +42,7 @@ const emptySummary=()=>({portfolioValue:{current:0,complete:false},confirmCount:
 //   - confirmQueue: l'UNICO posto con mappingEvidence/candidates, caricato
 //     lazy solo quando si apre la tab "Conferma" o si preme "Conferma tutti".
 export class MarketWatchController {
-  constructor({api,getGame,getDecks,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,onRender,onToast,onNavigate});
+  constructor({api,getGame,getDecks,getMember,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,getMember,onRender,onToast,onNavigate});
     this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
     this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
     this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
@@ -69,49 +80,60 @@ export class MarketWatchController {
     if(this.loadInFlight&&this.loadGame===game)return this.loadInFlight;
     const generation=this.loadGeneration=(this.loadGeneration||0)+1;
     const current=()=>this.loadGeneration===generation&&this.getGame()===game;
-    this.loadGame=game;this.loading=true;this.error='';this.extraSummaryError='';this.ownedPageError='';this.confirmQueue=[];this.confirmQueueLoaded=false;
+    const cacheKey=this.cacheKey=marketCacheKey(game,this.getMember?.());
+    const cached=readMarketCache(cacheKey);
+    this.loadGame=game;this.loading=true;this.error='';this.extraSummaryError='';this.ownedPageError='';this.confirmQueue=[];this.confirmQueueLoaded=false;this.usingCache=false;
     this.trendsLoading=true;this.trendsError=false;this.extra.featuredMovers=undefined;
-    let extrasReady=false,movers=[],anomalies=[];
-    // Accessory panels must not hold up the main card list.
-    void Promise.all([
-      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>{if(current())this.trendsError=true;return [];}),
-      Promise.resolve().then(()=>this.api.marketPriceAnomalies?.()||[]).catch(()=>[])
-    ]).then(([nextMovers,nextAnomalies])=>{
-      movers=nextMovers;anomalies=nextAnomalies;extrasReady=true;
-      if(!current())return;this.trendsLoading=false;
-      this.extra.featuredMovers=mapDashboardMovers(movers);this.anomalies=anomalies||[];
-      this.refreshAfterLoad();void this.loadFeaturedHistories();
-    });
-    // P0 performance: owned_page (~2s, la più lenta e quella che l'utente
-    // aspetta per vedere la propria Raccolta) parte SUBITO, in parallelo a
-    // extra/summary — non più dopo, come prima di questo fix. Ha già il
-    // proprio generation guard (ownedPageGeneration) indipendente da
-    // questo, e silent=false così si aggiorna sul DOM (refreshBoardSection)
-    // appena pronta, senza aspettare extra/summary. Trade-off accettato: un
-    // cambio gioco fulmineo (prima che QUALUNQUE rete risponda) ora avvia
-    // comunque la fetch owned_page del gioco vecchio invece di saltarla del
-    // tutto (come faceva la versione sequenziale, che arrivava a
-    // loadOwnedPage solo dopo aver già scoperto lo stale-check su
-    // extra/summary) — una singola richiesta owned_page in più nel raro
-    // caso di doppio cambio gioco istantaneo, a fronte di ~1s in meno ad
-    // ogni apertura normale. Il risultato finale resta comunque sempre
-    // corretto: ownedPageGeneration scarta la risposta stale qualunque sia
-    // l'ordine di arrivo.
+    // Copia locale (2026-10-24): l'ultimo caricamento riuscito si mostra subito,
+    // la rete aggiorna in background. I prezzi cambiano una volta al giorno.
+    if(cached){
+      try{
+        if(cached.owned&&cached.ownedSort===this.sort&&!this.query){const mapped=mapOwnedPagePayload(cached.owned);this.ownedPage={items:mapped.items,total:mapped.total,limit:ROW_BATCH_SIZE,offset:0};}
+        if(cached.extra&&cached.summary){this.extra={...mapExtraPayload(cached.extra),featuredMovers:undefined};this.summary=mapSummaryPayload(cached.summary);}
+        if(Array.isArray(cached.movers)){this.extra.featuredMovers=mapDashboardMovers(cached.movers);this.trendsLoading=false;}
+        this.usingCache=true;this.loading=false;this.refreshAfterLoad();
+      }catch{this.usingCache=false;}
+    }
+    const timeoutMessage='Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.';
+    let extrasReady=false;
+    // Ordine (2026-10-24): prima la lista delle carte (quello che si guarda),
+    // poi riepilogo ed extra, infine movers e anomalie. Prima partivano 5 RPC
+    // pesanti insieme sull'istanza piccola e si rallentavano a vicenda fino a
+    // sforare i 3 s del ruolo anon (errore 57014): una alla volta finiscono prima.
     const ownedPromise=this.loadOwnedPage({reset:true});
     const request=(async()=>{
+      await ownedPromise.catch(()=>{});
+      if(!current())return;
       try{
-        const [extraPayload,summaryPayload]=await Promise.all([this.api.marketWatchExtra(game),this.api.marketWatchSummary(game)]);
+        const summaryPayload=await withTimeoutRetry(()=>this.api.marketWatchSummary(game));
         if(!current())return;
-        this.extra={...mapExtraPayload(extraPayload),featuredMovers:mapDashboardMovers(movers)};
+        const extraPayload=await withTimeoutRetry(()=>this.api.marketWatchExtra(game));
+        if(!current())return;
+        this.extra={...mapExtraPayload(extraPayload),featuredMovers:this.extra.featuredMovers};
         this.summary=mapSummaryPayload(summaryPayload);
         if(this.summary.lastSync&&this.summary.lastSync!==this.featuredSync){this.featuredHistory.clear();this.featuredSync=this.summary.lastSync;}
         this.extraSummaryError='';
-      }catch(error){if(current())this.extraSummaryError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');}
-      // Aggiorna subito hero/valore portafoglio appena extra/summary sono
-      // pronti, senza aspettare owned_page (stesso principio inverso della
-      // riga sopra: ogni pezzo si mostra appena pronto, non tutti insieme).
+        writeMarketCache(cacheKey,{extra:extraPayload,summary:summaryPayload});
+      }catch(error){
+        if(!current())return;
+        // Con una copia locale a schermo un timeout non cancella i dati: restano quelli di prima.
+        if(isStatementTimeout(error)&&cached?.extra&&cached?.summary){this.extraSummaryError='';this.usingCache=true;}
+        else this.extraSummaryError=isStatementTimeout(error)?timeoutMessage:/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');
+      }
       if(current()){this.syncError();this.refreshAfterLoad();}
     })();
+    // Pannelli accessori per ultimi: non devono contendersi il database con la lista.
+    void request.then(()=>Promise.all([
+      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>null),
+      Promise.resolve().then(()=>this.api.marketPriceAnomalies?.()||[]).catch(()=>[])
+    ])).then(([nextMovers,nextAnomalies])=>{
+      extrasReady=true;
+      if(!current())return;this.trendsLoading=false;
+      if(Array.isArray(nextMovers)){this.extra.featuredMovers=mapDashboardMovers(nextMovers);writeMarketCache(cacheKey,{movers:nextMovers});}
+      else if(!Array.isArray(cached?.movers)){this.trendsError=true;this.extra.featuredMovers=mapDashboardMovers([]);}
+      this.anomalies=nextAnomalies||[];
+      this.refreshAfterLoad();void this.loadFeaturedHistories();
+    });
     const combined=Promise.all([request,ownedPromise]).then(()=>{});
     this.loadInFlight=combined;
     try{return await combined;}finally{if(this.loadInFlight===combined){this.loadInFlight=null;if(current()){this.loading=false;this.syncError();this.refreshAfterLoad();if(extrasReady)void this.loadFeaturedHistories();}}}
@@ -151,7 +173,13 @@ export class MarketWatchController {
       const mapped=mapOwnedPagePayload(payload);
       this.ownedPage={items:reset?mapped.items:[...this.ownedPage.items,...mapped.items],total:mapped.total,limit:ROW_BATCH_SIZE,offset};
       this.ownedPageError='';
-    }catch(error){if(current())this.ownedPageError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');}
+      if(offset===0&&!this.query)writeMarketCache(this.cacheKey||marketCacheKey(game,this.getMember?.()),{owned:payload,ownedSort:this.sort});
+    }catch(error){
+      if(!current())return;
+      // Timeout con la copia locale già a schermo: si tengono i dati di prima invece dell'errore.
+      if(isStatementTimeout(error)&&reset&&this.usingCache&&this.ownedPage.items.length){this.ownedPageError='';return;}
+      this.ownedPageError=isStatementTimeout(error)?'Il caricamento dei prezzi sta impiegando troppo tempo. Riprova tra poco.':(error.message||'Market Watch non disponibile');
+    }
     finally{if(current()){this.ownedLoading=false;this.syncError();if(!silent)this.refreshBoard();}}
   }
   // load() ora gira anche mentre l'utente è già fermo su Market Watch (apertura
@@ -178,7 +206,7 @@ export class MarketWatchController {
     }
     const heroValue=document.querySelector('.market-hero-value'),heroSync=document.querySelector('.market-hero-sync');
     if(heroValue){const pv=this.summary.portfolioValue;heroValue.textContent=pv.complete?money(pv.current):'Dati parziali';}
-    if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}`:'In attesa del primo sync'}`;
+    if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}${this.usingCache?' · copia locale':''}`:'In attesa del primo sync'}`;
     // refreshBoard() (mirato), MAI refreshBoardSection(): un refresh di
     // sfondo (fallback periodico, sync dopo un'azione) mentre l'utente sta
     // già scrivendo nella search bar di Market Watch non deve ricrearla.
@@ -291,7 +319,7 @@ export class MarketWatchController {
           <strong class="market-hero-value">${this.summary.portfolioValue.complete?money(this.summary.portfolioValue.current):'Dati parziali'}</strong>
           ${sparkle('bottom:-4px;right:6%;width:15px;height:15px;animation-delay:1.1s')}
         </span>
-        <span class="market-hero-sync"><i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}`:'In attesa del primo sync'}</span>
+        <span class="market-hero-sync"><i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}${this.usingCache?' · copia locale':''}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
       <section class="surface market-board"><div data-market-board-section>${this.renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue})}</div>

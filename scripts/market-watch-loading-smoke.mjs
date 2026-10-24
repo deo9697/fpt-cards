@@ -21,26 +21,32 @@ const emptyExtraPayload=()=>({items:[],deckUnresolved:[]});
 const emptySummaryPayload=()=>({portfolioValue:{current:0,complete:false},confirmCount:0,aggregatePendingCount:0,catalogPriceFloor:{},lastSync:null});
 const emptyOwnedPayload=()=>({items:[],total:0,limit:60,offset:0});
 
-// 1) owned/summary/extra partono nello stesso tick logico: nessuno aspetta
-//    gli altri per essere INVOCATO (non solo per essere applicato). Un solo
-//    load() concorrente per lo stesso gioco condivide comunque la stessa
-//    richiesta (dedup invariato).
+// 1) 2026-10-24: le RPC partono SCAGLIONATE, non più tutte insieme. Con 5 RPC
+//    pesanti in parallelo l'istanza piccola sforava i 3 s del ruolo anon
+//    (errore 57014, "Il caricamento dei prezzi sta impiegando..."). Ordine:
+//    owned_page (la lista che si guarda) → summary → extra → movers/anomalie.
+//    Un load() concorrente per lo stesso gioco condivide la stessa richiesta.
 {
   const extraD=deferred(),summaryD=deferred(),ownedD=deferred();
-  let ownedCalls=0,extraCalls=0,summaryCalls=0;
+  let ownedCalls=0,extraCalls=0,summaryCalls=0,moverCalls=0;
   const controller=new MarketWatchController({getGame:()=>'yugioh',onRender:()=>{},api:{
     marketWatchExtra:()=>{extraCalls++;return extraD.promise;},marketWatchSummary:()=>{summaryCalls++;return summaryD.promise;},
     marketWatchOwnedPage:()=>{ownedCalls++;return ownedD.promise;},
-    marketDashboardMovers:async()=>[],marketPriceAnomalies:async()=>[]
+    marketDashboardMovers:async()=>{moverCalls++;return [];},marketPriceAnomalies:async()=>[]
   }});
   const first=controller.load(),second=controller.load();
   await flush();
-  assert.equal(extraCalls,1);assert.equal(summaryCalls,1);
-  assert.equal(ownedCalls,1,'owned_page deve partire nello stesso giro di extra/summary, non dopo che si sono risolte');
-  extraD.resolve(emptyExtraPayload());summaryD.resolve(emptySummaryPayload());ownedD.resolve(emptyOwnedPayload());
-  await Promise.all([first,second]);
+  assert.equal(ownedCalls,1,'owned_page parte subito');
+  assert.equal(summaryCalls+extraCalls+moverCalls,0,'nient\'altro parte finché owned_page non ha risposto');
+  ownedD.resolve(emptyOwnedPayload());await flush();await flush();
+  assert.equal(summaryCalls,1,'summary dopo owned_page');assert.equal(extraCalls,0,'extra solo dopo summary');
+  summaryD.resolve(emptySummaryPayload());await flush();await flush();
+  assert.equal(extraCalls,1,'extra dopo summary');assert.equal(moverCalls,0,'movers per ultimi');
+  extraD.resolve(emptyExtraPayload());
+  await Promise.all([first,second]);await flush();await flush();
+  assert.equal(moverCalls,1,'movers dopo extra/summary');
   assert.equal(ownedCalls,1,'un secondo load() concorrente per lo stesso gioco condivide la stessa richiesta, non ne fa doppie');
-  console.log('PASS owned_page parte in parallelo a extra/summary (stesso tick), load() concorrenti condividono la richiesta');
+  console.log('PASS RPC scaglionate: owned_page → summary → extra → movers; load() concorrenti condividono la richiesta');
 }
 
 // 2) owned_page completa PRIMA di summary/extra: refreshBoard aggiorna il
@@ -217,3 +223,38 @@ await retry.loadOwnedPage({reset:true});
 assert.equal(retryCalls,1,'a non-timeout error must not be retried');
 assert.equal(retry.error,'Sessione scaduta');
 console.log('PASS transient timeout recovery, bounded retries, retained page and visible persistent errors');
+
+// Copia locale (2026-10-24): un caricamento riuscito resta in memoria e alla
+// prossima apertura si vede subito; se poi le RPC scadono (57014) restano i
+// dati di prima, con "copia locale", invece del messaggio di errore.
+{
+  const store=new Map(),previous=globalThis.localStorage;
+  globalThis.localStorage={getItem:key=>store.has(key)?store.get(key):null,setItem:(key,value)=>store.set(key,String(value)),removeItem:key=>store.delete(key)};
+  const ok={
+    marketWatchOwnedPage:async()=>({items:[{printing_id:'p1',card_name:'Cached Card'}],total:1,limit:60,offset:0}),
+    marketWatchSummary:async()=>({...emptySummaryPayload(),lastSync:'2026-10-24T01:00:00Z',portfolioValue:{current:42,complete:true}}),
+    marketWatchExtra:async()=>emptyExtraPayload(),marketDashboardMovers:async()=>[],marketPriceAnomalies:async()=>[]
+  };
+  const first=new MarketWatchController({getGame:()=>'yugioh',getMember:()=>'daniele',onRender:()=>{},api:ok});
+  await first.load();await flush();
+  assert.equal(first.usingCache,false,'primo caricamento: dati freschi');
+  assert(store.size===1,'copia locale salvata per membro e gioco');
+  let ownedCalls=0;
+  const slow=new MarketWatchController({getGame:()=>'yugioh',getMember:()=>'daniele',onRender:()=>{},api:{
+    marketWatchOwnedPage:async()=>{ownedCalls++;throw timeout();},marketWatchSummary:async()=>{throw timeout();},marketWatchExtra:async()=>{throw timeout();},
+    marketDashboardMovers:async()=>{throw timeout();},marketPriceAnomalies:async()=>[]
+  }});
+  const pending=slow.load();
+  assert.equal(slow.ownedPage.items[0]?.cardName,'Cached Card','la copia locale è a schermo prima della rete');
+  assert.equal(slow.loading,false,'niente schermata di caricamento con una copia locale');
+  await pending;await flush();
+  assert.equal(slow.error,'','con la copia locale un timeout non mostra l\'errore');
+  assert.equal(slow.usingCache,true);assert.equal(slow.summary.portfolioValue?.current??slow.summary.portfolioValue,42);
+  assert.equal(ownedCalls,2,'owned_page riprova una volta anche con la copia a schermo');
+  const other=new MarketWatchController({getGame:()=>'yugioh',getMember:()=>'luca-ec46',onRender:()=>{},api:{...ok,marketWatchOwnedPage:async()=>{throw timeout();}}});
+  await other.load();
+  assert.equal(other.ownedPage.items.length,0,'la copia di un membro non compare a un altro');
+  assert.match(other.error,/Riprova tra poco/,'senza copia locale il timeout resta visibile');
+  globalThis.localStorage=previous;
+  console.log('PASS copia locale: apertura immediata, timeout senza errore con dati di prima, separata per membro');
+}

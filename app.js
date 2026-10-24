@@ -193,7 +193,7 @@ function loadAppControllers() {
   appControllersLoading ??= Promise.all([import('./js/decks.js'), import('./js/market-watch.js'), import('./js/stats.js')])
     .then(([{ DeckController }, { MarketWatchController }, { StatsController }]) => {
       decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
-      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:message=>toast(message),onNavigate:target=>navigate(target)});
+      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:message=>toast(message),onNavigate:target=>navigate(target)});
       stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
       // Ridisegna solo dove servono i controller (Dashboard e le loro pagine):
       // mai sulla Raccolta, su Fast Scan o mentre si scrive, per non perdere
