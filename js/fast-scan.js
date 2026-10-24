@@ -550,7 +550,7 @@ export class FastScanController {
   async recordFailure(catalogMiss=false){
     if(this.activeCaptureId){this.buffer.failScan(this.activeCaptureId,catalogMiss?'NO_CATALOG_MATCH':'NO_TEXT');this.persist();this.refreshHud();}
     const hint=catalogMiss?'':captureHint(this.lastPreprocessing,this.camera.torchSupported);this.lastPreprocessing=null;
-    this.showDetection(catalogMiss?'Codice non confermato':'Codice non letto',hint||'Riprova questa carta','error');
+    this.showDetection(catalogMiss?'Codice non confermato':'Codice non letto','Riprova questa carta','error');
     this.consensus.miss();this.gate.miss();this.failureStreak+=1;
     if(this.failureStreak>=4){this.failureStreak=0;const focused=await this.camera.refocus();this.setStatus(focused?'Messa a fuoco…':this.camera.focusSupported?'Tocca per mettere a fuoco':'Avvicina la carta');}
     else this.setStatus(catalogMiss?'Codice non trovato · controlla la review':hint||'Codice non letto · riprova lo scatto');
