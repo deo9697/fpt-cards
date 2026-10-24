@@ -141,7 +141,7 @@ function createFastScanController(FastScanController) { return new FastScanContr
   // prossimo login/refresh online per essere riconciliata. scheduleCatalogRepairs
   // è già rientrante (catalogRepairRunning/catalogRepairQueued), chiamarla
   // qui non duplica un ciclo già in corso.
-  onSaved:async()=>{await loadCollection();saveState();scheduleCatalogRepairs();}, onToast:message=>toast(message),
+  onSaved:async()=>{await loadCollection({force:true});saveState();if(page==='collection')renderRoute();scheduleCatalogRepairs();}, onToast:message=>toast(message),
   onRoute:mode=>setFastScanRoute(mode)
 }); }
 

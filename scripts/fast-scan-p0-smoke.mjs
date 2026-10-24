@@ -82,7 +82,11 @@ assert.match(source,/Sincronizzazione interrotta\. I tuoi scan sono salvati sul 
 assert.ok(source.indexOf("stage='acknowledged'")<source.indexOf('await clearScanSession()'),'cleanup locale deve seguire ack definitivo');
 assert.match(source,/saveFastScanChunk\(this\.sync\.batchId/);
 assert.match(source,/if\(this\.saving\|\|!this\.buffer\.entries\.size\|\|!this\.isOnline\(\)\)return/,'rete assente o doppio tap devono essere bloccati prima della sync');
-assert.match(source,/stage='refresh';try\{await this\.onSaved/,'timeout refresh dopo commit non deve retrocedere un batch acknowledged');
+// Dal 2026-10-24 la ricarica della Raccolta dopo il commit gira in background
+// (non blocca la fine del salvataggio): un suo errore o timeout non può più
+// raggiungere il catch del salvataggio, quindi non retrocede mai un batch acknowledged.
+assert.match(source,/stage='refresh';void Promise\.resolve\(\)\.then\(\(\)=>this\.onSaved\?\.\(\)\)/,'timeout refresh dopo commit non deve retrocedere un batch acknowledged');
+assert.doesNotMatch(source,/stage='refresh';try\{await this\.onSaved/,'la ricarica dopo il commit non deve più bloccare il salvataggio');
 assert.match(source,/if\(this\.sync\?\.status==='syncing'\)this\.sync=\{\.\.\.this\.sync,status:'pending'\}/,'refresh durante sync deve rendere il batch riprendibile');
 const sql=fs.readFileSync(new URL('../supabase-fast-scan-idempotency-p0.sql',import.meta.url),'utf8');
 assert.match(sql,/primary key \(owner_slug,scan_batch_id,chunk_id\)/i);

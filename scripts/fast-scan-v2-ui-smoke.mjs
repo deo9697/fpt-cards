@@ -27,7 +27,7 @@ assert.match(live, /<b data-scan-total-number>0<\/b> <span data-scan-total-label
 c.buffer.add(card);
 live = c.scannerView();
 assert.match(live, /<b data-scan-total-number>1<\/b> <span data-scan-total-label>carta<\/span>/, 'singolare con una carta');
-assert.ok(live.includes(card.imageUrl), 'miniatura dell\'ultima carta nel tray');
+assert.ok(live.includes(card.imageUrl.replace('/images/cards/', '/images/cards_small/')), 'miniatura (versione piccola) dell\'ultima carta nel tray');
 assert.doesNotMatch(live, /data-scan-undo disabled/, 'annulla attivo dopo una scansione');
 
 // Lo stato segue l'esito.
