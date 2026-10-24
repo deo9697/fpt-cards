@@ -75,7 +75,9 @@
     "test:fast-scan-crop-assist": "node scripts/fast-scan-crop-assist-smoke.mjs",
     "bench:collection-virtual": "node scripts/collection-virtual-benchmark.mjs",
     "test:route-lazy": "node scripts/route-lazy-loading-smoke.mjs",
-    "test:market-exact-variant-pricing": "node scripts/market-exact-variant-pricing-smoke.mjs"
+    "test:market-exact-variant-pricing": "node scripts/market-exact-variant-pricing-smoke.mjs",
+    "catalog:add-set": "node scripts/catalog-add-set.mjs",
+    "test:catalog-set-fill": "node scripts/catalog-set-fill-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
