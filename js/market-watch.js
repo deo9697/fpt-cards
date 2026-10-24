@@ -207,6 +207,10 @@ export class MarketWatchController {
     const heroValue=document.querySelector('.market-hero-value'),heroSync=document.querySelector('.market-hero-sync');
     if(heroValue){const pv=this.summary.portfolioValue;heroValue.textContent=pv.complete?money(pv.current):'Dati parziali';}
     if(heroSync)heroSync.innerHTML=`<i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}${this.usingCache?' · copia locale':''}`:'In attesa del primo sync'}`;
+    // Barra delle schede: con il caricamento scaglionato (2026-10-24) lista,
+    // riepilogo ed extra arrivano in momenti diversi, e alcune schede (Conferma
+    // rarità, Prezzi insoliti) esistono solo se i dati le giustificano.
+    this.refreshTabs();
     // refreshBoard() (mirato), MAI refreshBoardSection(): un refresh di
     // sfondo (fallback periodico, sync dopo un'azione) mentre l'utente sta
     // già scrivendo nella search bar di Market Watch non deve ricrearla.
@@ -446,10 +450,21 @@ export class MarketWatchController {
   // toolbar/tab bar (per non ricreare la search bar a fuoco), quindi senza
   // questo patch mirato il numero sul tab "Raccolta" resterebbe indietro
   // rispetto ai risultati mostrati durante la digitazione.
+  // Ridisegna SOLO la barra delle schede (stesso markup del render completo) e
+  // ricollega i clic: la toolbar di ricerca resta intatta, il fuoco non si perde.
+  refreshTabs(){
+    const nav=document.querySelector('[data-market-board-section] .market-tabs');if(!nav)return;
+    const holder=document.createElement('div');
+    holder.innerHTML=this.renderBoardSection({items:this.itemsForTab(),marketDecks:this.marketDecks(),hasSnapshots:this.allLoadedItems().some(item=>item.referencePrice!=null),confirmQueue:this.rarityMismatchQueue(),aggregatePending:this.aggregatePendingQueue(),anomalyQueue:this.anomalyQueue()});
+    const next=holder.querySelector('.market-tabs');if(!next||next.outerHTML===nav.outerHTML)return;
+    nav.replaceWith(next);this.bindBoardSection(next);
+  }
   refreshTabCounts(marketDecks=this.marketDecks()){
     document.querySelectorAll('[data-market-tab]').forEach(button=>{
       const span=button.querySelector('span');
-      if(span)span.textContent=countFor(this,button.dataset.marketTab,marketDecks.length);
+      const tab=button.dataset.marketTab;
+      // confirm/anomaly hanno contatori propri (summary o coda caricata), non countFor.
+      if(span)span.textContent=tab==='confirm'?(this.confirmQueueLoaded?this.rarityMismatchQueue().length:this.summary.confirmCount):tab==='anomaly'?this.anomalyQueue().length:countFor(this,tab,marketDecks.length);
     });
   }
   observeRows(root=document){

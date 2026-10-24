@@ -176,7 +176,7 @@ test('limite di default coerente con lo stesso ordine di grandezza del batch cat
     assert.match(block, /await loadCollection\(\);/);
   });
   test('app.js: Fast Scan onSaved pianifica scheduleCatalogRepairs (vera riconciliazione POST-SAVE, non solo al bootstrap)', () => {
-    assert.match(appJs, /onSaved:async\(\)=>\{await loadCollection\(\);saveState\(\);scheduleCatalogRepairs\(\);\}/);
+    assert.match(appJs, /onSaved:async\(\)=>\{await loadCollection\(\{force:true\}\);saveState\(\);if\(page==='collection'\)renderRoute\(\);scheduleCatalogRepairs\(\);\}/);
   });
   console.log('app.js (statico): import presente, terza riconciliazione nel ciclo esistente, reload condizionato a stats.resolved>0, Fast Scan onSaved pianifica una riconciliazione post-save reale');
 }

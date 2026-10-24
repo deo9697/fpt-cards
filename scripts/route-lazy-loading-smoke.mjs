@@ -89,7 +89,7 @@ try {
   console.log('PASS Team: team.js caricato su richiesta e pagina renderizzata');
 
   await evaluate(`location.hash='#/fastscan'`);
-  await waitFor(`Boolean(document.querySelector('.fast-scan-route .fast-scan-setup, .fast-scan-route .fast-scan-live'))`, 'Fast Scan non renderizzato dopo il caricamento lazy');
+  await waitFor(`Boolean(document.querySelector('.fast-scan-route .fast-scan-setup, .fast-scan-route .fast-scan-live, .fast-scan-route .fsx-launch'))`, 'Fast Scan non renderizzato dopo il caricamento lazy');
   await evaluate(`location.hash='#/home'`);
   await waitFor(`Boolean(document.querySelector('.mm-dashboard'))`, 'Ritorno alla Dashboard da Fast Scan non riuscito');
   console.log('PASS Fast Scan: controller creato alla prima apertura, uscita verso la Dashboard regolare');
