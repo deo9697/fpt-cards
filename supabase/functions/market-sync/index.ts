@@ -656,6 +656,14 @@ Deno.serve(async request=>{
   ];
   const resolverBatchSize=payload?.resolvePending===true?Math.max(1,Math.min(RESOLVER_SAFETY_CEILING,Number(payload?.resolverBatchSize)||100)):0;
   if(resolverBatchSize){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:resolverBatchSize,skipPrices:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolver_batch',results:[result]});}
+  // resolveNew (2026-10-24): mappa SOLO le printing monitorate senza alcuna
+  // mappatura Cardmarket (carte appena entrate in collezione). Il giro
+  // notturno è pricesOnly per contenere il traffico (niente Product Catalogue)
+  // e dal 2026-10-04 nient'altro creava mappature: l'ultima era del 18/09.
+  // Il catalogo si scarica solo se c'è almeno una carta nuova (controllo dei
+  // target prima di qualsiasi download in syncProvider); ambigue/non risolte
+  // non vengono riprovate ogni notte (restano per resolvePending o a mano).
+  if(payload?.resolveNew===true){const cardmarket=providers.find(provider=>provider.name==='cardmarket');const limit=Math.max(1,Math.min(RESOLVER_SAFETY_CEILING,Number(payload?.resolverBatchSize)||500));const result=await syncProvider(cardmarket,{recoverStale:payload?.recoverStale===true,pendingResolverLimit:limit,skipPrices:true,newMappingsOnly:true});return json({ok:['succeeded','partial','skipped'].includes(result.status),mode:'resolve_new',result});}
   const scheduled=payload?.scheduled===true||payload?.mode==='daily_full',pricesOnly=payload?.pricesOnly===true||scheduled;
   if(canaryPrintingIds.length&&pricesOnly)return json({error:'canary_requires_full_mode'},400);
   if(dryTargetPrintingIds.length){
@@ -687,7 +695,7 @@ function withDeadline<T>(promise:Promise<T>,ms:number,label:string):Promise<T>{
   return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
 }
 
-async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false,priorityOnly=false,newPrintingsOnly=false}={}){
+async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,targetPrintingIds=[] as string[],pendingResolverLimit=0,skipPrices=false,priorityOnly=false,newPrintingsOnly=false,newMappingsOnly=false}={}){
   const metadata=provider.getPriceMetadata();
   if(metadata.status==='unavailable')return {provider:provider.name,status:'unavailable',reason:'secret_or_feed_missing'};
   if(recoverStale)await releaseProviderSync(provider.name);
@@ -699,7 +707,7 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     // An empty queue must not transfer the full multi-megabyte target catalog.
     const targetResult=await rpcPages('market_sync_targets',{p_provider:provider.name},{filters:priorityOnly?{refresh_requested_at:'not.is.null'}:{},order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
     const allTargets=targetResult.rows;targetPages=targetResult.requests;
-    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):newPrintingsOnly?allTargets.filter((target:any)=>!target.mapping_id||target.refresh_requested_at).slice(0,100):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
+    const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):newPrintingsOnly?allTargets.filter((target:any)=>!target.mapping_id||target.refresh_requested_at).slice(0,100):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(newMappingsOnly?(target:any)=>!target.mapping_id:cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
     if(newPrintingsOnly&&targets.length&&targets.every((target:any)=>isAuthorizedCardmarketMapping(target)))pricesOnly=true;
     if((pendingResolverLimit||priorityOnly||newPrintingsOnly)&&!targets.length){await finish(runId,'succeeded',{request_count:requestCount,attempt_count:1,metadata:{targets:0,snapshots:0,resolverVersion:CARDMARKET_RESOLVER_VERSION}});return {provider:provider.name,status:'skipped',reason:priorityOnly?'no_pending_refresh_requests':'resolver_current',targets:0,pagination:{targetPages,targetRows:allTargets.length}};}
     const unique=new Map<string,any>();
