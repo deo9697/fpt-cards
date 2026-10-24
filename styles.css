@@ -3039,7 +3039,7 @@ body.pinpad-open { overflow:hidden; }
 @keyframes fsx-sweep { 0% { left:-30%; } 100% { left:100%; } }
 @keyframes fsx-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
 @keyframes fsx-spin { to { transform:rotate(360deg); } }
-@keyframes fsx-sheet { from { transform:translateY(24px);opacity:.6; } to { transform:none;opacity:1; } }
+@keyframes fsx-sheet { from { opacity:.4; } to { opacity:1; } }
 @keyframes fsx-captured { 0% { transform:translate(-50%,-50%) scale(.97);filter:brightness(1.8); } 100% { transform:translate(-50%,-50%) scale(1);filter:none; } }
 @media (prefers-reduced-motion:reduce) { .fsx-scanline::after,.fsx-hero-code i,.live-capture:disabled > i,.live-ocr-state > i { animation:none !important; } .scan-bottom-sheet { animation:none; } }
 @media (max-width:370px) { .fsx-hero { grid-template-columns:76px 1fr; } .fsx-hero-card { width:76px; } .live-capture > i { width:68px;height:68px; } .fsx-tray-count { display:none; } }
