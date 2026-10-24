@@ -784,8 +784,14 @@ async function run() {
   // controller (this.buffer.entries), non in un input DOM non controllato,
   // quindi non esiste qui la stessa classe di bug "draft perso al render"
   // trovata altrove oggi — è solo un selettore obsoleto.
+  // Revisione v2.1 (2026-10-24): le carte pronte sono una griglia; quantità,
+  // 1ª Ed. e rimozione stanno nel foglio di dettaglio che si apre toccando la carta.
+  await evaluate(`document.querySelector('[data-scan-entry-open]').click()`);
+  await waitFor(`Boolean(document.querySelector('[data-scan-entry-sheet] [data-scan-qty-inc]'))`, 'Dettaglio carta Fast Scan non aperto');
   await evaluate(`document.querySelector('[data-scan-qty-inc]').click()`);
   await waitFor(`document.querySelector('.scan-qty-stepper b')?.textContent==='2'`, 'Modifica quantità Fast Scan non conservata');
+  await evaluate(`document.querySelector('[data-scan-entry-close]').click()`);
+  await waitFor(`!document.querySelector('[data-scan-entry-sheet]')&&document.querySelector('.fsx-tile-qty')?.textContent==='×2'`, 'Badge quantità Fast Scan non aggiornato');
   await evaluate(`document.querySelector('[data-scan-save]').click()`);
   await waitFor(`document.querySelector('#toast').textContent.includes('Sessione salvata')`, 'Batch Fast Scan non salvato');
   assert(await evaluate(`window.__authTest.lastBatch.length===1&&window.__authTest.lastBatch[0].quantityDelta===2&&!('owner' in window.__authTest.lastBatch[0])`),'Payload batch Fast Scan non valido');
