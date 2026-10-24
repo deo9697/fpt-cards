@@ -2446,13 +2446,28 @@ function assertPersistedCollectionItem(item, expected) {
 function sameCollectionSet(left, right) { return String(left || '').trim().toUpperCase() === String(right || '').trim().toUpperCase(); }
 function sameCollectionRarity(left, right) { return String(left || '').trim().toLocaleLowerCase('it') === String(right || '').trim().toLocaleLowerCase('it'); }
 
+// Ricarica completa della Raccolta senza bloccare chi l'ha chiesta: a dati
+// arrivati salva e ridisegna solo la pagina corrente (percorso leggero).
+function refreshCollectionInBackground() {
+  void loadCollection({ force:true }).then(() => { saveState(); renderRoute(); }).catch(() => {});
+}
+// Toglie una carta eliminata da entrambe le liste (quella del team include anche le mie carte).
+function removeCollectionItemLocally(id) {
+  state.collection = { ...state.collection, mine:state.collection.mine.filter(entry => entry.id !== id), team:(state.collection.team || []).filter(entry => entry.id !== id) };
+}
+
 async function deleteCollectionItem(id) {
   const item = state.collection.mine.find(entry => entry.id === id);
   if (!item || !online()) return;
   if (!confirm(`Rimuovere ${item.cardName} dalla tua raccolta?`)) return;
   try {
-    await api.deleteCollection(id); await loadCollection(); saveState();
+    await api.deleteCollection(id);
+    // La cancellazione è confermata dal server: aggiorniamo subito la vista
+    // invece di aspettare la ricarica completa (mia + team, 3.600+ carte a
+    // pagine da 500 in sequenza: 2-4 s), che parte in background.
+    removeCollectionItemLocally(id); saveState();
     selectedCollectionItem = ''; render(); toast('Carta rimossa dalla raccolta');
+    refreshCollectionInBackground();
   } catch (error) { toast(error.message || 'Rimozione non riuscita'); }
 }
 
@@ -2491,8 +2506,11 @@ async function submitCollectionLoanRequest(event) {
   if (submit) submit.disabled = true;
   try {
     await api.requestCollectionLoan(item.id, quantity, notes, false, crypto.randomUUID());
-    await Promise.all([loadCloudLoans(), loadCollection()]);
+    // Solo i prestiti (~30 ms) bloccano la risposta; la Raccolta (disponibilità)
+    // si aggiorna in background.
+    await loadCloudLoans();
     collectionLoanRequest = null; saveState(); render(); toast('Richiesta inviata al proprietario');
+    refreshCollectionInBackground();
   } catch (error) { toast(error.message || 'Richiesta non riuscita'); if (submit?.isConnected) submit.disabled = false; }
 }
 
@@ -2981,8 +2999,12 @@ async function updateLoan(id, action) {
     // l'attesa percepita dopo ogni azione sul prestito, senza cambiare la
     // gestione errori — un fallimento di loadCollection resta silenzioso
     // come prima, uno di loadCloudLoans va comunque al catch esterno.
-    await Promise.all([loadCloudLoans(), loadCollection().catch(() => {})]);
+    // Solo la lista prestiti (~30 ms) blocca la risposta: la ricarica della
+    // Raccolta (disponibilità delle copie) era il grosso dell'attesa e ora
+    // parte in background, con errori silenziosi come prima.
+    await loadCloudLoans();
     saveState(); selectedLoanId = ''; render(); toast('Prestito aggiornato');
+    refreshCollectionInBackground();
   } catch (error) { toast(error.message); }
 }
 
