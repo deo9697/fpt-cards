@@ -76,9 +76,9 @@ try {
       return {shelf: panel.querySelectorAll('.mv-shelf-card').length, movers: panel.querySelectorAll('.mv-mover').length, chips: panel.querySelectorAll('.mv-signal').length,
         chart: !!panel.querySelector('.mv-hero .market-featured-chart svg'), overflow, inner, panelRight: r.right <= innerWidth + 1, carousel: !!panel.querySelector('.market-featured-slide')};
     })()`);
-    if (check.shelf !== 4 || check.movers !== 4 || check.chips !== 3 || !check.chart || check.overflow || check.inner || !check.panelRight || check.carousel) throw Error(`Layout Vetrina non valido a ${width}px: ${JSON.stringify(check)}`);
+    if (check.shelf !== 4 || check.movers !== 4 || check.chips !== 2 || !check.chart || check.overflow || check.inner || !check.panelRight || check.carousel) throw Error(`Layout Vetrina non valido a ${width}px: ${JSON.stringify(check)}`);
   }
-  console.log('PASS Vetrina senza overflow a 360/390/768/1440px: hero con grafico, 4 carte in vetrina, 4 movers, 3 segnali');
+  console.log('PASS Vetrina senza overflow a 360/390/768/1440px: hero con grafico, 4 carte in vetrina, 4 movers, 2 segnali');
 
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1500, deviceScaleFactor: 2, mobile: true });
   const artCheck = await evaluate(`(async()=>{

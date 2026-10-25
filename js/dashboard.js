@@ -71,7 +71,6 @@ function duelistPanel(p) {
   const pct = Math.max(0, Math.min(100, Number(p.progress) || 0));
   const maxLevel = !p.nextXp;
   const xpLine = maxLevel ? 'Livello massimo raggiunto' : wholeNumber(p.currentXp)+' / '+wholeNumber(p.nextXp)+' XP · '+wholeNumber(p.nextXp - p.currentXp)+' al prossimo livello';
-  const portfolio = p.portfolio && p.portfolio.complete ? new Intl.NumberFormat('it-IT', { style:'currency', currency:'EUR', maximumFractionDigits:0, useGrouping:'always' }).format(p.portfolio.current || 0) : '—';
   const winRate = p.winRate == null ? '—' : p.winRate+'%';
   return '<section class="surface duel-panel mm-panel mm-duelist">'+MILLENNIUM_CORNERS+
     '<button type="button" class="mm-duelist-ring" data-dashboard-progression aria-label="Livello '+p.level+': apri la progressione">'+
@@ -83,7 +82,6 @@ function duelistPanel(p) {
     '<small class="mm-duelist-xp">'+xpLine+'</small>'+
     '<span class="mm-divider" aria-hidden="true"></span>'+
     '<div class="mm-duelist-stats">'+
-      '<button type="button" data-page="market"><b>'+portfolio+'</b><small>Raccolta</small></button>'+
       '<button type="button" data-page="collection"><b>'+wholeNumber(p.cardCount)+'</b><small>Carte</small></button>'+
       '<button type="button" data-page="stats"><b>'+winRate+'</b><small>Vittorie</small></button>'+
     '</div>'+
@@ -199,9 +197,8 @@ function vetrinaPanel(market) {
     '<span class="mv-signal-text"><strong>'+title+'</strong>'+(detail?'<small>'+detail+'</small>':'')+'</span>'+
     '<b class="mv-signal-value">'+value+'</b><span class="mv-signal-go" aria-hidden="true">&#8250;</span></button>';
   const chips = [
-    s.aboveMonthAverage > 0 ? signalRow('up', 'Sopra la media del mese', 'Prezzo almeno 20% sopra la media a 30 giorni', wholeNumber(s.aboveMonthAverage)+(s.aboveMonthAverage===1?' carta':' carte')) : '',
+    s.aboveMonthAverage > 0 ? signalRow('up', 'Carte STONKS', 'Prezzo almeno 20% sopra la media a 30 giorni', wholeNumber(s.aboveMonthAverage)+(s.aboveMonthAverage===1?' carta':' carte')) : '',
     s.duplicatesValue > 0 ? signalRow('dupes', 'Doppioni di valore', esc((s.duplicates||[]).map(d => d.cardName+' ×'+d.quantity).join(', ')), marketMoney(s.duplicatesValue)) : '',
-    s.estimated > 0 ? signalRow('estimate', 'Prezzi stimati', 'Rarità con più versioni da distinguere', wholeNumber(s.estimated)) : '',
   ].filter(Boolean);
   return '<section class="surface duel-panel featured-card-panel market-millennium market-vetrina" data-featured-track>'+heading+
     heroCard+shelfRow+valueRow+movers+

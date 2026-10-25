@@ -2377,7 +2377,7 @@ button.market-row:hover { background:#15121d; }
 .mm-duelist-title { margin-top:6px; color:#f7e7c0; font-family:'Cinzel FPT', Georgia, serif; font-size:1.35rem; font-weight:700; line-height:1.2; overflow-wrap:anywhere; }
 .mm-duelist-xp { color:#b9ae96; font-size:.74rem; }
 .mm-divider { width:100%; height:1px; background:linear-gradient(90deg, transparent, #8a6420, transparent); }
-.mm-duelist-stats { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); width:100%; }
+.mm-duelist-stats { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); width:100%; }
 .mm-duelist-stats button { display:flex; flex-direction:column; align-items:center; gap:2px; min-height:52px; padding:4px; border:0; background:none; color:inherit; cursor:pointer; }
 .mm-duelist-stats button + button { border-left:1px solid #3a2c10; }
 .mm-duelist-stats b { color:#f4b942; font-size:1.1rem; font-weight:800; font-variant-numeric:tabular-nums; }
