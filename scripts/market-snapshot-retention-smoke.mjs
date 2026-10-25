@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
 import { PGlite } from '@electric-sql/pglite';
 import { execFileSync } from 'node:child_process';
+import { marketSyncForVm, withSharedModules } from './lib/market-sync-vm.mjs';
 execFileSync(process.execPath,['scripts/build-market-retention-sql.mjs','--check'],{stdio:'inherit'});
 const read=f=>fs.readFileSync(new URL(`../${f}`,import.meta.url),'utf8');
 const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -48,7 +49,7 @@ try {
     Deno:{env:{get:k=>k==='SUPABASE_URL'?'https://offline.invalid':'fixture'},serve:()=>{}},
     fetch:()=>{throw new Error('Unexpected network');},listTargets:()=>({rows:targets,requests:1}),finishRun:(...a)=>finished.push(a),
     captureWrite:async(table,method,rows,headers)=>{if(failWrite)throw new Error('fixture write failure');writes.push({table,method,rows:JSON.parse(JSON.stringify(rows)),headers});}});
-  vm.runInContext(stripTypeScriptTypes(read('supabase/functions/market-sync/index.ts')),ctx);
+  vm.runInContext(marketSyncForVm(read('supabase/functions/market-sync/index.ts')),withSharedModules(ctx));
   vm.runInContext("rpc=async()=> 'run'; rpcPages=async()=>listTargets(); finish=finishRun; rest=captureWrite; recordMappingError=async()=>{};",ctx);
   const target=(n,provider='cardmarket')=>({printing_id:uid(n),mapping_id:uid(n+1000),variant_key:'default',resolution_status:'manual',foil:false,provider,provider_metadata:{active:true,resolverStatus:'EXACT'}});
   const seed=async t=>{

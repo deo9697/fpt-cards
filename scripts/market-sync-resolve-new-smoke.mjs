@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
+import { marketSyncForVm, withSharedModules } from './lib/market-sync-vm.mjs';
 
 const source = fs.readFileSync(new URL('../supabase/functions/market-sync/index.ts', import.meta.url), 'utf8');
 assert.match(source, /payload\?\.resolveNew===true/, 'modalità resolveNew esposta dalla richiesta');
@@ -19,7 +20,7 @@ const context = vm.createContext({
     return new Response(JSON.stringify(rows.slice(offset, offset + limit)));
   },
 });
-vm.runInContext(stripTypeScriptTypes(source), context);
+vm.runInContext(marketSyncForVm(source),withSharedModules(context));
 vm.runInContext("rpc=async()=> 'run'; finish=async(...args)=>captureFinish(args);", context);
 context.captureFinish = args => finished.push(args);
 const version = vm.runInContext('CARDMARKET_RESOLVER_VERSION', context);

@@ -135,6 +135,7 @@ function missionsPanel(missions = []) {
 // è stato rimosso su richiesta).
 const MILLENNIUM_CORNERS = '<span class="mm-corner mm-tl" aria-hidden="true"></span><span class="mm-corner mm-tr" aria-hidden="true"></span><span class="mm-corner mm-bl" aria-hidden="true"></span><span class="mm-corner mm-br" aria-hidden="true"></span>';
 function featuredPanel(market) {
+  if (market.overview && Array.isArray(market.overview.top) && market.overview.top.length) return vetrinaPanel(market);
   const upMovers = Array.isArray(market.featuredMovers) ? market.featuredMovers.slice(0, 3) : positiveMovers(market.items || [], 3);
   const heading = MILLENNIUM_CORNERS+'<div class="market-featured-head"><h2>Market Watch</h2><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
   if (!upMovers.length) {
@@ -155,6 +156,69 @@ function featuredPanel(market) {
     '</div>'+
   '</section>';
 }
+// "Vetrina" (2026-10-25, scelta dall'utente fra 3 mockup, nello stile
+// Millennium di questa card). Sostituisce il carosello "in crescita %": la
+// carta da 0,02 € passata a 0,09 € (+400%) non dice niente. Dati da
+// market.overview (RPC get_market_dashboard_overview, precalcolata ogni notte):
+// la carta più preziosa in evidenza, le altre 4 in fila, il valore della
+// collezione con la variazione A PARITÀ DI CARTE, chi ha mosso il valore in
+// euro sulle copie possedute (≥1 €, ≥0,50 €/copia, mai prezzi stimati), segnali.
+// Senza overview (migration non applicata, membro nuovo) resta il carosello.
+// data-featured-track sulla radice: bindDashboardCarousel() aggancia così il
+// fallback degli artwork (con una sola "slide" non attiva la navigazione).
+function vetrinaPanel(market) {
+  const o = market.overview, [hero, ...shelf] = o.top, history = market.featuredHistory instanceof Map ? market.featuredHistory.get(hero.printingId) || [] : [];
+  const value = Number.isFinite(market.portfolioValue) && market.portfolioValue > 0 ? market.portfolioValue : o.value;
+  const heading = MILLENNIUM_CORNERS+'<div class="market-featured-head"><h2>Market Watch</h2><button class="text-action" data-page="market">Vedi mercato '+icon('arrow')+'</button></div>';
+  const past = Number(hero.price30) > 0 ? { price: hero.price30, label: '30 giorni fa' } : Number(hero.price7) > 0 ? { price: hero.price7, label: '7 giorni fa' } : null;
+  const heroMeta = [hero.setCode, hero.rarity, copies(hero.quantity)].filter(Boolean).map(esc).join(' &#183; ');
+  const heroCard = '<button type="button" class="mv-hero" data-page="market" aria-label="Apri Market Watch: '+esc(hero.cardName)+'">'+
+    '<span class="mv-art mv-hero-art">'+artwork(hero, 'eager')+'<span class="mv-scrim" aria-hidden="true"></span>'+
+      '<span class="mv-badge">La tua carta più preziosa</span>'+(hero.estimated?'<span class="mv-badge mv-badge-estimate">Prezzo stimato</span>':'')+
+      '<span class="mv-hero-copy">'+
+        '<strong class="mv-hero-name">'+esc(hero.cardName)+'</strong>'+(heroMeta?'<span class="mv-hero-meta">'+heroMeta+'</span>':'')+
+        '<span class="mv-hero-price"><b>'+marketMoney(hero.price)+'</b>'+(past?'<small>'+marketMoney(past.price)+' '+past.label+'<br>'+percent((hero.price/past.price-1)*100)+'</small>':'')+'</span>'+
+      '</span>'+
+    '</span>'+heroChart(history)+'</button>';
+  const shelfRow = shelf.length ? '<div class="mv-shelf" role="list" aria-label="Le altre carte di valore">'+shelf.slice(0, 4).map(card =>
+    '<button type="button" class="mv-shelf-card" role="listitem" data-page="market" aria-label="'+esc(card.cardName+' · '+marketMoney(card.price))+'">'+
+      '<span class="mv-art mv-shelf-art">'+artwork(card)+'</span><b>'+marketMoney(card.price)+'</b></button>').join('')+'</div>' : '';
+  const week = changeOf(o.change7), month = changeOf(o.change30);
+  const valueRow = '<div class="mv-value"><div><span>Collezione</span><strong>'+marketMoney(value)+'</strong></div>'+
+    '<div class="mv-value-change">'+(week?'<strong class="'+trendClass(week.eur)+'">'+signedMoney(week.eur)+' in 7 gg</strong>':'<strong class="mv-flat">Variazione dalla prossima settimana</strong>')+
+    (month?'<span>'+signedMoney(month.eur)+' in 30 gg ('+percent(month.pct)+')</span>':week?'<span>'+percent(week.pct)+' sulle carte già prezzate</span>':'')+'</div></div>';
+  const movers = (o.movers || []).length ? '<div class="mv-section"><h3>Questa settimana</h3><div class="mv-movers">'+o.movers.map(item =>
+    '<button type="button" class="mv-mover" data-page="market" aria-label="'+esc(item.cardName+' · '+signedMoney(item.deltaEur))+'">'+
+      '<span class="mv-art mv-mover-art">'+artwork(item)+'</span>'+
+      '<span class="mv-mover-copy"><strong>'+esc(item.cardName)+'</strong><small>'+esc(copies(item.quantity))+' &#183; '+marketMoney(item.price)+(item.quantity>1?' a copia':'')+'</small>'+
+      '<b class="'+trendClass(item.deltaEur)+'">'+signedMoney(item.deltaEur)+'</b></span></button>').join('')+'</div></div>'
+    : '<p class="mv-quiet">Settimana tranquilla: nessuna carta da almeno 1 € si è mossa di più di 0,50 €.</p>';
+  const s = o.signals || {}, chips = [
+    s.aboveMonthAverage > 0 ? '<button type="button" class="mv-chip mv-chip-up" data-page="market">&#9650; '+wholeNumber(s.aboveMonthAverage)+(s.aboveMonthAverage===1?' carta sopra':' carte sopra')+' la media del mese</button>' : '',
+    s.duplicatesValue > 0 ? '<button type="button" class="mv-chip mv-chip-dupes" data-page="market" title="'+esc((s.duplicates||[]).map(d => d.cardName+' ×'+d.quantity).join(', '))+'">Doppioni &#183; '+marketMoney(s.duplicatesValue)+'</button>' : '',
+    s.estimated > 0 ? '<button type="button" class="mv-chip" data-page="market">'+wholeNumber(s.estimated)+' prezzi stimati</button>' : '',
+  ].filter(Boolean);
+  return '<section class="surface duel-panel featured-card-panel market-millennium market-vetrina" data-featured-track>'+heading+
+    heroCard+shelfRow+valueRow+movers+
+    (chips.length?'<div class="mv-section"><h3>Da sapere</h3><div class="mv-chips">'+chips.join('')+'</div></div>':'')+
+  '</section>';
+}
+function artwork(item, loading = 'lazy') {
+  const candidates = moverArtworkCandidates(item);
+  const placeholder = '<span class="market-featured-art market-featured-art-placeholder"'+(candidates.length?' hidden':'')+'>'+icon('card')+'</span>';
+  return candidates.length
+    ? '<img class="market-featured-art'+(isFullCardImage(candidates[0])?' is-full-card':'')+'" data-art-fallback="'+esc(JSON.stringify(candidates.slice(1)))+'" src="'+esc(candidates[0])+'" alt="" loading="'+loading+'" decoding="async">'+placeholder
+    : placeholder;
+}
+function changeOf(change) {
+  const eur = Number(change?.eur), base = Number(change?.base);
+  return change && Number.isFinite(eur) && base > 0 ? { eur, pct: eur / base * 100 } : null;
+}
+const copies = quantity => (Number(quantity) || 1) === 1 ? '1 copia' : wholeNumber(quantity)+' copie';
+const trendClass = value => Number(value) > 0 ? 'mv-up' : Number(value) < 0 ? 'mv-down' : 'mv-flat';
+// Segno esplicito e meno tipografico: "+3,76 €" / "−3,11 €".
+function signedMoney(value) { const n = Number(value) || 0; return (n > 0 ? '+' : n < 0 ? '−' : '')+marketMoney(Math.abs(n)); }
+function percent(value) { const n = Number(value) || 0; return (n > 0 ? '+' : n < 0 ? '−' : '')+new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1, minimumFractionDigits: Math.abs(n) < 10 ? 1 : 0 }).format(Math.abs(n))+'%'; }
 function heroSlide(item, index, history) {
   const candidates = moverArtworkCandidates(item), change = Number(item.positiveChange);
   const previous = Number.isFinite(item.price24h) ? item.price24h : (Number.isFinite(item.baselinePrice) ? item.baselinePrice : null);

@@ -45,7 +45,7 @@ export class MarketWatchController {
   constructor({api,getGame,getDecks,getMember,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,getMember,onRender,onToast,onNavigate});
     this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
     this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
-    this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];
+    this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];this.overview=null;
     // extra/summary e owned_page ora partono in parallelo (P0 performance:
     // owned_page, il più lento, non deve più aspettare gli altri due prima
     // di partire) e possono quindi fallire/riuscire in ordine imprevedibile
@@ -91,6 +91,7 @@ export class MarketWatchController {
         if(cached.owned&&cached.ownedSort===this.sort&&!this.query){const mapped=mapOwnedPagePayload(cached.owned);this.ownedPage={items:mapped.items,total:mapped.total,limit:ROW_BATCH_SIZE,offset:0};}
         if(cached.extra&&cached.summary){this.extra={...mapExtraPayload(cached.extra),featuredMovers:undefined};this.summary=mapSummaryPayload(cached.summary);}
         if(Array.isArray(cached.movers)){this.extra.featuredMovers=mapDashboardMovers(cached.movers);this.trendsLoading=false;}
+        if(cached.overview){this.overview=mapDashboardOverview(cached.overview);this.trendsLoading=false;}
         this.usingCache=true;this.loading=false;this.refreshAfterLoad();
       }catch{this.usingCache=false;}
     }
@@ -124,11 +125,16 @@ export class MarketWatchController {
     })();
     // Pannelli accessori per ultimi: non devono contendersi il database con la lista.
     void request.then(()=>Promise.all([
-      Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).catch(()=>null),
+      // Dashboard "Vetrina": riepilogo notturno; i vecchi movers % solo se manca.
+      Promise.resolve().then(()=>this.api.marketDashboardOverview?.(game)??null).catch(()=>null)
+        .then(overview=>overview?.top?{overview}:Promise.resolve().then(()=>this.api.marketDashboardMovers?.(game)||[]).then(movers=>({movers})).catch(()=>({movers:null}))),
       Promise.resolve().then(()=>this.api.marketPriceAnomalies?.()||[]).catch(()=>[])
-    ])).then(([nextMovers,nextAnomalies])=>{
+    ])).then(([dashboard,nextAnomalies])=>{
       extrasReady=true;
       if(!current())return;this.trendsLoading=false;
+      const nextMovers=dashboard.overview?[]:dashboard.movers;
+      if(dashboard.overview){this.overview=mapDashboardOverview(dashboard.overview);writeMarketCache(cacheKey,{overview:dashboard.overview});}
+      else if(!cached?.overview)this.overview=null;
       if(Array.isArray(nextMovers)){this.extra.featuredMovers=mapDashboardMovers(nextMovers);writeMarketCache(cacheKey,{movers:nextMovers});}
       else if(!Array.isArray(cached?.movers)){this.trendsError=true;this.extra.featuredMovers=mapDashboardMovers([]);}
       this.anomalies=nextAnomalies||[];
@@ -221,7 +227,7 @@ export class MarketWatchController {
   // set con printing OWNED e prezzo 24h, non le sole extra (mazzi/watchlist,
   // spesso vuote di owned): allLoadedItems() combina la pagina Raccolta già
   // in memoria con extra, stessa fonte già usata da loadFeaturedHistories().
-  dashboardState(){return {trendsLoading:this.trendsLoading,trendsError:this.trendsError,items:this.allLoadedItems(),deckUnresolved:this.extra.deckUnresolved,lastSync:this.summary.lastSync,featuredMovers:this.extra.featuredMovers,error:this.error,featuredHistory:this.featuredHistory};}
+  dashboardState(){return {trendsLoading:this.trendsLoading,trendsError:this.trendsError,items:this.allLoadedItems(),deckUnresolved:this.extra.deckUnresolved,lastSync:this.summary.lastSync,featuredMovers:this.extra.featuredMovers,overview:this.overview,portfolioValue:this.summary.portfolioValue?.current,error:this.error,featuredHistory:this.featuredHistory};}
   // Coda "Conferma rarità"/"Conferma aggregate": lazy, solo quando serve
   // davvero (apertura della tab, o "Conferma tutti aggregate") — è l'unico
   // posto che porta mappingEvidence/candidates, vedi
@@ -263,7 +269,7 @@ export class MarketWatchController {
   // con la guardia. Quando l'hero della Dashboard non è montato (non è la
   // pagina attualmente mostrata) il render è inutile comunque: i dati restano
   // in featuredHistory e verranno mostrati al prossimo giro naturale.
-  async loadFeaturedHistories(){const movers=(this.extra.featuredMovers?.length?this.extra.featuredMovers:positiveMovers(this.ownedPage.items,3)).slice(0,3);const missing=movers.filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,365),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));if(document.querySelector('[data-featured-track]'))this.onRender?.();}
+  async loadFeaturedHistories(){const movers=(this.overview?.top?.length?this.overview.top.slice(0,1):this.extra.featuredMovers?.length?this.extra.featuredMovers:positiveMovers(this.ownedPage.items,3)).slice(0,3);const missing=movers.filter(item=>!this.featuredHistory.has(item.printingId)&&!this.featuredLoading.has(item.printingId));if(!missing.length)return;missing.forEach(item=>this.featuredLoading.add(item.printingId));await Promise.all(missing.map(async item=>{try{const rows=await this.api.marketPriceHistory(item.printingId,365),history=(rows||[]).map(row=>({provider:row.provider,type:row.price_type||row.priceType,price:Number(row.price),capturedAt:row.captured_at||row.capturedAt})).filter(row=>row.provider==='cardmarket'&&row.type==='trend'&&Number.isFinite(row.price));this.featuredHistory.set(item.printingId,history);this.history.set(item.printingId,history);}catch{this.featuredHistory.set(item.printingId,[]);}finally{this.featuredLoading.delete(item.printingId);}}));if(document.querySelector('[data-featured-track]'))this.onRender?.();}
   // Solo la tab Raccolta è impaginata/ordinata/cercata lato server (arriva
   // già pronta in ownedPage.items) — Mazzi/Watchlist restano piccole per
   // costruzione, filtrate/ordinate lato client come prima.
@@ -579,6 +585,17 @@ export function deduplicateMonitored({owned=[],deck=[],manual=[]}={}){const map=
 // alcuna nuova query. Il campo resta `positiveChange` (qui negativo) così
 // un'unica riga di rendering nella Dashboard funziona per entrambe le liste.
 export function negativeMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice<item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>a.positiveChange-b.positiveChange||(a.referencePrice-a.price24h)-(b.referencePrice-b.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
+// get_market_dashboard_overview → numeri veri (numeric arriva come stringa).
+export function mapDashboardOverview(payload){
+  if(!payload||!Array.isArray(payload.top))return null;
+  const num=value=>value==null||value===''?null:Number(value);
+  const card=row=>({printingId:String(row.printingId||''),catalogCardId:String(row.catalogCardId||''),cardName:row.cardName||'',setCode:row.setCode||'',rarity:row.rarity||'',imageUrl:row.imageUrl||'',quantity:num(row.quantity)||1,price:num(row.price),price7:num(row.price7),price30:num(row.price30),estimated:Boolean(row.estimated),deltaEur:num(row.deltaEur),deltaPct:num(row.deltaPct)});
+  const change=value=>value&&value.base!=null?{eur:num(value.eur),base:num(value.base),cards:num(value.cards)}:null;
+  const signals=payload.signals||{};
+  return {value:num(payload.value)||0,pricedCards:num(payload.pricedCards)||0,change7:change(payload.change7),change30:change(payload.change30),top:payload.top.map(card),movers:(payload.movers||[]).map(card),
+    signals:{aboveMonthAverage:num(signals.aboveMonthAverage)||0,duplicatesValue:num(signals.duplicatesValue)||0,duplicates:(signals.duplicates||[]).map(row=>({cardName:row.cardName||'',quantity:num(row.quantity)||0,spare:num(row.spare)||0})),estimated:num(signals.estimated)||0},
+    lastSync:payload.lastSync||null,computedAt:payload.computedAt||null};
+}
 export function mapDashboardMovers(rows=[]){return (Array.isArray(rows)?rows:[]).map(row=>({printingId:row.printingId||row.printing_id,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),cardName:row.cardName||row.card_name||'',setCode:row.setCode||row.set_code||'',setName:row.setName||row.set_name||'',rarity:row.rarity||'',imageUrl:row.imageUrl||row.image_url||'',ownedQuantity:Number(row.ownedQuantity??row.owned_quantity??0),referencePrice:nullableNumber(row.referencePrice??row.reference_price),baselinePrice:nullableNumber(row.baselinePrice??row.baseline_price),positiveChange:nullableNumber(row.positiveChange??row.positive_change),capturedAt:row.capturedAt||row.captured_at||null,sparkline:(row.sparkline||[]).map(point=>({label:point.label||'',price:nullableNumber(point.price),order:Number(point.order||0)})).filter(point=>point.price!=null).sort((a,b)=>a.order-b.order)}));}
 
 function marketRow(item,history,tab){

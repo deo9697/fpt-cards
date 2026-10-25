@@ -116,6 +116,11 @@ export const api = {
     // parte di questo task — vedi la nota nel commit di questo cambio).
     ensure(); return unwrap(await client.rpc('list_market_dashboard_movers', { p_token:token(),p_game:game }));
   },
+  // Dashboard "Vetrina" (2026-10-25): riepilogo precalcolato ogni notte
+  // (get_market_dashboard_overview legge una riga). null = non ancora pronto.
+  async marketDashboardOverview(game = 'yugioh') {
+    ensure(); return unwrap(await client.rpc('get_market_dashboard_overview', { p_token:token(),p_game:game }));
+  },
   async marketPriceHistory(printingId, days = 30) {
     ensure(); return unwrap(await client.rpc('list_market_price_history', { p_token:token(),p_printing_id:printingId,p_days:days }));
   },

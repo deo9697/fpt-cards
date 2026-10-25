@@ -722,6 +722,50 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .market-featured-chart-dates { display: flex; justify-content: space-between; margin-top: 4px; padding: 0 2px; color: #8f8670; font-size: .62rem; }
 .market-featured-chart-dates small:nth-child(2) { letter-spacing: .16em; text-transform: uppercase; }
 .market-featured-chart-empty { display: block; margin-top: 6px; padding: 14px 10px; border: 1px dashed #3a2c10; border-radius: 12px; color: #b9ae96; font-size: .7rem; text-align: center; }
+/* Dashboard Market Watch "Vetrina" (2026-10-25): stesso pannello Millennium,
+   contenuti in euro sulle copie possedute. Prefisso .mv-* (vedi dashboard.js). */
+.market-vetrina { display: flex; flex-direction: column; gap: 14px; }
+.market-vetrina .market-featured-head { margin-bottom: 0; }
+.market-vetrina button { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.mv-art { position: relative; isolation: isolate; display: block; overflow: hidden; background: #0b0c11; }
+.mv-hero { display: block; width: 100%; margin: 0; padding: 3px; border: 0; border-radius: 16px; background: linear-gradient(135deg, #f8dc8a 0%, #b97818 35%, #f4b942 55%, #7a4d0c 100%); box-shadow: 0 18px 34px -20px #000; }
+.mv-hero-art { height: clamp(300px, 42vw, 380px); border-radius: 13px; }
+.mv-hero .market-featured-chart, .mv-hero .market-featured-chart-empty { margin: 3px 0 0; border-radius: 0 0 13px 13px; background: #12100b; }
+.mv-scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, #0b0c1126 0%, #0b0c1100 32%, #0b0c11f2 80%); }
+.mv-badge { position: absolute; top: 12px; left: 12px; padding: 4px 10px; border-radius: 999px; background: #f4b942; color: #0b0c11; font-size: .72rem; font-weight: 800; }
+.mv-badge-estimate { left: auto; right: 12px; background: #1d1a12; color: #e9dcc0; border: 1px solid #5a4417; }
+.mv-hero-copy { position: absolute; left: 16px; right: 16px; bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.mv-hero-name { font-family: 'Cinzel FPT', Georgia, serif; font-size: 1.55rem; line-height: 1.12; color: #fff4d6; }
+.mv-hero-meta { font-size: .76rem; color: #d8c9a4; }
+.mv-hero-price { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.mv-hero-price b { font-size: 1.85rem; font-weight: 800; color: #f6e2ae; letter-spacing: -.01em; }
+.mv-hero-price small { font-size: .74rem; line-height: 1.35; color: #d8c9a4; text-align: right; }
+.mv-shelf { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mv-shelf-card { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; border: 0; background: none; min-width: 0; }
+.mv-shelf-art { aspect-ratio: 1; border-radius: 12px; border: 1px solid #5a4417; }
+.mv-shelf-card b { font-size: .82rem; color: #f6e2ae; }
+.mv-value { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #3a2c10; border-radius: 14px; background: #f4b9420d; }
+.mv-value > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mv-value span { font-size: .74rem; color: #b9ae96; }
+.mv-value > div:first-child strong { font-size: 1.45rem; font-weight: 800; color: #f6e2ae; }
+.mv-value-change { align-items: flex-end; text-align: right; }
+.mv-value-change strong { font-size: .95rem; font-weight: 800; }
+.mv-up { color: #7fd8a6; } .mv-down { color: #ff9a85; } .mv-flat { color: #b9ae96; }
+.mv-section { display: flex; flex-direction: column; gap: 10px; }
+.mv-section h3 { margin: 0; font-family: 'Cinzel FPT', Georgia, serif; font-size: 1rem; color: #f6e2ae; }
+.mv-movers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mv-mover { display: flex; flex-direction: column; margin: 0; padding: 0; border: 1px solid #3a2c10; border-radius: 14px; overflow: hidden; background: #12100b; min-width: 0; }
+.mv-mover-art { height: 96px; }
+.mv-mover-copy { display: flex; flex-direction: column; gap: 3px; padding: 10px; min-width: 0; }
+.mv-mover-copy strong { font-size: .82rem; line-height: 1.25; height: 2.5em; overflow: hidden; color: #f3ead6; }
+.mv-mover-copy small { font-size: .7rem; color: #b9ae96; }
+.mv-mover-copy b { font-size: 1rem; font-weight: 800; }
+.mv-quiet { margin: 0; padding: 12px 14px; border: 1px dashed #3a2c10; border-radius: 12px; color: #b9ae96; font-size: .8rem; }
+.mv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.mv-chip { display: inline-flex; align-items: center; min-height: 44px; margin: 0; padding: 0 14px; border: 1px solid #3a2c10; border-radius: 999px; background: #171410; color: #e9dcc0; font-size: .8rem; font-weight: 700; }
+.mv-chip-up { color: #ffd28a; border-color: #5a4417; background: #241c0c; }
+.mv-chip-dupes { color: #ddcbff; border-color: #3d2d66; background: #1c1530; }
+@media (max-width: 420px) { .mv-hero-art { height: 300px; } .mv-hero-name { font-size: 1.35rem; } .mv-hero-price b { font-size: 1.6rem; } }
 .market-featured-nav { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 14px; }
 .market-featured-nav-btn { width: 44px; height: 44px; border: 1px solid #8a6420; border-radius: 50%; background: #15110a; color: #f4b942; cursor: pointer; font-size: 1.25rem; line-height: 1; }
 .market-featured-nav-btn:disabled { opacity: .3; cursor: default; }

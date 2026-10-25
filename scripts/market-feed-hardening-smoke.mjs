@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {stripTypeScriptTypes} from 'node:module';
 import {PGlite} from '@electric-sql/pglite';
+import { marketSyncForVm, withSharedModules } from './lib/market-sync-vm.mjs';
 const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
 const worker=read('supabase/functions/market-sync/index.ts');
 const queue=read('supabase/functions/market-refresh-queue-cached/index.ts');
@@ -18,7 +19,7 @@ function harness(source,fetchImpl){
     Deno:{env:{get:k=>({SUPABASE_URL:'https://offline.invalid',SUPABASE_SERVICE_ROLE_KEY:'fixture',MARKET_SYNC_SECRET:'fixture',
       CARDMARKET_PRODUCT_CATALOG_URL:'https://downloads.s3.cardmarket.com/products_singles_3.json',CARDMARKET_PRICE_GUIDE_URL:'https://downloads.s3.cardmarket.com/price_guide_3.json'})[k]},serve:fn=>{handler=fn;}},
     fetch:async(url,options)=>{requests.push({url:String(url),options});return fetchImpl(url,options);}});
-  vm.runInContext(stripTypeScriptTypes(source),ctx);
+  vm.runInContext(marketSyncForVm(source),withSharedModules(ctx));
   return {ctx,logs,requests,call:(body={},secret='fixture')=>handler(new Request('https://offline.invalid/worker',{method:'POST',headers:{'x-market-sync-secret':secret},body:JSON.stringify(body)}))};
 }
 const metrics=h=>h.logs.map(a=>{try{return JSON.parse(a[0]);}catch{return null;}}).filter(Boolean);
