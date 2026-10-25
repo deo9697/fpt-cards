@@ -18,6 +18,8 @@
     "test:market": "node scripts/market-watch-core-smoke.mjs",
     "test:market-browser": "node scripts/market-watch-browser-smoke.mjs",
     "test:dashboard-vetrina": "node scripts/dashboard-vetrina-smoke.mjs",
+    "test:fast-scan-review-selection": "node scripts/fast-scan-review-selection-smoke.mjs",
+    "test:fast-scan-review-selection-browser": "node scripts/fast-scan-review-selection-browser-smoke.mjs",
     "test:dashboard-vetrina-browser": "node scripts/dashboard-vetrina-browser-smoke.mjs",
     "test:market-sync-egress": "node scripts/market-sync-egress-smoke.mjs",
     "test:market-sync-resolve-new": "node scripts/market-sync-resolve-new-smoke.mjs",

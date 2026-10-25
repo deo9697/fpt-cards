@@ -3147,10 +3147,35 @@ body.pinpad-open { overflow:hidden; }
 .fsx-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px; }
 @media (min-width:560px) { .fsx-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media (min-width:820px) { .fsx-grid { grid-template-columns:repeat(5,minmax(0,1fr)); } }
-.fsx-tile { display:grid;align-content:start;gap:6px;min-width:0;padding:0;border:0;background:transparent;color:#f3f4f7;text-align:left;cursor:pointer; }
+.fsx-tile { position:relative;display:grid;align-content:start;gap:6px;min-width:0;padding:0;border:0;background:transparent;color:#f3f4f7;text-align:left; }
+.fsx-tile-open { display:block;width:100%;padding:0;border:0;background:none;cursor:pointer; }
 .fsx-tile-art { position:relative;display:block;aspect-ratio:59/86;max-width:100%;border-radius:8px;overflow:hidden;background:#151925;box-shadow:0 8px 18px #0008;transition:transform .12s; }
-.fsx-tile:active .fsx-tile-art { transform:scale(.96); }
-.fsx-tile:focus-visible .fsx-tile-art { outline:2px solid var(--fsx-accent-soft);outline-offset:2px; }
+.fsx-tile-open:active .fsx-tile-art { transform:scale(.96); }
+.fsx-tile-open:focus-visible .fsx-tile-art { outline:2px solid var(--fsx-accent-soft);outline-offset:2px; }
+/* Selezione multipla (2026-10-25): pallino, stato sotto l'immagine, barra in basso. */
+.fsx-tile.selected .fsx-tile-art { box-shadow:0 0 0 3px var(--fsx-accent-soft),0 8px 18px #0008; }
+.fsx-tile-check { position:absolute;top:0;left:0;width:44px;height:44px;padding:0;border:0;background:none;cursor:pointer;display:grid;place-items:start;padding:6px; }
+.fsx-tile-check::before { content:'';grid-area:1/1;width:22px;height:22px;border-radius:50%;border:2px solid #ffffffb3;background:#0b0d1799;box-sizing:border-box; }
+.fsx-tile-check .icon, .fsx-tile-check svg { grid-area:1/1;width:22px;height:22px;padding:4px;box-sizing:border-box;color:#fff;z-index:1; }
+.fsx-tile.selected .fsx-tile-check::before { border-color:#fff;background:#9b5cff; }
+.fsx-tile-check:focus-visible::before { outline:2px solid var(--fsx-accent-soft);outline-offset:2px; }
+.fsx-tile-state { display:flex;flex-wrap:wrap;gap:4px;min-height:18px; }
+.fsx-tile-state i { padding:1px 6px;border-radius:6px;background:#151925;color:#8b92a5;font-size:.64rem;font-style:normal;font-weight:800; }
+.fsx-tile-state .fsx-state-ed.first { background:#9b5cff33;color:#ecdfff; }
+.fsx-review .cond-m,.fsx-review .cond-nm { color:#7fd8a6; } .fsx-review .cond-ex { color:#8ad1ff; } .fsx-review .cond-gd { color:#ffd36b; } .fsx-review .cond-pl { color:#ffab6b; } .fsx-review .cond-po { color:#ff8a8a; }
+.fsx-select-all { margin-left:auto;min-height:44px;padding:0 12px;border:1px solid #2a3042;border-radius:12px;background:#10131b;color:#d9bfff;font:800 .74rem var(--body-font);cursor:pointer; }
+.fsx-savebar[hidden] { display:none; }
+.fsx-selbar { gap:10px;border-radius:22px 22px 0 0;background:#10131bf7; }
+.fsx-selbar-head { display:flex;align-items:center;justify-content:space-between; }
+.fsx-selbar-head strong { font-size:.95rem; }
+.fsx-selbar-head .fsx-link { min-height:44px;padding:0 4px;color:#d9bfff;font-weight:800; }
+.fsx-selbar-ed { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+.fsx-selbar-cond { display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px; }
+.fsx-selbar button[aria-pressed] { min-height:44px;border:1px solid #2a3042;border-radius:12px;background:#151925;font:800 .8rem var(--body-font);cursor:pointer; }
+.fsx-selbar-ed button[aria-pressed] { color:#c3c8d4; }
+.fsx-selbar-ed button[aria-pressed="true"] { border-color:var(--fsx-accent-soft);background:#9b5cff33;color:#ecdfff; }
+.fsx-selbar-cond button[aria-pressed="true"] { border-width:2px;border-color:currentColor;background:#ffffff12; }
+.fsx-selbar button:focus-visible, .fsx-select-all:focus-visible { outline:2px solid var(--fsx-accent-soft);outline-offset:2px; }
 .fsx-tile-art img,.fsx-tile-art .fsx-thumb-empty { display:grid;width:100%;height:100%;object-fit:cover;border-radius:0; }
 .fsx-tile-qty { position:absolute;top:6px;right:6px;min-width:28px;padding:2px 7px;border-radius:999px;background:#0b0d17e6;color:#fff;font-size:.74rem;font-weight:900;text-align:center;box-shadow:0 0 0 1.5px var(--fsx-accent-soft); }
 .fsx-tile-ed { position:absolute;left:6px;bottom:6px;padding:2px 6px;border-radius:6px;background:#9b5cffe6;color:#fff;font-size:.6rem;font-style:normal;font-weight:800; }

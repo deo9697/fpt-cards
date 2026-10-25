@@ -353,6 +353,10 @@ export class ScanSessionBuffer {
     else for(let i=active.length;i<next;i++){const event=this.createScan({source:'quantity-adjustment',countsAsScan:false});this.confirmScan(event.id,item,item.confidence,item.warning);}
   }
   setEdition(key,edition){for(const event of this.scanEvents)if(event.status==='CONFIRMED'&&event.printing?.key===key){event.printing.edition=edition;event.resolutionVersion+=1;}this.rebuild();this.touch();}
+  // Condizione per carta dalla revisione (2026-10-25): come setEdition vale per
+  // tutte le copie della stampa; la chiave non include la condizione, quindi le
+  // righe non si separano.
+  setCondition(key,condition){for(const event of this.scanEvents)if(event.status==='CONFIRMED'&&event.printing?.key===key){event.printing.condition=condition;event.resolutionVersion+=1;}this.rebuild();this.touch();}
   removeReview(id){const event=this.getScan(id);if(event?.status==='CONFIRMED')return;this.cancelScan(id);}
   interruptPending(){for(const event of this.scanEvents)if(['CAPTURED','PROCESSING','PENDING_REMOTE'].includes(event.status)){event.resolutionVersion+=1;event.status='REVIEW_REQUIRED';event.reviewData={...event.reviewData,id:event.id,raw:event.rawCode,code:event.normalizedCode,matches:event.reviewData?.matches||[],pending:false,status:'needs_review',warning:'Verifica interrotta: conferma o correggi il codice'};}this.rebuild();this.touch();}
   rebuild(){
