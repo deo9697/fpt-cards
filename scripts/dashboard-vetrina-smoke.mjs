@@ -56,9 +56,12 @@ test('Vetrina: carta più preziosa, scaffale, valore a parità di carte, movers 
   assert.match(html, /mv-up">\+3,76\s€</);
   assert.match(html, /mv-down">−3,11\s€</);
   assert.match(html, /2 copie &#183; 9,22\s€ a copia/);
-  assert.match(html, /8 carte sopra la media del mese/);
-  assert.match(html, /Doppioni &#183; 63,88\s€/);
-  assert.match(html, /472 prezzi stimati/);
+  assert.match(html, /class="mv-signals"/);
+  assert.equal((html.match(/class="mv-signal mv-signal-/g) || []).length, 3, 'Da sapere a lista: 3 righe');
+  assert.match(html, /Sopra la media del mese<\/strong>[\s\S]*?mv-signal-value">8 carte</);
+  assert.match(html, /Doppioni di valore<\/strong><small>Super Polymerization ×6<\/small>[\s\S]*?mv-signal-value">63,88\s€</);
+  assert.match(html, /Prezzi stimati<\/strong>[\s\S]*?mv-signal-value">472</);
+  assert.doesNotMatch(html, /mv-chip/, 'niente più pulsanti a pillola');
   assert.doesNotMatch(html, /market-featured-slide/, 'niente carosello % quando c\'è la Vetrina');
 });
 

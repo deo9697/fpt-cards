@@ -193,14 +193,19 @@ function vetrinaPanel(market) {
       '<span class="mv-mover-copy"><strong>'+esc(item.cardName)+'</strong><small>'+esc(copies(item.quantity))+' &#183; '+marketMoney(item.price)+(item.quantity>1?' a copia':'')+'</small>'+
       '<b class="'+trendClass(item.deltaEur)+'">'+signedMoney(item.deltaEur)+'</b></span></button>').join('')+'</div></div>'
     : '<p class="mv-quiet">Settimana tranquilla: nessuna carta da almeno 1 € si è mossa di più di 0,50 €.</p>';
-  const s = o.signals || {}, chips = [
-    s.aboveMonthAverage > 0 ? '<button type="button" class="mv-chip mv-chip-up" data-page="market">&#9650; '+wholeNumber(s.aboveMonthAverage)+(s.aboveMonthAverage===1?' carta sopra':' carte sopra')+' la media del mese</button>' : '',
-    s.duplicatesValue > 0 ? '<button type="button" class="mv-chip mv-chip-dupes" data-page="market" title="'+esc((s.duplicates||[]).map(d => d.cardName+' ×'+d.quantity).join(', '))+'">Doppioni &#183; '+marketMoney(s.duplicatesValue)+'</button>' : '',
-    s.estimated > 0 ? '<button type="button" class="mv-chip" data-page="market">'+wholeNumber(s.estimated)+' prezzi stimati</button>' : '',
+  // "Da sapere" a lista compatta (richiesta 2026-10-25: niente pulsanti a pillola).
+  const s = o.signals || {}, signalRow = (tone, title, detail, value) =>
+    '<button type="button" class="mv-signal mv-signal-'+tone+'" data-page="market"><span class="mv-signal-dot" aria-hidden="true"></span>'+
+    '<span class="mv-signal-text"><strong>'+title+'</strong>'+(detail?'<small>'+detail+'</small>':'')+'</span>'+
+    '<b class="mv-signal-value">'+value+'</b><span class="mv-signal-go" aria-hidden="true">&#8250;</span></button>';
+  const chips = [
+    s.aboveMonthAverage > 0 ? signalRow('up', 'Sopra la media del mese', 'Prezzo almeno 20% sopra la media a 30 giorni', wholeNumber(s.aboveMonthAverage)+(s.aboveMonthAverage===1?' carta':' carte')) : '',
+    s.duplicatesValue > 0 ? signalRow('dupes', 'Doppioni di valore', esc((s.duplicates||[]).map(d => d.cardName+' ×'+d.quantity).join(', ')), marketMoney(s.duplicatesValue)) : '',
+    s.estimated > 0 ? signalRow('estimate', 'Prezzi stimati', 'Rarità con più versioni da distinguere', wholeNumber(s.estimated)) : '',
   ].filter(Boolean);
   return '<section class="surface duel-panel featured-card-panel market-millennium market-vetrina" data-featured-track>'+heading+
     heroCard+shelfRow+valueRow+movers+
-    (chips.length?'<div class="mv-section"><h3>Da sapere</h3><div class="mv-chips">'+chips.join('')+'</div></div>':'')+
+    (chips.length?'<div class="mv-section"><h3>Da sapere</h3><div class="mv-signals">'+chips.join('')+'</div></div>':'')+
   '</section>';
 }
 function artwork(item, loading = 'lazy') {

@@ -71,9 +71,9 @@ try {
     const check = await evaluate(`(()=>{
       const panel = document.querySelector('.market-vetrina');
       const overflow = document.body.getBoundingClientRect().width > innerWidth + 1;
-      const inner = [...panel.querySelectorAll('.mv-hero,.mv-shelf,.mv-value,.mv-movers,.mv-chips')].some(el => el.scrollWidth > el.clientWidth + 1);
+      const inner = [...panel.querySelectorAll('.mv-hero,.mv-shelf,.mv-value,.mv-movers,.mv-signals')].some(el => el.scrollWidth > el.clientWidth + 1);
       const r = panel.getBoundingClientRect();
-      return {shelf: panel.querySelectorAll('.mv-shelf-card').length, movers: panel.querySelectorAll('.mv-mover').length, chips: panel.querySelectorAll('.mv-chip').length,
+      return {shelf: panel.querySelectorAll('.mv-shelf-card').length, movers: panel.querySelectorAll('.mv-mover').length, chips: panel.querySelectorAll('.mv-signal').length,
         chart: !!panel.querySelector('.mv-hero .market-featured-chart svg'), overflow, inner, panelRight: r.right <= innerWidth + 1, carousel: !!panel.querySelector('.market-featured-slide')};
     })()`);
     if (check.shelf !== 4 || check.movers !== 4 || check.chips !== 3 || !check.chart || check.overflow || check.inner || !check.panelRight || check.carousel) throw Error(`Layout Vetrina non valido a ${width}px: ${JSON.stringify(check)}`);
