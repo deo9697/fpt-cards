@@ -7,6 +7,9 @@
 // finisce fuori dalla function e il deploy fallisce con "Module not found".
 // Se modifichi market/providers.js, riporta manualmente le stesse modifiche qui sotto.
 
+// Unico import relativo: _shared/ viene incluso dal deploy via CLI (come
+// catalog-new-sets con _shared/konami.ts). Logica pura, testata in Node.
+import { inferVariantsByPriceOrder, resolveBySetTemplates, buildRarityFamilies, guidePrice } from '../_shared/variant-price-order.js';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
 const CARDMARKET_RESOLVER_VERSION=11;
 const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
@@ -361,6 +364,45 @@ async function applyExactVariantPricing(targets:any[]):Promise<{targets:any[],na
   let narrowed=0;
   const result=targets.map((target:any)=>{const next=narrowTargetToExactVariant(target,variants.get(String(target.printing_id))||null);if(next!==target)narrowed++;return next;});
   return {targets:result,narrowed};
+}
+// Varianti esatte automatiche (2026-10-25). Le carte con più prodotti
+// Cardmarket nello stesso set (es. BETB-013 Secret + Starlight) senza variante
+// esatta venivano prezzate al MINIMO tra i prodotti: la Starlight con il prezzo
+// della Secret. Nel giro completo notturno, prima di calcolare i prezzi:
+// 1) template di set verificati (RA01–RA05); 2) regola prezzo + ordine idProduct
+// per set (_shared/variant-price-order.js). Scrive solo dove manca una variante
+// live (mai sopra verified/manual o resolved con confidenza 1); se qualcosa
+// fallisce si prosegue col minimo, come prima.
+async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any>{
+  const aggregate=targets.filter((target:any)=>isAuthorizedCardmarketMapping(target)&&mappingProductIds(target).length>1&&target.catalog_card_id&&target.set_code);
+  if(!aggregate.length)return {candidates:0,written:0};
+  const existing=await fetchExistingYgoMarketVariants(aggregate.map((target:any)=>String(target.printing_id)));
+  const missing=aggregate.filter((target:any)=>!isLiveExactVariantEligible(existing.get(String(target.printing_id))));
+  if(!missing.length)return {candidates:0,written:0};
+  const [aliasMap,templates]=await Promise.all([fetchYgoRarityAliasMap(),fetchYgoMarketVariantSetTemplates()]);
+  const catalogIds=[...new Set(aggregate.map((target:any)=>String(target.catalog_card_id)))],printings:any[]=[];
+  for(let index=0;index<catalogIds.length;index+=150){
+    const chunk=catalogIds.slice(index,index+150);
+    const page=await restPages(`card_printings?select=id,catalog_card_id,set_code,rarity&game=eq.yugioh&catalog_card_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
+    printings.push(...page.rows);
+  }
+  const toInput=(target:any)=>({printingId:String(target.printing_id),setCode:target.set_code,rarity:target.rarity,catalogCardId:String(target.catalog_card_id),candidateProductIds:mappingProductIds(target)});
+  const canonicalOf=(rarity:any)=>canonicalYgoRarity(rarity,aliasMap);
+  const byTemplate=resolveBySetTemplates({targets:missing.map(toInput),templates,canonicalOf});
+  // Evidenza dalla serie completa (anche carte già esatte), assegnazioni solo alle mancanti.
+  const byPrice=inferVariantsByPriceOrder({targets:aggregate.map(toInput),families:buildRarityFamilies(printings),priceOf:(id:string)=>guidePrice(provider.prices?.get?.(id))});
+  const missingIds=new Set(missing.map((target:any)=>String(target.printing_id))),chosen=new Map<string,any>();
+  for(const row of byTemplate)chosen.set(row.printingId,row);
+  for(const row of byPrice.assignments)if(missingIds.has(row.printingId)&&!chosen.has(row.printingId))chosen.set(row.printingId,row);
+  const byId=new Map(missing.map((target:any)=>[String(target.printing_id),target]));
+  const rows=[...chosen.values()].map((row:any)=>{const target=byId.get(row.printingId);return {
+    printing_id:row.printingId,rarity_raw:String(target?.rarity||'').slice(0,100),rarity_canonical:canonicalOf(target?.rarity),cardmarket_product_id:row.productId,
+    cardmarket_expansion_id:target?.provider_expansion_id||null,candidate_product_ids:row.candidateProductIds,
+    mapping_source:row.template?MARKET_VARIANT_SOURCE.SET_TEMPLATE:MARKET_VARIANT_SOURCE.RESOLVER,mapping_confidence:1,mapping_status:MARKET_VARIANT_STATUS.RESOLVED,verified:false,
+    resolution_reason:row.template?'verified_set_variant_template':'price_order_set_rule',
+    mapping_notes:(row.template?row.group:`Regola set ${row.group} da ${row.decisiveCards} carte con prezzi nettamente distinti`).slice(0,1000)};});
+  if(rows.length)await upsertYgoMarketVariantsShadow(rows);
+  return {candidates:missing.length,written:rows.length,byTemplate:byTemplate.length,byPrice:rows.length-byTemplate.length,skipped:byPrice.skipped};
 }
 function classifyPriceComparison(legacyPrice:any,exactPrice:any):any{
   const legacy=typeof legacyPrice==='number'&&Number.isFinite(legacyPrice)?legacyPrice:null;
@@ -727,6 +769,12 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
       }
     }
     let exactVariantTargets=0;
+    // Solo giri completi (notturno): un sottoinsieme non basta come evidenza per set.
+    let inferredVariants:any=null;
+    if(provider.name==='cardmarket'&&!selectedIds.size&&!priorityOnly&&!newPrintingsOnly&&!pendingResolverLimit&&String(Deno.env.get('MARKET_INFER_VARIANTS')||'').toLowerCase()!=='off'){
+      try{inferredVariants=await inferMissingExactVariants(provider,resolvedTargets);console.log(JSON.stringify({event:'market_sync_inferred_variants',...inferredVariants}));}
+      catch(error:any){console.error('[market-sync] varianti automatiche fallite, uso il minimo',{error:String(error?.message||error)});}
+    }
     if(provider.name==='cardmarket'){const exact=await applyExactVariantPricing(resolvedTargets);resolvedTargets=exact.targets;exactVariantTargets=exact.narrowed;}
     const pendingSnapshots=[];
     for(const target of resolvedTargets){
@@ -761,8 +809,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     }
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
-    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots,exactVariantTargets}});
-    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,exactVariantTargets,failures,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
+    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots,exactVariantTargets,inferredVariants:inferredVariants?.written??null}});
+    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,exactVariantTargets,inferredVariants,failures,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
   }catch(error:any){await finish(runId,'failed',{request_count:requestCount,attempt_count:1,error_code:error?.code||'sync_failed',error_message:String(error?.message||error).slice(0,500)});return {provider:provider.name,status:'failed',error:String(error?.message||error)};}
 }
 
