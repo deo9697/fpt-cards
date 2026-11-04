@@ -325,7 +325,12 @@ export class FastScanController {
   }
   chooseReview(id,index){
     if(!this.canEditSession())return;const item=this.buffer.review.find(entry=>entry.id===id),match=item?.matches?.[index];if(!match)return;
-    if(match.requiresCatalogRepair||match.invalidPhysicalRarity||!sanitizeYugiohRarity(match.rarity)){
+    // match è già passato da printingEvidence() (classifyPrintingMatch/
+    // classifyNearPrintingMatch): requiresCatalogRepair/invalidPhysicalRarity
+    // riflettono già la scoping corretta (RA05/BLGG) — niente controllo
+    // rarity indipendente qui, o un set code mai tracciato da YGOPRODeck con
+    // rarità genuinamente mai registrata non si confermerebbe mai.
+    if(match.requiresCatalogRepair||match.invalidPhysicalRarity){
       this.buffer.updateScan(id,{classification:'REQUIRES_CATALOG_REPAIR',failureReason:'REQUIRES_CATALOG_REPAIR'});
       item.warning='Questa stampa richiede una correzione del catalogo prima del salvataggio';
       this.onToast?.(item.warning);this.persist();this.refreshHud();if(this.phase==='review')this.onRender();return;
@@ -842,7 +847,13 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       if(base.game==='yugioh')base.rarity=sanitizeYugiohRarity(base.rarity);
       const invalidReason=hardValidationReason(base);
       if(invalidReason)throw saveError('INVALID_RPC_PAYLOAD',`${base.cardName||base.setCode||'Carta'}: ${invalidReason}`,base);
-      if(base.game==='yugioh'&&(!base.rarity||entry.requiresCatalogRepair||printingEvidence([base])[0]?.invalidPhysicalRarity))throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
+      // printingEvidence() è già scoped a RA05/BLGG (le sole famiglie con più
+      // varianti rarità reali sullo stesso set code, indistinguibili a OCR):
+      // non usare più un !base.rarity indipendente qui, o un set code mai
+      // tracciato da YGOPRODeck (es. DUAD, prodotto europeo) con rarità
+      // genuinamente mai registrata — non una vera ambiguità da proteggere —
+      // resterebbe bloccato per sempre, pur essendo già corretto a catalogo.
+      if(base.game==='yugioh'&&(entry.requiresCatalogRepair||printingEvidence([base])[0]?.invalidPhysicalRarity))throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
       if(base.printingId&&base.game!=='yugioh'){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
       if(base.printingId){
         const rows=(await lookupOnce(base.setCode,base.game)||[]).map(mapPrinting);

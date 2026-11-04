@@ -9,6 +9,21 @@ const verified=new Map([
   ['BLGG-EN012',['Ultra Rare']],['BLGG-EN004',['Secret Rare','Starlight Rare']]
 ]);
 export const physicalKey=row=>[row.game||'yugioh',row.catalogCardId||row.catalog_card_id||'',row.setCode||row.set_code||'',row.rarity||'',row.variantId||row.variant_id||'',row.artworkId||row.artwork_id||''].join('|');
+// Products YGOPRODeck has never tracked at all (confirmed per-product, not a
+// guess): DUAD "R.B." (supabase-add-duad-rb-printings.sql) is a European
+// exclusive with no external source to ever resolve a rarity from, so its
+// printings were deliberately catalogued with rarity left blank, to be
+// filled in later if/when known. For every catalogued set, an empty/garbage
+// rarity (e.g. a "New artwork" artwork tag that slipped through — see
+// sanitizeYugiohRarity) is still worth flagging: it usually means a real
+// sync gap on a set the catalog SHOULD know. DUAD is the one confirmed
+// exception, not a general "unknown means fine" rule — extend this set only
+// for other products confirmed the same way, never to silence a real gap.
+const untrackedProducts=new Set(['DUAD']);
+function isUntrackedProduct(setCode){
+  const code=String(setCode||'').toUpperCase();
+  return untrackedProducts.has(code.split('-')[0]);
+}
 export function printingEvidence(matches=[]){
   const result=[];
   for(const row of matches){
@@ -16,7 +31,7 @@ export function printingEvidence(matches=[]){
     const code=String(row.setCode||row.set_code||'').toUpperCase();
     const rarity=sanitizeYugiohRarity(row.rarity);
     const expected=verified.get(code)||row.expectedRarities||row.game_metadata?.expected_rarities||[];
-    const invalid=!rarity||(/^BLGG-/.test(code)&&rarity==='Common')||(expected.length&&!expected.includes(rarity));
+    const invalid=(!rarity&&!isUntrackedProduct(code))||(/^BLGG-/.test(code)&&rarity==='Common')||(expected.length&&rarity&&!expected.includes(rarity));
     result.push({...row,setCode:code,catalogCardId:String(row.catalogCardId||row.catalog_card_id||''),rarity,expectedRarities:expected,physicalIdentityChecked:true,invalidPhysicalRarity:invalid,
       catalogVariantIncomplete:row.catalogVariantIncomplete||invalid,
       variantId:row.variantId||row.variant_id||'',artworkId:row.artworkId||row.artwork_id||''});
@@ -31,7 +46,7 @@ export function printingEvidence(matches=[]){
 export function physicalAmbiguity(matches=[]){
   if(!matches.length)return '';
   const rows=printingEvidence(matches);
-  if(rows.some(row=>!sanitizeYugiohRarity(row.rarity)&&(row.game||'yugioh')==='yugioh'))return 'UNKNOWN_RARITY';
+  if(rows.some(row=>!sanitizeYugiohRarity(row.rarity)&&(row.game||'yugioh')==='yugioh'&&!isUntrackedProduct(row.setCode||row.set_code)))return 'UNKNOWN_RARITY';
   if(rows.some(row=>row.catalogVariantIncomplete||row.requiresCatalogRepair))return 'CATALOG_VARIANT_INCOMPLETE';
   if(new Set(rows.map(row=>row.rarity)).size>1)return 'RARITY_AMBIGUOUS';
   if(rows.length>1&&new Set(rows.map(row=>row.catalogCardId||row.catalog_card_id)).size===1)return 'ARTWORK_AMBIGUOUS';

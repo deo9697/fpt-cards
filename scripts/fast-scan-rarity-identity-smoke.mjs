@@ -24,6 +24,30 @@ check('verified Falchion Ultra alone stays exact',()=>assert.equal(classify([row
 check('normal single rarity stays exact',()=>assert.equal(classify([row('LOB-EN001','Ultra Rare')]).decision,'EXACT_UNIQUE'));
 check('explicit Common remains exact',()=>assert.equal(classify([row('LOB-EN002','Common')]).decision,'EXACT_UNIQUE'));
 for(const rarity of ['','New','Reprint','New artwork','Reprint (new artwork)','Unknown','3'])check('unknown metadata: '+JSON.stringify(rarity),()=>{assert.equal(sanitizeYugiohRarity(rarity),'');assert.equal(classify([row('LOB-EN001',rarity)]).physicalClassification,'UNKNOWN_RARITY');});
+// Bug reale 2026-11-04: DUAD ("R.B.", supabase-add-duad-rb-printings.sql) è
+// un prodotto europeo mai tracciato da YGOPRODeck — la rarità fu lasciata
+// vuota di proposito, nessuna fonte esterna potrà mai risolverla. La stessa
+// regola "rarità vuota = sospetta" che protegge RA05/BLGG/LOB bloccava anche
+// queste printing già corrette a catalogo, impedendo per sempre di
+// registrarle — pur non essendoci alcuna reale ambiguità da proteggere (un
+// solo candidato, nessuna variante concorrente). Eccezione nominale per
+// prodotto confermato, non un indebolimento della regola generale (il test
+// "unknown metadata" sopra, su un set tracciato, deve restare rosso se
+// qualcuno riallarga la regola per sbaglio).
+check('DUAD (prodotto non tracciato) con rarità vuota resta exact, non richiede riparazione',()=>{const result=classify([row('DUAD-IT090','')]);assert.equal(result.decision,'EXACT_UNIQUE');assert.equal(result.physicalClassification,undefined);});
+check('un set tracciato con rarità vuota resta invece sospetto',()=>assert.equal(classify([row('DUEA-EN001','')]).physicalClassification,'UNKNOWN_RARITY'));
+{
+  const duadMatch=printingEvidence([row('DUAD-IT090','')])[0];
+  check('printingEvidence: DUAD non è mai invalidPhysicalRarity',()=>assert.ok(!duadMatch.invalidPhysicalRarity));
+  const duadController=new (await import('../js/fast-scan.js')).FastScanController({camera:{},api:{},paddleOcr:{},getCollection:()=>({mine:[],team:[]}),isOnline:()=>true,onRender(){},onRoute(){},onToast(){}});
+  const duadScan=duadController.buffer.createScan();
+  duadController.buffer.queueReview({id:duadScan.id,code:'DUAD-IT090',matches:[duadMatch]});duadController.currentScanId=duadScan.id;
+  duadController.chooseReview(duadScan.id,0);
+  check('chooseReview: una DUAD scelta nel picker si conferma normalmente',()=>{assert.equal(duadController.buffer.entries.size,1);assert.equal(duadController.buffer.getScan(duadScan.id).status,'CONFIRMED');});
+  const duadSave=await canonicalizeFastScanEntries([{...duadMatch,quantity:1}],async()=>[duadMatch]);
+  check('canonicalizeFastScanEntries: una DUAD con rarità vuota si salva, non viene isolata',()=>{assert.equal(duadSave.rejected.length,0);assert.equal(duadSave.items.length,1);assert.equal(duadSave.items[0].rarity,'');});
+  clearTimeout(duadController.persistTimer);
+}
 const artwork=[{...row('LOB-EN001','Ultra Rare',1),variantId:'a'},{...row('LOB-EN001','Ultra Rare',2),variantId:'b'}];
 check('artwork-only ambiguity',()=>assert.equal(physicalAmbiguity(artwork),'ARTWORK_AMBIGUOUS'));
 check('mixed rarity and artwork never exact',()=>assert.equal(classify([...artwork,row('LOB-EN001','Secret Rare',3)]).physicalClassification,'RARITY_AMBIGUOUS'));
