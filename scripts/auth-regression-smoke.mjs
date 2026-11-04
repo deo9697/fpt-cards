@@ -238,7 +238,12 @@ async function run() {
   await evaluate(`window.__authTest.syncDelay=120;window.__authTest.syncMaxInFlight=0`);
   await submitPin('1234');
   await waitFor(`Boolean(document.querySelector('.app-shell'))`, 'Login con PIN corretto non completato');
-  await waitFor(`window.__authTest.syncMaxInFlight>=6`,'Prestiti, raccolta, mazzi e statistiche non vengono caricati in parallelo');
+  // 6bdaba2 (2026-10-11, perf bootstrap) ha reso deliberatamente pigri Decks/
+  // Market Watch/Stats dopo il login — solo Prestiti/Raccolta mia/Raccolta
+  // team restano nel burst iniziale, quindi il massimo concorrente atteso è
+  // sceso da 6 a 3. L'asserzione precedente (>=6) era rimasta quella di
+  // prima del cambiamento architetturale intenzionale.
+  await waitFor(`window.__authTest.syncMaxInFlight>=3`,'Prestiti, raccolta e raccolta team non vengono caricati in parallelo');
   await waitFor(`window.__authTest.syncInFlight===0`,'Sincronizzazione iniziale non completata');
   await evaluate(`window.__authTest.syncDelay=0`);
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
@@ -543,7 +548,18 @@ async function run() {
   // renderizzato perché il foglio non era ancora aperto.
   await evaluate(`document.querySelector('[data-loan-open="request-incoming"]').click()`);
   await waitFor(`Boolean(document.querySelector('[data-action="accept-request"]'))`, 'Pulsante accetta richiesta assente nel foglio di dettaglio');
+  // Bug reale 2026-10-29: localStorage pieno (collezione cresciuta nel tempo)
+  // faceva fallire saveState() DOPO che la RPC accetta/conferma era già
+  // andata a buon fine — l'utente vedeva il testo grezzo del QuotaExceededError
+  // al posto del successo, il foglio non si chiudeva, sembrava che accettare
+  // "non funzionasse" anche se il prestito era già stato aggiornato sul
+  // server. Simula la quota esaurita per questa singola scrittura: le
+  // asserzioni esistenti subito sotto (foglio che si chiude, riga aggiornata)
+  // bastano a dimostrare che saveState() ora la ingloba senza bloccare il resto.
+  await evaluate(`(()=>{const real=localStorage.setItem.bind(localStorage);let fired=false;localStorage.setItem=(...args)=>{if(!fired){fired=true;throw new DOMException("Failed to execute 'setItem' on 'Storage': Setting the value of 'fpt-cards-state-v2' exceeded the quota.","QuotaExceededError");}return real(...args);};})()`);
   await evaluate(`(()=>{const input=document.querySelector('[data-accept-qty="request-incoming"]');input.value='1';document.querySelector('[data-action="accept-request"][data-id="request-incoming"]').click()})()`);
+  await waitFor(`document.querySelector('#toast')?.textContent.includes('Prestito aggiornato')`, 'Quota storage esaurita: il toast di successo non arriva (saveState() blocca ancora il resto del flusso)');
+  assert(!(await evaluate(`document.querySelector('#toast')?.textContent||''`)).includes('Quota'), 'Il testo grezzo del QuotaExceededError non deve mai arrivare all\'utente come se fosse un fallimento dell\'azione');
   // updateLoan() chiude il foglio di dettaglio dopo l'azione (selectedLoanId
   // = ''), tornando alla lista: la riga mostra SOLO lo status breve
   // (shortStatus, badge "Riservata" — loanPresentation in app.js), mai il

@@ -931,8 +931,12 @@ export class DeckController {
     }
   }
   markDirty(deck) { deck.dirty = true; deck.ownerSlug = this.state.currentUser; this.persistDrafts(); }
-  persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); }
-  clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); }
+  // Stesso bug di js/core.js saveState(): una quota locale già esaurita non
+  // deve mai interrompere a metà il chiamante (qui, il salvataggio di un
+  // mazzo) — la bozza locale è un acceleratore per la ripresa offline, mai
+  // una condizione per completare un salvataggio già confermato dal server.
+  persistDrafts() { const current = readDrafts().filter(deck => deck.ownerSlug !== this.state.currentUser), dirty = (this.state.decks || []).filter(deck => deck.ownerSlug === this.state.currentUser && (deck.dirty || !deck.persisted)); try { localStorage.setItem(DRAFTS_KEY, JSON.stringify([...current, ...dirty])); } catch (error) { console.warn('persistDrafts: scrittura locale non riuscita (quota storage?)', error); } }
+  clearDraft(id) { const next = readDrafts().filter(deck => !(deck.ownerSlug === this.state.currentUser && deck.id === id)); try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); } catch (error) { console.warn('clearDraft: scrittura locale non riuscita (quota storage?)', error); } }
   setMissingRowChoice(cardId, patch) { if (!cardId) return; this.missingRowChoices.set(cardId, { ...this.missingRowChoices.get(cardId), ...patch }); }
   async request(cardId) {
     const row = deckAvailability(this.active(), this.state.collection, this.state.currentUser, { loans:this.state.loans }).rows.find(item => item.catalogCardId === cardId);

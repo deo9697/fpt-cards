@@ -35,7 +35,22 @@ export const FUTURE_GAMES = [
   { id:'magic', name:'Magic: The Gathering', logo:'assets/game-logos/magic.png' },
   { id:'pokemon', name:'Pokémon TCG', logo:'assets/game-logos/pokemon.png' }
 ];
-export function saveState() { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+// localStorage ha una quota per origine (in genere 5-10MB): una collezione
+// cresciuta nel tempo (migliaia di carte, prestiti, mazzi) può superarla.
+// Prima di questo fix, il QuotaExceededError di setItem interrompeva
+// qualunque chiamante a metà — es. updateLoan() falliva DOPO che la RPC
+// (accetta/conferma prestito) era già andata a buon fine server-side,
+// mostrando all'utente il testo grezzo dell'eccezione del browser ("Failed
+// to execute 'setItem' on 'Storage'...") al posto del toast di successo, e
+// senza mai richiamare render() — il prestito sembrava non essersi
+// aggiornato anche se in realtà lo era. La cache locale resta un
+// acceleratore per la ripresa offline, mai una condizione per completare
+// un'azione già confermata dal server: un fallimento qui non deve mai
+// bloccare il resto del flusso chiamante.
+export function saveState() {
+  try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+  catch (error) { console.warn('saveState: scrittura locale non riuscita (quota storage?)', error); }
+}
 export function member(id) { return MEMBERS.find(item => item.id === id); }
 export function initials(name) { return name.split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase(); }
 export function esc(value) { return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }

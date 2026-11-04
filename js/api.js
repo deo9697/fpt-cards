@@ -6,10 +6,23 @@ const client = configured ? window.supabase.createClient(window.FPT_CONFIG.supab
 const TOKEN_KEY = 'fpt-cards-session-token';
 let realtimeChannel;
 let collectionChannel;
+// Riserva in memoria per quando localStorage non accetta la scrittura (vedi
+// sotto): senza, ogni chiamata rigenererebbe un token diverso non essendo
+// mai stato salvato, e session_member(p_token) non troverebbe mai una riga —
+// rompendo ogni RPC nella stessa sessione, non solo dopo un reload.
+let inMemoryToken = '';
 
 function token() {
-  let value = localStorage.getItem(TOKEN_KEY);
-  if (!value) { value = `${crypto.randomUUID()}${crypto.randomUUID()}`; localStorage.setItem(TOKEN_KEY, value); }
+  let value = localStorage.getItem(TOKEN_KEY) || inMemoryToken;
+  // Stesso bug di js/core.js saveState(): se la quota locale è già esaurita
+  // (es. da uno stato grosso salvato altrove), un setItem qui romperebbe
+  // OGNI chiamata RPC (token() è nel percorso di tutte). Il nuovo token resta
+  // valido per questa sessione (in memoria) anche se non si persiste — non
+  // sopravvive a un reload, ma non deve mai impedire di usare l'app ora.
+  if (!value) {
+    value = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+    try { localStorage.setItem(TOKEN_KEY, value); } catch (error) { inMemoryToken = value; console.warn('token: impossibile persistere il token di sessione (quota storage?)', error); }
+  }
   return value;
 }
 function ensure() { if (!client) throw new Error('Supabase non configurato'); }
