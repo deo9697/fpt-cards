@@ -56,6 +56,7 @@
     "test:card-image-proxy": "node scripts/card-image-proxy-hardening-smoke.mjs",
     "test:mobile-focus-regression": "node scripts/mobile-focus-regression-smoke.mjs",
     "test:collection-share-bootstrap-guard": "node scripts/collection-share-bootstrap-guard-smoke.mjs",
+    "test:collection-share-double-create": "node scripts/collection-share-double-create-smoke.mjs",
     "test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs",
     "test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs",
     "test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs",

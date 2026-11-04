@@ -45,6 +45,7 @@ let collectionSentinelObserver;
 let collectionShareModal = false;
 let collectionShareLink = null;
 let collectionSharePending = false;
+let collectionShareOpening = false;
 let collectionShareRequests = [];
 let requestsTab = 'pending';
 // id delle richieste con un'azione (conferma/annulla/completa) in corso —
@@ -1641,6 +1642,15 @@ async function runRequestAction(requestId, action, moveToTab) {
 function collectionShareUrl(id) { return `${location.origin}${location.pathname}#/share/${id}`; }
 
 async function openCollectionShareModal() {
+  // create_collection_share revoca sempre il link attivo corrente prima di
+  // inserirne uno nuovo (voluto per "Rigenera"): senza questa guardia, un
+  // doppio avvio concorrente di questa funzione (doppio tap, o un secondo
+  // click sintetico prima che il re-render sotto sostituisca il bottone)
+  // genera due link al posto di uno, e il secondo revoca silenziosamente
+  // quello appena creato dal primo — prima che chiunque lo apra. Bug reale
+  // segnalato dall'utente 2026-11-04.
+  if (collectionShareOpening) return;
+  collectionShareOpening = true;
   collectionShareModal = true; collectionShareLink = null; render();
   try {
     const shares = await api.collectionShares();
@@ -1650,6 +1660,7 @@ async function openCollectionShareModal() {
       collectionShareLink = { id, game: state.game, active:true };
     }
   } catch (error) { toast(error.message || 'Impossibile caricare il link di condivisione'); }
+  finally { collectionShareOpening = false; }
   render();
   // The whole point of tapping "Condividi" is to hand the link to someone —
   // jump straight to the native share sheet instead of making that a second
@@ -1658,6 +1669,7 @@ async function openCollectionShareModal() {
 }
 
 async function generateCollectionShareLink() {
+  if (collectionSharePending) return;
   collectionSharePending = true; render();
   try {
     const id = await api.createCollectionShare(state.game);
