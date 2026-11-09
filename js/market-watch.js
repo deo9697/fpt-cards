@@ -329,6 +329,7 @@ export class MarketWatchController {
           <strong class="market-hero-value">${this.summary.portfolioValue.complete?money(this.summary.portfolioValue.current):'Dati parziali'}</strong>
           ${sparkle('bottom:-4px;right:6%;width:15px;height:15px;animation-delay:1.1s')}
         </span>
+        ${heroDelta(this.overview?.change7)}
         <span class="market-hero-sync"><i class="${this.error?'error':this.summary.lastSync?'ok':'waiting'}"></i>${this.error?'Sincronizzazione non riuscita':this.summary.lastSync?`Aggiornato ${formatTimestamp(this.summary.lastSync)}${this.usingCache?' · copia locale':''}`:'In attesa del primo sync'}</span>
       </header>
       ${this.error?`<div class="connection-banner error"><span>${esc(this.error)}</span><button class="btn secondary small" data-market-retry>Riprova</button></div>`:''}
@@ -586,6 +587,13 @@ export function deduplicateMonitored({owned=[],deck=[],manual=[]}={}){const map=
 // un'unica riga di rendering nella Dashboard funziona per entrambe le liste.
 export function negativeMovers(items,limit=3){const ranked=(items||[]).filter(item=>derivedPriceEligible(item)&&item.sources?.includes('owned')&&Number.isFinite(item.referencePrice)&&Number.isFinite(item.price24h)&&item.price24h>0&&item.referencePrice<item.price24h).map(item=>({...item,positiveChange:(item.referencePrice-item.price24h)/item.price24h*100})).sort((a,b)=>a.positiveChange-b.positiveChange||(a.referencePrice-a.price24h)-(b.referencePrice-b.price24h));const seen=new Set(),result=[];for(const item of ranked){const key=String(item.catalogCardId||item.cardName).toLowerCase();if(seen.has(key))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result;}
 // get_market_dashboard_overview → numeri veri (numeric arriva come stringa).
+// Variazione a 7 giorni del valore (stessa base like-for-like del cruscotto
+// in Dashboard), sotto il valore della collezione.
+function heroDelta(change){
+  if(!change||change.eur==null||!change.base)return '';
+  const up=change.eur>=0,pct=Math.abs(change.eur/change.base*100).toFixed(1).replace('.',',');
+  return `<span class="market-hero-delta ${up?'up':'down'}">${up?'▲ +':'▼ −'}${money(Math.abs(change.eur))} · ${pct}% · 7 giorni</span>`;
+}
 export function mapDashboardOverview(payload){
   if(!payload||!Array.isArray(payload.top))return null;
   const num=value=>value==null||value===''?null:Number(value);

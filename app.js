@@ -1732,7 +1732,7 @@ function requestsView() {
     confirmed: { title:'Nessuna richiesta confermata', body:'Le richieste che confermi restano qui, con le copie riservate, finché non le segni come effettuate.' },
     completed: { title:'Nessuna richiesta effettuata', body:'Le richieste che completi (carte rimosse dalla raccolta) finiscono qui, come archivio.' }
   }[requestsTab] || {};
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Interesse ricevuto</span><h1>Richieste</h1><p>Chi ha visto la tua raccolta condivisa e ti ha segnalato interesse.</p></div></header>
+  return `<section class="page-stack requests-page"><header class="page-header"><div><span class="eyebrow">Interesse ricevuto</span><h1>Richieste</h1><p>Chi ha visto la tua raccolta condivisa e ti ha segnalato interesse.</p></div></header>
     <nav class="market-tabs" aria-label="Filtri richieste">
       <button type="button" data-requests-tab="pending" class="${requestsTab === 'pending' ? 'active' : ''}">In attesa <span>${pending.length}</span></button>
       <button type="button" data-requests-tab="confirmed" class="${requestsTab === 'confirmed' ? 'active' : ''}">Confermate <span>${confirmed.length}</span></button>
@@ -1758,13 +1758,17 @@ function requestRowHtml(request) {
     : request.status === 'completed'
       ? `<p class="share-request-status-note">${icon('check')} Effettuata il ${formatDate(request.completedAt)} · le carte sono state rimosse dalla tua raccolta.</p>`
       : '';
-  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${actions ? `<div class="share-request-actions">${actions}</div>` : ''}</header>
+  // Ricevuta (stile FPT 2026-11-09): chi, messaggio, carte, totale e in fondo
+  // le azioni, dove arriva il pollice.
+  const statusTag = { pending:['pink','In attesa'], seen:['pink','In attesa'], confirmed:['violet','Riservata'], completed:['ok','Effettuata'] }[request.status];
+  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${statusTag ? `<span class="share-request-tag ${statusTag[0]}">${statusTag[1]}</span>` : ''}</header>
     ${request.message ? `<p class="share-request-message">${icon('message')} ${esc(request.message)}</p>` : ''}
     ${statusNote}
     <div class="share-receipt">
       ${items.map(item => requestReceiptRowHtml(item, request, busy)).join('')}
       <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
     </div>
+    ${actions ? `<div class="share-request-actions">${actions}</div>` : ''}
   </article>`;
 }
 function requestReceiptRowHtml(item, request = {}, busy = false) {

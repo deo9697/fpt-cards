@@ -3473,3 +3473,133 @@ body.pinpad-open { overflow:hidden; }
 .mobile-nav button { border-radius:0; }
 .mobile-nav button.active { background:linear-gradient(180deg,#e8b84f1f,transparent 70%);color:var(--fpt-gold);box-shadow:inset 0 2px var(--fpt-gold); }
 .mobile-nav button i { border-radius:0;background:var(--fpt-pink);font-family:var(--fpt-mono); }
+
+/* ==========================================================================
+   FPT gotico cyber, seconda parte (2026-11-09): Raccolta, Market Watch,
+   Richieste e Team. Stessi token del blocco sopra (--fpt-*).
+   ========================================================================== */
+.collection-page .page-header h1,.market-page .market-hero-eyebrow,.requests-page .page-header h1,.team-page .team-hero h1 { font-family:'Cinzel FPT',Georgia,serif;font-weight:800;letter-spacing:.03em;text-transform:uppercase; }
+.collection-page .page-header .eyebrow,.requests-page .page-header .eyebrow { font-family:var(--fpt-mono);color:var(--fpt-violet);letter-spacing:.16em; }
+.collection-page .page-header .eyebrow::before,.requests-page .page-header .eyebrow::before { content:'// '; }
+.collection-page .page-header h1::after,.requests-page .page-header h1::after { content:'';display:block;width:100%;max-width:340px;height:1px;margin-top:10px;background:linear-gradient(90deg,var(--fpt-gold),transparent); }
+
+/* --- Raccolta --- */
+.collection-page .collection-add-actions { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+.collection-page .collection-add-actions .btn { border-radius:0;clip-path:var(--fpt-cut-br);text-transform:uppercase;letter-spacing:.05em;font-weight:800; }
+.collection-page .collection-add-actions [data-collection-add] { grid-column:1/-1;border:0;background:linear-gradient(180deg,#f2c965,#d9a43a);color:#140e02;box-shadow:0 0 18px #e8b84f40; }
+.collection-page .collection-add-actions .btn.secondary { border-color:#9b5cff73;background:#9b5cff0f; }
+.collection-hud { display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--fpt-line);background:var(--fpt-panel); }
+.collection-hud>div { padding:8px 12px;border-left:1px solid var(--fpt-line); }
+.collection-hud>div:first-child { border-left:0; }
+.collection-hud small { display:block;color:var(--muted);font:700 .58rem var(--fpt-mono);letter-spacing:.1em;text-transform:uppercase; }
+.collection-hud b { font:800 1.2rem var(--fpt-mono); }
+.collection-hud .c-copies b { color:var(--fpt-violet); }
+.collection-hud .c-free b { color:var(--fpt-ok); }
+.collection-page .collection-surface { border-radius:0;background:transparent;border:0;box-shadow:none;padding-inline:0; }
+.collection-page .tabs { border-radius:0;border:1px solid var(--fpt-line);background:var(--fpt-panel);padding:0; }
+.collection-page .tabs button { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.06em;font-size:.7rem; }
+.collection-page .tabs button.active { background:#9b5cff29;color:var(--text);box-shadow:inset 0 -2px var(--fpt-violet); }
+.collection-page .tabs button span { color:var(--fpt-gold); }
+.collection-page .filter-search { border-radius:0; }
+.collection-page .filter-search input { font-family:var(--fpt-mono); }
+.collection-page .filter-chips .chip { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.04em; }
+.collection-page .filter-chips .chip.active { border-color:var(--fpt-gold);color:var(--fpt-gold);background:#e8b84f14; }
+.collection-page select { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.04em; }
+.collection-page .view-toggle,.collection-page .view-toggle button { border-radius:0; }
+.collection-page .view-toggle button.active { background:#9b5cff2e; }
+.collection-page .inventory-az-index button { border-radius:0;font-family:var(--fpt-mono); }
+.collection-page .inventory-tile-art { border-radius:0;box-shadow:0 0 0 1px #9b5cff59; }
+.collection-page .inventory-tile-art img { border-radius:0; }
+.collection-page .inventory-tile-qty { border-radius:0;background:var(--fpt-gold);color:#120d02;font-family:var(--fpt-mono); }
+.collection-page .inventory-tile-status { width:10px;height:10px;border-radius:0;transform:rotate(45deg);border:1px solid #06050b; }
+.collection-page .inventory-tile-name { font-weight:800; }
+.collection-page .inventory-tile-deck { color:var(--fpt-violet-hi);font-family:var(--fpt-mono); }
+
+/* --- Market Watch --- */
+.market-page .market-hero { border-radius:0;border:1px solid #e8b84f66;clip-path:var(--fpt-cut); }
+.market-page .market-hero-eyebrow { color:var(--fpt-gold);font-family:var(--fpt-mono);font-size:.68rem;letter-spacing:.16em; }
+.market-page .market-hero-eyebrow::before { content:'// '; }
+.market-page .market-hero-label { font-family:'Cinzel FPT',Georgia,serif;text-transform:uppercase;letter-spacing:.06em; }
+.market-page .market-hero-value { font-family:var(--fpt-mono);color:var(--fpt-gold);text-shadow:0 0 22px #e8b84f59; }
+.market-hero-delta { position:relative;z-index:2;display:inline-block;margin:6px auto 0;padding:2px 9px;font:700 .68rem var(--fpt-mono);letter-spacing:.04em;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.market-hero-delta.up { background:#48d98b24;color:var(--fpt-ok); }
+.market-hero-delta.down { background:#ff5f7a24;color:var(--fpt-danger); }
+.market-page .market-hero-sync { font-family:var(--fpt-mono); }
+.market-page .market-board { border-radius:0;background:transparent;border:0;box-shadow:none;padding-inline:0; }
+.market-page .market-tabs { display:grid;grid-auto-flow:column;grid-auto-columns:minmax(max-content,1fr);gap:0;overflow-x:auto;padding:0;border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel);scrollbar-width:none; }
+.market-page .market-tabs button { min-height:40px;padding:0 10px;border:0;border-radius:0;background:transparent;color:var(--muted);font:700 .64rem var(--fpt-mono);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap; }
+.market-page .market-tabs button.active { background:#9b5cff29;color:var(--text);box-shadow:inset 0 -2px var(--fpt-violet); }
+.market-page .market-tabs button span { color:var(--fpt-gold);background:transparent; }
+.market-page .market-tabs button.warn,.market-page .market-tabs button.warn span { color:var(--fpt-pink); }
+.market-page .market-tabs button.warn.active { box-shadow:inset 0 -2px var(--fpt-pink); }
+.market-page .market-search,.market-page .market-sort select { border-radius:0; }
+.market-page .market-search input,.market-page .market-sort select { font-family:var(--fpt-mono); }
+.market-page .market-list { display:grid;gap:6px; }
+.market-page .market-row { border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel);clip-path:var(--fpt-cut); }
+.market-page .market-row .market-card-copy strong { font-weight:800; }
+.market-page .market-row .market-card-copy small { font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.03em; }
+.market-page .market-row-badge { border-radius:0;font-family:var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.market-page .market-row-badge.owned { background:#9b5cff2e;color:var(--fpt-violet-hi); }
+.market-page .market-row-badge.qty { background:#e8b84f29;color:var(--fpt-gold); }
+.market-page .market-row-badge.aggregate { background:#ff4fd826;color:var(--fpt-pink); }
+.market-page .market-price-top strong,.market-page .market-price-position b { font-family:var(--fpt-mono); }
+.market-page .market-price-position b { color:var(--fpt-gold); }
+.market-page .market-price-note,.market-page .market-price-position small { font-family:var(--fpt-mono); }
+.market-page .market-row-chart.empty { display:none; }
+.market-page .market-row-chart.up { color:var(--fpt-ok); }
+.market-page .market-row-chart.down { color:var(--fpt-danger); }
+
+/* --- Richieste: ricevute --- */
+.requests-page .market-tabs { display:grid;grid-template-columns:repeat(3,1fr);gap:0;padding:0;border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel); }
+.requests-page .market-tabs button { min-height:40px;border:0;border-radius:0;background:transparent;color:var(--muted);font:700 .64rem var(--fpt-mono);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap; }
+.requests-page .market-tabs button.active { background:#9b5cff29;color:var(--text);box-shadow:inset 0 -2px var(--fpt-violet); }
+.requests-page .market-tabs button span { color:var(--fpt-gold);background:transparent; }
+.requests-page .surface { border-radius:0;background:transparent;border:0;box-shadow:none;padding-inline:0; }
+.requests-page .share-request-row { border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel);clip-path:var(--fpt-cut); }
+.requests-page .share-request-row header { display:flex;justify-content:space-between;align-items:flex-start;gap:10px; }
+.requests-page .share-request-row header strong { font-family:'Cinzel FPT',Georgia,serif;font-weight:800;text-transform:uppercase; }
+.requests-page .share-request-row header small { font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.05em; }
+.share-request-tag { flex:none;padding:2px 8px;font:700 .58rem var(--fpt-mono);letter-spacing:.08em;text-transform:uppercase;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.share-request-tag.pink { background:#ff4fd826;color:var(--fpt-pink); }
+.share-request-tag.violet { background:#9b5cff2e;color:var(--fpt-violet-hi); }
+.share-request-tag.ok { background:#48d98b24;color:var(--fpt-ok); }
+.requests-page .share-request-message { border:0;border-left:3px solid var(--fpt-violet);border-radius:0;background:#9b5cff14;color:#e2d4ff; }
+.requests-page .share-request-status-note { font-family:var(--fpt-mono);font-size:.66rem; }
+.requests-page .share-receipt-art img { border-radius:0; }
+.requests-page .share-receipt-info small,.requests-page .share-receipt-price { font-family:var(--fpt-mono); }
+.requests-page .share-receipt-remove { border-radius:0; }
+.requests-page .share-receipt-total span { font-family:var(--fpt-mono);letter-spacing:.08em; }
+.requests-page .share-receipt-total b { font-family:var(--fpt-mono);color:var(--fpt-gold);font-size:1.25rem; }
+.requests-page .share-request-actions { display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-top:12px; }
+.requests-page .share-request-actions .btn { min-height:44px;border-radius:0;font-weight:800;text-transform:uppercase;letter-spacing:.05em;clip-path:var(--fpt-cut-br); }
+.requests-page .share-request-actions .btn:not(.secondary) { border:0;background:linear-gradient(180deg,#f2c965,#d9a43a);color:#140e02; }
+.requests-page .share-request-actions .btn.secondary { border:1px dashed #ff5f7a8c;background:transparent;color:var(--fpt-danger); }
+
+/* --- Team --- */
+.team-page .team-hero { border-radius:0;border:1px solid #e8b84f59;clip-path:var(--fpt-cut); }
+.team-page .team-hero .eyebrow { font-family:var(--fpt-mono);letter-spacing:.14em; }
+.team-page .team-hero .eyebrow::before { content:'// '; }
+.team-page .team-hero p { font-family:var(--fpt-mono);font-size:.72rem; }
+.team-page .team-summary { gap:0;border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel); }
+.team-page .team-summary>div { border:0;border-left:1px solid var(--fpt-line);border-radius:0;background:transparent; }
+.team-page .team-summary>div:first-child { border-left:0; }
+.team-page .team-summary strong { font-family:var(--fpt-mono);font-weight:800; }
+.team-page .team-summary small { font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.08em; }
+.team-page .team-summary>div:nth-child(2) strong { color:var(--fpt-violet); }
+.team-page .team-summary>div:nth-child(3) strong { color:var(--fpt-gold); }
+.team-page .team-notifications { border:1px dashed #e8b84f73;border-radius:0;background:#e8b84f0d;clip-path:var(--fpt-cut-br); }
+.team-page .team-notifications .btn,.team-page .team-add-toggle { border:0;border-radius:0;background:linear-gradient(180deg,#f2c965,#d9a43a);color:#140e02;font-weight:800;text-transform:uppercase;letter-spacing:.05em;clip-path:var(--fpt-cut-br); }
+.team-page .team-section-heading h2 { font-family:'Cinzel FPT',Georgia,serif;text-transform:uppercase; }
+.team-page .team-search { border-radius:0; }
+.team-page .team-search input { font-family:var(--fpt-mono); }
+.team-page .team-filters button { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.04em; }
+.team-page .team-filters button.active { border-color:var(--fpt-gold);color:var(--fpt-gold);background:#e8b84f14; }
+.team-page .team-person { border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel);clip-path:var(--fpt-cut); }
+.team-page .team-person.is-self { border-color:#e8b84f8c; }
+.team-page .team-person-avatar { border-radius:0;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+.team-page .team-role,.team-page .team-you { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.06em;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.team-page .team-you { background:#e8b84f29;color:var(--fpt-gold);border-color:transparent; }
+.team-page .team-role.is-admin { background:#9b5cff2e;color:var(--fpt-violet-hi); }
+.team-page .team-person-actions .btn { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.05em; }
+.team-page .team-person-actions .btn.danger { border-style:dashed; }
+.team-page .team-invite { border-radius:0;clip-path:var(--fpt-cut-br); }
