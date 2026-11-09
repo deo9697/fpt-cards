@@ -48,8 +48,8 @@ export async function cardCostsByIds(ids) {
   const unique = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
   const missing = unique.filter(id => !costCache.has(id));
   if (missing.length) {
-    let rows = [];
-    try { rows = await api.onePieceCardCosts(missing) || []; } catch { rows = []; }
+    let rows = [], failed = false;
+    try { rows = await api.onePieceCardCosts(missing) || []; } catch { rows = []; failed = true; }
     const resolved = new Set();
     for (const row of rows) {
       const id = String(row.catalog_card_id ?? row.catalogCardId ?? '').trim();
@@ -58,10 +58,11 @@ export async function cardCostsByIds(ids) {
       costCache.set(id, Number.isFinite(cost) ? cost : null);
       resolved.add(id);
     }
-    for (const id of missing) if (!resolved.has(id)) costCache.set(id, null);
+    // Chiamata fallita (rete, timeout): niente cache, così si riprova dopo.
+    if (!failed) for (const id of missing) if (!resolved.has(id)) costCache.set(id, null);
   }
   const map = {};
-  for (const id of unique) map[id] = costCache.get(id) ?? null;
+  for (const id of unique) if (costCache.has(id)) map[id] = costCache.get(id);
   return map;
 }
 

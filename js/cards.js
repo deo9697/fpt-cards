@@ -138,7 +138,9 @@ export async function cardTypesByIds(ids, game = 'yugioh') {
   if (!unique.length) return {};
   // Cache shared by detail and decks; batch only missing types and reuse in-flight lookups.
   const now = Date.now();
-  const missing = unique.filter(id => !typeRequests.has(id) && !(savedTypes[id]?.type && now - savedTypes[id].at < 30 * 86400000));
+  // Le voci salvate prima del 2026-11-10 non hanno il livello: per i mostri
+  // vanno richieste una volta sola, poi restano in cache come le altre.
+  const missing = unique.filter(id => !typeRequests.has(id) && !(savedTypes[id]?.type && now - savedTypes[id].at < 30 * 86400000 && (Object.hasOwn(savedTypes[id], 'level') || !/monster/i.test(savedTypes[id].type))));
   const CHUNK = 40;
   const chunks = [];
   for (let index = 0; index < missing.length; index += CHUNK) chunks.push(missing.slice(index, index + CHUNK));
@@ -152,7 +154,7 @@ export async function cardTypesByIds(ids, game = 'yugioh') {
         for (const row of rows) {
           if (typeof row.type !== 'string' || !row.type) continue;
           map[String(row.id)] = row.type;
-          savedTypes[String(row.id)] = { type: row.type, at: Date.now() };
+          savedTypes[String(row.id)] = { type: row.type, level: cardLevelOf(row), at: Date.now() };
         }
         try { localStorage.setItem(typeCacheKey, JSON.stringify(savedTypes)); } catch {}
         return map;
@@ -166,6 +168,20 @@ export async function cardTypesByIds(ids, game = 'yugioh') {
     return savedTypes[id]?.type ? { [id]: savedTypes[id].type } : {};
   }));
   return Object.assign({}, ...results);
+}
+
+// Livello per l'ordinamento dei mazzi: Livello, Rango (Xyz) o valore Link
+// (YGOPRODeck: level / linkval). null per Magie, Trappole e dati mancanti.
+function cardLevelOf(row) {
+  const value = Number(row?.level ?? row?.linkval);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+export async function cardLevelsByIds(ids, game = 'yugioh') {
+  if (game !== 'yugioh') return {};
+  const types = await cardTypesByIds(ids, game);
+  const map = {};
+  for (const id of Object.keys(types)) map[id] = savedTypes[id]?.level ?? null;
+  return map;
 }
 
 // Ordine = priorità sul tipo YGOPRODeck: il tipo di evocazione vince sul
@@ -509,6 +525,7 @@ function mapCard(card) {
     id: card.id,
     name: card.name,
     type: card.type,
+    level: cardLevelOf(card),
     // image_url_cropped contiene soltanto l'illustrazione interna: non va usato
     // come immagine della carta nelle liste o nei dati persistenti.
     image: artwork.image_url_small || artwork.image_url || artwork.image_url_cropped || '',

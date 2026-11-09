@@ -30,7 +30,7 @@ const TYPE_FILTERS = [
 ];
 const TYPE_RANK = { monster: 0, spell: 1, trap: 2, '': 3 };
 const SORT_OPTIONS = [
-  { value: 'type', label: 'Tipo', title: 'Ordina per tipo: Mostri → Magie → Trappole' },
+  { value: 'type', label: 'Tipo', title: 'Ordina per tipo: Mostri dal livello più alto → Magie → Trappole' },
   { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
   { value: 'name-desc', label: 'Z–A', title: 'Ordina per nome, Z–A' },
   { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' },
@@ -50,8 +50,9 @@ function sortOptionsFor(game) { return game === 'onepiece' ? ONE_PIECE_SORT_OPTI
 const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limitata a 2 copie', forbidden: 'Proibita' };
 
 export class DeckController {
-  constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics } = {}) {
-    Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics });
+  constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics } = {}) {
+    Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics });
+    this.cardLevels = {}; this.levelsRequest = null;
     this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchQuery = ''; this.searchOpen = false; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
     // Import/export OPTCGSim (P1.1) sono un flusso a parte dal generico YDK,
     // non lo riusano: formati e logiche di risoluzione troppo diversi.
@@ -294,9 +295,19 @@ export class DeckController {
       case 'name-desc': return sorted.sort((a, b) => b.cardName.localeCompare(a.cardName, 'it'));
       case 'qty-desc': return sorted.sort((a, b) => b.quantity - a.quantity || a.cardName.localeCompare(b.cardName, 'it'));
       case 'name-asc': return sorted.sort((a, b) => a.cardName.localeCompare(b.cardName, 'it'));
+      // Tipo (default Yu-Gi-Oh): Mostri → Magie → Trappole; i mostri dal
+      // Livello/Rango/Link più alto al più basso, a parità per nome. Un mostro
+      // con livello non ancora noto sta dopo gli altri mostri.
       default: return sorted.sort((a, b) => {
-        const rank = (TYPE_RANK[this.cardTypes[a.catalogCardId] || ''] ?? 3) - (TYPE_RANK[this.cardTypes[b.catalogCardId] || ''] ?? 3);
-        return rank || a.cardName.localeCompare(b.cardName, 'it');
+        const typeA = this.cardTypes[a.catalogCardId] || '', typeB = this.cardTypes[b.catalogCardId] || '';
+        const rank = (TYPE_RANK[typeA] ?? 3) - (TYPE_RANK[typeB] ?? 3);
+        if (rank) return rank;
+        if (typeA === 'monster') {
+          const levelA = this.cardLevels[a.catalogCardId], levelB = this.cardLevels[b.catalogCardId];
+          const byLevel = (typeof levelB === 'number' ? levelB : -1) - (typeof levelA === 'number' ? levelA : -1);
+          if (byLevel) return byLevel;
+        }
+        return a.cardName.localeCompare(b.cardName, 'it');
       });
     }
   }
@@ -491,7 +502,7 @@ export class DeckController {
   }
   async downloadImageExport() {
     try {
-      await this.resolveCardTypes(this.active());
+      await this.resolveCardTypes(this.active()); void this.resolveCardLevels(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
       const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, style: this.imageExportStyle, details: this.imageExportDetails });
       downloadDeckImageBlob(blob, this.active()?.name || 'mazzo');
@@ -499,7 +510,7 @@ export class DeckController {
   }
   async shareImageExport() {
     try {
-      await this.resolveCardTypes(this.active());
+      await this.resolveCardTypes(this.active()); void this.resolveCardLevels(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
       const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, style: this.imageExportStyle, details: this.imageExportDetails });
       const deckName = this.active()?.name || 'mazzo';
@@ -692,8 +703,8 @@ export class DeckController {
     this.markDirty(deck);
     this.onRender();
   }
-  open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); void this.resolveCardCosts(this.active()); this.onRender(); }
-  openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); void this.resolveCardCosts(this.activeTeamDeck()); this.onRender(); }
+  open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); void this.resolveCardLevels(this.active()); void this.resolveCardCosts(this.active()); this.onRender(); }
+  openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); void this.resolveCardLevels(this.activeTeamDeck()); void this.resolveCardCosts(this.activeTeamDeck()); this.onRender(); }
   showGallery(render = true) { this.screen = 'gallery'; this.teamDetailId = ''; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; if (render) this.onRender(); }
   create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (deck.game === 'onepiece') void this.autofillDon(deck); if (render) this.onRender(); }
   // Le 10 carte DON!! (P1.0) non passano più da un tab dedicato: ogni mazzo
@@ -726,7 +737,11 @@ export class DeckController {
     const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(), first = deck?.game === 'onepiece' ? 'main' : (sectionsFor(deck)[0] || 'main');
     this.activeSection = first; this.targetSection = first; this.cardTypeFilter = 'all'; this.selectedCard = null; this.missingPanelOpen = false; this.moreMenuOpen = false; this.catalogExpansion = 'all'; this.catalogColors = new Set(); this.catalogColorsTouched = false;
     const sortOptions = sortOptionsFor(deck?.game);
-    if (!sortOptions.some(option => option.value === this.cardSort)) this.cardSort = sortOptions[0].value;
+    // Ogni mazzo si apre SEMPRE nell'ordinamento di default del gioco: Costo
+    // per One Piece, Tipo (mostri dal livello più alto) per Yu-Gi-Oh. Prima
+    // l'ultimo ordinamento scelto restava su tutti i mazzi (es. "Manuale"
+    // usato una volta per trascinare una carta), e le carte non erano ordinate.
+    this.cardSort = sortOptions[0].value;
   }
   setSection(section) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sectionsFor(deck).includes(section)) return; this.activeSection = section; this.targetSection = section; this.selectedCard = null; this.onRender(); }
   // Apre la ricerca generica targetizzata sul Leader (bottone "Scegli"/"Cambia"
@@ -774,6 +789,21 @@ export class DeckController {
   toggleMoreMenu() { this.moreMenuOpen = !this.moreMenuOpen; this.onRender(); }
   setSort(value) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!sortOptionsFor(deck?.game).some(option => option.value === value)) return; this.cardSort = value; this.onRender(); }
   cycleSort() { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); const options = sortOptionsFor(deck?.game); const index = options.findIndex(option => option.value === this.cardSort); this.setSort(options[(index + 1) % options.length].value); }
+  // Livelli dei mostri per l'ordinamento "Tipo": cache separata dai tipi
+  // (quella dei tipi è già popolata per i mazzi esistenti e non ha i livelli).
+  async resolveCardLevels(deck) {
+    if (!deck || deck.game !== 'yugioh' || !this.cardLevelsByIds) return;
+    if (this.levelsRequest) return this.levelsRequest;
+    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardLevels));
+    if (!ids.length) return;
+    this.levelsRequest = (async () => {
+      try {
+        const resolved = await this.cardLevelsByIds(ids, deck.game);
+        for (const id of ids) if (Object.hasOwn(resolved, id)) this.cardLevels[id] = resolved[id];
+      } catch {} finally { this.levelsRequest = null; this.onRender(); }
+    })();
+    return this.levelsRequest;
+  }
   async resolveCardTypes(deck) {
     if (!deck || deck.game !== 'yugioh' || !this.cardTypesByIds) return;
     if (this.cardTypesRequest) return this.cardTypesRequest;
@@ -805,7 +835,9 @@ export class DeckController {
     this.costsLoading = true;
     try {
       const resolved = await adapter.cardCostsByIds(ids);
-      for (const id of ids) this.cardCosts[id] = resolved[id] ?? null;
+      // Solo gli id che il catalogo ha davvero risposto: se la chiamata fallisce
+      // non si memorizza "nessun costo", così alla prossima apertura si riprova.
+      for (const id of ids) if (Object.hasOwn(resolved, id)) this.cardCosts[id] = resolved[id];
     } finally {
       this.costsLoading = false;
       this.onRender();
@@ -901,6 +933,7 @@ export class DeckController {
     else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
     this.rememberCardType(id, card.type);
+    this.rememberCardLevel(id, card.level, deck);
     this.rememberCardCost(id, card.cost);
     this.markDirty(deck);
     this.onRender();
@@ -913,12 +946,26 @@ export class DeckController {
       this.renderSearchResultsList();
     }
   }
+  rememberCardLevel(id, level, deck) {
+    if (deck?.game !== 'yugioh' || id in this.cardLevels) return;
+    if (typeof level === 'number' && Number.isFinite(level)) { this.cardLevels[id] = level; return; }
+    if (level === null) { this.cardLevels[id] = null; return; }
+    queueMicrotask(() => void this.resolveCardLevels(deck));
+  }
   rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
   // Il risultato di ricerca One Piece porta già il costo (catalog.js): non
   // serve aspettare resolveCardCosts (pensato per backfillare le carte di
   // un mazzo già salvato, che non lo portano con sé) per una carta appena
   // aggiunta in questa sessione.
-  rememberCardCost(id, cost) { if (!(id in this.cardCosts)) this.cardCosts[id] = typeof cost === 'number' ? cost : null; }
+  rememberCardCost(id, cost) {
+    if (id in this.cardCosts) return;
+    const value = cost === null || cost === undefined || cost === '' ? NaN : Number(cost);
+    if (Number.isFinite(value)) { this.cardCosts[id] = value; return; }
+    // Costo assente nel risultato di ricerca: lo chiede al catalogo invece di
+    // mandare la carta in fondo alla lista per sempre.
+    const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active();
+    if (deck?.game === 'onepiece') queueMicrotask(() => void this.resolveCardCosts(deck));
+  }
   quantity(id, section, delta, printingId = null) { const deck = this.active(), item = deck?.cards.find(card => card.catalogCardId === id && card.section === section && (card.printingId || null) === (printingId || null)); if (!item) return; item.quantity = Math.min(copyBudget(deck, section, id, item), item.quantity + delta); if (item.quantity <= 0) { deck.cards = deck.cards.filter(card => card !== item); if (String(deck.signatureCardId || '') === String(id) && !deck.cards.some(card => String(card.catalogCardId) === String(id))) deck.signatureCardId = null; } this.markDirty(deck); this.onRender(); }
   chooseCover(catalogCardId) { const deck = this.active(); if (!deck?.cards.some(card => String(card.catalogCardId) === String(catalogCardId))) return this.onToast('La cover deve appartenere al mazzo'); deck.signatureCardId = String(catalogCardId); this.markDirty(deck); this.onToast('Carta signature aggiornata'); this.onRender(); }
   // I 4 modelli storici (procedural/arcane-vault/infernal-dragon/cyber-core)
