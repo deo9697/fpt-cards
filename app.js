@@ -1396,6 +1396,7 @@ function bind() {
   document.querySelectorAll('[data-confirm-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.confirmRequest, () => api.confirmCollectionShareRequest(button.dataset.confirmRequest), 'confirmed')));
   document.querySelectorAll('[data-reject-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.rejectRequest, () => api.cancelCollectionShareRequest(button.dataset.rejectRequest))));
   document.querySelectorAll('[data-cancel-confirmed-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.cancelConfirmedRequest, () => api.cancelCollectionShareRequest(button.dataset.cancelConfirmedRequest))));
+  document.querySelectorAll('[data-remove-request-item]').forEach(button => button.addEventListener('click', () => removeRequestItem(button.dataset.removeRequestItem, button.dataset.printingId)));
   document.querySelectorAll('[data-complete-request]').forEach(button => button.addEventListener('click', () => runRequestAction(button.dataset.completeRequest, () => api.completeCollectionShareRequest(button.dataset.completeRequest), 'completed')));
   document.querySelectorAll('[data-requests-tab]').forEach(button => button.addEventListener('click', () => { requestsTab = button.dataset.requestsTab; render(); }));
   observeCollectionTypes();
@@ -1754,19 +1755,38 @@ function requestRowHtml(request) {
     ${request.message ? `<p class="share-request-message">${icon('message')} ${esc(request.message)}</p>` : ''}
     ${statusNote}
     <div class="share-receipt">
-      ${items.map(requestReceiptRowHtml).join('')}
+      ${items.map(item => requestReceiptRowHtml(item, request, busy)).join('')}
       <div class="share-receipt-total"><span>Totale stimato · Market Watch</span><b>${formatEuro(request.totalPrice) || 'n/d'}</b></div>
     </div>
   </article>`;
 }
-function requestReceiptRowHtml(item) {
+function requestReceiptRowHtml(item, request = {}, busy = false) {
   const unit = formatEuro(item.unitPrice);
   const lineTotal = formatEuro(item.lineTotal);
-  return `<div class="share-receipt-row">
+  // Le carte che non vuoi scambiare si tolgono finché la richiesta è in
+  // attesa o confermata (su una confermata la copia torna disponibile).
+  const editable = ['pending', 'seen', 'confirmed'].includes(request.status) && item.printingId;
+  return `<div class="share-receipt-row${editable ? ' editable' : ''}">
     <span class="share-receipt-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}</span>
     <div class="share-receipt-info"><b>${esc(item.cardName)}</b><small>${item.quantity}× ${unit ? `· ${unit} cad.` : '· prezzo n/d'}</small></div>
     <b class="share-receipt-price">${lineTotal || '—'}</b>
+    ${editable ? `<button type="button" class="share-receipt-remove" data-remove-request-item="${esc(request.id)}" data-printing-id="${esc(item.printingId)}" ${busy ? 'disabled' : ''} aria-label="Togli ${esc(item.cardName)} dalla richiesta">×</button>` : ''}
   </div>`;
+}
+
+function removeRequestItem(requestId, printingId) {
+  const request = collectionShareRequests.find(row => row.id === requestId);
+  const item = request?.items?.find(row => row.printingId === printingId);
+  if (!request || !item) return;
+  const last = (request.items || []).length === 1;
+  const question = last
+    ? `${item.cardName} è l'unica carta della richiesta di ${request.requesterName}: togliendola la richiesta viene annullata. Continuare?`
+    : `Togliere ${item.cardName} dalla richiesta di ${request.requesterName}?`;
+  if (!confirm(question)) return;
+  runRequestAction(requestId, async () => {
+    const result = await api.removeCollectionShareRequestItem(requestId, printingId);
+    toast(result?.status === 'cancelled' ? 'Richiesta annullata: non restavano carte' : `${item.cardName} tolta dalla richiesta`);
+  });
 }
 function formatEuro(value) {
   return typeof value === 'number' ? value.toLocaleString('it-IT', { style:'currency', currency:'EUR' }) : null;

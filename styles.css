@@ -1939,6 +1939,10 @@ button.market-row:hover { background:#15121d; }
 .share-receipt-info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
 .share-receipt-info small { display: block; color: var(--muted); font-size: .66rem; }
 .share-receipt-price { font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.share-receipt-row.editable { grid-template-columns: 34px 1fr auto 36px; }
+.share-receipt-remove { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
+.share-receipt-remove:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.share-receipt-remove:disabled { opacity: .45; cursor: default; }
 .share-receipt-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; font-weight: 800; }
 .share-receipt-total span { color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
 .share-receipt-total b { font-size: 1.05rem; font-variant-numeric: tabular-nums; color: var(--accent); }

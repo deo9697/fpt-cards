@@ -113,6 +113,21 @@ const fakeSupabaseSource = `(()=>{
           return {data:null,error:null};
         }catch(err){return {data:null,error:{message:err.message}};}
       }
+      // Stesse regole di remove_collection_share_request_item
+      // (supabase/migrations/20261109120000_...): solo pending/seen/confirmed,
+      // togliere l'ultima carta annulla la richiesta.
+      if(name==='remove_collection_share_request_item'){
+        try{
+          const r=findReq(args.p_request_id);
+          if(!['pending','seen','confirmed'].includes(r.status)) throw new Error('Questa richiesta non si può più modificare');
+          const before=r.items.length;
+          r.items=r.items.filter(item=>item.printingId!==args.p_printing_id);
+          if(r.items.length===before) throw new Error('Carta non presente nella richiesta');
+          r.totalPrice=r.items.reduce((sum,item)=>sum+(item.lineTotal||0),0)||null;
+          if(!r.items.length){r.status='cancelled';return {data:{remainingItems:0,status:'cancelled'},error:null};}
+          return {data:{remainingItems:r.items.length,status:r.status},error:null};
+        }catch(err){return {data:null,error:{message:err.message}};}
+      }
       if(name==='mark_collection_share_request_seen'){
         return {data:null,error:{message:'RPC ritirata: la funzione non esiste più'}};
       }
@@ -287,7 +302,36 @@ async function run() {
   assert(completedHtml.includes('Effettuata il'), 'manca la data di completamento');
   assert(completedHtml.includes('rimosse dalla tua raccolta'), 'manca la nota "carte rimosse dalla raccolta"');
   assert(!completedHtml.includes('data-complete-request') && !completedHtml.includes('data-cancel-confirmed-request') && !completedHtml.includes('data-confirm-request'), 'una richiesta completed deve essere sola lettura, senza azioni');
+  assert(!completedHtml.includes('data-remove-request-item'), 'da una richiesta effettuata non si possono togliere carte');
   console.log('PASS tab Effettuate: sola lettura, data completamento, nota rimozione dalla raccolta');
+
+  // --- Togliere carte da una richiesta ricevuta (2026-11-09) ---
+  await click('[data-requests-tab="pending"]');
+  const marcoRow = `[...document.querySelectorAll('.share-request-row')].find(r=>r.querySelector('strong').textContent==='Marco Ospite')`;
+  await waitFor(`Boolean(${marcoRow}?.querySelector('[data-remove-request-item][data-printing-id="printing-2"]'))`, 'manca il tasto per togliere Dark Magician dalla richiesta');
+  await evaluate(`window.__confirmMessages=[];window.confirm=message=>{window.__confirmMessages.push(message);return false;};true`);
+  await click(`[data-remove-request-item="req-pending"][data-printing-id="printing-2"]`);
+  await delay(300);
+  assert(await evaluate(`${marcoRow}.innerText.includes('Dark Magician') && !window.__rpcCounts.remove_collection_share_request_item`), 'annullando la conferma la carta deve restare e nessuna RPC deve partire');
+  await evaluate(`window.confirm=message=>{window.__confirmMessages.push(message);return true;};true`);
+  await click(`[data-remove-request-item="req-pending"][data-printing-id="printing-2"]`);
+  await waitFor(`!${marcoRow}?.innerText.includes('Dark Magician') && ${marcoRow}?.innerText.includes('Blue-Eyes White Dragon')`, 'Dark Magician non è stata tolta, o è sparita anche Blue-Eyes');
+  assert(await evaluate(`document.querySelector('#toast')?.textContent.includes('Dark Magician tolta dalla richiesta')`), 'manca il messaggio di conferma della rimozione');
+  console.log('PASS togli una carta: conferma richiesta, la carta sparisce e le altre restano');
+  await click(`[data-remove-request-item="req-pending"][data-printing-id="printing-1"]`);
+  await waitFor(`![...document.querySelectorAll('.share-request-row strong')].some(el=>el.textContent==='Marco Ospite')`, 'togliendo l\'ultima carta la richiesta doveva sparire (annullata)');
+  assert(await evaluate(`window.__confirmMessages.at(-1).includes('annullata')`), 'per l\'ultima carta l\'avviso deve dire che la richiesta viene annullata');
+  assert(await evaluate(`document.querySelector('#toast')?.textContent.includes('Richiesta annullata')`), 'manca il messaggio di richiesta annullata');
+  console.log('PASS togli l\'ultima carta: avviso esplicito, richiesta annullata');
+
+  // --- La migration applica le stesse regole lato server ---
+  const sql = fs.readFileSync(path.join(root,'supabase/migrations/20261109120000_collection_share_request_remove_item.sql'), 'utf8');
+  assert(/s\.owner_slug = me/.test(sql), 'la RPC deve verificare che la richiesta sia del proprietario');
+  assert(/status not in \('pending','seen','confirmed'\)/.test(sql), 'solo richieste in attesa o confermate sono modificabili');
+  assert(/pg_advisory_xact_lock\(hashtext\('collection_share_owner_mutation:'/.test(sql), 'stesso lucchetto delle altre mutazioni del proprietario');
+  assert(/remaining = 0[\s\S]*status = 'cancelled'/.test(sql), 'togliere l\'ultima carta deve annullare la richiesta');
+  assert(/grant execute on function public\.remove_collection_share_request_item\(text, uuid, uuid\) to anon, authenticated/.test(sql), 'grant come le altre RPC protette da token');
+  console.log('PASS migration remove_collection_share_request_item: proprietario, stati, lucchetto, annullamento, grant');
 
   assert(exceptions.length === 0, `Eccezioni JS non gestite: ${JSON.stringify(exceptions)}`);
   assert(consoleErrors.length === 0, `console.error registrati: ${JSON.stringify(consoleErrors)}`);

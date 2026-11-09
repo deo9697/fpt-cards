@@ -485,6 +485,7 @@ export const api = {
   // confirmed -> completed: unica RPC che decrementa davvero la raccolta.
   async completeCollectionShareRequest(requestId) { ensure(); return unwrap(await client.rpc('complete_collection_share_request', { p_token:token(), p_request_id:requestId })); },
   // pending/seen/confirmed -> cancelled (rifiuto o annullo conferma); completed non è annullabile da qui.
+  async removeCollectionShareRequestItem(requestId, printingId) { ensure(); return unwrap(await client.rpc('remove_collection_share_request_item', { p_token:token(), p_request_id:requestId, p_printing_id:printingId })); },
   async cancelCollectionShareRequest(requestId) { ensure(); return unwrap(await client.rpc('cancel_collection_share_request', { p_token:token(), p_request_id:requestId })); },
   // Guest-facing: no session token — the share id itself is the only
   // credential, validated server-side against collection_shares.
