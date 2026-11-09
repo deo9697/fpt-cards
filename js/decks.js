@@ -487,9 +487,11 @@ export class DeckController {
     };
     try {
       const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
-      const { model, layout, ready, redraw } = renderDeckImagePreview(deck, {
+      // Stesso ordine che si vede nel Deck Builder, sezione per sezione.
+      const ordered = { ...deck, cards: sectionsFor(deck).flatMap(section => this.sortCards(deck.cards.filter(card => card.section === section))) };
+      const { model, layout, ready, redraw } = renderDeckImagePreview(ordered, {
         style: this.imageExportStyle, details: this.imageExportDetails,
-        ownerName, cardTypes:this.cardTypes, proxyUrl: '/api/card-image-proxy',
+        ownerName, cardTypes:this.cardTypes, keepOrder: true, proxyUrl: '/api/card-image-proxy',
         cache: this.imageExportCache, canvas,
         onProgress: unlockControls
       });

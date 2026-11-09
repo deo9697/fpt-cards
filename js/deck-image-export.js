@@ -24,7 +24,10 @@ export const DECK_IMAGE_HEIGHT = 1350;
 // vivono in `sections`; main/extra/side restano come viste di comodo sulle
 // SOLE chiavi realmente presenti in quel gioco (mai un dato perso: ogni
 // carta finisce sempre in `sections`, main/extra/side sono solo un alias).
-export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {} } = {}) {
+// keepOrder: le carte arrivano già nell'ordine del Deck Builder (Costo per One
+// Piece, Tipo+livello per Yu-Gi-Oh, o quello scelto): l'immagine lo rispetta
+// invece di riordinarle da sola.
+export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {}, keepOrder = false } = {}) {
   const game = deck?.game || 'yugioh';
   const adapter = getGameAdapter(game);
   const sectionKeys = adapter.sections || ['main'];
@@ -46,7 +49,7 @@ export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {} } =
   }
 
   const sections = sectionKeys.map(key => ({ key, label: labels[key] || key, cards: [...(buckets.get(key)?.values() || [])] }));
-  if (game === 'yugioh') {
+  if (game === 'yugioh' && !keepOrder) {
     const rank = card => {
       const type = String(card.cardType || '').toLowerCase();
       return type.includes('monster') ? 0 : type.includes('spell') ? 1 : type.includes('trap') ? 2 : 3;
@@ -900,8 +903,8 @@ function resolveEffectiveMode(mode, model) {
   return 'clean';
 }
 
-export async function renderDeckImage(deck, { mode = 'clean', layoutMode = 'readable', logo = 'fpt', style = '', details = {}, ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
-  const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
+export async function renderDeckImage(deck, { mode = 'clean', layoutMode = 'readable', logo = 'fpt', style = '', details = {}, ownerName = '', cardTypes = {}, keepOrder = false, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
+  const model = normalizeDeckForImage(deck, { ownerName, cardTypes, keepOrder });
   const effectiveMode = resolveEffectiveMode(mode, model);
   const layout = layoutForStyle(model, style, layoutMode);
   // Il pool progressivo libera uno slot dopo previewTimeoutMs anche se il
@@ -943,10 +946,10 @@ function loadFptFonts() {
 // La promise `ready` nel valore di ritorno permette comunque a chi chiama
 // di sapere quando il preload è terminato, se serve.
 export function renderDeckImagePreview(deck, {
-  mode = 'clean', layoutMode = 'readable', logo = 'fpt', style = '', details = {}, ownerName = '', cardTypes = {}, proxyUrl = '', cache = createDeckImageCache(), canvas,
+  mode = 'clean', layoutMode = 'readable', logo = 'fpt', style = '', details = {}, ownerName = '', cardTypes = {}, keepOrder = false, proxyUrl = '', cache = createDeckImageCache(), canvas,
   concurrency = DEFAULT_PREVIEW_CONCURRENCY, previewTimeoutMs = DEFAULT_PREVIEW_TIMEOUT_MS, onProgress
 } = {}) {
-  const model = normalizeDeckForImage(deck, { ownerName, cardTypes });
+  const model = normalizeDeckForImage(deck, { ownerName, cardTypes, keepOrder });
   const effectiveMode = resolveEffectiveMode(mode, model);
   const layout = layoutForStyle(model, style, layoutMode);
   const target = prepareCanvasTarget(canvas);

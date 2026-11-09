@@ -88,6 +88,19 @@ await check('One Piece: carta Event aggiunta dalla ricerca va subito tra gli Eve
   assert.deepEqual(controller.sortCards(metaDeck.cards.filter(item => item.section === 'main')).map(item => item.cardName).slice(3, 6), ['Gum-Gum Red Hawk', 'Divine Departure', 'Radical Beam']);
 });
 
+// ------- Immagine della lista: stesso ordine del Deck Builder -------
+const { normalizeDeckForImage } = await import('../js/deck-image-export.js');
+const imageOrder = (ctrl, d) => {
+  const sections = d.game === 'onepiece' ? ['leader', 'main'] : ['main', 'extra', 'side'];
+  const ordered = { ...d, cards: sections.flatMap(section => ctrl.sortCards(d.cards.filter(c => c.section === section))) };
+  return normalizeDeckForImage(ordered, { cardTypes: ctrl.cardTypes, keepOrder: true }).sections.find(s => s.key === 'main').cards.map(c => c.cardName);
+};
+await check('immagine One Piece: il Main esce nello stesso ordine del Deck Builder (tipo + costo)', async () => {
+  const metaDeck = state.decks[0];
+  assert.deepEqual(imageOrder(controller, metaDeck), controller.sortCards(metaDeck.cards.filter(c => c.section === 'main')).map(c => c.cardName));
+  assert.deepEqual(imageOrder(controller, metaDeck).slice(0, 3), ['Zoro', 'Kaido', 'Big Mom']);
+});
+
 // ---------------- Yu-Gi-Oh: mostri dal livello più alto ----------------
 const LEVELS = { '1': 8, '2': 4, '3': 4, '4': 1, '5': 12, '6': null, '7': null, '8': 4, '9': 2 };
 const ygoController = new DeckController({ api: {}, getState: () => state, onRender() {}, onToast() {},
@@ -106,6 +119,11 @@ await check('Yu-Gi-Oh: mostri dal livello più alto al più basso, poi Magie e T
   assert.equal(ygoController.cardSort, 'type', 'il default Yu-Gi-Oh resta "Tipo"');
   await ygoController.resolveCardTypes(ygoDeck); await ygoController.resolveCardLevels(ygoDeck);
   assert.deepEqual(ygoMain(), ['Mekk-Knight Crusadia', 'Blue-Eyes White Dragon', 'Aluber the Jester', 'Bystial Druiswurm', 'Effect Veiler', 'Ash Blossom', 'Called by the Grave', 'Infinite Impermanence']);
+});
+
+await check('immagine Yu-Gi-Oh: mostri dal livello più alto anche nella foto, come nel Deck Builder', async () => {
+  assert.deepEqual(imageOrder(ygoController, ygoDeck), ygoMain());
+  assert.equal(imageOrder(ygoController, ygoDeck)[0], 'Mekk-Knight Crusadia');
 });
 
 await check('Yu-Gi-Oh: carta aggiunta dalla ricerca va subito al suo livello', async () => {
