@@ -1,7 +1,8 @@
 import { esc, initials, member } from './core.js';
 import { icon } from './icons.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
-import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, deckThemeOptions, normalizeDeckBoxTemplate, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
+import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, DECK_THEMES, deckThemeOptions, normalizeDeckBoxTemplate, normalizeDeckTheme, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
+import { DECK_ROLES, ROLE_LABELS, DEFAULT_ITERATIONS, deckPool, simulateOpeningHands, exactOpeningHands, chanceAtLeastOne, readDeckRoles, writeDeckRoles } from './deck-stats.js';
 import { getGameAdapter } from './games/index.js';
 import { deckCardIdentityKey, normalizeDeckCardName, deckUsageIndex, deckNamesForCollectionItem } from './deck-usage.js';
 export { deckUsageIndex, deckNamesForCollectionItem };
@@ -69,6 +70,9 @@ export class DeckController {
     this.imageExportStyle = 'arena';
     this.imageExportDetails = { event: '', place: '', date: todayIsoDate() };
     this.imageExportRedraw = null;
+    // Statistiche mano: mano da 5 (vai primo) o 6 (vai secondo); risultati in
+    // cache finché ruoli, carte e mano non cambiano.
+    this.statsOpen = false; this.statsHandSize = 5; this.statsCache = null;
     // model/layout dell'ultima preview disegnata: servono a exportDeckImageBlob
     // per un eventuale ultimo redraw dopo aver atteso le immagini ancora
     // pendenti, senza ricalcolare nulla (mai una seconda normalizzazione).
@@ -100,7 +104,7 @@ export class DeckController {
   async load() { if (this.loadInFlight) return this.loadInFlight; const request = (async () => { let remote = [], failure = null; try { remote = (await this.api.decks() || []).map(mapDeck); } catch (error) { failure = error; remote = this.state.decks || []; } const local = readDrafts().filter(deck => deck.ownerSlug === this.state.currentUser), merged = new Map(remote.map(deck => [deck.id, deck])); for (const draft of local) if (draft.dirty || !draft.persisted) merged.set(draft.id, draft); this.state.decks = [...merged.values()]; await this.refreshTcgBanlist(); if (!this.decks.some(deck => deck.id === this.activeId)) this.activeId = this.decks[0]?.id || ''; if (!this.decks.some(deck => deck.id === this.previewId)) this.previewId = this.activeId; if (failure) throw failure; return this.state.decks; })(); this.loadInFlight = request; try { return await request; } finally { if (this.loadInFlight === request) this.loadInFlight = null; } }
   async loadTeam() { if (this.teamLoadInFlight) return this.teamLoadInFlight; const request = (async () => { try { this.teamDecksAll = (await this.api.teamDecks() || []).map(mapTeamDeck); this.teamError = ''; } catch (error) { this.teamError = error.message || 'Mazzi del team non disponibili'; } finally { this.teamLoaded = true; } return this.teamDecksAll; })(); this.teamLoadInFlight = request; try { return await request; } finally { if (this.teamLoadInFlight === request) this.teamLoadInFlight = null; } }
   async refreshTcgBanlist() { if (!this.tcgBanlistStatuses || !(this.state.decks || []).some(deck => deck.game === 'yugioh')) return; const statuses = await this.tcgBanlistStatuses(); if (!statuses) return; for (const deck of this.state.decks || []) { if (deck.game !== 'yugioh') continue; for (const card of deck.cards || []) card.banTcg = statuses[String(card.catalogCardId)] || ''; } }
-  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.optcgImportOpen ? this.optcgImportView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}${this.imageExportOpen && deck ? this.imageExportView(deck) : ''}</section>`; }
+  view() { const deck = this.active(), detail = this.screen === 'detail' && deck, teamDeck = this.screen === 'team-detail' ? this.activeTeamDeck() : null; return `<section class="page-stack deck-page ${detail || teamDeck ? 'is-editor' : 'is-gallery'}">${this.error ? `<div class="connection-banner error">${esc(this.error)}</div>` : ''}${teamDeck ? this.teamDetailView(teamDeck) : detail ? this.detailView(deck) : this.galleryView()}${this.importOpen ? this.importView() : ''}${this.optcgImportOpen ? this.optcgImportView() : ''}${this.coverPickerOpen && deck ? this.coverPickerView(deck) : ''}${this.printingPicker ? this.printingPickerView() : ''}${this.imageExportOpen && deck ? this.imageExportView(deck) : ''}${this.statsOpen && detail ? this.statsView(deck) : ''}</section>`; }
   galleryView() {
     const scope = this.scope, mineCount = this.decks.length, teamCount = this.teamDecks.length;
     const tabs = `<div class="tabs" role="tablist" aria-label="Ambito mazzi"><button type="button" data-deck-scope="mine" class="${scope === 'mine' ? 'active' : ''}" role="tab" aria-selected="${scope === 'mine'}">I miei mazzi <span>${mineCount}</span></button><button type="button" data-deck-scope="team" class="${scope === 'team' ? 'active' : ''}" role="tab" aria-selected="${scope === 'team'}">Mazzi del team <span>${teamCount}</span></button></div>`;
@@ -321,19 +325,74 @@ export class DeckController {
   }
   availabilityFoot(report) { return `<button type="button" class="deck-sheet-foot" data-deck-missing-open><span class="deck-sheet-dot ${report.percent === 100 ? 'ok' : 'warn'}"></span><b>${report.percent}% pronto per il team</b><small>${report.rows.length} ${report.rows.length === 1 ? 'mancante' : 'mancanti'}</small></button>`; }
   availabilityPeek(report) { return `<button type="button" class="deck-peek" data-deck-missing-open aria-label="Apri carte mancanti"><span class="deck-peek-ring" style="--ready:${report.percent}"><i>${report.percent}%</i></span><span class="deck-peek-copy"><b>${report.percent}% pronto per il team</b><small>${report.rows.length} carte mancanti o parziali</small></span><span class="deck-peek-chev">${icon('arrow')}</span></button>`; }
+  statsResult(deck) {
+    const pool = deckPool(deck.cards, readDeckRoles(deck.id));
+    const key = JSON.stringify([this.statsHandSize, pool.entries.map(entry => [entry.id, entry.quantity, entry.role])]);
+    if (this.statsCache?.key !== key) {
+      const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const sim = simulateOpeningHands(pool, { handSize: this.statsHandSize, iterations: DEFAULT_ITERATIONS });
+      const ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started);
+      this.statsCache = { key, pool, sim, exact: exactOpeningHands(pool, { handSize: this.statsHandSize }), ms };
+    }
+    return this.statsCache;
+  }
+  statsView(deck) {
+    const { pool, sim, exact, ms } = this.statsResult(deck), hand = this.statsHandSize;
+    const pct = value => `${(value * 100).toFixed(1).replace('.', ',')}%`;
+    const metric = (label, key, tone, hint) => `<div class="deck-stat ${tone}"><small>${label}</small><b>${pct(sim[key])}</b><span>esatto ${pct(exact[key])}${hint ? ` · ${hint}` : ''}</span></div>`;
+    const line = (label, value, exactValue) => `<div class="deck-stat-line"><span>${label}</span><b>${value}</b>${exactValue ? `<small>esatto ${exactValue}</small>` : ''}</div>`;
+    const short = { starter: 'S', extender: 'E', handtrap: 'HT', brick: 'B' };
+    const rows = pool.entries.map(entry => `<div class="deck-stat-card ${entry.role || 'none'}">
+      <span class="deck-stat-thumb">${entry.imageUrl ? `<img src="${esc(entry.imageUrl)}" alt="" loading="lazy">` : icon('card')}<b>${entry.quantity}</b></span>
+      <span class="deck-stat-name"><b>${esc(entry.cardName)}</b><small>${pct(chanceAtLeastOne(pool.size, entry.quantity, Math.min(hand, pool.size)))} in mano</small></span>
+      <span class="deck-stat-roles" role="group" aria-label="Ruolo di ${esc(entry.cardName)}">${DECK_ROLES.map(role => `<button type="button" data-deck-stat-role="${esc(entry.id)}" data-role="${role}" aria-pressed="${entry.role === role}" aria-label="${ROLE_LABELS[role]}" title="${ROLE_LABELS[role]}">${short[role]}</button>`).join('')}</span>
+    </div>`).join('');
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-stats-close><aside class="card-detail deck-stats fpt-sheet" role="dialog" aria-modal="true" aria-label="Statistiche della mano iniziale">
+      <span class="fpt-sheet-tab" aria-hidden="true">SIMULATORE // ${DEFAULT_ITERATIONS.toLocaleString('it-IT')} MANI</span>
+      <button class="detail-close" data-deck-stats-close aria-label="Chiudi">×</button>
+      <h2>Statistiche mano</h2>
+      <p class="deck-stats-lede">${DEFAULT_ITERATIONS.toLocaleString('it-IT')} mani mescolate dal Main di ${pool.size} carte. Accanto a ogni valore, quello esatto calcolato con la formula.</p>
+      <div class="deck-stats-hand" role="group" aria-label="Mano iniziale"><button type="button" data-deck-stats-hand="5" aria-pressed="${hand === 5}">Vai primo · 5 carte</button><button type="button" data-deck-stats-hand="6" aria-pressed="${hand === 6}">Vai secondo · 6 carte</button></div>
+      ${pool.counts.starter ? '' : '<p class="deck-stats-hint">Segna i tuoi starter: tocca <b>S</b> accanto alle carte che da sole avviano il gioco. Le hand trap note le ho già segnate io.</p>'}
+      <div class="deck-stats-main">
+        ${metric('Mano giocabile', 'playable', 'ok', 'almeno uno starter')}
+        ${metric('Brick', 'brick', 'danger', 'nessuno starter')}
+        ${metric('Mono hand trap', 'monoHandTrap', 'pink', 'solo interazione, niente starter')}
+        ${metric('Mano ideale', 'ideal', 'gold', 'starter + hand trap')}
+      </div>
+      <div class="deck-stats-more">
+        ${line('Almeno 2 hand trap', pct(sim.twoHandTraps), pct(exact.twoHandTraps))}
+        ${line('Almeno un brick (carta morta) in mano', pct(sim.anyBrickCard), pct(exact.anyBrickCard))}
+        ${line('Mano morta: niente starter, estensori o hand trap', pct(sim.dead), pct(exact.dead))}
+        ${line('Starter medi per mano', sim.avgStarters.toFixed(2).replace('.', ','), exact.avgStarters.toFixed(2).replace('.', ','))}
+      </div>
+      <div class="fpt-cmd-label">Ruoli delle carte</div>
+      <p class="deck-stats-counts"><b>S</b> ${pool.counts.starter} · <b>E</b> ${pool.counts.extender} · <b>HT</b> ${pool.counts.handtrap} · <b>B</b> ${pool.counts.brick} · senza ruolo ${pool.counts['']} · su ${pool.size}</p>
+      <div class="deck-stats-roles-list">${rows || '<p class="deck-stats-hint">Aggiungi carte al Main per vedere le statistiche.</p>'}</div>
+      <small class="deck-stats-foot">Simulazione in ${ms} ms · i ruoli restano salvati su questo dispositivo</small>
+    </aside></div>`;
+  }
   moreMenu(deck) {
     const signature = resolveDeckSignature(deck), artwork = preferredDeckArtwork(signature);
-    return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-more-close><aside class="card-detail deck-more-menu" role="dialog" aria-modal="true" aria-label="Altre azioni sul mazzo">
+    const theme = normalizeDeckTheme(deck.deckTheme), counts = sectionsFor(deck).map(section => sectionTotal(deck, section)).join(' · ');
+    const command = (attr, glyph, label, hint, extra = '') => `<button type="button" class="fpt-cmd" ${attr} ${extra}><i aria-hidden="true">${glyph}</i><span><b>${label}</b><small>${hint}</small></span><em aria-hidden="true">›</em></button>`;
+    return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-more-close><aside class="card-detail deck-more-menu fpt-sheet" role="dialog" aria-modal="true" aria-label="Altre azioni sul mazzo">
+      <span class="fpt-sheet-tab" aria-hidden="true">MAZZO // ${esc(String(deck.game === 'onepiece' ? 'OP' : 'YGO'))}</span>
       <button class="detail-close" data-deck-more-close aria-label="Chiudi">×</button>
-      <span class="eyebrow">Mazzo</span><h2>${esc(deck.name)}</h2>
-      <div class="deck-more-box"><span class="deck-more-box-art">${artwork ? `<img src="${esc(artwork)}" alt="">` : icon('deck')}</span><div><strong>Deck Box</strong><small>${DECK_BOX_TEMPLATES[normalizeDeckBoxTemplate(deck.deckBoxTemplate)].label} · ${signature ? `Signature: ${esc(signature.cardName)}` : 'cover F.P.T generica'}</small><label>Tema Deck Box<select data-deck-theme>${deckThemeOptions(deck.deckTheme)}</select></label></div></div>
-      <div class="deck-more-actions">
-        <button type="button" class="btn secondary" data-deck-cover-open>${icon('deck')} Personalizza Deck Box</button>
-        <button type="button" class="btn secondary" data-deck-new>${icon('plus')} Nuovo mazzo</button>
-        <button type="button" class="btn secondary" data-deck-image-open>${icon('camera')} Genera immagine</button>
-        ${deck.game === 'onepiece' ? `<button type="button" class="btn secondary" data-deck-optcg-import>${icon('logout')} Importa da OPTCGSim</button><button type="button" class="btn secondary" data-deck-optcg-export>${icon('share')} Copia per OPTCGSim</button>` : `<button type="button" class="btn secondary" data-deck-import>${icon('logout')} Importa lista / YDK</button>`}
-        <button type="button" class="btn secondary danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}>${icon('trash')} Elimina mazzo</button>
+      <div class="fpt-sheet-hero"><span class="deck-more-box-art">${artwork ? `<img src="${esc(artwork)}" alt="">` : icon('deck')}<b>F.P.T</b></span><div><h2>${esc(deck.name)}</h2><p>${counts} · ${esc(deck.format || 'TCG Avanzato')}<br>${signature ? `Firma: ${esc(signature.cardName)}` : 'Cover F.P.T generica'}</p>
+        <div class="fpt-swatches" role="radiogroup" aria-label="Tema Deck Box">${Object.entries(DECK_THEMES).map(([value, option]) => `<button type="button" role="radio" data-deck-theme-swatch="${value}" aria-checked="${value === theme}" aria-label="${esc(option.label)}" style="--swatch:${option.accent}"></button>`).join('')}<small>${esc(DECK_THEMES[theme]?.label || '')}</small></div></div></div>
+      <div class="fpt-cmd-label">Deck box e condivisione</div>
+      <div class="fpt-cmd-group">
+        ${command('data-deck-cover-open', '◆', 'Personalizza Deck Box', 'modello, colore, carta firma')}
+        ${command('data-deck-image-open', '▣', 'Genera immagine', 'Arena FPT · Lista torneo')}
+        ${command('data-deck-stats-open', '%', 'Statistiche mano', 'brick, starter, hand trap · 200.000 mani')}
       </div>
+      <div class="fpt-cmd-label">Lista</div>
+      <div class="fpt-cmd-group">
+        ${deck.game === 'onepiece' ? `${command('data-deck-optcg-import', '⇣', 'Importa da OPTCGSim', 'una riga per carta, es. 4xOP17-086')}${command('data-deck-optcg-export', '⇡', 'Copia per OPTCGSim', 'lista pronta da incollare')}` : command('data-deck-import', '⇣', 'Importa lista / YDK', 'file .ydk o testo "3 Nome carta"')}
+        ${command('data-deck-new', '+', 'Nuovo mazzo', 'parti da zero')}
+      </div>
+      <button type="button" class="fpt-danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}><span>Elimina mazzo</span><small>${deck.persisted ? 'tieni premuto 1 s' : 'non ancora salvato'}</small><i aria-hidden="true"></i></button>
     </aside></div>`;
   }
   // Decklist Image Generator — modale dedicata, indipendente dall'editor
@@ -484,7 +543,19 @@ export class DeckController {
     root.querySelectorAll('[data-deck-scope]').forEach(button => button.addEventListener('click', () => { this.scope = button.dataset.deckScope; if (this.scope === 'team' && !this.teamDecksAll.length && !this.teamLoadInFlight) void this.loadTeam().then(() => this.onRender()); this.onRender(); }));
     root.querySelectorAll('[data-deck-team-member]').forEach(button => button.addEventListener('click', () => { this.teamMemberFilter = button.dataset.deckTeamMember; this.onRender(); }));
     root.querySelectorAll('[data-deck-open-team]').forEach(button => button.addEventListener('click', () => this.openTeam(button.dataset.deckOpenTeam)));
-    root.querySelector('[data-deck-save]')?.addEventListener('click', () => void this.save()); root.querySelector('[data-deck-delete]')?.addEventListener('click', () => void this.remove());
+    root.querySelector('[data-deck-save]')?.addEventListener('click', () => void this.save());
+    this.bindHoldToDelete(root.querySelector('[data-deck-delete]'));
+    root.querySelectorAll('[data-deck-theme-swatch]').forEach(button => button.addEventListener('click', () => { const deck = this.active(); if (!deck || deck.deckTheme === button.dataset.deckThemeSwatch) return; deck.deckTheme = button.dataset.deckThemeSwatch; this.markDirty(deck); this.onRender(); }));
+    root.querySelector('[data-deck-stats-open]')?.addEventListener('click', () => { this.statsOpen = true; this.moreMenuOpen = false; this.statsScroll = 0; this.onRender(); });
+    root.querySelectorAll('[data-deck-stats-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.statsOpen = false; this.onRender(); }));
+    root.querySelectorAll('[data-deck-stats-hand]').forEach(button => button.addEventListener('click', () => { this.statsHandSize = Number(button.dataset.deckStatsHand) === 6 ? 6 : 5; this.keepStatsScroll(); this.onRender(); }));
+    root.querySelectorAll('[data-deck-stat-role]').forEach(button => button.addEventListener('click', () => {
+      const deck = this.active(); if (!deck) return;
+      const roles = readDeckRoles(deck.id), id = button.dataset.deckStatRole, current = deckPool(deck.cards, roles).entries.find(entry => entry.id === id)?.role || '';
+      roles[id] = current === button.dataset.role ? '' : button.dataset.role;
+      writeDeckRoles(deck.id, roles); this.keepStatsScroll(); this.onRender();
+    }));
+    const statsSheet = root.querySelector('.deck-stats'); if (statsSheet && this.statsScroll) statsSheet.scrollTop = this.statsScroll;
     root.querySelector('[data-deck-name]')?.addEventListener('input', event => { const deck = this.active(); if (deck) { deck.name = event.target.value; this.markDirty(deck); } });
     root.querySelector('select[data-deck-theme]')?.addEventListener('change', event => { const deck = this.active(); if (!deck) return; deck.deckTheme = event.target.value; this.markDirty(deck); this.onRender(); });
     root.querySelector('[data-deck-cover-open]')?.addEventListener('click', () => { this.coverPickerOpen = true; this.moreMenuOpen = false; this.onRender(); });
@@ -865,7 +936,19 @@ export class DeckController {
   async openPrintingPicker(catalogCardId, section) { const deck = this.active(), card = deck?.cards.find(item => item.catalogCardId === catalogCardId && item.section === section); if (!deck?.persisted) return this.onToast('Salva il mazzo prima di selezionare la printing'); this.printingPicker = { catalogCardId, section, cardName: card?.cardName || 'Carta', loading: true, error: '', options: [] }; this.onRender(); try { const rows = await this.api.deckPrintingOptions(deck.id, catalogCardId); if (!this.printingPicker) return; this.printingPicker.options = (rows || []).map(row => ({ printingId: row.printing_id || row.printingId, setCode: row.set_code || row.setCode || '', setName: row.set_name || row.setName || '', rarity: row.rarity || '', imageUrl: row.image_url || row.imageUrl || '' })); } catch (error) { if (this.printingPicker) this.printingPicker.error = error.message || 'Printing non disponibili'; } finally { if (this.printingPicker) this.printingPicker.loading = false; this.onRender(); } }
   async choosePrinting(printingId) { const picker = this.printingPicker, deck = this.active(); if (!picker || !deck) return; const option = picker.options.find(item => item.printingId === printingId); this.busy = true; try { await this.api.setDeckCardPrinting(deck.id, picker.catalogCardId, picker.section, printingId); const card = deck.cards.find(item => item.catalogCardId === picker.catalogCardId && item.section === picker.section); if (card) { card.printingId = printingId; card.printingSetCode = option?.setCode || ''; card.printingRarity = option?.rarity || ''; if (option?.imageUrl) card.imageUrl = option.imageUrl; } this.printingPicker = null; this.onToast('Printing collegata al mazzo'); } catch (error) { this.onToast(error.message || 'Selezione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async save() { const deck = this.active(); if (!deck || !deck.name.trim() || !this.isOnline()) return this.onToast('Nome del mazzo o connessione non disponibili'); for (const card of deck.cards) card.catalogCardId = canonicalCatalogCardId(card.catalogCardId, deck.game) || card.catalogCardId; const oldId = deck.id; this.busy = true; this.onRender(); try { const result = await this.api.saveDeck(deck), id = String(result?.id || result || oldId); this.clearDraft(oldId); if (result?.deckBoxPersisted === false) { deck.id = id; deck.persisted = true; deck.dirty = true; this.persistDrafts(); await this.load(); this.onToast('Mazzo salvato · Deck Box locale fino alla migration'); } else { await this.load(); this.onToast('Mazzo salvato'); } this.activeId = id; this.previewId = id; } catch (error) { this.error = error.message || 'Salvataggio non riuscito'; } finally { this.busy = false; this.onRender(); } }
-  async remove() { const deck = this.active(); if (!deck?.persisted || !confirm(`Eliminare “${deck.name}”?`)) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
+  // Il ricalcolo ricrea il pannello: si conserva la posizione nell'elenco.
+  keepStatsScroll() { this.statsScroll = (typeof document !== 'undefined' && document.querySelector('.deck-stats')?.scrollTop) || 0; }
+  // Elimina mazzo: con dito o mouse si tiene premuto 1 s (niente tocchi per
+  // errore); da tastiera resta la conferma classica.
+  bindHoldToDelete(button) {
+    if (!button || button.disabled) return;
+    let timer = 0, done = false;
+    const stop = () => { clearTimeout(timer); timer = 0; button.classList.remove('holding'); };
+    button.addEventListener('pointerdown', event => { if (event.button > 0) return; done = false; button.classList.add('holding'); timer = setTimeout(() => { done = true; stop(); void this.remove({ confirmed:true }); }, 1000); });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(type, stop);
+    button.addEventListener('click', event => { if (done) return; if (event.detail === 0) void this.remove(); else this.onToast?.('Tieni premuto per eliminare il mazzo'); });
+  }
+  async remove({ confirmed = false } = {}) { const deck = this.active(); if (!deck?.persisted || (!confirmed && !confirm(`Eliminare “${deck.name}”?`))) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.rememberCardCost(id, card.cost); this.markDirty(deck); }
   // Import OPTCGSim (P1.1): formato "4xOP17-086", una carta logica per riga —

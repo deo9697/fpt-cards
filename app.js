@@ -528,7 +528,7 @@ async function equipCosmeticAndRefresh(type, id) {
 }
 
 function bindProgressionHeader(root) {
-  root.querySelector('[data-open-progression]')?.addEventListener('click', () => { progressionDrawerOpen = true; render(); });
+  root.querySelectorAll('[data-open-progression]').forEach(button => button.addEventListener('click', () => { progressionDrawerOpen = true; render(); }));
   root.querySelectorAll('[data-close-progression]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); progressionDrawerOpen = false; render(); }));
   root.querySelectorAll('[data-open-avatar]').forEach(button => button.addEventListener('click', () => { avatarPanelOpen = true; render(); }));
   root.querySelectorAll('[data-close-avatar]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); avatarPanelOpen = false; render(); }));
@@ -640,9 +640,12 @@ function settingsView() {
 function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
-  if (canManageArtwork()) links.push(['admin','card','Artwork Resolver','Printing multi-artwork da revisionare']);
-  if (state.role === 'admin') links.push(['market-variants','chart','Market Variant Resolver','Rarity Cardmarket ambigue da revisionare']);
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Navigazione</span><h1>Altro</h1></div></header><section class="surface more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}">${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests}</i>` : ''}${icon('arrow')}</button>`).join('')}</section></section>`;
+  const tools = [];
+  if (canManageArtwork()) tools.push(['admin','card','Artwork Resolver','Stampe con più illustrazioni']);
+  if (state.role === 'admin') tools.push(['market-variants','chart','Market Variant Resolver','Rarità Cardmarket ambigue']);
+  const u = member(state.currentUser), progress = progressForXp(stats?.progression?.totalXp || 0);
+  const duelist = u ? `<button type="button" class="more-duelist" data-open-progression>${profileAvatarMarkup(u, activeCosmetics(), 'large')}<span><strong>${esc(u.name)}</strong><small>LV ${progress.level} · ${state.role === 'admin' ? 'Admin' : 'Membro'} · ${stats?.progression?.totalXp || 0} XP</small></span>${icon('arrow')}</button>` : '';
+  return `<section class="page-stack more-page"><header class="page-header"><div><span class="eyebrow">// Navigazione</span><h1>Altro</h1></div></header>${duelist}<section class="more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests} ${pendingRequests === 1 ? 'nuova' : 'nuove'}</i>` : ''}</button>`).join('')}</section>${tools.length ? `<h2 class="more-tools-label">Strumenti admin</h2><section class="more-tools">${tools.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${icon('arrow')}</button>`).join('')}</section>` : ''}</section>`;
 }
 
 function newLoanView() {
@@ -796,8 +799,12 @@ function loanListRow(l) {
   const shownQuantity = ['returned','completed'].includes(l.status) ? l.quantity : remaining;
   const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt="" loading="lazy"><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
   const memberMarker = person ? `<i class="member-dot ${person.id}"></i>` : '';
-  const printing = [l.setCode,l.setName,l.rarity].filter(Boolean).join(' · ');
-  return `<button type="button" class="loan-row ${presentation.kind}" data-loan-open="${l.id}">${visual}<div class="loan-main"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="direction-line"><b class="direction-tag ${presentation.kind}">${presentation.direction}</b> ${memberMarker}${presentation.person}</span><small class="next-action ${presentation.urgent ? 'urgent' : ''}">${presentation.action}</small></div><span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></button>`;
+  // Biglietto (stile FPT 2026-11-09): la striscia a sinistra dice lo stato,
+  // set e rarità restano nel dettaglio così la riga sta su poche righe.
+  const tone = presentation.urgent ? 'urgent' : presentation.badgeClass;
+  const days = l.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(l.createdAt).getTime()) / 86400000)) : null;
+  const direction = outgoing ? '▸ Prestato a' : incoming ? '◂ Ricevuto da' : presentation.direction;
+  return `<button type="button" class="loan-row ${presentation.kind} tone-${tone}" data-loan-open="${l.id}">${visual}<div class="loan-main"><strong>${esc(l.cardName)}</strong><span class="direction-line"><b class="direction-tag ${presentation.kind}">${direction}</b> ${memberMarker}${presentation.person}</span><span class="loan-row-meta"><span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span>${presentation.urgent ? `<small class="next-action urgent">${presentation.action}</small>` : ''}</span></div>${days == null ? '' : `<span class="loan-age"><b>${days}</b>${days === 1 ? 'giorno' : 'giorni'}</span>`}</button>`;
 }
 
 function loanDetailSheetView(l) {
