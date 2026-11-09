@@ -25,12 +25,18 @@ const FETCH_TIMEOUT_MS = 30_000;
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const syncSecret = Deno.env.get('ONEPIECE_CATALOG_SYNC_SECRET') || '';
+// Il cron onepiece-catalog-sync-daily usa lo stesso secret Vault degli altri
+// job (market_sync_secret -> header x-market-sync-secret), come
+// catalog-new-sets: così non serve un secondo secret nel Vault.
+const marketSyncSecret = Deno.env.get('MARKET_SYNC_SECRET') || '';
 
 Deno.serve(async request => {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   if (!supabaseUrl || !serviceKey) return json({ error: 'backend_not_configured' }, 503);
-  if (!syncSecret) return json({ error: 'sync_secret_not_configured' }, 503);
-  if (request.headers.get('x-onepiece-catalog-sync-secret') !== syncSecret) return json({ error: 'unauthorized' }, 401);
+  if (!syncSecret && !marketSyncSecret) return json({ error: 'sync_secret_not_configured' }, 503);
+  const manualOk = Boolean(syncSecret) && request.headers.get('x-onepiece-catalog-sync-secret') === syncSecret;
+  const scheduledOk = Boolean(marketSyncSecret) && request.headers.get('x-market-sync-secret') === marketSyncSecret;
+  if (!manualOk && !scheduledOk) return json({ error: 'unauthorized' }, 401);
 
   const errors: string[] = [];
 
