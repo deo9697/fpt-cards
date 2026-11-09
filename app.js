@@ -13,6 +13,7 @@ import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconciliation.js';
 import { icon } from './js/icons.js';
+import { showToast, fptConfirm } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
@@ -227,7 +228,7 @@ let avatarPanelOpen = false;
 let profileCustomizeOpen = false;
 let profileCustomizeTab = 'avatar';
 let cosmeticActionPending = '';
-function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
+function toast(message, tone) { showToast(message, tone); }
 function installCardImageRecovery() {
   document.addEventListener('error', event => {
     const image = event.target;
@@ -460,20 +461,22 @@ function avatarPanelView(u) {
   const unlockedTitles = cosmeticsByType('title').filter(item => cosmetics.unlocked.includes(item.id) || isCosmeticUnlocked(item, progress));
   const equippedTitle = findCosmetic(cosmetics.activeTitle);
   const titleLabel = equippedTitle?.label || titleForLevel(progress.level);
-  return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel profile-panel" role="dialog" aria-modal="true" aria-label="Profilo">
+  const toNext = Math.max(0, (progress.nextLevelXp || progress.currentLevelXp) - progress.currentLevelXp);
+  return `<div class="detail-backdrop" data-close-avatar><aside class="card-detail avatar-panel profile-panel fpt-sheet" role="dialog" aria-modal="true" aria-label="Profilo">
+    <span class="fpt-sheet-tab" aria-hidden="true">PROFILO</span>
     <button class="detail-close" data-close-avatar aria-label="Chiudi">×</button>
-    <span class="eyebrow">Profilo</span>
-    <button type="button" class="profile-header" data-open-customize>${profileAvatarMarkup(u, cosmetics, 'large')}<div class="profile-header-copy"><h2>${esc(u.name)}</h2><small>LV ${progress.level} · ${esc(titleLabel)}</small></div><b class="profile-header-chevron">›</b></button>
-    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
+    <button type="button" class="profile-header profile-idcard" data-open-customize aria-label="Personalizza il profilo"><span class="profile-idcard-label" aria-hidden="true">DUELIST ID</span><span class="profile-hex">${profileAvatarMarkup(u, cosmetics, 'large')}</span><div class="profile-header-copy"><h2>${esc(u.name)}</h2><small><span class="profile-tag title">${esc(titleLabel)}</span><span class="profile-tag level">LV ${progress.level}</span></small></div><b class="profile-header-chevron" aria-hidden="true">›</b></button>
+    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small><span><b>${progress.currentLevelXp}</b> / ${progress.nextLevelXp || progress.currentLevelXp} XP</span><span>${progress.nextLevelXp ? `${toNext} al LV ${progress.level + 1}` : 'Livello massimo'}</span></small></div>
+    <div class="profile-hud"><div><small>Livello</small><b class="gold">${progress.level}</b></div><div><small>XP totale</small><b class="violet">${progression.totalXp || 0}</b></div><div><small>Titoli</small><b>${unlockedTitles.length}</b></div></div>
     <div class="profile-selects">
       <label>Titolo equipaggiato<select data-equip-title ${cosmeticActionPending ? 'disabled' : ''}>${unlockedTitles.map(item => `<option value="${esc(item.id)}" ${cosmetics.activeTitle === item.id ? 'selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>
       <label>Frame<select disabled title="Presto disponibile"><option>Default</option><option>Bronze</option><option>Silver</option><option>Gold</option></select></label>
     </div>
-    <div class="avatar-panel-actions">
-      <button type="button" class="btn secondary wide" data-avatar-goto="stats">${icon('chart')} Statistiche</button>
-      <button type="button" class="btn secondary wide" data-avatar-goto="settings">${icon('settings')} Impostazioni</button>
-      <button type="button" class="btn wide" data-open-customize>${icon('star')} Personalizza</button>
+    <div class="fpt-cmd-group profile-cmds">
+      <button type="button" class="fpt-cmd" data-avatar-goto="stats"><i aria-hidden="true">${icon('chart')}</i><span><b>Statistiche</b><small>Match, mazzi e progressione</small></span><em aria-hidden="true">›</em></button>
+      <button type="button" class="fpt-cmd" data-avatar-goto="settings"><i aria-hidden="true">${icon('settings')}</i><span><b>Impostazioni</b><small>Notifiche e sessione</small></span><em aria-hidden="true">›</em></button>
     </div>
+    <button type="button" class="btn wide profile-customize" data-open-customize>${icon('star')} Personalizza</button>
   </aside></div>${profileCustomizeOpen ? customizePanelView(cosmetics, progress) : ''}`;
 }
 function customizePanelView(cosmetics, progress) {
@@ -634,7 +637,16 @@ function futureView(title, iconName, description) {
 
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();
-  return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="surface settings-list"><div><span>${icon('bell')}<b>Notifiche push</b><small>${!supported ? 'Non supportate' : configured ? 'Attive su questo dispositivo' : 'Non ancora attive'}</small></span><button class="btn secondary small" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button></div><div><span>${icon('info')}<b>Tutorial</b><small>Blattaman ti rispiega come funziona l'app</small></span><button class="btn secondary small" data-tutorial-open>Rivedi</button></div><div><span>${icon('logout')}<b>Sessione</b><small>Esci in sicurezza da F.P.T Cards</small></span><button class="btn secondary small" data-logout>Esci</button></div></section></section>`;
+  const u = member(state.currentUser), game = GAMES[state.game] || GAMES.yugioh;
+  const pushStatus = !supported ? '<em class="settings-state off">Non supportate</em> su questo dispositivo' : configured ? '<em class="settings-state on">Attive</em> su questo dispositivo' : '<em class="settings-state off">Non attive</em> su questo dispositivo';
+  const row = (iconName, title, detail, action) => `<div class="settings-row"><span class="settings-icon">${icon(iconName)}</span><div class="settings-copy"><strong>${title}</strong><small>${detail}</small></div>${action}</div>`;
+  return `<section class="page-stack settings-page"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="settings-list">${
+    row('bell', 'Notifiche push', pushStatus, `<button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button>`)
+  }${
+    row('info', 'Tutorial', 'Blattaman ti rispiega l\'app', '<button class="btn small settings-action ghost" data-tutorial-open>Rivedi</button>')
+  }${
+    row('logout', 'Sessione', `<em class="settings-state on">Connesso</em> come ${esc(u?.name || state.currentUser || 'membro')}`, '<button class="btn small settings-action danger" data-logout>Esci</button>')
+  }</section><p class="settings-terminal" aria-label="Informazioni sull'app">&gt; F.P.T CARDS <b data-app-build>web</b> · MEMBRO <b>${esc(state.currentUser || '—')}</b> · GIOCO <b>${esc(game.short)}</b><br>&gt; STATO <i class="${online() ? 'on' : 'off'}">● ${online() ? 'online' : 'offline'}</i></p></section>`;
 }
 
 function moreView() {
@@ -920,7 +932,7 @@ const teamActions = {
     } catch (error) { toast(error.message || 'Invito non creato'); }
   },
   async revokeInvite(code) {
-    if (!confirm('Revocare questo invito? Il link smetterà di funzionare.')) return;
+    if (!(await fptConfirm('Il link smetterà di funzionare per chi non l\'ha ancora usato.', { title:'Revocare l\'invito?', confirmLabel:'Revoca' }))) return;
     try { await api.revokeTeamInvite(code); await loadTeamInvites(); toast('Invito revocato'); }
     catch (error) { toast(error.message || 'Revoca non riuscita'); }
   },
@@ -1375,6 +1387,8 @@ function bind() {
   pinField?.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key) || /^[0-9]$/.test(event.key)) { event.preventDefault(); openLoginPinPad(); } });
   document.querySelectorAll('[data-logout]').forEach(button => button.addEventListener('click', logout));
   document.querySelector('[data-tutorial-open]')?.addEventListener('click', openTutorial);
+  const appBuild = document.querySelector('[data-app-build]');
+  if (appBuild && globalThis.caches?.keys) caches.keys().then(keys => { const key = keys.filter(name => /^fpt-cards-v\d+$/.test(name)).sort((x, y) => Number(y.slice(11)) - Number(x.slice(11)))[0]; if (key && appBuild.isConnected) appBuild.textContent = key.slice(10); }).catch(() => {});
   const gameSwitcher = document.querySelector('.game-switcher');
   gameSwitcher?.querySelector('.menu-trigger')?.addEventListener('click', event => {
     event.stopPropagation();
@@ -1785,7 +1799,7 @@ function requestReceiptRowHtml(item, request = {}, busy = false) {
   </div>`;
 }
 
-function removeRequestItem(requestId, printingId) {
+async function removeRequestItem(requestId, printingId) {
   const request = collectionShareRequests.find(row => row.id === requestId);
   const item = request?.items?.find(row => row.printingId === printingId);
   if (!request || !item) return;
@@ -1793,7 +1807,7 @@ function removeRequestItem(requestId, printingId) {
   const question = last
     ? `${item.cardName} è l'unica carta della richiesta di ${request.requesterName}: togliendola la richiesta viene annullata. Continuare?`
     : `Togliere ${item.cardName} dalla richiesta di ${request.requesterName}?`;
-  if (!confirm(question)) return;
+  if (!(await fptConfirm(question, { title: last ? 'Annullare la richiesta?' : 'Togliere la carta?', confirmLabel: last ? 'Annulla richiesta' : 'Togli carta', cancelLabel:'Indietro' }))) return;
   runRequestAction(requestId, async () => {
     const result = await api.removeCollectionShareRequestItem(requestId, printingId);
     toast(result?.status === 'cancelled' ? 'Richiesta annullata: non restavano carte' : `${item.cardName} tolta dalla richiesta`);
@@ -2421,7 +2435,7 @@ async function saveCollectionItem(event) {
   if (printingChanged && (quantityOwned !== item.quantityOwned || language !== item.language || condition !== item.condition)) {
     return toast('Per sicurezza, salva quantità, lingua o condizione separatamente dalla correzione printing');
   }
-  if (printingChanged && !confirm(`Confermi il collegamento a ${printing.setCode} · ${printing.rarity || 'rarità non specificata'}${edition ? ` · ${edition}` : ''}?`)) return;
+  if (printingChanged && !(await fptConfirm(`Confermi il collegamento a ${printing.setCode} · ${printing.rarity || 'rarità non specificata'}${edition ? ` · ${edition}` : ''}?`, { title:'Cambiare la stampa?', confirmLabel:'Collega', danger:false }))) return;
   const submit = event.submitter;
   let catalogWarning = '';
   collectionPending = true;
@@ -2502,7 +2516,7 @@ function removeCollectionItemLocally(id) {
 async function deleteCollectionItem(id) {
   const item = state.collection.mine.find(entry => entry.id === id);
   if (!item || !online()) return;
-  if (!confirm(`Rimuovere ${item.cardName} dalla tua raccolta?`)) return;
+  if (!(await fptConfirm(`Rimuovere ${item.cardName} dalla tua raccolta?`, { title:'Rimuovere la carta?', confirmLabel:'Rimuovi' }))) return;
   try {
     await api.deleteCollection(id);
     // La cancellazione è confermata dal server: aggiorniamo subito la vista
@@ -2604,8 +2618,8 @@ async function addMember(event) {
 async function manageMember(action, slug) {
   const target = member(slug);
   if (!target) return;
-  if (action === 'deactivate' && !confirm(`Disattivare ${target.name}?`)) return;
-  if (action === 'reset-pin' && !confirm(`Azzerare il PIN di ${target.name}?`)) return;
+  if (action === 'deactivate' && !(await fptConfirm(`Disattivare ${target.name}?`, { title:'Disattivare il membro?', confirmLabel:'Disattiva' }))) return;
+  if (action === 'reset-pin' && !(await fptConfirm(`Azzerare il PIN di ${target.name}?`, { title:'Azzerare il PIN?', confirmLabel:'Azzera PIN' }))) return;
   try {
     await api.manageMember(action, slug);
     await loadMembers(); render();

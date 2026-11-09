@@ -39,23 +39,28 @@ export function dashboardView(state, game = 'yugioh', market = {}, profile = nul
   </section>`;
 }
 
-// Bandiera del gioco attivo: un unico drappo diviso in FLAG_STRIPS strisce
-// verticali, ognuna con una copia del drappo spostata (container query units,
-// 100cqw = larghezza della bandiera) e animata con uno sfasamento: fissata
-// all'asta in alto, ondeggia verso la coda di rondine. Solo transform/opacity
-// (niente filtri SVG): leggero anche su telefoni economici. Con
-// prefers-reduced-motion resta ferma. .duel-game-logo resta la classe del
-// banner (stessa larghezza piena di prima).
-const FLAG_STRIPS = 24;
+// Bandiera del gioco attivo come insegna neon FPT: la sagoma a coda di
+// rondine è disegnata da due "tubi" SVG (rosa fuori, viola dentro) su vetro
+// scuro, appesa all'asta con due cavi e con un'oscillazione minima. La frase
+// è un neon oro con una lettera che sfarfalla. Solo transform/opacity e
+// drop-shadow statici; con prefers-reduced-motion resta tutto fermo.
+// .duel-game-logo resta la classe del banner (larghezza piena).
+function neonTagline(tagline) {
+  const chars = [...tagline];
+  let at = -1;
+  for (let i = Math.floor(chars.length * 0.72); i < chars.length; i++) if (/\p{L}/u.test(chars[i])) { at = i; break; }
+  if (at < 0) return esc(tagline);
+  return esc(chars.slice(0, at).join('')) + '<span class="game-neon-dead">' + esc(chars[at]) + '</span>' + esc(chars.slice(at + 1).join(''));
+}
 function gameFlag(game) {
   const g = GAMES[game] || GAMES.yugioh, tagline = dashboardTagline(game);
-  const cloth = '<svg class="game-flag-trim" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="2.4,4 97.6,4 97.6,90 50,76 2.4,90"/><polygon class="inner" points="4,7 96,7 96,85.5 50,72.5 4,85.5"/></svg>'+
-    '<span class="game-flag-plate"><img src="'+esc(g.logo)+'" alt="" decoding="async"></span>'+
-    '<span class="game-flag-tagline">'+esc(tagline)+'</span>';
-  const strips = Array.from({ length: FLAG_STRIPS }, (_, i) => '<span class="game-flag-strip" style="--i:'+i+'"><span class="game-flag-cloth">'+cloth+'<span class="game-flag-shade"></span></span></span>').join('');
-  return '<header class="duel-welcome duel-welcome-logo game-flag-wrap game-flag-'+esc(g.id)+'">'+
-    '<span class="game-flag-rod" aria-hidden="true"></span>'+
-    '<div class="duel-game-logo game-flag" style="--n:'+FLAG_STRIPS+'" role="img" aria-label="'+esc(g.name+' · '+tagline)+'">'+strips+'</div>'+
+  return '<header class="duel-welcome duel-welcome-logo game-neon-wrap game-neon-'+esc(g.id)+'">'+
+    '<span class="game-neon-rod" aria-hidden="true"></span><span class="game-neon-wire l" aria-hidden="true"></span><span class="game-neon-wire r" aria-hidden="true"></span>'+
+    '<div class="duel-game-logo game-neon" role="img" aria-label="'+esc(g.name+' · '+tagline)+'">'+
+      '<svg class="game-neon-tubes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon class="glass" points="1,1 99,1 99,86 50,72 1,86"/><polygon class="tube outer" points="1,1 99,1 99,86 50,72 1,86"/><polygon class="tube inner" points="4,5 96,5 96,80 50,66.5 4,80"/></svg>'+
+      '<span class="game-neon-logo"><img src="'+esc(g.logo)+'" alt="" decoding="async"></span>'+
+      '<span class="game-neon-tag">'+neonTagline(tagline)+'</span>'+
+    '</div>'+
   '</header>';
 }
 

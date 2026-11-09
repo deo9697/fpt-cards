@@ -1,5 +1,6 @@
 import { esc, initials, member } from './core.js';
 import { icon } from './icons.js';
+import { fptConfirm } from './fpt-feedback.js';
 import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, DECK_THEMES, deckThemeOptions, normalizeDeckBoxTemplate, normalizeDeckTheme, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
 import { DECK_ROLES, ROLE_LABELS, DEFAULT_ITERATIONS, deckPool, simulateOpeningHands, exactOpeningHands, chanceAtLeastOne, readDeckRoles, writeDeckRoles } from './deck-stats.js';
@@ -392,7 +393,7 @@ export class DeckController {
         ${deck.game === 'onepiece' ? `${command('data-deck-optcg-import', '⇣', 'Importa da OPTCGSim', 'una riga per carta, es. 4xOP17-086')}${command('data-deck-optcg-export', '⇡', 'Copia per OPTCGSim', 'lista pronta da incollare')}` : command('data-deck-import', '⇣', 'Importa lista / YDK', 'file .ydk o testo "3 Nome carta"')}
         ${command('data-deck-new', '+', 'Nuovo mazzo', 'parti da zero')}
       </div>
-      <button type="button" class="fpt-danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}><span>Elimina mazzo</span><small>${deck.persisted ? 'tieni premuto 1 s' : 'non ancora salvato'}</small><i aria-hidden="true"></i></button>
+      <button type="button" class="fpt-danger" data-deck-delete ${deck.persisted ? '' : 'disabled'}><span>Elimina mazzo</span><small>${deck.persisted ? 'tieni premuto 1 s o tocca 2 volte' : 'non ancora salvato'}</small><i aria-hidden="true"></i></button>
     </aside></div>`;
   }
   // Decklist Image Generator — modale dedicata, indipendente dall'editor
@@ -942,13 +943,27 @@ export class DeckController {
   // errore); da tastiera resta la conferma classica.
   bindHoldToDelete(button) {
     if (!button || button.disabled) return;
-    let timer = 0, done = false;
+    // Il dito viene "catturato" dal tasto: un piccolo scivolamento non annulla
+    // più la pressione. Se il telefono interrompe comunque il gesto (menu
+    // contestuale, lente iOS), resta il doppio tocco: il primo arma, il secondo
+    // entro 3 s elimina.
+    let timer = 0, done = false, armedUntil = 0, armTimer = 0;
+    const label = button.querySelector('small'), idle = label?.textContent || '';
     const stop = () => { clearTimeout(timer); timer = 0; button.classList.remove('holding'); };
-    button.addEventListener('pointerdown', event => { if (event.button > 0) return; done = false; button.classList.add('holding'); timer = setTimeout(() => { done = true; stop(); void this.remove({ confirmed:true }); }, 1000); });
-    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(type, stop);
-    button.addEventListener('click', event => { if (done) return; if (event.detail === 0) void this.remove(); else this.onToast?.('Tieni premuto per eliminare il mazzo'); });
+    const disarm = () => { clearTimeout(armTimer); armedUntil = 0; button.classList.remove('armed'); if (label) label.textContent = idle; };
+    const fire = () => { done = true; stop(); disarm(); void this.remove({ confirmed:true }); };
+    button.addEventListener('pointerdown', event => { if (event.button > 0) return; done = false; try { button.setPointerCapture(event.pointerId); } catch {} button.classList.add('holding'); timer = setTimeout(fire, 1000); });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, stop);
+    button.addEventListener('contextmenu', event => event.preventDefault());
+    button.addEventListener('click', event => {
+      if (done) return;
+      if (event.detail === 0) return void this.remove();
+      if (armedUntil > Date.now()) return fire();
+      armedUntil = Date.now() + 3000; button.classList.add('armed'); if (label) label.textContent = 'tocca di nuovo per eliminare';
+      armTimer = setTimeout(disarm, 3000);
+    });
   }
-  async remove({ confirmed = false } = {}) { const deck = this.active(); if (!deck?.persisted || (!confirmed && !confirm(`Eliminare “${deck.name}”?`))) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
+  async remove({ confirmed = false } = {}) { const deck = this.active(); if (!deck?.persisted || (!confirmed && !(await fptConfirm('Il mazzo sparisce per sempre, anche dagli altri dispositivi.', { title:`Eliminare “${deck.name}”?`, confirmLabel:'Elimina' })))) return; this.moreMenuOpen = false; this.busy = true; try { await this.api.deleteDeck(deck.id); this.clearDraft(deck.id); await this.load(); this.activeId = this.decks[0]?.id || ''; this.previewId = this.activeId; this.screen = 'gallery'; this.onToast('Mazzo eliminato'); } catch (error) { this.onToast(error.message || 'Eliminazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   async importText(text) { if (!text.trim()) return this.onToast('Incolla una lista o seleziona un file'); this.busy = true; this.onRender(); try { const parsed = parseDeckList(text), resolved = new Map(); for (const item of parsed) { const key = item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`; if (resolved.has(key)) continue; const card = item.id ? await this.findCardById(item.id, '', this.state.game) : await this.findCard(item.name, this.state.game); if (card) resolved.set(key, card); } for (const item of parsed) { const card = resolved.get(item.id ? `id:${item.id}` : `name:${item.name.toLowerCase()}`); if (card) this.addSilent(card, item.section, item.quantity); } if (!resolved.size) throw new Error('Nessuna carta valida trovata nella lista'); this.importOpen = false; this.onToast(`${resolved.size} carte importate`); } catch (error) { this.onToast(error.message || 'Importazione non riuscita'); } finally { this.busy = false; this.onRender(); } }
   addSilent(card, section, quantity) { const deck = this.active(), id = canonicalCatalogCardId(card.id, deck.game) || String(card.id); if (deck.game === 'onepiece' && section === 'leader') deck.cards = deck.cards.filter(item => item.section !== 'leader'); const colors = Array.isArray(card.colors) && card.colors.length ? card.colors : undefined, existing = deck.cards.find(item => item.catalogCardId === id && item.section === section && !item.printingId), budget = copyBudget(deck, section, id, existing); if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; } else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) }); deck.cover = deck.cover || card.fullImage || card.image || ''; this.rememberCardType(id, card.type); this.rememberCardCost(id, card.cost); this.markDirty(deck); }
   // Import OPTCGSim (P1.1): formato "4xOP17-086", una carta logica per riga —
@@ -990,7 +1005,7 @@ export class DeckController {
     if (!deck || deck.game !== 'onepiece') return;
     const adapter = getGameAdapter('onepiece');
     const { valid, errors } = adapter.validateDeck(deck);
-    if (!valid && !confirm(`Mazzo non conforme:\n${errors.join('\n')}\n\nCopiare comunque?`)) return;
+    if (!valid && !(await fptConfirm(`Mazzo non conforme:\n${errors.join('\n')}\n\nCopiare comunque?`, { title:'Mazzo non conforme', confirmLabel:'Copia comunque', danger:false }))) return;
     const leader = deck.cards.find(item => item.section === 'leader');
     const mainByCard = new Map();
     for (const card of deck.cards) {
