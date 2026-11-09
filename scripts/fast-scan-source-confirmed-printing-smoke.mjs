@@ -58,5 +58,45 @@ assert.equal((await canonicalizeFastScanEntries([{ ...weather, variantId: 'b', u
 assert.equal((await canonicalizeFastScanEntries([{ ...starlight, userConfirmedPrinting: true }], async () => [ultraRow])).items.length, 0, 'codice noto con rarità mancante: resta bloccato (caso RA05/BLZD)');
 assert.equal((await canonicalizeFastScanEntries([starlight], async () => [ultraRow])).rejected[0].sourceUnconfirmed, false, 'codice noto con rarità mancante: nessuna conferma offerta');
 
+// 7. Sessione rimasta sul telefono (caso reale 2026-11-09): scansionate a
+// rarità vuota quando il codice non era a catalogo, poi aggiunte a catalogo.
+// Un'unica stampa per codice+carta → adottata, esattamente come farebbe una
+// nuova scansione.
+const row = (id, code, rarity, card = '72053645', name = 'Weather Report') => ({ printing_id: id, game: 'yugioh', catalog_card_id: card, card_name: name, set_code: code, set_name: '', rarity });
+const stuckSdm = { ...weather, rarity: '' };
+const adoptedSdm = await canonicalizeFastScanEntries([stuckSdm], async () => [row('22222222-2222-4222-8222-222222222222', 'SDM-I020', 'Common')]);
+assert.equal(adoptedSdm.items.length, 1, 'SDM-I020 a rarità vuota, ora a catalogo come Common: salvabile');
+assert.equal(adoptedSdm.items[0].rarity, 'Common');
+assert.equal(adoptedSdm.items[0].printingId, '22222222-2222-4222-8222-222222222222');
+const stuckDuad = { ...entry, catalogCardId: '45409943', cardName: "Luce the Dusk's Dark", setCode: 'DUAD-EN082', rarity: '' };
+const adoptedDuad = await canonicalizeFastScanEntries([stuckDuad], async () => [row('33333333-3333-4333-8333-333333333333', 'DUAD-EN082', 'Super Rare', '45409943', "Luce the Dusk's Dark")]);
+assert.equal(adoptedDuad.items.length, 1, 'DUAD-EN082 a rarità vuota, ora a catalogo come Super Rare: salvabile');
+assert.equal(adoptedDuad.items[0].rarity, 'Super Rare');
+const twoRarities = await canonicalizeFastScanEntries([stuckSdm], async () => [row('22222222-2222-4222-8222-222222222222', 'SDM-I020', 'Common'), row('44444444-4444-4444-8444-444444444444', 'SDM-I020', 'Rare')]);
+assert.equal(twoRarities.items.length, 0, 'più rarità a catalogo per lo stesso codice: niente scelta automatica');
+assert.match(twoRarities.rejected[0].message, /Rarità non verificata/);
+const ra05 = await canonicalizeFastScanEntries([{ ...stuckSdm, setCode: 'RA05-EN050' }], async () => [row('55555555-5555-4555-8555-555555555555', 'RA05-EN050', 'Super Rare')]);
+assert.equal(ra05.items.length, 0, 'RA05 con una sola riga a catalogo: mai adottata (varianti multiple reali)');
+const otherCard = await canonicalizeFastScanEntries([stuckSdm], async () => [row('22222222-2222-4222-8222-222222222222', 'SDM-I020', 'Common', '1', 'Altra carta')]);
+assert.equal(otherCard.items.length, 0, 'unica riga ma di un\'altra carta: niente adozione');
+
+// 8. Codice sconosciuto e rarità vuota: la conferma dell'utente porta la rarità.
+const unknown = await canonicalizeFastScanEntries([stuckSdm], none);
+assert.equal(unknown.rejected[0].sourceUnconfirmed, true, 'rarità vuota su codice sconosciuto: confermabile indicando la rarità');
+const withUserRarity = await canonicalizeFastScanEntries([{ ...stuckSdm, userConfirmedPrinting: true, userRarity: 'Common' }], none);
+assert.equal(withUserRarity.items.length, 1);
+assert.equal(withUserRarity.items[0].rarity, 'Common');
+assert.equal(withUserRarity.decisions[0].validationResult, 'CREATE_FROM_USER_CONFIRMATION');
+const { FastScanController } = await import('../js/fast-scan.js');
+const promptAnswers = ['3', '', 'abc'];
+globalThis.prompt = () => promptAnswers.shift();
+globalThis.confirm = () => true;
+const askEntries = [{ ...stuckSdm }, { ...stuckSdm, setCode: 'SDM-I021' }, { ...stuckSdm, setCode: 'SDM-I022' }, { ...weather, setCode: 'SDM-I023' }];
+const accepted = FastScanController.prototype.confirmUnverifiedPrintings.call({}, askEntries);
+assert.deepEqual(accepted.map(item => item.setCode), ['SDM-I020', 'SDM-I023'], 'prompt annullato o non numerico: carta saltata');
+assert.equal(askEntries[0].userRarity, 'Super Rare', 'numero 3 = Super Rare');
+delete globalThis.prompt; delete globalThis.confirm;
+
+console.log('PASS Fast Scan: sessioni a rarità vuota adottano l\'unica stampa a catalogo · codici sconosciuti chiedono la rarità all\'utente');
 console.log('PASS Fast Scan: codice sconosciuto a YGOPRODeck registrabile solo con conferma esplicita dell\'utente · mai con rarità vuota, artwork o rarità mancante su codice noto');
 console.log('PASS Fast Scan: stampa assente creata solo con conferma YGOPRODeck (codice o gemello inglese + rarità) · senza conferma rifiutata col motivo · artwork mai automatici');

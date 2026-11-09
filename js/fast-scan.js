@@ -1,6 +1,7 @@
 import { esc } from './core.js';
 import { classifyScanDiagnostic } from './fast-scan-core.js';
-import { printingEvidence, physicalKey } from './fast-scan-printing-identity.js';
+import { printingEvidence, physicalKey, physicalAmbiguity } from './fast-scan-printing-identity.js';
+const USER_RARITY_CHOICES=['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Ghost Rare','Starlight Rare','Quarter Century Secret Rare','Platinum Secret Rare',"Collector's Rare",'Prismatic Secret Rare','Gold Rare','Short Print'];
 import { icon } from './icons.js';
 import { normalizeSetCode, extractSetCodeCandidates, setCodeCandidates, classifyPrintingMatch, classifyNearPrintingMatch, OcrConsensus, ScanGate, ScanSessionBuffer, defaultScanSettings } from './fast-scan-core.js';
 import { isFirstEdition, editionState } from './collection.js';
@@ -348,10 +349,23 @@ export class FastScanController {
     }catch(error){if(this.buffer!==buffer||!buffer.isCurrent(id,version))return;buffer.updateReview(id,{pending:false,warning:'Verifica non disponibile: riprova'});this.onToast?.(error.message);}
     this.persist();this.refreshHud();if(this.phase==='review')this.onRender();
   }
+  // Restituisce le entry che l'utente ha confermato. Senza rarità (il caso
+  // tipico: lo scanner non può leggerla da un codice che nessuno conosce) la
+  // chiede, con la lista numerata delle rarità reali.
   confirmUnverifiedPrintings(entries){
-    if(typeof globalThis.confirm!=='function')return false;
-    const list=entries.map(entry=>`• ${entry.cardName||'Carta'} · ${entry.setCode} · ${entry.rarity}`).join('\n');
-    return globalThis.confirm(`Queste carte non sono ancora nel catalogo e YGOPRODeck non le conosce:\n${list}\n\nControlla codice e rarità sulla carta fisica. Registrarle comunque?`);
+    const accepted=[];
+    for(const entry of entries.filter(entry=>!sanitizeYugiohRarity(entry.rarity))){
+      if(typeof globalThis.prompt!=='function')break;
+      const answer=globalThis.prompt(`${entry.cardName||'Carta'} · ${entry.setCode}\nNon è nel catalogo e YGOPRODeck non la conosce.\nScrivi il numero della rarità stampata sulla carta (Annulla per saltarla):\n${USER_RARITY_CHOICES.map((rarity,index)=>`${index+1}. ${rarity}`).join('\n')}`);
+      const rarity=USER_RARITY_CHOICES[Number.parseInt(String(answer||'').trim(),10)-1];
+      if(rarity){entry.userRarity=rarity;accepted.push(entry);}
+    }
+    const withRarity=entries.filter(entry=>sanitizeYugiohRarity(entry.rarity));
+    if(withRarity.length&&typeof globalThis.confirm==='function'){
+      const list=withRarity.map(entry=>`• ${entry.cardName||'Carta'} · ${entry.setCode} · ${entry.rarity}`).join('\n');
+      if(globalThis.confirm(`Queste carte non sono ancora nel catalogo e YGOPRODeck non le conosce:\n${list}\n\nControlla codice e rarità sulla carta fisica. Registrarle comunque?`))accepted.push(...withRarity);
+    }
+    return accepted;
   }
   async save(){
     if(this.buffer.review.some(item=>item.pending)||this.buffer.scanEvents.some(scan=>['CAPTURED','PROCESSING','PENDING_REMOTE'].includes(scan.status))){this.onToast?.('Attendi le verifiche in corso prima di salvare');return;}
@@ -363,11 +377,12 @@ export class FastScanController {
       const lookup=(code,game)=>this.api.lookupPrintings(code,game);
       const prepared=await canonicalizeFastScanEntries(entries,lookup,async()=>null,base=>confirmPrintingFromCatalogSource(base));
       const unconfirmed=prepared.rejected.filter(row=>row.sourceUnconfirmed);
-      if(unconfirmed.length&&this.confirmUnverifiedPrintings(unconfirmed.map(row=>row.entry))){
-        for(const row of unconfirmed)row.entry.userConfirmedPrinting=true;
-        const retry=await canonicalizeFastScanEntries(unconfirmed.map(row=>row.entry),lookup);
+      const accepted=unconfirmed.length?this.confirmUnverifiedPrintings(unconfirmed.map(row=>row.entry)):[];
+      if(accepted.length){
+        for(const entry of accepted)entry.userConfirmedPrinting=true;
+        const retry=await canonicalizeFastScanEntries(accepted,lookup);
         prepared.items.push(...retry.items);prepared.decisions.push(...retry.decisions);
-        prepared.rejected=prepared.rejected.filter(row=>!row.sourceUnconfirmed).concat(retry.rejected);
+        prepared.rejected=prepared.rejected.filter(row=>!accepted.includes(row.entry)).concat(retry.rejected);
       }
       // Nome + motivo (prima solo il nome: impossibile capire cosa correggere).
       const rejectedNames=prepared.rejected.map(row=>{const name=row.entry.cardName||row.entry.setCode||'carta sconosciuta',message=String(row.message||'').trim();return message?`${name} (${message.startsWith(name)?message.slice(name.length).replace(/^[:\s]+/,''):message})`:name;});
@@ -866,7 +881,13 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       // tracciato da YGOPRODeck (es. DUAD, prodotto europeo) con rarità
       // genuinamente mai registrata — non una vera ambiguità da proteggere —
       // resterebbe bloccato per sempre, pur essendo già corretto a catalogo.
-      if(base.game==='yugioh'&&(entry.requiresCatalogRepair||printingEvidence([base])[0]?.invalidPhysicalRarity))throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
+      if(base.game==='yugioh'&&!base.rarity&&entry.userConfirmedPrinting&&entry.userRarity)base.rarity=sanitizeYugiohRarity(entry.userRarity);
+      // Rarità vuota (codice letto quando non era ancora a catalogo): prima di
+      // rifiutarla si guarda il catalogo, sotto — se oggi ha un'unica stampa
+      // per quel codice e quella carta, è la stessa che una nuova scansione
+      // accetterebbe da sola.
+      const rarityPending=base.game==='yugioh'&&!base.rarity&&!entry.requiresCatalogRepair&&!base.printingId;
+      if(base.game==='yugioh'&&!rarityPending&&(entry.requiresCatalogRepair||printingEvidence([base])[0]?.invalidPhysicalRarity))throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
       if(base.printingId&&base.game!=='yugioh'){items.push(base);decisions.push(canonicalDecision(base,'EXISTING_PRINTING_ID'));continue;}
       if(base.printingId){
         const rows=(await lookupOnce(base.setCode,base.game)||[]).map(mapPrinting);
@@ -877,6 +898,12 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       if(!base.setCode||!base.cardName||!base.catalogCardId)throw saveError('INVALID_RPC_PAYLOAD',`Sessione precedente non compatibile: dati printing incompleti per ${base.setCode||base.cardName||'una carta'}`,base);
       let rows=[],lookupFailure='';try{rows=await lookupOnce(base.setCode,base.game);}catch(error){lookupFailure=error?.message||'lookup_failed';}
       const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
+      if(rarityPending&&candidates.length){
+        const same=candidates.filter(item=>String(item.catalogCardId)===String(base.catalogCardId)&&!item.variantId&&!item.artworkId);
+        const rarity=same.length===1?sanitizeYugiohRarity(same[0].rarity):'';
+        if(rarity&&!physicalAmbiguity(same))base.rarity=rarity;
+        else if(printingEvidence([base])[0]?.invalidPhysicalRarity)throw saveError('REQUIRES_CATALOG_REPAIR','Rarità non verificata: correggi il catalogo prima di salvare',base);
+      }
       if(!candidates.length&&base.game==='yugioh'){
         if(await sourceConfirms(base)){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_VERIFIED_SOURCE'));continue;}
         // Codice del tutto assente dal catalogo e sconosciuto a YGOPRODeck
@@ -887,7 +914,7 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
         // e quella sulla rarità contaminata scattano comunque prima (sopra).
         if(entry.userConfirmedPrinting&&base.rarity&&!base.variantId&&!base.artworkId){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_USER_CONFIRMATION'));continue;}
         const error=saveError('REQUIRES_CATALOG_REPAIR','stampa non ancora nel catalogo e non confermata da YGOPRODeck',base);
-        error.sourceUnconfirmed=Boolean(base.rarity&&!base.variantId&&!base.artworkId);
+        error.sourceUnconfirmed=!base.variantId&&!base.artworkId;
         throw error;
       }
       if(!candidates.length){
