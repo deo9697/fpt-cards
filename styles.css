@@ -3199,3 +3199,52 @@ body.pinpad-open { overflow:hidden; }
 .fsx-entry-controls .scan-first-edition-toggle { min-height:46px;padding:0 16px;font-size:.8rem; }
 .fsx-entry-backdrop { z-index:40; }
 .fsx-review .fsx-grid { gap:10px 8px; }
+
+/* Menu rapido Fast Scan (2026-11-09): pannello "cyber" che si apre da una
+   linea al centro dopo ogni carta riconosciuta. Colori oro/viola FPT. */
+.fsx-qm { --qm-gold:#e8b84f;--qm-violet:#9b5cff;--qm-pink:#ff4fd8;--qm-mono:ui-monospace,'Cascadia Mono','SFMono-Regular',Menlo,Consolas,monospace;position:absolute;inset:0;z-index:60;display:grid;place-items:center;padding:max(18px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left)); }
+.fsx-qm[hidden] { display:none; }
+.fsx-qm-dim { position:absolute;inset:0;background:rgba(0,0,0,.6); }
+.fsx-qm-line { position:absolute;left:14px;right:14px;top:50%;height:2px;margin-top:-1px;background:var(--qm-violet);box-shadow:0 0 12px var(--qm-violet),0 0 2px #fff;opacity:0;pointer-events:none; }
+.fsx-qm-wrap { position:relative;width:100%;max-width:380px; }
+.fsx-qm-panel { position:relative;display:grid;gap:12px;padding:16px 14px 14px;background:rgba(6,9,16,.95);border:1px solid rgba(155,92,255,.55);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%);color:#eef0f6;font-family:var(--body-font); }
+.fsx-qm-panel::before { content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);pointer-events:none; }
+.fsx-qm-tab { position:absolute;left:-1px;top:-26px;padding:4px 12px 3px 10px;background:var(--qm-gold);color:#0a0a0a;font:700 .8rem var(--qm-mono);letter-spacing:.08em;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 100%,0 100%); }
+.fsx-qm-top { display:grid;grid-template-columns:minmax(92px,112px) minmax(0,1fr);gap:12px; }
+.fsx-qm-card { position:relative;margin:0;aspect-ratio:59/86;background:#000;border:1px solid var(--qm-violet);box-shadow:0 0 0 3px rgba(0,0,0,.6),0 0 18px rgba(155,92,255,.35); }
+.fsx-qm-card img { display:block;width:100%;height:100%;object-fit:cover; }
+.fsx-qm-card figcaption { position:absolute;left:-1px;bottom:-1px;padding:1px 6px;background:var(--qm-violet);color:#fff;font:.68rem var(--qm-mono); }
+.fsx-qm-label { display:flex;justify-content:space-between;gap:8px;color:var(--qm-violet);font:.72rem var(--qm-mono);letter-spacing:.1em;text-transform:uppercase; }
+.fsx-qm-cond { display:grid;gap:4px;align-content:start;min-width:0; }
+.fsx-qm-conds { display:grid;gap:4px; }
+.fsx-qm-conds button { display:flex;justify-content:space-between;align-items:center;gap:6px;min-height:32px;padding:4px 9px;border:1px solid #2a3142;border-radius:0;background:rgba(255,255,255,.03);color:#eef0f6;font:800 .95rem var(--body-font);letter-spacing:.05em;text-align:left; }
+.fsx-qm-conds button small { overflow:hidden;color:#9aa1b4;font:.66rem var(--qm-mono);letter-spacing:0;text-overflow:ellipsis;white-space:nowrap; }
+.fsx-qm-conds button[aria-checked="true"] { border-color:var(--qm-gold);background:var(--qm-gold);color:#0a0a0a;box-shadow:0 0 14px rgba(232,184,79,.45); }
+.fsx-qm-conds button[aria-checked="true"] small { color:#3a2b05; }
+.fsx-qm-art { display:grid;gap:6px; }
+.fsx-qm-arts { display:grid;grid-auto-flow:column;grid-auto-columns:74px;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin; }
+.fsx-qm-arts button { position:relative;padding:0;aspect-ratio:1;border:1px solid #2a3142;border-radius:0;background:#000; }
+.fsx-qm-arts img { display:block;width:100%;height:100%;object-fit:cover;opacity:.75; }
+.fsx-qm-arts span { position:absolute;left:0;top:0;padding:0 4px;background:rgba(0,0,0,.75);color:#9aa1b4;font:.68rem var(--qm-mono); }
+.fsx-qm-arts button[aria-checked="true"] { border-color:var(--qm-gold);box-shadow:0 0 0 2px var(--qm-gold),0 0 16px rgba(232,184,79,.5); }
+.fsx-qm-arts button[aria-checked="true"] img { opacity:1; }
+.fsx-qm-arts button[aria-checked="true"] span { background:var(--qm-gold);color:#0a0a0a; }
+.fsx-qm-actions { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 64px;gap:8px;align-items:center; }
+.fsx-qm-ed { height:46px;padding:0 8px;border:1px solid #2a3142;border-radius:0;background:rgba(255,255,255,.03);color:#eef0f6;font:800 .82rem var(--body-font);letter-spacing:.05em;text-transform:uppercase;clip-path:polygon(0 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%); }
+.fsx-qm-ed::before { content:"";display:inline-block;width:9px;height:9px;margin-right:7px;border:1px solid currentColor;vertical-align:1px; }
+.fsx-qm-ed[aria-pressed="true"] { border-color:var(--qm-violet);background:rgba(155,92,255,.22);color:#fff;box-shadow:inset 0 0 14px rgba(155,92,255,.35); }
+.fsx-qm-ed[aria-pressed="true"]::before { border-color:var(--qm-gold);background:var(--qm-gold);box-shadow:0 0 8px var(--qm-gold); }
+.fsx-qm-qty { display:grid;grid-template-columns:38px minmax(0,1fr) 38px;height:46px;border:1px solid #2a3142;background:rgba(255,255,255,.03);clip-path:polygon(9px 0,100% 0,100% 100%,0 100%,0 9px); }
+.fsx-qm-qty button { border:0;border-radius:0;background:transparent;color:var(--qm-gold);font:800 1.4rem/1 var(--body-font); }
+.fsx-qm-qty button:disabled { color:#4a5063; }
+.fsx-qm-qty output { display:grid;place-items:center;border-inline:1px solid #2a3142;color:#fff;font:700 1.3rem var(--qm-mono); }
+.fsx-qm-ok { width:64px;height:64px;border:2px solid var(--qm-gold);border-radius:50%;background:radial-gradient(circle,rgba(232,184,79,.25),transparent 70%);color:var(--qm-gold);font:800 1.3rem var(--body-font);letter-spacing:.06em;box-shadow:0 0 18px rgba(232,184,79,.45); }
+.fsx-qm-ok.done { background:var(--qm-gold);color:#0a0a0a; }
+.fsx-qm-meta { display:grid;gap:2px;min-width:0;padding-right:64px; }
+.fsx-qm-meta b { overflow:hidden;font:800 1rem/1.15 var(--body-font);letter-spacing:.02em;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap; }
+.fsx-qm-meta small { overflow:hidden;color:#9aa1b4;font:.72rem var(--qm-mono);text-overflow:ellipsis;white-space:nowrap; }
+.fsx-qm-meta em { color:var(--qm-violet);font-style:normal; }
+.fsx-qm-notch { position:absolute;right:-1px;bottom:-1px;display:grid;place-items:center;width:64px;height:40px;background:var(--qm-pink);color:#fff;font:700 .9rem var(--qm-mono);clip-path:polygon(14px 0,100% 0,100% 100%,0 100%,0 14px); }
+.fsx-qm-sweep { position:absolute;left:0;right:0;top:0;height:26%;background:linear-gradient(180deg,transparent,rgba(155,92,255,.35),transparent);opacity:0;pointer-events:none; }
+.fsx-qm-stamp { position:absolute;inset:0;display:grid;place-items:center;color:var(--qm-gold);font:800 7rem/1 var(--body-font);letter-spacing:.04em;text-shadow:-4px 0 var(--qm-pink),4px 0 var(--qm-violet);opacity:0;pointer-events:none; }
+.fsx-qm button:focus-visible { outline:2px solid var(--qm-violet);outline-offset:2px; }

@@ -319,7 +319,7 @@ export class ScanSessionBuffer {
     // snapshot), a YGOProDeck artwork/reprint tag can never survive as a
     // literal rarity from here on — see js/cards.js sanitizeYugiohRarity.
     const rarity=game==='yugioh'?sanitizeYugiohRarity(value.rarity):(value.rarity||'');
-    return {variantId:value.variantId||value.variant_id||'',artworkId:value.artworkId||value.artwork_id||'',requiresCatalogRepair:value.requiresCatalogRepair||false,key:value.key||value.printingId||[game,value.catalogCardId,value.setCode,rarity,value.variantId||value.variant_id||'',value.artworkId||value.artwork_id||''].join(':'),printingId:value.printingId||'',game,catalogCardId:String(value.catalogCardId||''),cardName:value.cardName||'',setCode:value.setCode||'',setName:value.setName||'',rarity,imageUrl:value.imageUrl||'',artworkLabel:value.artworkLabel||'',language:value.language||(game==='yugioh'?languageFromSetCode(value.setCode,this.settings.language):this.settings.language),condition:value.condition||this.settings.condition,edition:value.edition??this.settings.edition};
+    return {variantId:value.variantId||value.variant_id||'',artworkId:value.artworkId||value.artwork_id||'',requiresCatalogRepair:value.requiresCatalogRepair||false,key:value.key||value.printingId||[game,value.catalogCardId,value.setCode,rarity,value.variantId||value.variant_id||'',value.artworkId||value.artwork_id||''].join(':'),printingId:value.printingId||'',game,catalogCardId:String(value.catalogCardId||''),cardName:value.cardName||'',setCode:value.setCode||'',setName:value.setName||'',rarity,imageUrl:value.imageUrl||'',artworkLabel:value.artworkLabel||'',userArtwork:Boolean(value.userArtwork),artworkOf:value.artworkOf||'',language:value.language||(game==='yugioh'?languageFromSetCode(value.setCode,this.settings.language):this.settings.language),condition:value.condition||this.settings.condition,edition:value.edition??this.settings.edition};
   }
   createScan(data={}){
     const event={id:data.id||crypto.randomUUID(),sequence:data.countsAsScan===false?0:this.nextSequence++,createdAt:new Date().toISOString(),status:data.status||'CAPTURED',rawCode:data.rawCode||'',normalizedCode:data.normalizedCode||'',ocrConfidence:Number(data.ocrConfidence)||0,matchType:'',printingId:'',cardName:'',setCode:'',rarity:'',imageUrl:'',source:data.source||'camera',failureReason:data.failureReason||'',resolutionVersion:0,countsAsScan:data.countsAsScan!==false};
@@ -381,4 +381,4 @@ export class ScanSessionBuffer {
   touch(){this.updatedAt=new Date().toISOString();}
 }
 
-export function defaultScanSettings(){return {game:'yugioh',language:'Italiano',condition:'Near Mint',edition:'',autoAdd:true,vibration:true,sound:false};}
+export function defaultScanSettings(){return {game:'yugioh',language:'Italiano',condition:'Near Mint',edition:'',autoAdd:true,vibration:true,sound:false,quickMenu:true};}

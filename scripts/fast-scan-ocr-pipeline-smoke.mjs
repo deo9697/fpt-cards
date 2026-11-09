@@ -12,7 +12,9 @@ const {FastScanController}=await import('../js/fast-scan.js');
 const controllers=[];
 function controller(options={}){
   const value=new FastScanController({camera:{stream:{},sample:()=>({signature:[1],quality:{sharpness:5}}),waitForFreshFrame:async()=>{},captureSnapshot:async()=>({rawCanvas:canvas(),canvas:canvas(),preprocessing:{sharpness:5},release(){}})},paddleOcr:{dispose:async()=>{}},isOnline:()=>true,onRender(){},onToast(){},...options});
-  value.phase='scanning';value.refreshHud=()=>{};value.feedback=()=>{};value.snapshotFeedback=async()=>{};value.schedule=()=>{};controllers.push(value);return value;
+  // Pipeline OCR pura: menu rapido spento (scansione in blocco), altrimenti
+  // il menu aperto mette in pausa la cattura tra una copia e l'altra.
+  value.phase='scanning';value.buffer.settings.quickMenu=false;value.refreshHud=()=>{};value.feedback=()=>{};value.snapshotFeedback=async()=>{};value.schedule=()=>{};controllers.push(value);return value;
 }
 const printing={printingId:'p1',game:'yugioh',catalogCardId:'1',cardName:'Test',setCode:'LOB-IT001',rarity:'Common'};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};

@@ -27,7 +27,10 @@ const race=controller();race.buffer.add(a);const editId=race.buffer.scanEvents[0
 // Un esito accettato non produce più un pannello persistente in assistantView
 // (rimosso col ripristino del flusso minimale): resta un feedback transitorio
 // su showDetection, con la carta arricchita (immagine/nome/set/rarità).
-const c=controller();c.cacheResolution(a.setCode,[a]);await c.resolveCapturedReading({text:a.setCode,confidence:96});assert.equal(c.assistantView(),'','un esito accettato non deve lasciare un pannello persistente');assert.equal(c.detection.tone,'ok');assert.match(c.detection.detail,/Salvata/);assert.equal(c.detection.card.cardName,'Carta A');assert.equal(c.detection.card.rarity,'Common');
+// Menu rapido acceso (default 2026-11-09): l'esito accettato apre il menu al
+// posto del pop transitorio; spento, resta il pop di sempre (verificato sotto).
+const menuOn=controller();menuOn.cacheResolution(a.setCode,[a]);await menuOn.resolveCapturedReading({text:a.setCode,confidence:96});assert.ok(menuOn.quickMenu,'menu rapido aperto dopo un esito accettato');assert.equal(menuOn.detection,null,'nessun pop sotto al menu');assert.equal(menuOn.buffer.total,1);menuOn.flushQuickMenu();clearTimeout(menuOn.persistTimer);
+const c=controller();c.buffer.settings.quickMenu=false;c.cacheResolution(a.setCode,[a]);await c.resolveCapturedReading({text:a.setCode,confidence:96});assert.equal(c.assistantView(),'','un esito accettato non deve lasciare un pannello persistente');assert.equal(c.detection.tone,'ok');assert.match(c.detection.detail,/Salvata/);assert.equal(c.detection.card.cardName,'Carta A');assert.equal(c.detection.card.rarity,'Common');
 c.requestSnapshot();assert.equal(c.buffer.scanned,2);assert.equal(c.buffer.scanEvents[1].status,'CAPTURED');c.requestSnapshot();assert.equal(c.buffer.scanned,2,'busy press does not duplicate the acquisition');await c.openReview();assert.equal(c.buffer.scanEvents[1].status,'FAILED');assert.equal(c.buffer.scanEvents[1].failureReason,'INTERRUPTED');
 // Sezione 2/5 (2026-09-17): una verifica di rete in corso (PENDING_REMOTE)
 // non blocca più lo scatto successivo — la latenza di rete non deve mai
