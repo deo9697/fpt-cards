@@ -1,0 +1,239 @@
+/* Loaded only by the private One Piece practice table. */
+.op-simulator {
+  --op-surface: #101b29;
+  --op-surface-raised: #172839;
+  --op-line: #2a4355;
+  --op-teal: #74dcc6;
+  --op-gold: #e8c681;
+  --op-ink: #edf5f5;
+  --op-muted: #a8bbc6;
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  color: var(--op-ink);
+}
+.op-simulator *, .op-simulator *::before, .op-simulator *::after { box-sizing: border-box; }
+.op-simulator h1, .op-simulator h2, .op-simulator h3, .op-simulator p { overflow-wrap: anywhere; }
+.op-simulator h1 { margin: 4px 0 8px; font-size: clamp(1.65rem, 3vw, 2.35rem); line-height: 1.15; letter-spacing: -.04em; }
+.op-simulator h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.op-simulator h3 { margin: 0 0 10px; font-size: .96rem; }
+.op-simulator p { color: var(--op-muted); font-size: .88rem; line-height: 1.6; }
+.op-simulator p:last-child { margin-bottom: 0; }
+.op-simulator button, .op-simulator input, .op-simulator select, .op-simulator textarea, .op-simulator summary { touch-action: manipulation; }
+.op-simulator button { min-height: 44px; }
+.op-simulator button:disabled { opacity: .42; cursor: default; }
+.op-simulator :is(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid var(--op-teal); outline-offset: 3px; }
+.op-simulator .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 10px 14px; border: 1px solid transparent; border-radius: 11px; background: var(--op-teal); color: #08251f; font-size: .81rem; font-weight: 800; white-space: normal; line-height: 1.4; }
+.op-simulator .btn.secondary { border-color: var(--op-line); background: #142434; color: var(--op-ink); }
+.op-simulator .btn.danger { color: #ffadb3; background: #3d2029; border-color: #6c3440; }
+.op-simulator .btn svg { flex-shrink: 0; width: 17px; height: 17px; }
+.op-simulator :is(input, select, textarea) { min-width: 0; min-height: 44px; border: 1px solid var(--op-line); border-radius: 10px; background: #0b1521; color: var(--op-ink); font-size: .88rem; padding: 11px 12px; }
+.op-simulator label { margin: 0 0 6px; color: var(--op-muted); font-size: .78rem; font-weight: 650; }
+.op-simulator a { color: var(--op-teal); text-underline-offset: 3px; }
+.op-simulator [hidden] { display: none !important; }
+.op-simulator .op-sim-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 23px 24px; border: 1px solid #365058; border-radius: 19px; background: radial-gradient(ellipse at 100% 0, #28594d45, transparent 65%), linear-gradient(120deg, #122334, #0e1927); }
+.op-simulator .op-sim-header > div { min-width: 0; }
+.op-simulator .op-sim-header p { max-width: 630px; margin-bottom: 0; }
+.op-simulator .op-sim-eyebrow { color: var(--op-teal); font-size: .68rem; line-height: 1.4; font-weight: 800; text-transform: uppercase; letter-spacing: .16em; }
+.op-simulator .op-sim-badge { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 7px 10px; border: 1px solid #527767; border-radius: 999px; background: #18342e; color: #b6eed5; font-size: .66rem; font-weight: 750; white-space: nowrap; }
+.op-simulator .op-sim-badge svg { width: 13px; height: 13px; }
+.op-simulator .op-sim-tabs, .op-simulator .op-sim-zones-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; border: 1px solid var(--op-line); border-radius: 13px; background: #0c1520; }
+.op-simulator .op-sim-tabs button, .op-simulator .op-sim-zones-tabs button { flex: 1 1 auto; border: 1px solid transparent; border-radius: 9px; padding: 10px 12px; background: transparent; color: var(--op-muted); font-size: .81rem; font-weight: 750; }
+.op-simulator .op-sim-tabs button.active, .op-simulator .op-sim-zones-tabs button.active { border-color: #426760; background: #1a3535; color: #b6f5e9; }
+.op-simulator .op-sim-panel { min-width: 0; padding: 20px; border: 1px solid var(--op-line); border-radius: 16px; background: var(--op-surface); }
+.op-simulator .op-sim-setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.op-simulator .op-sim-deck-picker { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 18px; border: 1px solid var(--op-line); border-radius: 14px; background: #0d1825; }
+.op-simulator fieldset.op-sim-deck-picker { margin: 0; min-inline-size: 0; }
+.op-simulator .op-sim-deck-picker legend { padding: 0 8px; color: var(--op-gold); font-size: .87rem; font-weight: 800; }
+.op-simulator .op-sim-deck-picker > label { display: grid; gap: 6px; margin: 0; }
+.op-simulator .op-sim-deck-picker > small { color: var(--op-muted); font-size: .72rem; }
+.op-simulator .op-sim-deck-picker input, .op-simulator .op-sim-deck-picker select { width: 100%; }
+.op-simulator .op-sim-setup-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.op-simulator .op-sim-setup-actions label { margin: 0; }
+.op-simulator .op-sim-setup-actions > label { display: grid; flex: 1 1 180px; gap: 6px; }
+.op-simulator .op-sim-setup-actions select { flex: 1 1 180px; }
+.op-simulator .op-sim-setup-actions > .btn { align-self: end; }
+.op-simulator .op-sim-setup + .op-sim-notice { margin-top: 18px; }
+.op-simulator .op-sim-validation { padding: 10px 12px; border: 1px solid #6e4e36; border-radius: 10px; background: #352719; color: #f1d0a5; font-size: .77rem; line-height: 1.6; }
+.op-simulator .op-sim-validation ul { margin: 4px 0 0; padding-left: 18px; }
+.op-simulator .op-sim-empty { padding: 30px 20px; border: 1px dashed #365363; border-radius: 13px; background: #0b1520; color: var(--op-muted); text-align: center; font-size: .83rem; line-height: 1.6; }
+.op-simulator .op-sim-empty .btn { margin-top: 12px; }
+.op-simulator .op-sim-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.op-simulator .op-sim-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--op-line); border-radius: 14px; background: var(--op-surface); }
+.op-simulator .op-sim-toolbar > div { min-width: 0; }
+.op-simulator .op-sim-toolbar > .op-sim-zones-tabs { flex: 1 1 100%; }
+.op-simulator .op-sim-zones-tabs button { flex: 1 1 100px; min-width: 0; overflow-wrap: anywhere; }
+.op-simulator .op-sim-toolbar strong { display: block; font-size: .91rem; overflow-wrap: anywhere; }
+.op-simulator .op-sim-toolbar small { color: var(--op-muted); font-size: .73rem; }
+.op-simulator .op-sim-phasebar { display: flex; gap: 6px; overflow-x: auto; min-width: 0; padding: 4px 2px 8px; scrollbar-width: thin; scrollbar-color: #446373 transparent; }
+.op-simulator .op-sim-phasebar > span { display: grid; flex: 1 0 62px; place-items: center; min-height: 44px; padding: 9px 8px; border: 1px solid var(--op-line); border-radius: 10px; background: #101c2a; color: var(--op-muted); font-size: .76rem; font-weight: 750; text-align: center; }
+.op-simulator .op-sim-phasebar button { flex: 0 0 auto; padding: 9px 12px; border: 1px solid var(--op-line); border-radius: 10px; background: #101c2a; color: var(--op-muted); font-size: .76rem; font-weight: 750; text-align: center; }
+.op-simulator .op-sim-phasebar button small { display: block; margin-bottom: 2px; color: #8c9fab; font-size: .6rem; font-weight: 650; }
+.op-simulator .op-sim-phasebar > .active { border-color: var(--op-gold); background: #3b3324; color: #f6dfad; }
+.op-simulator .op-sim-phasebar button.active small { color: #e6c68c; }
+.op-simulator .op-sim-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 16px; min-width: 0; }
+.op-simulator .op-sim-table { display: grid; gap: 14px; min-width: 0; }
+.op-simulator .op-sim-player { display: grid; gap: 13px; min-width: 0; padding: 16px; border: 1px solid var(--op-line); border-radius: 17px; background: radial-gradient(ellipse at 50% 45%, #19314730, transparent 70%), #0e1926; }
+.op-simulator .op-sim-player.is-active { border-color: #6eb3a3; box-shadow: inset 3px 0 #74dcc6; }
+.op-simulator .op-sim-player-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 9px; }
+.op-simulator .op-sim-player-head > div { min-width: 0; }
+.op-simulator .op-sim-player-head h2, .op-simulator .op-sim-player-head h3 { margin: 0; font-size: .97rem; }
+.op-simulator .op-sim-player-head small { display: block; color: var(--op-muted); font-size: .72rem; overflow-wrap: anywhere; }
+.op-simulator .op-sim-player-head h2 small { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 5px; border: 1px solid #456074; border-radius: 50%; color: #d3e2eb; font-size: .65rem; vertical-align: middle; }
+.op-simulator .op-sim-player-head p { margin: 4px 0 0; color: #a8bbc6; font-size: .73rem; }
+.op-simulator .op-sim-player-head .op-sim-badge { padding: 4px 8px; font-size: .6rem; }
+.op-simulator .op-sim-zone-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 0 8px; color: #aec3cd; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.op-simulator .op-sim-zone-label .op-sim-count { color: var(--op-gold); letter-spacing: 0; }
+.op-simulator .op-sim-board-row { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; min-width: 0; }
+.op-simulator .op-sim-zone { min-width: 0; padding: 10px; border: 1px dashed #2d4555; border-radius: 12px; background: #07121d66; }
+.op-simulator .op-sim-board-row > .op-sim-zone { flex: 0 0 auto; }
+.op-simulator .op-sim-board-row > .op-sim-zone:nth-child(2) { flex: 1 1 210px; }
+.op-simulator .op-sim-cards { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 8px; min-width: 0; min-height: 38px; }
+.op-simulator .op-sim-cards > small { padding: 16px 5px; color: #899eac; font-size: .72rem; }
+.op-simulator .op-sim-empty-zone { display: grid; place-items: center; min-width: 76px; min-height: 115px; padding: 10px; color: #839ba9; font-size: .68rem; text-align: center; }
+.op-simulator .op-sim-card { position: relative; display: flex; flex: 0 0 82px; flex-direction: column; align-items: stretch; gap: 0; width: 82px; max-width: 100%; min-height: 120px; padding: 0; overflow: hidden; border: 1px solid #385062; border-radius: 7px; background: #1a2a3a; color: var(--op-ink); text-align: left; box-shadow: 0 3px 8px #0004; transition: border-color .15s ease, box-shadow .15s ease; }
+.op-simulator .op-sim-card img { display: block; width: 100%; height: auto; aspect-ratio: 63 / 88; object-fit: cover; background: #17283a; }
+.op-simulator .op-sim-card > .op-sim-card-art { display: grid !important; place-items: center; width: 100%; aspect-ratio: 63 / 88; padding: 8px; background: radial-gradient(ellipse, #264d5c, #132b3c 75%); color: #a8c1c5; font-size: .67rem; letter-spacing: .08em; text-align: center; }
+.op-simulator .op-sim-card > span:not(.op-sim-card-badges) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; padding: 5px 5px 1px; color: #ecf2f5; font-size: .62rem; font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
+.op-simulator .op-sim-card > small { display: block; padding: 2px 5px 5px; color: #b3c1cb; font-size: .56rem; line-height: 1.2; }
+.op-simulator .op-sim-card.is-rested { border-color: #dba964; box-shadow: inset 0 -3px #dba964, 0 3px 8px #0004; }
+.op-simulator .op-sim-card.is-rested img { opacity: .72; filter: saturate(.6); }
+.op-simulator .op-sim-card.is-selected { border-color: var(--op-teal); outline: 2px solid var(--op-teal); outline-offset: 2px; box-shadow: 0 0 16px #74dcc633; }
+.op-simulator .op-sim-card-badges { position: absolute; display: flex; flex-wrap: wrap; gap: 3px; top: 4px; left: 4px; right: 4px; pointer-events: none; }
+.op-simulator .op-sim-card-badges b { padding: 3px 4px; border: 1px solid #ffffff3b; border-radius: 4px; background: #061321eb; color: #ffdf9e; font-size: .56rem; line-height: 1.15; box-shadow: 0 1px 3px #0008; }
+.op-simulator .op-sim-card-back { display: grid; place-items: center; width: 82px; min-height: 110px; aspect-ratio: 63 / 88; padding: 8px; border: 1px solid #416578; border-radius: 7px; background: repeating-linear-gradient(135deg, #142b40 0, #142b40 8px, #102436 8px, #102436 16px); color: #8ba9b7; font-size: .63rem; font-weight: 800; letter-spacing: .08em; text-align: center; }
+.op-simulator .op-sim-hand { min-width: 0; padding-top: 11px; border-top: 1px solid #263b4a; }
+.op-simulator .op-sim-hand.is-hidden .op-sim-cards { gap: 5px; }
+.op-simulator .op-sim-hand.is-hidden .op-sim-card-back { width: 42px; min-height: 59px; border-radius: 5px; font-size: .5rem; }
+.op-simulator .op-sim-hand .op-sim-card-back { width: 42px; flex-basis: 42px; min-height: 59px; border-radius: 5px; font-size: .5rem; }
+.op-simulator .op-sim-card-back > span { padding: 0 !important; color: #a8c3d1 !important; text-align: center; }
+.op-simulator .op-sim-piles { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.op-simulator .op-sim-pile { display: grid; flex: 1 1 86px; grid-template-columns: 52px minmax(0, 1fr); align-content: start; align-items: center; gap: 6px; min-width: 0; min-height: 65px; padding: 9px 10px; border: 1px solid #304c5d; border-radius: 10px; background: #142636; color: #c3d4dc; font-size: .7rem; }
+.op-simulator .op-sim-pile b { color: var(--op-ink); font-size: 1.15rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.op-simulator .op-sim-pile > b { grid-column: 1 / -1; margin-bottom: 3px; font-size: .79rem; text-align: center; }
+.op-simulator .op-sim-pile > .btn { grid-column: 2; width: 100%; margin: 0; padding: 8px; font-size: .68rem; }
+.op-simulator .op-sim-pile > .op-sim-card-back { grid-column: 1; grid-row: 2 / span 2; width: 52px; min-height: 74px; }
+.op-simulator .op-sim-pile > .op-sim-empty-zone { grid-column: 1; min-width: 0; min-height: 74px; padding: 4px; }
+.op-simulator .op-sim-pile > .op-sim-cards { grid-column: 1 / -1; align-self: start; justify-content: center; }
+.op-simulator .op-sim-pile:nth-child(2) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.op-simulator .op-sim-pile:nth-child(2) > .btn { grid-column: auto; }
+.op-simulator .op-sim-pile .op-sim-card { width: 52px; flex-basis: 52px; min-height: 74px; }
+.op-simulator .op-sim-pile .op-sim-card:not(.op-sim-card-back) { min-height: 95px; }
+.op-simulator .op-sim-pile .op-sim-card > span:not(.op-sim-card-badges) { font-size: .5rem; }
+.op-simulator .op-sim-pile .op-sim-card > small { font-size: .46rem; }
+.op-simulator .op-sim-pile.active { border-color: var(--op-teal); color: var(--op-teal); background: #1a3535; }
+.op-simulator .op-sim-don { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; padding: 10px 11px; border: 1px solid #4d4937; border-radius: 11px; background: #29291f; }
+.op-simulator .op-sim-don > strong { margin-right: 3px; color: var(--op-gold); font-size: .79rem; }
+.op-simulator .op-sim-don-count { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #5a5740; border-radius: 6px; color: #d2ccad; font-size: .68rem; font-variant-numeric: tabular-nums; }
+.op-simulator .op-sim-don-count b { color: #fff0c9; font-size: .84rem; }
+.op-simulator .op-sim-don .btn { flex: 0 1 auto; min-height: 44px; padding: 8px 10px; border-color: #57513b; background: #3b3827; color: #ffedc7; font-size: .69rem; }
+.op-simulator .op-sim-inspector { display: grid; gap: 14px; min-width: 0; padding: 17px; border: 1px solid var(--op-line); border-radius: 16px; background: var(--op-surface); }
+.op-simulator .op-sim-inspector h3 { margin: 0 0 8px; color: var(--op-gold); font-size: .9rem; }
+.op-simulator .op-sim-inspector p, .op-simulator .op-sim-inspector small { font-size: .75rem; }
+.op-simulator .op-sim-inspector > h2, .op-simulator .op-sim-inspector > p { margin: 0; }
+.op-simulator .op-sim-inspector > section + section { padding-top: 14px; border-top: 1px solid var(--op-line); }
+.op-simulator .op-sim-inspector form { display: grid; gap: 8px; min-width: 0; }
+.op-simulator .op-sim-inspector form label { margin: 3px 0 0; }
+.op-simulator .op-sim-inspector form .btn { width: 100%; }
+.op-simulator .op-sim-inspector textarea { min-height: 86px; resize: vertical; }
+.op-simulator .op-sim-preview { display: grid; justify-items: center; gap: 9px; min-width: 0; margin-bottom: 5px; }
+.op-simulator .op-sim-preview img { display: block; width: auto; max-width: 100%; height: auto; max-height: 260px; border: 1px solid #486271; border-radius: 9px; object-fit: contain; box-shadow: 0 8px 20px #0005; }
+.op-simulator .op-sim-preview strong, .op-simulator .op-sim-preview small { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+.op-simulator .op-sim-preview strong { font-size: .91rem; }
+.op-simulator .op-sim-preview small { color: var(--op-muted); }
+.op-simulator .op-sim-log { min-width: 0; font-size: .73rem; }
+.op-simulator .op-sim-log ol { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; margin: 0; padding: 0 4px 0 20px; scrollbar-width: thin; scrollbar-color: #446373 transparent; }
+.op-simulator .op-sim-log li { padding: 0 0 7px 2px; border-bottom: 1px solid #263a48; color: #b2c6d0; overflow-wrap: anywhere; line-height: 1.5; }
+.op-simulator .op-sim-log li:last-child { border-bottom: 0; }
+.op-simulator .op-sim-log small { color: #8da6b5; }
+.op-simulator .op-sim-notice, .op-simulator .op-sim-error { padding: 12px 14px; border: 1px solid #4e5b43; border-radius: 11px; background: #242e25; color: #d3e5c2; font-size: .78rem; line-height: 1.6; overflow-wrap: anywhere; }
+.op-simulator .op-sim-notice p { color: inherit; font-size: inherit; }
+.op-simulator .op-sim-error { border-color: #74404a; background: #3b2029; color: #ffbcc4; }
+.op-simulator .op-sim-save-status { color: #9eb8b2; font-size: .68rem; line-height: 1.5; }
+.op-simulator summary { padding: 7px 0; color: #d4e2e7; font-size: .84rem; font-weight: 750; cursor: pointer; }
+.op-simulator summary + :is(form, ol, p) { margin-top: 12px; }
+.op-simulator form[data-op-finish] { display: grid; gap: 12px; }
+.op-simulator form[data-op-finish] > label { display: grid; gap: 6px; }
+.op-simulator form[data-op-finish] > .btn { justify-self: start; }
+.op-simulator .op-sim-history { display: grid; gap: 12px; min-width: 0; }
+.op-simulator .op-sim-stats + .op-sim-actions, .op-simulator .op-sim-actions + .op-sim-history { margin-top: 16px; }
+.op-simulator .op-sim-history > article { min-width: 0; padding: 16px; border: 1px solid var(--op-line); border-radius: 13px; background: var(--op-surface); }
+.op-simulator .op-sim-history > article > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 9px; }
+.op-simulator .op-sim-history strong { overflow-wrap: anywhere; font-size: .88rem; }
+.op-simulator .op-sim-history small { color: var(--op-muted); font-size: .73rem; }
+.op-simulator .op-sim-history p { margin: 7px 0 0; font-size: .79rem; white-space: pre-wrap; }
+.op-simulator .op-sim-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.op-simulator .op-sim-stats > div, .op-simulator .op-sim-stats > article { min-width: 0; padding: 17px 13px; border: 1px solid var(--op-line); border-radius: 12px; background: var(--op-surface); text-align: center; }
+.op-simulator .op-sim-stats b { display: block; margin-bottom: 5px; color: var(--op-gold); font-size: 1.65rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.op-simulator .op-sim-stats span { display: block; color: var(--op-muted); font-size: .69rem; overflow-wrap: anywhere; }
+.op-simulator .op-sim-rules { display: grid; gap: 10px; }
+.op-simulator .op-sim-rules details { padding: 0 15px 13px; border: 1px solid var(--op-line); border-radius: 12px; background: var(--op-surface); }
+.op-simulator .op-sim-rules summary { min-height: 48px; padding: 13px 0; color: #e6e0cc; font-size: .85rem; font-weight: 750; cursor: pointer; }
+.op-simulator .op-sim-rules details:not([open]) { padding-bottom: 0; }
+.op-simulator .op-sim-rules p, .op-simulator .op-sim-rules li { color: var(--op-muted); font-size: .81rem; line-height: 1.7; }
+.op-simulator .op-sim-rules ul, .op-simulator .op-sim-rules ol { margin: 0; padding-left: 19px; }
+.op-simulator .op-sim-rules li + li { margin-top: 6px; }
+.op-simulator .op-sim-result { padding: 16px; border: 1px solid #887344; border-radius: 12px; background: linear-gradient(100deg, #3b3423, #222b29); color: #ffe7b1; }
+.op-simulator .op-sim-result strong { display: block; margin-bottom: 4px; font-size: 1.04rem; }
+.op-simulator .op-sim-result p { margin: 0; color: #e3d5b7; font-size: .8rem; }
+.op-simulator .op-sim-result > .btn { margin-top: 12px; }
+.op-simulator .op-sim-count { font-variant-numeric: tabular-nums; }
+@media (hover: hover) {
+  .op-simulator .btn:not(:disabled):hover { filter: brightness(1.1); }
+  .op-simulator .op-sim-card:hover { border-color: #91b8c9; }
+  .op-simulator .op-sim-tabs button:not(.active):hover, .op-simulator .op-sim-zones-tabs button:not(.active):hover { background: #172a38; color: #e2f0f2; }
+}
+@media (min-width: 1500px) {
+  .op-simulator .op-sim-card { width: 96px; flex-basis: 96px; }
+  .op-simulator .op-sim-card-back { width: 96px; }
+}
+@media (min-width: 1100px) {
+  .op-simulator .op-sim-inspector { position: sticky; top: 16px; }
+}
+@media (max-width: 1099px) {
+  .op-simulator .op-sim-layout { grid-template-columns: minmax(0, 1fr); }
+  .op-simulator .op-sim-inspector { grid-template-columns: minmax(0, 1fr); }
+  .op-simulator .op-sim-inspector > section + section { padding-top: 0; border-top: 0; }
+  .op-simulator .op-sim-preview img { max-height: 220px; }
+}
+@media (max-width: 600px) {
+  .op-simulator { gap: 13px; }
+  .op-simulator .op-sim-header { padding: 19px 16px; gap: 12px; }
+  .op-simulator h1 { font-size: 1.65rem; }
+  .op-simulator .op-sim-header p { font-size: .8rem; }
+  .op-simulator .op-sim-setup { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .op-simulator .op-sim-panel { padding: 15px; }
+  .op-simulator .op-sim-deck-picker { padding: 14px; }
+  .op-simulator .op-sim-setup-actions { align-items: stretch; }
+  .op-simulator .op-sim-setup-actions > .btn { flex: 1 1 100%; }
+  .op-simulator .op-sim-tabs button { flex: 1 1 80px; padding: 9px 7px; font-size: .73rem; }
+  .op-simulator .op-sim-toolbar { padding: 12px; }
+  .op-simulator .op-sim-toolbar > .op-sim-actions { flex: 1 1 100%; }
+  .op-simulator .op-sim-toolbar > .op-sim-actions > .btn { flex: 1 1 auto; }
+  .op-simulator .op-sim-player { padding: 12px; gap: 11px; }
+  .op-simulator .op-sim-board-row { gap: 7px; }
+  .op-simulator .op-sim-zone { padding: 8px; }
+  .op-simulator .op-sim-board-row > .op-sim-zone:nth-child(2) { flex-basis: 100%; order: 3; }
+  .op-simulator .op-sim-board-row > .op-sim-zone:first-child, .op-simulator .op-sim-board-row > .op-sim-zone:last-child { flex: 1 1 100px; }
+  .op-simulator .op-sim-card { width: 76px; flex-basis: 76px; min-height: 116px; }
+  .op-simulator .op-sim-card-back { width: 76px; min-height: 106px; }
+  .op-simulator .op-sim-cards { gap: 7px; }
+  .op-simulator .op-sim-piles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .op-simulator .op-sim-pile { padding: 8px; }
+  .op-simulator .op-sim-pile:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .op-simulator .op-sim-pile:nth-child(3) { grid-column: 2; grid-row: 1; }
+  .op-simulator .op-sim-pile:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .op-simulator .op-sim-don { padding: 9px; gap: 6px; }
+  .op-simulator .op-sim-don .btn { flex: 1 1 68px; }
+  .op-simulator .op-sim-inspector { grid-template-columns: minmax(0, 1fr); padding: 15px; }
+  .op-simulator .op-sim-inspector > section + section { padding-top: 14px; border-top: 1px solid var(--op-line); }
+  .op-simulator .op-sim-inspector .op-sim-actions > .btn { flex: 1 1 100px; }
+  .op-simulator .op-sim-stats { gap: 7px; }
+  .op-simulator .op-sim-stats > div, .op-simulator .op-sim-stats > article { padding: 14px 8px; }
+  .op-simulator .op-sim-stats b { font-size: 1.35rem; }
+  .op-simulator .op-sim-stats span { font-size: .65rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .op-simulator *, .op-simulator *::before, .op-simulator *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

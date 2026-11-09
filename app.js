@@ -31,7 +31,7 @@ import { DAILY_MISSIONS_META } from './js/missions.js';
 function searchCards(query, game = 'yugioh') { return getGameAdapter(game).searchCards(query); }
 function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(name); }
 
-const ROUTES = new Set(['home','cards','collection','fastscan','decks','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
+const ROUTES = new Set(['home','cards','collection','fastscan','decks','simulator','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 const JOIN_HASH = /^#\/join\/([0-9a-f]{16})$/i;
 let guestShare;
@@ -164,6 +164,34 @@ function lazyPageModule(key, pageId, loader) {
   return null;
 }
 const loadedPageModule = key => lazyPageModules.get(key)?.module || null;
+let onePieceSimulator = null;
+function canUseOnePieceSimulator() {
+  return Boolean(state.currentUser && !state.standalone && state.game === 'onepiece' && member(state.currentUser));
+}
+function onePieceSimulatorContext() {
+  return { member:state.currentUser, team:state.team?.id || 'legacy-fpt', allowed:canUseOnePieceSimulator() };
+}
+function onePieceSimulatorView() {
+  if (!canUseOnePieceSimulator()) return `<section class="page-stack"><div class="surface empty-state"><h1>Simulatore One Piece</h1><p>Il tavolo privato è disponibile ai membri del team nella sezione One Piece.</p><button type="button" class="btn secondary" data-page="home">Torna alla Home</button></div></section>`;
+  if (!document.querySelector('link[data-onepiece-simulator]')) {
+    const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/onepiece-simulator.css'; link.dataset.onepieceSimulator = 'true'; document.head.append(link);
+  }
+  const module = lazyPageModule('onepiece-simulator', 'simulator', () => import('./js/games/onepiece/simulator.js'));
+  if (!module) return lazyLoadingView('Simulatore One Piece');
+  const context = onePieceSimulatorContext();
+  if (!onePieceSimulator || onePieceSimulator.context.member !== context.member || onePieceSimulator.context.team !== context.team) {
+    onePieceSimulator?.reset();
+    onePieceSimulator = new module.OnePieceSimulator({
+      getContext:onePieceSimulatorContext, getDecks:()=>state.decks,
+      loadDecks:async()=>{ await loadAppControllers(); await decks.load(); },
+      verifyAccess:async()=>{ const slug = state.currentUser; const members = await api.teamMembers(); return slug === state.currentUser && canUseOnePieceSimulator() && Array.isArray(members) && members.some(item => (item.slug || item.id) === slug); },
+      lookupCard:async id => { const rows = await api.onePieceCatalogSearch(id, 60); return rows?.find(row => String(row.catalog_card_id).toUpperCase() === String(id).toUpperCase())?.game_metadata || null; },
+      onRender:()=>{ if (page === 'simulator') renderRoute(); }, onToast:toast,
+      confirm:message=>fptConfirm(message, { title:'Simulatore One Piece', confirmLabel:'Conferma' })
+    });
+  }
+  return onePieceSimulator.view();
+}
 function lazyLoadingView(label) {
   return `<section class="page-stack lazy-page-loading" aria-busy="true"><div class="inline-empty">${icon('card')}<div><strong>Caricamento ${esc(label)}…</strong><span>Un attimo, sto preparando la pagina.</span></div></div></section>`;
 }
@@ -324,7 +352,7 @@ function renderRoute() {
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
-    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats'].includes(page)));
+    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats','simulator'].includes(page)));
   });
   // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
   // ricostruire la pagina e le sue immagini.
@@ -383,6 +411,7 @@ function appView() {
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
   const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['stats','trophy','Statistiche'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
+  if (canUseOnePieceSimulator()) desktopNav.push(['more','more','Altro']);
   const mobileNav = [['home','home','Home'],['market','chart','Market Watch'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
   // Va renderizzato qui (fuori da .page-stage), non dentro loansView(): .page-stage
   // ha view-transition-name, che in Chrome le dà una propria stacking context.
@@ -545,7 +574,7 @@ function bindProgressionHeader(root) {
 }
 
 function navButton(id, iconName, label, notifications) {
-  const active = page === id || (id === 'more' && ['team','settings','requests','stats'].includes(page));
+  const active = page === id || (id === 'more' && ['team','settings','requests','stats','simulator'].includes(page));
   return `<button data-page="${id}" class="${active ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`;
 }
 
@@ -556,6 +585,7 @@ function pageContent() {
   if (page === 'team') return teamView();
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScanPageView();
+  if (page === 'simulator') return onePieceSimulatorView();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch ? marketWatch.view() : appControllerPageView('Market Watch');
   if (page === 'decks') return decks ? decks.view() : appControllerPageView('Mazzi');
@@ -652,6 +682,7 @@ function settingsView() {
 function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
+  if (canUseOnePieceSimulator()) links.unshift(['simulator','deck','Simulatore One Piece','Tavolo manuale privato e test dei mazzi']);
   const tools = [];
   if (canManageArtwork()) tools.push(['admin','card','Artwork Resolver','Stampe con più illustrazioni']);
   if (state.role === 'admin') tools.push(['market-variants','chart','Market Variant Resolver','Rarità Cardmarket ambigue']);
@@ -1528,6 +1559,7 @@ function bind() {
   document.querySelector('#retry-cloud')?.addEventListener('click', retryCloud);
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks' && decks) decks.bind(document);
+  if (page === 'simulator' && canUseOnePieceSimulator()) onePieceSimulator?.bind(document);
   if (page === 'market' && marketWatch) marketWatch.bind(document);
   if (page === 'fastscan') fastScan?.bind(document);
   if (page === 'stats' && stats) stats.bind(document);
@@ -1852,6 +1884,8 @@ function selectGame(game) {
   const changed = state.game !== game;
   state.game = game; gameMenuOpen = false;
   if (changed) {
+    onePieceSimulator?.reset(); onePieceSimulator = null;
+    if (page === 'simulator' && game !== 'onepiece') { page = 'home'; history.replaceState(null, '', '#/home'); }
     draftCards = [];
     loanBuilderDraft = { borrower:'', notes:'', query:'', mode:'lend' };
     loanSearchResults = []; loanSearchStatus = 'idle';
@@ -2679,6 +2713,7 @@ async function login(e) {
 
 async function logout() {
   await fastScan?.leave();
+  onePieceSimulator?.close(); onePieceSimulator = null;
   api.unsubscribe();
   await api.logout();
   state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; state.team = null; teamInvites = null; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();

@@ -12,6 +12,18 @@ npm run preview
 
 Aprire `http://localhost:8080` nel browser.
 
+## Simulatore manuale One Piece
+
+I membri autenticati del team trovano **Simulatore One Piece** esclusivamente nella pagina **Altro**, quando è selezionato **One Piece**. Su desktop, **Altro** compare anche nella barra laterale della sezione One Piece. Il tavolo è locale, senza multiplayer o link di condivisione. L'accesso verifica l'appartenenza al team tramite le API esistenti; gli account standalone e le raccolte pubbliche non mostrano il simulatore.
+
+Si scelgono due dei propri mazzi (anche lo stesso per un mirror), il primo giocatore e le Life dei Leader. Servono un Leader e 50 carte Main; le 10 risorse DON!! vengono create sul tavolo anche senza carte DON!! nel catalogo. Il setup mescola e pesca 5 carte, consente un mulligan completo per lato e distribuisce le Life all'avvio del duello.
+
+Sono disponibili movimenti tra zone, ricerca e mescolamento del mazzo, Life coperte/scoperte, attivazione/riposo, gestione e assegnazione dei DON!!, modificatori di potere, fasi e turno, registro e annullamento delle ultime 30 azioni. Costi, attacchi, Counter, Trigger, effetti e condizioni di vittoria si risolvono manualmente. La scheda **Regole e ruling** rimanda a regolamento, Q&A ed errata Bandai.
+
+Il tavolo usa `sessionStorage`, separato per team e membro: sopravvive al refresh della stessa scheda e viene rimosso al logout dal menu dell'app. I test conclusi, le note e le copie delle liste usate vengono salvati in `localStorage` per lo stesso profilo/dispositivo (ultimi 100 test), con statistiche e esportazione JSON. Non vengono inviati al database o aggiunti ai match/XP del team. Lo storico locale può essere cancellato dalla scheda **Test e statistiche**.
+
+Verifica: `npm run test:onepiece-simulator` (engine, salvataggi e browser Chrome con dati sintetici). Nessuna migration o dipendenza aggiuntiva richiesta.
+
 ## Sincronizzazione gratuita con Supabase
 
 1. Creare un progetto gratuito su Supabase.

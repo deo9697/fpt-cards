@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>One Piece manual simulator — isolated test fixture</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/css/onepiece-simulator.css">
+</head>
+<body data-game="onepiece" data-page="simulator">
+  <main class="app-main"><section id="app" class="page-stage"></section></main>
+  <script type="module">
+    import { OnePieceSimulator } from '/js/games/onepiece/simulator.js';
+
+    const params = new URLSearchParams(location.search);
+    window.__context = {
+      member: params.get('member') || 'simulator-member-a',
+      team: params.get('team') || 'simulator-team-a',
+      allowed: params.get('allowed') !== '0'
+    };
+    const mainCards = Array.from({length:13}, (_, index) => ({
+      catalogCardId: `OP01-${String(index + 10).padStart(3, '0')}`,
+      cardName: `Fixture Character ${index + 1}`,
+      imageUrl: '/icon-192.png',
+      section: 'main', quantity: index === 12 ? 2 : 4,
+      type: 'Character', colors: ['Red'], power: 3000, cost: 2
+    }));
+    window.__decks = ['a', 'b'].map((suffix, index) => ({
+      id: `simulator-deck-${suffix}`, name: `Fixture deck ${suffix.toUpperCase()}`,
+      game: 'onepiece', ownerSlug: 'simulator-member-a', persisted: true,
+      cards: [
+        {catalogCardId:'OP01-001', cardName:'Fixture Leader', imageUrl:'/icon-192.png',
+          type:'Leader', section:'leader', quantity:1, colors:['Red'], life:5, power:5000},
+        ...mainCards.map(card => ({...card})),
+        {catalogCardId:'don_1', cardName:'DON!!', type:'don', section:'don', quantity:10, imageUrl:'/icon-192.png'}
+      ]
+    }));
+    window.__toasts = [];
+    window.__confirmations = [];
+    window.__verifyCalls = 0;
+    window.__render = () => {
+      const root = document.getElementById('app');
+      root.innerHTML = window.__sim.view();
+      window.__sim.bind(root);
+    };
+    window.__mount = () => {
+      window.__sim = new OnePieceSimulator({
+        getContext: () => ({...window.__context}),
+        getDecks: () => window.__decks,
+        loadDecks: async () => window.__decks,
+        lookupCard: async id => {
+          const row = window.__decks[0].cards.find(card => card.catalogCardId === id);
+          return row ? {...row, id, name:row.cardName, fullImage:row.imageUrl, cardType:row.type,
+            effect:'Manual fixture effect; resolve it using the card inspector.', counter:1000} : null;
+        },
+        verifyAccess: async () => { window.__verifyCalls += 1; return window.__context.allowed; },
+        onRender: () => window.__render(),
+        onToast: message => window.__toasts.push(String(message)),
+        confirm: async message => { window.__confirmations.push(String(message)); return true; }
+      });
+      window.__render();
+    };
+    window.__mount();
+    window.__fixtureReady = true;
+  </script>
+</body>
+</html>
