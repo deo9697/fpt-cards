@@ -348,6 +348,11 @@ export class FastScanController {
     }catch(error){if(this.buffer!==buffer||!buffer.isCurrent(id,version))return;buffer.updateReview(id,{pending:false,warning:'Verifica non disponibile: riprova'});this.onToast?.(error.message);}
     this.persist();this.refreshHud();if(this.phase==='review')this.onRender();
   }
+  confirmUnverifiedPrintings(entries){
+    if(typeof globalThis.confirm!=='function')return false;
+    const list=entries.map(entry=>`• ${entry.cardName||'Carta'} · ${entry.setCode} · ${entry.rarity}`).join('\n');
+    return globalThis.confirm(`Queste carte non sono ancora nel catalogo e YGOPRODeck non le conosce:\n${list}\n\nControlla codice e rarità sulla carta fisica. Registrarle comunque?`);
+  }
   async save(){
     if(this.buffer.review.some(item=>item.pending)||this.buffer.scanEvents.some(scan=>['CAPTURED','PROCESSING','PENDING_REMOTE'].includes(scan.status))){this.onToast?.('Attendi le verifiche in corso prima di salvare');return;}
     if(this.saving||!this.buffer.entries.size||!this.isOnline())return;
@@ -355,7 +360,15 @@ export class FastScanController {
     const entries=[...this.buffer.entries.values()];
     this.debugTrace('save:buffer',{entries:entries.map(saveDiagnosticEntry),reviews:this.buffer.review.length,totalQuantity:this.buffer.total});
     try{
-      const prepared=await canonicalizeFastScanEntries(entries,(code,game)=>this.api.lookupPrintings(code,game),async()=>null,base=>confirmPrintingFromCatalogSource(base));
+      const lookup=(code,game)=>this.api.lookupPrintings(code,game);
+      const prepared=await canonicalizeFastScanEntries(entries,lookup,async()=>null,base=>confirmPrintingFromCatalogSource(base));
+      const unconfirmed=prepared.rejected.filter(row=>row.sourceUnconfirmed);
+      if(unconfirmed.length&&this.confirmUnverifiedPrintings(unconfirmed.map(row=>row.entry))){
+        for(const row of unconfirmed)row.entry.userConfirmedPrinting=true;
+        const retry=await canonicalizeFastScanEntries(unconfirmed.map(row=>row.entry),lookup);
+        prepared.items.push(...retry.items);prepared.decisions.push(...retry.decisions);
+        prepared.rejected=prepared.rejected.filter(row=>!row.sourceUnconfirmed).concat(retry.rejected);
+      }
       // Nome + motivo (prima solo il nome: impossibile capire cosa correggere).
       const rejectedNames=prepared.rejected.map(row=>{const name=row.entry.cardName||row.entry.setCode||'carta sconosciuta',message=String(row.message||'').trim();return message?`${name} (${message.startsWith(name)?message.slice(name.length).replace(/^[:\s]+/,''):message})`:name;});
       this.debugTrace('save:canonicalized',{repaired:prepared.repaired,decisions:prepared.decisions,entries:prepared.items.map(saveDiagnosticEntry),rejected:prepared.rejected.map(row=>({...saveDiagnosticEntry(row.entry),code:row.code,message:row.message}))});
@@ -866,7 +879,16 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       const candidates=(rows||[]).map(mapPrinting).filter(item=>item.printingId&&sameText(item.setCode,base.setCode)&&item.game===base.game);
       if(!candidates.length&&base.game==='yugioh'){
         if(await sourceConfirms(base)){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_VERIFIED_SOURCE'));continue;}
-        throw saveError('REQUIRES_CATALOG_REPAIR','stampa non ancora nel catalogo e non confermata da YGOPRODeck',base);
+        // Codice del tutto assente dal catalogo e sconosciuto a YGOPRODeck
+        // (prodotti europei come DUAD, vecchie edizioni italiane come SDM-I020):
+        // nessuna fonte esterna lo confermerà mai, quindi l'unica conferma
+        // possibile è quella dell'utente che ha la carta in mano. Solo con
+        // rarità esplicita e senza varianti/artwork: la protezione RA05/BLGG
+        // e quella sulla rarità contaminata scattano comunque prima (sopra).
+        if(entry.userConfirmedPrinting&&base.rarity&&!base.variantId&&!base.artworkId){items.push(base);decisions.push(canonicalDecision(base,'CREATE_FROM_USER_CONFIRMATION'));continue;}
+        const error=saveError('REQUIRES_CATALOG_REPAIR','stampa non ancora nel catalogo e non confermata da YGOPRODeck',base);
+        error.sourceUnconfirmed=Boolean(base.rarity&&!base.variantId&&!base.artworkId);
+        throw error;
       }
       if(!candidates.length){
         items.push(base);decisions.push(canonicalDecision(base,'RPC_VALIDATION_REQUIRED',{lookupFailure}));continue;
@@ -881,7 +903,7 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       if(!best||ties.length!==1)throw saveError('AMBIGUOUS_PRINTING',`Identità printing ambigua o incoerente per ${base.setCode}: verifica la carta prima di salvare`,{base,candidates:candidates.map(saveDiagnosticEntry)});
       const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
     }catch(error){
-      rejected.push({entry,code:error?.code||'PRINTING_CANONICALIZATION_FAILED',message:error?.message||String(error),details:error?.details||null});
+      rejected.push({entry,code:error?.code||'PRINTING_CANONICALIZATION_FAILED',message:error?.message||String(error),details:error?.details||null,sourceUnconfirmed:Boolean(error?.sourceUnconfirmed)});
     }
   }
   return {items,repaired,decisions,rejected};

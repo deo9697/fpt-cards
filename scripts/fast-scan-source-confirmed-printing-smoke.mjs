@@ -42,4 +42,21 @@ assert.equal(await confirmPrintingFromCatalogSource({ ...entry, rarity: 'Secret 
 assert.equal(await confirmPrintingFromCatalogSource({ ...entry, setCode: 'BLZD-EN018' }, find), false, 'numero diverso (OCR sbagliato): niente conferma');
 assert.equal(await confirmPrintingFromCatalogSource({ ...entry, catalogCardId: '1' }, find), false, 'carta sconosciuta alla fonte: niente conferma');
 
+// 6. Codice mai tracciato da YGOPRODeck (caso reale 2026-11-09: SDM-I020
+// Weather Report, DUAD-EN082): il rifiuto è marcato come confermabile, e con
+// la conferma esplicita dell'utente la stampa passa al server. Mai per
+// rarità vuota, varianti di artwork o codice noto con rarità mancante.
+const weather = { ...entry, catalogCardId: '72053645', cardName: 'Weather Report', setCode: 'SDM-I020', rarity: 'Common', language: 'Italiano' };
+const blocked = await canonicalizeFastScanEntries([weather], none, async () => null, async () => false);
+assert.equal(blocked.rejected[0].sourceUnconfirmed, true, 'codice sconosciuto a YGOPRODeck: rifiuto confermabile dall\'utente');
+const userConfirmed = await canonicalizeFastScanEntries([{ ...weather, userConfirmedPrinting: true }], none);
+assert.equal(userConfirmed.items.length, 1, 'confermata dall\'utente: salvabile');
+assert.equal(userConfirmed.items[0].printingId, '', 'il server crea la riga: nessun printingId inventato');
+assert.equal(userConfirmed.decisions[0].validationResult, 'CREATE_FROM_USER_CONFIRMATION');
+assert.equal((await canonicalizeFastScanEntries([{ ...weather, rarity: '', userConfirmedPrinting: true }], none)).items.length, 0, 'rarità vuota: mai, neanche con conferma');
+assert.equal((await canonicalizeFastScanEntries([{ ...weather, variantId: 'b', userConfirmedPrinting: true }], none)).items.length, 0, 'variante di artwork: mai, neanche con conferma');
+assert.equal((await canonicalizeFastScanEntries([{ ...starlight, userConfirmedPrinting: true }], async () => [ultraRow])).items.length, 0, 'codice noto con rarità mancante: resta bloccato (caso RA05/BLZD)');
+assert.equal((await canonicalizeFastScanEntries([starlight], async () => [ultraRow])).rejected[0].sourceUnconfirmed, false, 'codice noto con rarità mancante: nessuna conferma offerta');
+
+console.log('PASS Fast Scan: codice sconosciuto a YGOPRODeck registrabile solo con conferma esplicita dell\'utente · mai con rarità vuota, artwork o rarità mancante su codice noto');
 console.log('PASS Fast Scan: stampa assente creata solo con conferma YGOPRODeck (codice o gemello inglese + rarità) · senza conferma rifiutata col motivo · artwork mai automatici');
