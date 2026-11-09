@@ -168,14 +168,20 @@ export async function cardTypesByIds(ids, game = 'yugioh') {
   return Object.assign({}, ...results);
 }
 
+// Ordine = priorità sul tipo YGOPRODeck: il tipo di evocazione vince sul
+// Pendulum ("Synchro Pendulum Effect Monster" -> synchro, come già
+// "Pendulum Effect Fusion Monster" -> fusion); un Pendulum puro usa il suo.
+// Mostri normali/effetto/token e One Piece restano sullo sfondo predefinito.
 const CARD_TYPE_BACKGROUNDS = [
   { match: 'fusion', image: 'assets/background/fusion_monster_backgroudn.webp' },
+  { match: 'synchro', image: 'assets/background/synchro_background.webp' },
+  { match: 'xyz', image: 'assets/background/xyz_background.webp' },
+  { match: 'link', image: 'assets/background/link_background.webp' },
+  { match: 'ritual', image: 'assets/background/ritual_background.webp' },
+  { match: 'pendulum', image: 'assets/background/pendulum_background.webp' },
   { match: 'spell', image: 'assets/background/spell_background.webp' },
   { match: 'trap', image: 'assets/background/trap_backgroud.webp' }
 ];
-// Solo i 3 tipi per cui esiste davvero un asset: tutto il resto (mostri
-// normali/effetto/synchro/xyz/link/rituali, One Piece) non deve avere uno
-// sfondo inventato — resta quello di default della griglia/del dettaglio.
 export function backgroundForCardType(rawType) {
   const type = String(rawType || '').trim().toLowerCase();
   if (!type) return '';

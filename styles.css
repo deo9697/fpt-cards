@@ -3714,3 +3714,172 @@ body.pinpad-open { overflow:hidden; }
   .toast.fpt-toast.zap .fpt-toast-body,.fpt-confirm.zap .fpt-confirm-box { animation:none;opacity:0; }
   .toast.fpt-toast.zap::after,.profile-idcard::after { animation:none; }
 }
+
+/* ==========================================================================
+   FPT gotico cyber, quarta parte (2026-11-09): dettaglio carta Raccolta con
+   interferenza sullo sfondo, dettaglio Market Watch, Mazzi del team e
+   avvisi fissi.
+   ========================================================================== */
+/* --- Dettaglio carta della Raccolta --- */
+.inventory-detail { border-radius:0;border-color:#e8b84f66;background:linear-gradient(180deg,#120d20,#0a0812);box-shadow:0 24px 90px #000d,0 0 28px #9b5cff25; }
+.inventory-detail-heading { background:#110c1ef5; }
+.inventory-detail-heading .eyebrow.fpt-detail-tab { padding:4px 14px 3px 10px;background:var(--fpt-gold);color:#140e02;font:800 .62rem var(--fpt-mono);letter-spacing:.14em;text-transform:uppercase;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 100%,0 100%); }
+.inventory-detail-heading .detail-close { border-radius:0;border-color:var(--fpt-line);background:var(--fpt-panel);font-family:var(--fpt-mono);clip-path:var(--fpt-cut-br); }
+.inventory-detail .inventory-art-stage { position:relative;overflow:hidden;isolation:isolate;border-radius:0;box-shadow:inset 0 0 0 1px #e8b84f40; }
+.inventory-detail .inventory-art-stage::after { content:'';position:absolute;inset:0;z-index:3;pointer-events:none;background:repeating-linear-gradient(0deg,#ffffff06 0 1px,transparent 1px 3px); }
+.inventory-detail .detail-art { position:relative;z-index:4;border-radius:0;border-color:#e8b84f80; }
+.inventory-detail .detail-art img { border-radius:0; }
+.stage-corner { position:absolute;z-index:5;width:16px;height:16px;border-color:var(--fpt-gold);border-style:solid;pointer-events:none; }
+.stage-corner.tl { left:6px;top:6px;border-width:2px 0 0 2px; }
+.stage-corner.br { right:6px;bottom:6px;border-width:0 2px 2px 0; }
+.stage-id { position:absolute;z-index:5;left:8px;bottom:8px;padding:2px 6px;background:#06050bcc;color:var(--fpt-violet-hi);font:700 .55rem var(--fpt-mono);letter-spacing:.12em;pointer-events:none; }
+.stage-glitch { --dur:7s;--dx:14px;position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none; }
+.stage-glitch>i { position:absolute;font-style:normal; }
+.stage-glitch .bgl { inset:-6px;background:linear-gradient(#090d1722,#090d1755),var(--img) center/cover;animation:fpt-bg-jitter var(--dur) steps(1,end) infinite;animation-delay:var(--delay,0s); }
+.stage-glitch .slice { inset:-6px;background:var(--img) center/cover;opacity:0;mix-blend-mode:screen;animation:var(--dur) steps(1,end) infinite;animation-delay:var(--delay,0s); }
+.stage-glitch .slice.a { animation-name:fpt-slice-a;background-color:#ff4fd8;background-blend-mode:multiply; }
+.stage-glitch .slice.b { animation-name:fpt-slice-b;background-color:#48e0ff;background-blend-mode:multiply; }
+.stage-glitch .slice.c { animation-name:fpt-slice-c;mix-blend-mode:normal; }
+.stage-glitch .roll { left:0;right:0;top:-40px;height:34px;opacity:0;mix-blend-mode:screen;background:linear-gradient(180deg,transparent,#ffffff22 40%,#c8a8ff40 50%,#ffffff22 60%,transparent);animation:fpt-roll var(--dur) linear infinite;animation-delay:var(--delay,0s); }
+.stage-glitch .noise { inset:0;opacity:0;mix-blend-mode:overlay;background:repeating-radial-gradient(circle at 17% 23%,#fff 0 1px,transparent 1px 3px),repeating-radial-gradient(circle at 71% 61%,#000 0 1px,transparent 1px 4px);background-size:7px 7px,11px 11px;animation:fpt-noise var(--dur) steps(1,end) infinite;animation-delay:var(--delay,0s); }
+@keyframes fpt-bg-jitter {
+  0%,85.9%,92.1%,100% { transform:none;filter:none; }
+  86% { transform:translate(calc(var(--dx) * -.4),2px);filter:saturate(1.6) hue-rotate(-12deg); }
+  87.2% { transform:translate(calc(var(--dx) * .6),-1px) skewX(-2deg);filter:saturate(2) brightness(1.25); }
+  88.4% { transform:translate(calc(var(--dx) * -.2),0);filter:contrast(1.4); }
+  89.6% { transform:translate(calc(var(--dx) * .3),1px);filter:hue-rotate(18deg) brightness(.8); }
+  90.8% { transform:translate(0,0);filter:brightness(1.6); }
+}
+@keyframes fpt-slice-a {
+  0%,85.9%,91.9%,100% { opacity:0;clip-path:inset(0 0 100% 0);transform:none; }
+  86% { opacity:.9;clip-path:inset(18% 0 66% 0);transform:translateX(calc(var(--dx) * -1)); }
+  87.4% { opacity:.9;clip-path:inset(52% 0 30% 0);transform:translateX(var(--dx)); }
+  88.8% { opacity:.8;clip-path:inset(8% 0 84% 0);transform:translateX(calc(var(--dx) * -.6)); }
+  90.2% { opacity:.9;clip-path:inset(71% 0 12% 0);transform:translateX(calc(var(--dx) * 1.3)); }
+}
+@keyframes fpt-slice-b {
+  0%,86.3%,92.1%,100% { opacity:0;clip-path:inset(0 0 100% 0);transform:none; }
+  86.4% { opacity:.85;clip-path:inset(40% 0 44% 0);transform:translateX(calc(var(--dx) * .8)); }
+  88% { opacity:.85;clip-path:inset(80% 0 6% 0);transform:translateX(calc(var(--dx) * -1.2)); }
+  89.4% { opacity:.7;clip-path:inset(26% 0 58% 0);transform:translateX(calc(var(--dx) * .5)); }
+  91% { opacity:.85;clip-path:inset(60% 0 28% 0);transform:translateX(calc(var(--dx) * -.4)); }
+}
+@keyframes fpt-slice-c {
+  0%,87.9%,90.5%,100% { opacity:0;clip-path:inset(0 0 100% 0);transform:none; }
+  88% { opacity:1;clip-path:inset(33% 0 55% 0);transform:translateX(calc(var(--dx) * 2)); }
+  89.2% { opacity:1;clip-path:inset(62% 0 30% 0);transform:translateX(calc(var(--dx) * -2)); }
+}
+@keyframes fpt-roll { 0%,85% { top:-40px;opacity:0; } 85.5% { opacity:1; } 93% { top:100%;opacity:.9; } 93.1%,100% { top:100%;opacity:0; } }
+@keyframes fpt-noise { 0%,86.9%,91.1%,100% { opacity:0; } 87% { opacity:.35;background-position:0 0,3px 2px; } 88.5% { opacity:.25;background-position:4px 1px,0 5px; } 90% { opacity:.4;background-position:1px 6px,6px 0; } }
+.inventory-detail #collection-detail-title { font-family:'Cinzel FPT',Georgia,serif;font-weight:800;text-transform:uppercase;letter-spacing:.02em;text-wrap:balance; }
+.inventory-detail #collection-detail-title::after { content:'';display:block;max-width:260px;height:1px;margin-top:8px;background:linear-gradient(90deg,var(--fpt-gold),transparent); }
+.inventory-detail .inventory-meta-badge { padding:2px 8px;border:0;border-radius:0;background:#ffffff14;color:var(--text);font:700 .6rem var(--fpt-mono);letter-spacing:.08em;text-transform:uppercase;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.inventory-detail .inventory-meta-badge.is-rarity { background:#e8b84f29;color:var(--fpt-gold); }
+.inventory-detail .inventory-meta-badge.is-language,.inventory-detail .inventory-meta-badge.is-condition,.inventory-detail .inventory-meta-badge.is-edition { background:#9b5cff2e;color:var(--fpt-violet-hi); }
+.inventory-detail .inventory-availability { padding:0;border:0;border-radius:0;background:none;color:var(--fpt-danger);font:700 .6rem var(--fpt-mono);letter-spacing:.08em;text-transform:uppercase; }
+.inventory-detail .inventory-availability.is-available { color:var(--fpt-ok);background:none; }
+.inventory-detail .inventory-availability .icon { display:none; }
+.inventory-detail .inventory-availability::before { content:'●';margin-right:2px; }
+.inventory-detail .inventory-quantity-stats { padding:0;border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel); }
+.inventory-detail .inventory-quantity-stats>div { padding:8px 10px;text-align:left; }
+.inventory-detail .inventory-quantity-stats>div+div { border-left-color:var(--fpt-line); }
+.inventory-detail .inventory-quantity-stats dt { flex-direction:row;align-items:center;color:var(--muted);font:700 .52rem var(--fpt-mono);letter-spacing:.1em;text-transform:uppercase; }
+.inventory-detail .inventory-quantity-stats dt .icon { display:none; }
+.inventory-detail .inventory-quantity-stats dd { margin-top:2px;font:800 1.15rem var(--fpt-mono); }
+.inventory-detail .stat-grid-4>div:nth-child(1) dd { color:var(--fpt-gold); }
+.inventory-detail .stat-grid-4>div:nth-child(2) dd,.inventory-detail .stat-grid-3>div:nth-child(1) dd { color:var(--fpt-pink); }
+.inventory-detail .stat-grid-4>div:nth-child(3) dd,.inventory-detail .stat-grid-3>div:nth-child(2) dd { color:var(--fpt-violet); }
+.inventory-detail .inventory-quantity-stats>div:last-child dd { color:var(--fpt-ok); }
+.inventory-detail .inventory-quantity-stats>div:last-child dt { color:var(--muted); }
+.inventory-detail .inventory-market-summary { grid-template-columns:34px minmax(0,1fr) auto;padding:10px 12px;border-color:var(--fpt-line);border-radius:0;background:var(--fpt-panel);clip-path:var(--fpt-cut); }
+.inventory-detail .inventory-market-summary>.icon { box-sizing:border-box;width:34px;height:34px;padding:7px;border:1px solid #e8b84f59;color:var(--fpt-gold); }
+.inventory-detail .inventory-market-summary small { margin-bottom:2px;font:700 .52rem var(--fpt-mono);letter-spacing:.12em;text-transform:uppercase; }
+.inventory-detail .inventory-market-summary strong { font:800 1rem var(--fpt-mono);color:var(--fpt-gold); }
+.inventory-detail .inventory-market-summary.is-price-loading strong { color:var(--muted); }
+.inventory-detail .inventory-market-summary .text-action { color:var(--fpt-violet-hi);font:700 .62rem var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase; }
+.inventory-detail .inventory-loan-cta,.inventory-detail .detail-actions .btn:not(.secondary) { min-height:48px;border:0;border-radius:0;background:linear-gradient(180deg,#f2c965,#d9a43a);color:#140e02;font:800 .74rem var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase;box-shadow:none;clip-path:var(--fpt-cut-br); }
+.inventory-detail .detail-actions-row .btn { border-radius:0;border-color:#9b5cff73;background:#9b5cff0f;font:800 .64rem var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase;clip-path:var(--fpt-cut-br); }
+.inventory-detail .detail-actions-row .btn .icon { display:none; }
+.inventory-detail .detail-actions-row .danger { border-style:dashed;border-color:#ff5f7a8c;background:transparent;color:var(--fpt-danger); }
+.inventory-detail h3 { font:800 .8rem 'Cinzel FPT',Georgia,serif;text-transform:uppercase;letter-spacing:.04em; }
+.inventory-detail .team-availability>div { border-radius:0;border-color:var(--fpt-line);background:var(--fpt-panel); }
+.inventory-detail .team-availability .btn { border-radius:0;font-family:var(--fpt-mono);text-transform:uppercase;clip-path:var(--fpt-cut-br); }
+
+/* --- Dettaglio carta del Market Watch --- */
+.market-detail { border-radius:0;border-color:#e8b84f66;background:linear-gradient(180deg,#120d20,#0a0812); }
+.market-detail-hero { border-radius:0; }
+.market-detail-hero::after { content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,#ffffff06 0 1px,transparent 1px 3px); }
+.market-detail-hero>* { position:relative;z-index:1; }
+.market-detail-hero .market-detail-topbar .detail-close { border-radius:0;clip-path:var(--fpt-cut-br); }
+.market-detail .market-row-badge { border-radius:0;font-family:var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.market-detail-hero-meta { color:var(--fpt-violet-hi);font:700 .6rem var(--fpt-mono);letter-spacing:.14em;text-transform:uppercase; }
+.market-detail-hero-body h2 { font-family:'Cinzel FPT',Georgia,serif;font-weight:800;text-transform:uppercase;letter-spacing:.02em;text-wrap:balance; }
+.market-detail-hero-price strong { font-family:var(--fpt-mono);color:var(--fpt-gold);text-shadow:0 0 20px #e8b84f59; }
+.market-detail .market-price-card-badge { border-radius:0;font-family:var(--fpt-mono);clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.market-detail-hero-sub { font-family:var(--fpt-mono);text-transform:uppercase;letter-spacing:.04em; }
+.market-detail-hero-sub::before { content:'> '; }
+.market-detail .market-chart,.market-detail .market-position-card { border-color:var(--fpt-line);border-radius:0;background:var(--fpt-panel);clip-path:var(--fpt-cut); }
+.market-detail .market-chart-head h3,.market-detail .market-position-head h3 { font-family:'Cinzel FPT',Georgia,serif;font-weight:800;text-transform:uppercase;letter-spacing:.04em; }
+.market-detail .market-chart-head h3::before,.market-detail .market-position-head h3::before { content:'// ';color:var(--fpt-violet);font-family:var(--fpt-mono); }
+.market-detail .market-position-head small { font-family:var(--fpt-mono); }
+.market-detail .market-range-tabs { gap:0;padding:0;border-color:var(--fpt-line);border-radius:0; }
+.market-detail .market-range-tabs button { border-radius:0;font-family:var(--fpt-mono);font-size:.6rem; }
+.market-detail .market-range-tabs button.active { background:#9b5cff29;color:var(--text);box-shadow:inset 0 -2px var(--fpt-violet); }
+.market-detail .market-chart svg { color:var(--fpt-gold);background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),#2a214080 calc(25% - 1px) 25%); }
+.market-detail .market-chart-stats { gap:0;border:1px solid var(--fpt-line); }
+.market-detail .market-chart-stats span { border:0;border-left:1px solid var(--fpt-line);border-radius:0;background:transparent; }
+.market-detail .market-chart-stats span:first-child { border-left:0; }
+.market-detail .market-chart-stats small { font-family:var(--fpt-mono); }
+.market-detail .market-chart-stats b { font-family:var(--fpt-mono); }
+.market-detail .market-position-grid { gap:0;border:1px solid var(--fpt-line); }
+.market-detail .market-position-grid span { border:0;border-radius:0;background:transparent; }
+.market-detail .market-position-grid span:nth-child(even) { border-left:1px solid var(--fpt-line); }
+.market-detail .market-position-grid span:nth-child(n+3) { border-top:1px solid var(--fpt-line); }
+.market-detail .market-position-grid small { font:700 .52rem var(--fpt-mono);letter-spacing:.1em;text-transform:uppercase; }
+.market-detail .market-position-grid b { font:800 1.05rem var(--fpt-mono); }
+.market-detail .market-position-grid span:nth-child(1) b,.market-detail .market-position-grid span:nth-child(3) b { color:var(--fpt-gold); }
+.market-detail .market-position-grid em { font-family:var(--fpt-mono); }
+.market-detail .market-quick-actions { grid-template-columns:1fr;gap:1px;border:1px solid var(--fpt-line);background:var(--fpt-line); }
+.market-detail .market-quick-btn { display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;justify-items:start;gap:10px;padding:10px 12px;border:0;border-radius:0;background:var(--fpt-panel);color:var(--text);font:800 .74rem var(--fpt-body,inherit);text-transform:uppercase;letter-spacing:.04em;text-align:left; }
+.market-detail .market-quick-btn::after { content:'›';color:var(--fpt-gold);font:700 .9rem var(--fpt-mono); }
+.market-detail .market-quick-btn .icon { box-sizing:border-box;width:30px;height:30px;padding:6px;border:1px solid #9b5cff59;color:var(--fpt-violet-hi); }
+.market-detail .market-quick-btn.active { background:#9b5cff1e; }
+.market-detail .mapping-state { border:1px dashed var(--fpt-line);border-radius:0;background:transparent;color:var(--muted);font:600 .58rem/1.7 var(--fpt-mono);letter-spacing:.05em;text-transform:uppercase; }
+.market-detail .mapping-state::before { content:'> '; }
+
+/* --- Mazzi del team --- */
+.deck-page .tabs[aria-label="Ambito mazzi"] { padding:0;border:1px solid var(--fpt-line);border-radius:0;background:var(--fpt-panel); }
+.deck-page .tabs[aria-label="Ambito mazzi"] button { border-radius:0;font:700 .64rem var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase; }
+.deck-page .tabs[aria-label="Ambito mazzi"] button.active { background:#9b5cff29;color:var(--text);box-shadow:inset 0 -2px var(--fpt-violet); }
+.deck-page .tabs[aria-label="Ambito mazzi"] button span,.deck-page .tabs[aria-label="Ambito mazzi"] button b { color:var(--fpt-gold); }
+.team-member-chips .chip { border-radius:0;font:700 .66rem var(--fpt-mono);letter-spacing:.04em;text-transform:uppercase;clip-path:var(--fpt-cut-br); }
+.team-member-chips .chip.active { border-color:var(--fpt-gold);background:#e8b84f14;color:var(--fpt-gold); }
+.team-member-chips .chip b { color:var(--fpt-gold); }
+.team-member-chips .chip .mini-avatar { width:24px;height:26px;border-radius:0;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+.deck-peek { border-radius:0;border:1px solid #e8b84f66;background:#0c0a14f2;clip-path:var(--fpt-cut); }
+.deck-peek-ring { border-radius:0;width:40px;height:44px;background:conic-gradient(var(--fpt-gold) calc(var(--ready)*1%),#2a2140 0);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+.deck-peek-ring i { width:32px;height:36px;border-radius:0;background:var(--fpt-panel);color:var(--fpt-gold);font-family:var(--fpt-mono);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+.deck-peek-copy b { font-weight:800;text-transform:uppercase;letter-spacing:.04em; }
+.deck-peek-copy small { font-family:var(--fpt-mono); }
+.deck-peek-chev { color:var(--fpt-gold); }
+
+/* --- Avvisi fissi: un unico modulo con barra luminosa e tag --- */
+.connection-banner,.data-note,.provider-warning { --fpt-notice:var(--fpt-gold);--fpt-notice-tag:'!';position:relative;display:block;margin-inline:0;padding:9px 26px 9px 58px;border:1px solid color-mix(in srgb,var(--fpt-notice) 40%,transparent);border-left:3px solid var(--fpt-notice);border-radius:0;background:linear-gradient(90deg,color-mix(in srgb,var(--fpt-notice) 10%,transparent),transparent 70%),var(--fpt-panel);color:#d8d0ee;font-size:.76rem;line-height:1.45;text-align:left;box-shadow:-4px 0 12px -6px var(--fpt-notice);backdrop-filter:none;clip-path:var(--fpt-cut-br); }
+.connection-banner::before,.data-note::before,.provider-warning::before { content:var(--fpt-notice-tag);position:absolute;left:9px;top:9px;min-width:30px;padding:2px 6px;background:var(--fpt-notice);color:#0b0812;font:800 .54rem var(--fpt-mono);letter-spacing:.1em;text-align:center;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%); }
+.connection-banner>.icon,.data-note>.icon,.provider-warning>.icon { display:none; }
+.connection-banner strong,.data-note strong,.provider-warning strong { color:var(--fpt-notice);font:800 .68rem var(--fpt-mono);letter-spacing:.06em;text-transform:uppercase; }
+.connection-banner.offline { --fpt-notice:var(--fpt-pink);--fpt-notice-tag:'OFF';color:#ffd9f5;background:linear-gradient(90deg,#ff4fd81a,transparent 70%),var(--fpt-panel); }
+.connection-banner.offline::after { content:'';position:absolute;right:12px;top:50%;width:8px;height:8px;margin-top:-4px;background:var(--fpt-pink);clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);animation:fpt-notice-pulse 1.2s steps(2) infinite; }
+.connection-banner.error { --fpt-notice:var(--fpt-danger);--fpt-notice-tag:'ERR';color:#ffd0d8; }
+.connection-banner button,.connection-banner .btn { display:inline-block;margin:6px 0 0;padding:4px 10px;border:1px solid var(--fpt-notice);border-radius:0;background:transparent;color:var(--fpt-notice);font:800 .58rem var(--fpt-mono);letter-spacing:.08em;text-decoration:none;text-transform:uppercase;clip-path:var(--fpt-cut-br); }
+.connection-banner button { display:block; }
+.data-note:not(.warning) { --fpt-notice:var(--fpt-violet-hi);--fpt-notice-tag:'i'; }
+.provider-warning { --fpt-notice:var(--fpt-violet-hi);--fpt-notice-tag:'i';color:#d8d0ee; }
+.data-note button { color:var(--fpt-notice); }
+@keyframes fpt-notice-pulse { 50% { opacity:.25; } }
+.fpt-notice-ghost { position:fixed !important;z-index:350;margin:0 !important;pointer-events:none;animation:fpt-zap .42s steps(1,end) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .stage-glitch>i,.connection-banner.offline::after { animation:none; }
+  .fpt-notice-ghost { display:none; }
+}
+:where(.team-member-chips .chip .mini-avatar) { background-color:var(--fpt-violet);color:#fff; }

@@ -163,8 +163,8 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
     : [['swap','In prestito',item.quantityLoaned],['lock','Prenotate',item.quantityReserved],['deck','Disponibili',item.quantityAvailable]];
   const meta = [[item.setCode,'code'],[item.rarity,'rarity'],[item.language,'language'],[item.condition,'condition'],[item.edition,'edition']].filter(([value])=>value);
   return '<div class="detail-backdrop inventory-detail-backdrop" data-close-collection-detail><aside class="card-detail inventory-detail" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title">'
-    + `<header class="inventory-detail-heading"><span class="eyebrow">${scope==='mine'?'La mia raccolta':'Raccolta team'}</span><button type="button" class="detail-close" data-close-collection-detail aria-label="Chiudi dettaglio carta">×</button></header>
-    <div class="detail-layout"><div class="${artStageClass}"${typeBackground?` style="background:linear-gradient(#090d1722,#090d1755) center/cover, url('${esc(typeBackground)}') center/cover"`:''}><div class="detail-art">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">`:icon('card')}</div></div>
+    + `<header class="inventory-detail-heading"><span class="eyebrow fpt-detail-tab">${scope==='mine'?'La mia raccolta':'Raccolta team'}</span><button type="button" class="detail-close" data-close-collection-detail aria-label="Chiudi dettaglio carta">×</button></header>
+    <div class="detail-layout"><div class="${artStageClass}"${typeBackground?` style="background:linear-gradient(#090d1722,#090d1755) center/cover, url('${esc(typeBackground)}') center/cover"`:''}>${typeReady?stageGlitchLayers(typeBackground,item.id):''}<span class="stage-corner tl" aria-hidden="true"></span><span class="stage-corner br" aria-hidden="true"></span>${typeReady?`<span class="stage-id" aria-hidden="true">${esc(stageTypeLabel(item.game,cardType))}</span>`:''}<div class="detail-art">${item.imageUrl?`<img src="${esc(item.imageUrl)}" alt="${esc(item.cardName)}">`:icon('card')}</div></div>
     <div class="detail-copy"><h2 id="collection-detail-title">${esc(item.cardName)}</h2>
       <div class="inventory-printing-meta">${meta.map(([value,kind])=>`<span class="inventory-meta-badge is-${kind}">${esc(value)}</span>`).join('')}<span class="inventory-availability ${item.quantityAvailable>0?'is-available':''}">${icon(item.quantityAvailable>0?'check':'lock')} ${item.quantityAvailable>0?'Disponibile':'Non disponibile'}</span></div>
       <dl class="${scope==='mine'?'stat-grid-4':'stat-grid-3'} inventory-quantity-stats">${stats.map(([symbol,label,value])=>`<div><dt>${icon(symbol)}<span>${label}</span></dt><dd>${Number(value)||0}</dd></div>`).join('')}</dl>
@@ -173,6 +173,23 @@ export function collectionDetailView(id, scope, collection, connected, currentUs
       ${scope==='team'?`<h3>Disponibilità nel team</h3><div class="team-availability">${rows.map(row=>ownerAvailability(row,connected,currentUser)).join('')}</div><div class="detail-actions"><button type="button" class="btn wide" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui printing</button></div>`:`<div class="detail-actions"><button type="button" class="btn wide inventory-loan-cta" data-collection-loan="${esc(item.id)}" ${item.quantityAvailable>0&&connected?'':'disabled'}>${icon('swap')} Crea prestito</button><div class="detail-actions-row"><button type="button" class="btn secondary" data-market-watch-add="${esc(item.printingId)}" ${connected&&item.printingId?'':'disabled'}>${icon('chart')} Segui</button><button type="button" class="btn secondary" data-collection-edit="${esc(item.id)}" ${connected?'':'disabled'}>${icon('settings')} Modifica</button><button type="button" class="btn secondary danger" data-collection-delete="${esc(item.id)}" ${connected?'':'disabled'}>${icon('trash')} Rimuovi</button></div></div>`}
       ${!connected?'<p class="inventory-offline-note">Sei offline. Torna online per modificare la raccolta o creare un prestito.</p>':''}
     </div></div></aside></div>`;
+}
+// Interferenza sullo sfondo del dettaglio carta: copie dello sfondo che, per
+// circa mezzo secondo ogni 7 s, scattano a fasce con i canali rosa/ciano,
+// più banda luminosa e rumore. La carta sta sopra e resta ferma. Lo
+// sfasamento dipende dall'id, così carte diverse non glitchano insieme.
+const DEFAULT_STAGE_BACKGROUND = 'assets/background/yugioh-01.png';
+export function stageGlitchLayers(background, id) {
+  const image = background || DEFAULT_STAGE_BACKGROUND;
+  let hash = 0; for (const ch of String(id || '')) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const delay = -((hash % 70) / 10);
+  return `<span class="stage-glitch" aria-hidden="true" style="--img:url('${esc(image)}');--delay:${delay}s"><i class="bgl"></i><i class="slice a"></i><i class="slice b"></i><i class="slice c"></i><i class="roll"></i><i class="noise"></i></span>`;
+}
+export function stageTypeLabel(game, cardType) {
+  if (game !== 'yugioh') return 'OP · CARD';
+  const type = String(cardType || '').toLowerCase();
+  const kind = ['fusion','synchro','xyz','link','ritual','pendulum','spell','trap'].find(name => type.includes(name));
+  return 'YGO · ' + (kind ? kind.toUpperCase() : 'MONSTER');
 }
 export function collectionLoanRequestView(item, connected) {
   if (!item) return '';

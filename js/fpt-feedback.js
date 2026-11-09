@@ -92,3 +92,47 @@ export function fptConfirm(message, options = {}) {
     setTimeout(() => no.focus({ preventScroll:true }), 30);
   });
 }
+
+// Avvisi fissi (offline, errori di caricamento, note): quando la situazione si
+// risolve e l'avviso sparisce dal DOM, ne lasciamo un "fantasma" nella stessa
+// posizione che si chiude con lo zap glitch. I re-render dell'app ricreano
+// spesso lo stesso avviso: se dopo il re-render ne esiste ancora uno identico
+// (stesse classi e testo) non c'è nessuna chiusura da animare. Niente zap
+// quando cambia pagina o quando l'avviso stava dentro un pannello che si chiude.
+const NOTICE_SELECTOR = '.connection-banner, .data-note, .provider-warning';
+const noticeRects = new WeakMap();
+const noticeKey = node => `${node.className}::${(node.textContent || '').trim()}`;
+let noticeObserver = null;
+
+function rememberNotice(node) { noticeRects.set(node, { rect: node.getBoundingClientRect(), hash: location.hash }); }
+
+export function watchNoticeExits(root = typeof document !== 'undefined' ? document.body : null) {
+  if (!root || noticeObserver || typeof MutationObserver === 'undefined') return;
+  if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  // Una sola misura per frame, e solo sugli avvisi (pochi): niente layout forzato a ogni mutazione.
+  let scanQueued = false;
+  const scan = () => { if (scanQueued) return; scanQueued = true; requestAnimationFrame(() => { scanQueued = false; root.querySelectorAll(NOTICE_SELECTOR).forEach(rememberNotice); }); };
+  noticeObserver = new MutationObserver(records => {
+    const removed = [];
+    for (const record of records) for (const node of record.removedNodes) {
+      if (node.nodeType !== 1) continue;
+      const list = node.matches?.(NOTICE_SELECTOR) ? [node] : [...(node.querySelectorAll?.(NOTICE_SELECTOR) || [])];
+      for (const notice of list) if (!notice.closest('.detail-backdrop, .card-detail, .fpt-notice-ghost')) removed.push(notice);
+    }
+    if (removed.length) requestAnimationFrame(() => {
+      const alive = new Set([...root.querySelectorAll(NOTICE_SELECTOR)].map(noticeKey));
+      for (const notice of removed) {
+        const seen = noticeRects.get(notice);
+        if (!seen || seen.hash !== location.hash || alive.has(noticeKey(notice)) || !seen.rect.width) continue;
+        const ghost = notice.cloneNode(true);
+        ghost.classList.add('fpt-notice-ghost');
+        Object.assign(ghost.style, { left:`${seen.rect.left}px`, top:`${seen.rect.top}px`, width:`${seen.rect.width}px` });
+        document.body.append(ghost);
+        setTimeout(() => ghost.remove(), 480);
+      }
+    });
+    scan();
+  });
+  noticeObserver.observe(root, { childList:true, subtree:true });
+  scan();
+}

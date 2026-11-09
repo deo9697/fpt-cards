@@ -13,9 +13,9 @@ import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconciliation.js';
 import { icon } from './js/icons.js';
-import { showToast, fptConfirm } from './js/fpt-feedback.js';
+import { showToast, fptConfirm, watchNoticeExits } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
-import { collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
+import { stageGlitchLayers, stageTypeLabel, collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
@@ -143,7 +143,7 @@ function createFastScanController(FastScanController) { return new FastScanContr
   // prossimo login/refresh online per essere riconciliata. scheduleCatalogRepairs
   // è già rientrante (catalogRepairRunning/catalogRepairQueued), chiamarla
   // qui non duplica un ciclo già in corso.
-  onSaved:async()=>{await loadCollection({force:true});saveState();if(page==='collection')renderRoute();scheduleCatalogRepairs();}, onToast:message=>toast(message),
+  onSaved:async()=>{await loadCollection({force:true});saveState();if(page==='collection')renderRoute();scheduleCatalogRepairs();}, onToast:(message,tone)=>toast(message,tone),
   onRoute:mode=>setFastScanRoute(mode)
 }); }
 
@@ -194,9 +194,9 @@ const MARKET_RENDER_PAGES = new Set(['market', 'home']);
 function loadAppControllers() {
   appControllersLoading ??= Promise.all([import('./js/decks.js'), import('./js/market-watch.js'), import('./js/stats.js')])
     .then(([{ DeckController }, { MarketWatchController }, { StatsController }]) => {
-      decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:message=>toast(message),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
-      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:message=>toast(message),onNavigate:target=>navigate(target)});
-      stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:message=>toast(message)});
+      decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:(message,tone)=>toast(message,tone),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
+      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:(message,tone)=>toast(message,tone),onNavigate:target=>navigate(target)});
+      stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:(message,tone)=>toast(message,tone)});
       // Ridisegna solo dove servono i controller (Dashboard e le loro pagine):
       // mai sulla Raccolta, su Fast Scan o mentre si scrive, per non perdere
       // testo digitato o stato della pagina.
@@ -2008,6 +2008,12 @@ function updateDetailBackground() {
   const background = backgroundForCardType(type);
   stage.style.background = background
     ? `linear-gradient(#090d1722,#090d1755) center/cover, url('${background}') center/cover` : '';
+  // Tipo arrivato dopo il primo render: aggiungi interferenza ed etichetta che
+  // il render con tipo in attesa non poteva ancora sapere.
+  stage.querySelector('.stage-glitch')?.remove();
+  stage.insertAdjacentHTML('afterbegin', stageGlitchLayers(background, selectedCollectionItem));
+  const item = (state.collection.mine || []).find(entry => entry.id === selectedCollectionItem) || (state.collection.team || []).find(entry => entry.printingId === selectedCollectionItem);
+  if (!stage.querySelector('.stage-id')) stage.querySelector('.detail-art')?.insertAdjacentHTML('beforebegin', `<span class="stage-id" aria-hidden="true">${esc(stageTypeLabel(item?.game || 'yugioh', type))}</span>`);
 }
 function cardTypeForDetail(id) {
   const item = collectionFilters.scope === 'team'
@@ -3150,10 +3156,12 @@ async function start() {
       });
     }
     render(true);
+    watchNoticeExits();
     void registerAutoUpdates();
     return;
   }
   render();
+  watchNoticeExits();
   // Sessione ripristinata: avvia subito il caricamento dei controller post-login
   // (Mazzi/Market/Statistiche), in parallelo a membri e dati.
   if (state.currentUser && !state.standalone) void loadAppControllers().catch(() => {});
