@@ -85,7 +85,7 @@ function ygoDeck(cards, overrides = {}) {
   console.log('PASS signature card assente: fallback gestito da resolveDeckSignature() già esistente, mai duplicato');
 }
 
-// --- One Piece: sezioni diverse (leader/main/don), mai un dato perso ------
+// --- One Piece: sezioni leader/main; le vecchie righe DON!! restano fuori ---
 {
   const deck = { name: 'Luffy Rush', game: 'onepiece', format: '', deckTheme: null, signatureCardId: null, cards: [
     { catalogCardId: 'OP01-001', cardName: 'Monkey.D.Luffy', section: 'leader', quantity: 1, imageUrl: '' },
@@ -94,10 +94,10 @@ function ygoDeck(cards, overrides = {}) {
   ] };
   const model = normalizeDeckForImage(deck);
   const totalCards = model.sections.reduce((sum, s) => sum + sectionTotalQuantity(s.cards), 0);
-  assert.equal(totalCards, 15, 'nessuna carta deve andare persa bucketizzando per le sezioni reali del gioco (leader/main/don, non main/extra/side)');
-  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main,don');
+  assert.equal(totalCards, 5, 'Leader + Main contati; i 10 DON!! non fanno parte della lista e restano fuori dall\'immagine');
+  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main');
   assert.equal(model.extra.length, 0, 'One Piece non ha una sezione extra: la vista di comodo resta vuota, ma i dati vivono in sections');
-  console.log('PASS One Piece: sezioni leader/main/don riusate dall\'adapter, nessuna carta persa, main/extra/side restano solo un alias di comodo');
+  console.log('PASS One Piece: sezioni leader/main dall\'adapter, DON!! esclusi dall\'immagine, main/extra/side restano solo un alias di comodo');
 }
 
 // --- Layout: 40 main / 15 extra / 15 side, nessun overflow ---------------

@@ -368,13 +368,13 @@ function fakeCanvas() {
   try {
     const { canvas, calls } = fakeCanvas();
     const { ready, model, cache } = renderDeckImagePreview(deck, { canvas, previewTimeoutMs: 1000, concurrency: 6 });
-    assert.equal(model.sections.map(s => s.key).join(','), 'leader,main,don', 'la pipeline progressiva deve riusare le sezioni reali dell\'adapter One Piece, non main/extra/side');
+    assert.equal(model.sections.map(s => s.key).join(','), 'leader,main', 'la pipeline progressiva deve riusare le sezioni reali dell\'adapter One Piece (leader/main, niente DON!!), non main/extra/side');
     await ready;
     assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-001.jpg'), undefined);
     assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-016.jpg'), undefined);
     assert(calls.clearRect >= 1);
   } finally { restore(); }
-  console.log('PASS One Piece: caricamento progressivo (fetch osservabile) funziona identico su leader/main/don, riusando gli stessi adapter senza branching duplicato');
+  console.log('PASS One Piece: caricamento progressivo (fetch osservabile) funziona identico su leader/main (DON!! esclusi), riusando gli stessi adapter senza branching duplicato');
 }
 
 console.log('PASS deck-image-export caricamento progressivo: pipeline fetch osservabile, cache a 3 mappe senza falsi successi, retry con budget limitato, concorrenza limitata, timeout breve con upgrade tardivo, tetto globale export, preview sincrona prima del preload, retrocompatibilità, One Piece incluso');

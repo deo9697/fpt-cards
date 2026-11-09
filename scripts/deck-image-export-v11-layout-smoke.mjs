@@ -99,7 +99,7 @@ function assertNoOverflow(layout, label) {
     { catalogCardId: 'don-1', cardName: 'DON!!', section: 'don', quantity: 10, imageUrl: '' }
   ] };
   const model = normalizeDeckForImage(deck);
-  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main,don', 'le sezioni reali dell\'adapter One Piece devono restare leader/main/don, mai main/extra/side');
+  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main', 'le sezioni reali dell\'adapter One Piece sono leader/main (niente DON!!), mai main/extra/side');
 
   const readable = computeDeckImageLayout(model, { layoutMode: 'readable' });
   assertNoOverflow(readable, 'One Piece readable');

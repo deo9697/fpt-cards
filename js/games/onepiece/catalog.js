@@ -36,6 +36,13 @@ export async function findCardById(id) {
 }
 
 const costCache = new Map();
+const kindCache = new Map();
+// Tipo One Piece già noto (Character/Event/Stage...), riempito da cardCostsByIds.
+export function cachedCardKinds(ids) {
+  const map = {};
+  for (const id of ids || []) if (kindCache.has(String(id))) map[id] = kindCache.get(String(id));
+  return map;
+}
 
 // Usato dal Deck Builder per l'ordinamento "Costo" (P1.x): il costo non è
 // persistito su deck_cards (è metadata di catalogo, non inventario), quindi
@@ -48,14 +55,19 @@ export async function cardCostsByIds(ids) {
   const unique = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
   const missing = unique.filter(id => !costCache.has(id));
   if (missing.length) {
+    // Prima la RPC con anche il tipo; se non è ancora in produzione si torna
+    // a quella dei soli costi (ordine per costo, senza gruppi per tipo).
     let rows = [], failed = false;
-    try { rows = await api.onePieceCardCosts(missing) || []; } catch { rows = []; failed = true; }
+    try { rows = await api.onePieceCardMeta(missing) || []; }
+    catch { try { rows = await api.onePieceCardCosts(missing) || []; } catch { rows = []; failed = true; } }
     const resolved = new Set();
     for (const row of rows) {
       const id = String(row.catalog_card_id ?? row.catalogCardId ?? '').trim();
       if (!id) continue;
       const cost = row.cost === null || row.cost === undefined ? null : Number(row.cost);
       costCache.set(id, Number.isFinite(cost) ? cost : null);
+      const kind = String(row.card_type ?? row.cardType ?? '').trim();
+      if (kind) kindCache.set(id, kind);
       resolved.add(id);
     }
     // Chiamata fallita (rete, timeout): niente cache, così si riprova dopo.

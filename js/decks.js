@@ -29,6 +29,7 @@ const TYPE_FILTERS = [
   { value: 'trap', label: 'Trappole' }
 ];
 const TYPE_RANK = { monster: 0, spell: 1, trap: 2, '': 3 };
+const ONE_PIECE_KIND_RANK = { character: 0, event: 1, stage: 2 };
 const SORT_OPTIONS = [
   { value: 'type', label: 'Tipo', title: 'Ordina per tipo: Mostri dal livello più alto → Magie → Trappole' },
   { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
@@ -40,7 +41,7 @@ const SORT_OPTIONS = [
 // c'è "Costo" (crescente) — ed è anche il default all'apertura del mazzo,
 // non solo un'opzione da scegliere (richiesta utente 2026-09-10).
 const ONE_PIECE_SORT_OPTIONS = [
-  { value: 'cost-asc', label: 'Costo', title: 'Ordina per costo, dal più basso al più alto' },
+  { value: 'cost-asc', label: 'Costo', title: 'Character → Event → Stage, ognuno dal costo più basso al più alto' },
   { value: 'name-asc', label: 'A–Z', title: 'Ordina per nome, A–Z' },
   { value: 'name-desc', label: 'Z–A', title: 'Ordina per nome, Z–A' },
   { value: 'qty-desc', label: 'Copie', title: 'Ordina per quantità, più copie prima' },
@@ -91,7 +92,7 @@ export class DeckController {
     // Costo carte One Piece (per l'ordinamento "Costo", default del Main
     // Deck): non è cache-su-disco come cardTypes, si risolve al volo ad ogni
     // apertura mazzo — dataset piccolo, nessun bisogno di persisterlo.
-    this.cardCosts = {}; this.costsLoading = false;
+    this.cardCosts = {}; this.cardKinds = {}; this.costsLoading = false;
     // La ricerca carte del deck editor resta aperta finché non la chiudi
     // esplicitamente (X o indietro) — selezionare una carta da aggiungere
     // NON la chiude più, così se ne possono aggiungere più di seguito
@@ -198,8 +199,7 @@ export class DeckController {
     return `
       <div class="c-total"><small>Leader</small><b>${counts.leader.count}/${counts.leader.target}${counts.leader.count === counts.leader.target ? ' ✓' : ''}</b></div>
       <div class="c-main"><small>Main</small><b>${counts.main.count}/${counts.main.target}</b></div>
-      <div class="c-extra"><small>DON!!</small><b>${counts.don.count}/${counts.don.target}${counts.don.count === counts.don.target ? ' ✓' : ''}</b></div>
-      <div class="c-side"><small>Totale</small><b>${counts.leader.count + counts.main.count + counts.don.count}</b></div>`;
+      <div class="c-side"><small>Totale</small><b>${counts.leader.count + counts.main.count}</b></div>`;
   }
   legalityBadge(deck) {
     if (deck.game !== 'onepiece') return '';
@@ -287,7 +287,13 @@ export class DeckController {
       // Costo crescente (default One Piece): le carte senza costo risolto
       // (es. Stage, o non ancora sincronizzate) finiscono in fondo per
       // nome invece che mischiate a caso in mezzo alle altre.
+      // Character → Event → Stage (richiesta del team 2026-11-09), dentro ogni
+      // gruppo dal costo più basso. Tipo ancora sconosciuto = come Character,
+      // così senza la RPC dei tipi resta il semplice ordine per costo.
       case 'cost-asc': return sorted.sort((a, b) => {
+        const kind = item => ONE_PIECE_KIND_RANK[String(this.cardKinds[item.catalogCardId] || '').toLowerCase()] ?? 0;
+        const byKind = kind(a) - kind(b);
+        if (byKind) return byKind;
         const costA = this.cardCosts[a.catalogCardId], costB = this.cardCosts[b.catalogCardId];
         const rankA = typeof costA === 'number' ? costA : Infinity, rankB = typeof costB === 'number' ? costB : Infinity;
         return rankA - rankB || a.cardName.localeCompare(b.cardName, 'it');
@@ -322,7 +328,7 @@ export class DeckController {
   cardSheet(item, report, deck, { readonly = false } = {}) {
     // DON!! non è più raggiungibile dalla griglia (P1.0, gestito in automatico):
     // non ha senso offrirlo come destinazione di uno spostamento manuale.
-    const otherSections = sectionsFor(deck).filter(section => section !== item.section && !(deck.game === 'onepiece' && section === 'don'));
+    const otherSections = sectionsFor(deck).filter(section => section !== item.section);
     const info = report?.perCard.get(deckCardIdentityKey(item));
     return `<div class="deck-sheet" role="dialog" aria-label="Dettaglio carta ${esc(item.cardName)}">
       <button type="button" class="deck-sheet-close" data-deck-sheet-close aria-label="Chiudi dettaglio">${icon('arrow')}</button>
@@ -706,24 +712,7 @@ export class DeckController {
   open(id) { if (!this.decks.some(deck => deck.id === id)) return; this.activeId = id; this.previewId = id; this.screen = 'detail'; this.resetEditorView(); void this.resolveCardTypes(this.active()); void this.resolveCardLevels(this.active()); void this.resolveCardCosts(this.active()); this.onRender(); }
   openTeam(id) { if (!this.teamDecks.some(deck => deck.id === id)) return; this.teamDetailId = id; this.screen = 'team-detail'; this.resetEditorView(); void this.resolveCardTypes(this.activeTeamDeck()); void this.resolveCardLevels(this.activeTeamDeck()); void this.resolveCardCosts(this.activeTeamDeck()); this.onRender(); }
   showGallery(render = true) { this.screen = 'gallery'; this.teamDetailId = ''; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; if (render) this.onRender(); }
-  create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (deck.game === 'onepiece') void this.autofillDon(deck); if (render) this.onRender(); }
-  // Le 10 carte DON!! (P1.0) non passano più da un tab dedicato: ogni mazzo
-  // One Piece nuovo le riceve subito in automatico cercandole nel catalogo.
-  // Se il catalogo non è ancora sincronizzato la ricerca torna vuota — resta
-  // semplicemente 0/10 nel riepilogo finché il sync non gira, nessun errore
-  // mostrato all'utente.
-  async autofillDon(deck) {
-    const adapter = getGameAdapter(deck.game);
-    if (!adapter.donSearchQuery || !adapter.donDeckSize || deck.cards.some(card => card.section === 'don')) return;
-    try {
-      const results = await this.searchCards(adapter.donSearchQuery, deck.game);
-      const card = results.find(adapter.isDonCard) || results[0];
-      if (!card || !this.decks.some(d => d.id === deck.id)) return;
-      this.addSilent(card, 'don', adapter.donDeckSize);
-      this.persistDrafts();
-      this.onRender();
-    } catch {}
-  }
+  create(render = true) { const deck = { id: `draft-${Date.now()}`, persisted: false, dirty: true, ownerSlug: this.state.currentUser, name: 'Nuovo mazzo', format: 'TCG Avanzato', game: this.state.game, cards: [], cover: '', signatureCardId: null, deckTheme: DEFAULT_DECK_THEME, deckBoxTemplate: DEFAULT_DECK_BOX_TEMPLATE }; this.state.decks = [deck, ...(this.state.decks || [])]; this.activeId = deck.id; this.previewId = deck.id; this.screen = 'detail'; this.resetEditorView(); this.persistDrafts(); if (render) this.onRender(); }
   // Riparte sempre dalla prima sezione dell'adapter per Yu-Gi-Oh (Main). Per
   // One Piece il Leader ha ora la sua card dedicata (P1.0) fuori dai tab, così
   // la ricerca generica targetizza subito il Main invece del Leader.
@@ -838,6 +827,7 @@ export class DeckController {
       // Solo gli id che il catalogo ha davvero risposto: se la chiamata fallisce
       // non si memorizza "nessun costo", così alla prossima apertura si riprova.
       for (const id of ids) if (Object.hasOwn(resolved, id)) this.cardCosts[id] = resolved[id];
+      Object.assign(this.cardKinds, adapter.cachedCardKinds?.(ids) || {});
     } finally {
       this.costsLoading = false;
       this.onRender();
@@ -933,6 +923,7 @@ export class DeckController {
     else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
     this.rememberCardType(id, card.type);
+    if (deck.game === 'onepiece' && card.type && !(id in this.cardKinds)) this.cardKinds[id] = card.type;
     this.rememberCardLevel(id, card.level, deck);
     this.rememberCardCost(id, card.cost);
     this.markDirty(deck);
@@ -1152,10 +1143,13 @@ export function sameDeckCardIdentity(card, item) {
   return Boolean(cardName && itemName) && cardName === itemName;
 }
 export function parseDeckList(text) { let section = 'main'; const merged = new Map(); for (const raw of String(text).split(/\r?\n/)) { const line = raw.trim(); if (!line) continue; const marker = line.toLowerCase(); if (marker === '#main' || marker === 'main deck' || marker === 'main:') { section = 'main'; continue; } if (marker === '#extra' || marker === 'extra deck' || marker === 'extra:') { section = 'extra'; continue; } if (marker === '!side' || marker === '#side' || marker === 'side deck' || marker === 'side:') { section = 'side'; continue; } if (line.startsWith('#') || line.startsWith('!')) continue; const match = line.match(/^(?:(\d{1,2})\s*[x×]?\s+)?(.+)$/), quantity = Math.max(1, Number(match?.[1] || 1)), value = (match?.[2] || line).trim(), id = /^\d{5,10}$/.test(value) ? value : ''; const key = `${section}:${id || value.toLowerCase()}`, existing = merged.get(key); if (existing) existing.quantity += quantity; else merged.set(key, { section, quantity, id, name: id ? '' : value }); } return [...merged.values()]; }
-function mapDeck(row) { return { id: String(row.id), persisted: true, dirty: false, ownerSlug: row.owner_slug || row.ownerSlug || '', name: row.name, format: row.format || 'TCG Avanzato', game: row.game, signatureCardId: row.signature_card_id || row.signatureCardId || null, deckTheme: row.deck_theme || row.deckTheme || DEFAULT_DECK_THEME, deckBoxTemplate: row.deck_box_template || row.deckBoxTemplate || DEFAULT_DECK_BOX_TEMPLATE, createdAt: row.created_at || row.createdAt || '', updatedAt: row.updated_at || row.updatedAt || '', cards: (row.cards || []).map(card => ({ catalogCardId: String(card.catalog_card_id || card.catalogCardId), cardName: card.card_name || card.cardName, imageUrl: card.image_url || card.imageUrl || '', croppedImageUrl: card.cropped_image_url || card.croppedImageUrl || '', banTcg: card.ban_tcg || card.banTcg || '', section: card.section || 'main', quantity: Number(card.quantity || 1), printingId: card.printing_id || card.printingId || null, printingSetCode: card.printing_set_code || card.printingSetCode || '', printingRarity: card.printing_rarity || card.printingRarity || '' })), cover: row.cover_image_url || row.coverImageUrl || '' }; }
+function mapDeck(row) { return stripOnePieceDon({ id: String(row.id), persisted: true, dirty: false, ownerSlug: row.owner_slug || row.ownerSlug || '', name: row.name, format: row.format || 'TCG Avanzato', game: row.game, signatureCardId: row.signature_card_id || row.signatureCardId || null, deckTheme: row.deck_theme || row.deckTheme || DEFAULT_DECK_THEME, deckBoxTemplate: row.deck_box_template || row.deckBoxTemplate || DEFAULT_DECK_BOX_TEMPLATE, createdAt: row.created_at || row.createdAt || '', updatedAt: row.updated_at || row.updatedAt || '', cards: (row.cards || []).map(card => ({ catalogCardId: String(card.catalog_card_id || card.catalogCardId), cardName: card.card_name || card.cardName, imageUrl: card.image_url || card.imageUrl || '', croppedImageUrl: card.cropped_image_url || card.croppedImageUrl || '', banTcg: card.ban_tcg || card.banTcg || '', section: card.section || 'main', quantity: Number(card.quantity || 1), printingId: card.printing_id || card.printingId || null, printingSetCode: card.printing_set_code || card.printingSetCode || '', printingRarity: card.printing_rarity || card.printingRarity || '' })), cover: row.cover_image_url || row.coverImageUrl || '' }); }
+// I DON!! non fanno parte della lista One Piece (vedi rules.js): le righe
+// della vecchia sezione 'don' si scartano da mazzi salvati e bozze.
+function stripOnePieceDon(deck) { if (deck?.game === 'onepiece' && Array.isArray(deck.cards)) deck.cards = deck.cards.filter(card => card.section !== 'don'); return deck; }
 function mapTeamDeck(row) { return { ...mapDeck(row), ownerName: row.owner_name || row.ownerName || 'Membro del team' }; }
 function uniqueDeckCards(cards = []) { const seen = new Set(); return cards.filter(card => { const key = String(card.catalogCardId); if (seen.has(key)) return false; seen.add(key); return true; }); }
-function readDrafts() { try { const value = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } }
+function readDrafts() { try { const value = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); return Array.isArray(value) ? value.map(stripOnePieceDon) : []; } catch { return []; } }
 export function isExtraDeckCard(card) { return /fusion|synchro|xyz|link/i.test(String(card?.type || '')); }
 function sectionTotal(deck, section) { return deck.cards.filter(card => card.section === section).reduce((sum, card) => sum + card.quantity, 0); }
 // Limite copie per singolo catalogCardId in una sezione: 1 per il Leader

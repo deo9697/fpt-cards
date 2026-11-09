@@ -295,6 +295,10 @@ export const api = {
   // Il costo non viaggia sulle righe deck_cards (non è dato di inventario,
   // è metadata di catalogo) — si risolve al volo per catalogCardId, come i
   // tipi carta Yu-Gi-Oh via cardTypesByIds.
+  // Costo + tipo (Character/Event/Stage) per l'ordinamento del Main One Piece.
+  async onePieceCardMeta(catalogCardIds) {
+    ensure(); return unwrap(await client.rpc('list_onepiece_card_meta', { p_token:token(),p_catalog_card_ids:catalogCardIds }));
+  },
   async onePieceCardCosts(catalogCardIds) {
     ensure(); return unwrap(await client.rpc('list_onepiece_card_costs', { p_token:token(),p_catalog_card_ids:catalogCardIds }));
   },

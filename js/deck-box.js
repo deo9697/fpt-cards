@@ -57,7 +57,7 @@ export function deckBoxModel(deck,{availability=null,marketValue=null,marketIndi
 }
 
 // Ogni gioco ha la sua riga di stato sulla card del Deck Box: Main/Extra/Side
-// per Yu-Gi-Oh, Leader/Main/DON!! per One Piece — mai un elenco fisso che
+// per Yu-Gi-Oh, Leader/Main per One Piece (i DON!! non sono nella lista) — mai un elenco fisso che
 // presuppone le sezioni dell'altro gioco (bug corretto 2026-09-09: la card
 // mostrava "Main • Extra • Side" anche per i mazzi One Piece).
 function deckBoxStatLine(deck){
@@ -65,8 +65,7 @@ function deckBoxStatLine(deck){
     const {counts}=getGameAdapter('onepiece').validateDeck(deck);
     return [
       {label:'Leader',value:counts.leader.count?'✓':'—'},
-      {label:'Main',value:`${counts.main.count}/${counts.main.target}`},
-      {label:'DON!!',value:`${counts.don.count}/${counts.don.target}`}
+      {label:'Main',value:`${counts.main.count}/${counts.main.target}`}
     ];
   }
   return [

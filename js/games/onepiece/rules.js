@@ -1,16 +1,14 @@
-export const ONE_PIECE_SECTIONS = ['leader', 'main', 'don'];
-export const ONE_PIECE_LABELS = { leader: 'Leader', main: 'Main Deck', don: 'DON!!' };
+// La lista One Piece è Leader + 50 carte del Main: i 10 DON!! li ha ogni
+// giocatore e non fanno parte della decklist (2026-11-09, richiesta del team:
+// niente DON!! né nelle liste né nell'immagine della lista).
+export const ONE_PIECE_SECTIONS = ['leader', 'main'];
+export const ONE_PIECE_LABELS = { leader: 'Leader', main: 'Main Deck' };
 
 const LEADER_COUNT = 1;
 const MAIN_DECK_SIZE = 50;
-export const DON_DECK_SIZE = 10;
 const MAIN_CARD_COPY_LIMIT = 4;
 
-// Le 10 carte DON!! non si scelgono a mano come Leader/Main (P1.0): il Deck
-// Builder le aggiunge da solo cercando questo termine nel catalogo. Se il
-// catalogo non è ancora sincronizzato la ricerca torna vuota — nessun errore,
-// il riepilogo resta semplicemente a 0/10 finché il sync non gira.
-export const DON_SEARCH_QUERY = 'DON!!';
+// Le carte DON!! non entrano mai nella lista: l'import OPTCGSim le salta.
 export function isDonCard(card) {
   const type = String(card?.type || '').toLowerCase();
   if (type === 'don' || type.includes('don')) return true;
@@ -54,14 +52,11 @@ export function validateOnePieceDeck(deck) {
   const cards = deck?.cards || [];
   const leaderCards = cards.filter(card => card.section === 'leader');
   const mainCards = cards.filter(card => card.section === 'main');
-  const donCards = cards.filter(card => card.section === 'don');
   const leaderCount = sumQuantity(leaderCards);
   const mainCount = sumQuantity(mainCards);
-  const donCount = sumQuantity(donCards);
   const errors = [];
   if (leaderCount !== LEADER_COUNT) errors.push(`Serve esattamente ${LEADER_COUNT} Leader (attuali: ${leaderCount})`);
   if (mainCount !== MAIN_DECK_SIZE) errors.push(`Il Main Deck deve contenere ${MAIN_DECK_SIZE} carte (attuali: ${mainCount})`);
-  if (donCount !== DON_DECK_SIZE) errors.push(`Servono ${DON_DECK_SIZE} carte DON!! (attuali: ${donCount})`);
   // Il limite è per carta logica (catalogCardId), non per riga: 2x regular +
   // 2x parallel dello stesso catalogCardId sono 4 copie della stessa carta
   // ai fini di questo controllo, non 2+2 carte "diverse" (Fase 4.1).
@@ -83,8 +78,7 @@ export function validateOnePieceDeck(deck) {
     errors,
     counts: {
       leader: { count: leaderCount, target: LEADER_COUNT },
-      main: { count: mainCount, target: MAIN_DECK_SIZE },
-      don: { count: donCount, target: DON_DECK_SIZE }
+      main: { count: mainCount, target: MAIN_DECK_SIZE }
     }
   };
 }

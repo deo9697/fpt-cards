@@ -32,6 +32,9 @@ export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {} } =
   const buckets = new Map(sectionKeys.map(key => [key, new Map()]));
 
   for (const card of deck?.cards || []) {
+    // I DON!! non fanno parte della lista One Piece: una vecchia riga 'don'
+    // non deve finire nel primo bucket (sarebbe comparsa come Leader).
+    if (game === 'onepiece' && card?.section === 'don') continue;
     const bucket = buckets.get(card?.section) || buckets.get(sectionKeys[0]);
     if (!bucket) continue;
     const id = canonicalCatalogCardId(card.catalogCardId, game) || String(card.catalogCardId || '').trim();

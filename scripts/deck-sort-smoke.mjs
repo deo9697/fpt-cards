@@ -71,6 +71,23 @@ await check('chiamata costi fallita: non memorizza "nessun costo", alla riapertu
   assert.deepEqual(controller.sortCards(other.cards).map(item => item.cardName), ['Altra Nuova', 'Carta Nuova']);
 });
 
+// ------- One Piece con la RPC costo+tipo: Character → Event → Stage -------
+await check('One Piece: Character → Event → Stage, ognuno dal costo più basso', async () => {
+  const META = { 'OP20-001': [5, 'Character'], 'OP20-002': [1, 'Event'], 'OP20-003': [2, 'Character'], 'OP20-004': [1, 'Stage'], 'OP20-005': [3, 'Event'], 'OP20-006': [7, 'Character'] };
+  api.onePieceCardMeta = async ids => ids.filter(id => id in META).map(id => ({ catalog_card_id: id, cost: META[id][0], card_type: META[id][1] }));
+  const metaDeck = { ...deck, id: 'op-meta', cards: [card('OP20-001', 'Kaido'), card('OP20-002', 'Gum-Gum Red Hawk'), card('OP20-003', 'Zoro'), card('OP20-004', 'Thousand Sunny'), card('OP20-005', 'Radical Beam'), card('OP20-006', 'Big Mom')] };
+  state.decks = [metaDeck]; state.game = 'onepiece';
+  controller.open('op-meta'); await settle(); await settle();
+  assert.deepEqual(controller.sortCards(metaDeck.cards).map(item => item.cardName), ['Zoro', 'Kaido', 'Big Mom', 'Gum-Gum Red Hawk', 'Radical Beam', 'Thousand Sunny']);
+  delete api.onePieceCardMeta;
+});
+
+await check('One Piece: carta Event aggiunta dalla ricerca va subito tra gli Event', async () => {
+  const metaDeck = state.decks[0];
+  controller.add({ id: 'OP20-007', name: 'Divine Departure', image: '', cost: 2, type: 'Event' }, 'main', 1);
+  assert.deepEqual(controller.sortCards(metaDeck.cards.filter(item => item.section === 'main')).map(item => item.cardName).slice(3, 6), ['Gum-Gum Red Hawk', 'Divine Departure', 'Radical Beam']);
+});
+
 // ---------------- Yu-Gi-Oh: mostri dal livello più alto ----------------
 const LEVELS = { '1': 8, '2': 4, '3': 4, '4': 1, '5': 12, '6': null, '7': null, '8': 4, '9': 2 };
 const ygoController = new DeckController({ api: {}, getState: () => state, onRender() {}, onToast() {},
@@ -110,4 +127,4 @@ await check('Yu-Gi-Oh: ogni mazzo riparte da "Tipo" anche se prima era Z–A', a
   assert.equal(ygoController.cardSort, 'type');
 });
 
-console.log(`Deck sort (One Piece costo + Yu-Gi-Oh livello): ${count}/${count} PASS`);
+console.log(`Deck sort (One Piece tipo+costo + Yu-Gi-Oh livello): ${count}/${count} PASS`);

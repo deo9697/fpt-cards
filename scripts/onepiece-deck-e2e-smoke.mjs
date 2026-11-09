@@ -263,14 +263,17 @@ async function run() {
   assert(dialogsSeen >= 1, 'Il cambio printing doveva chiedere conferma (confirm()) e non l\'ha fatto');
   console.log('PASS cambio printing dall\'editor Raccolta (regular -> parallel), confirm() intercettato');
 
-  // -- 4-6. Deck Builder: crea mazzo, DON!! automatico, Leader, Main (Nami regular) --
+  // -- 4-6. Deck Builder: crea mazzo, Leader, Main (Nami regular) --
+  // -- I DON!! non fanno parte della lista: niente riepilogo DON, niente --
+  // -- aggiunta automatica, niente errore "Servono 10 carte DON!!". --
   await click('.sidebar button[data-page="decks"]');
   await waitFor(`Boolean(document.querySelector('.deck-page'))`, 'Pagina Mazzi non caricata');
   await click('[data-deck-new]');
   await waitFor(`Boolean(document.querySelector('[data-deck-search]'))`, 'Editor mazzo non aperto');
-
-  await waitFor(`document.querySelector('.c-extra b')?.textContent.includes('10/10')`, 'DON!! non auto-riempito a 10/10', 60);
-  console.log('PASS DON!! auto-riempito (10/10) alla creazione del mazzo');
+  await delay(400);
+  const donAtCreate = await evaluate(`({ cell: !!document.querySelector('.deck-mh-stats .c-extra'), text: /DON!!/.test(document.querySelector('.deck-mh-stats')?.textContent || '') || /carte DON/.test(document.body.textContent) })`);
+  assert(!donAtCreate.cell && !donAtCreate.text, `Il nuovo mazzo One Piece mostra ancora i DON!!: ${JSON.stringify(donAtCreate)}`);
+  console.log('PASS nuovo mazzo One Piece: nessun DON!! nel riepilogo, nessuna aggiunta automatica, nessun errore DON');
 
   const sortLabelAtOpen = await evaluate(`document.querySelector('[data-deck-sort-cycle] span')?.textContent`);
   assert(sortLabelAtOpen === 'Costo', `Ordinamento di default non è "Costo" ma "${sortLabelAtOpen}"`);
@@ -386,14 +389,15 @@ async function run() {
   await waitFor(`document.querySelectorAll('[data-deck-card-select="OP01-016"]').length >= 2`, 'Dopo la riapertura le due righe Nami sono sparite');
   const copyLimitErrorAfterReopen = await evaluate(`document.body.textContent.includes('massimo 4 copie')`);
   assert(!copyLimitErrorAfterReopen, 'Falso positivo "massimo 4 copie" ricomparso dopo chiusura/riapertura');
-  await waitFor(`document.querySelector('.c-extra b')?.textContent.includes('10/10')`, 'DON!! non più 10/10 dopo chiusura/riapertura');
-  console.log('PASS chiusura e riapertura: struttura del mazzo (2 righe Nami, DON!! 10/10, nessun falso errore) coerente');
+  const donAfterReopen = await evaluate(`!!document.querySelector('.deck-mh-stats .c-extra') || /carte DON/.test(document.body.textContent) || [...document.querySelectorAll('[data-deck-card-select]')].some(node => node.dataset.deckCardSelect === 'don_183')`);
+  assert(!donAfterReopen, 'La vecchia riga DON!! della bozza è ricomparsa dopo chiusura/riapertura');
+  console.log('PASS chiusura e riapertura: struttura del mazzo (2 righe Nami, vecchia riga DON!! scartata, nessun falso errore) coerente');
 
   assert(exceptions.length === 0, `Eccezioni JS non gestite: ${JSON.stringify(exceptions)}`);
   assert(consoleErrors.length === 0, `console.error registrati: ${JSON.stringify(consoleErrors)}`);
   assert(networkFailures.length === 0, `Risposte di rete >=400: ${JSON.stringify(networkFailures)}`);
 
-  console.log('\nonepiece-deck-e2e-smoke: OK — flusso completo cerca->raccolta->mazzo->cap 4 copie->Leader->DON!!->sort->drag->salva->riapri, nessun errore console/eccezione.');
+  console.log('\nonepiece-deck-e2e-smoke: OK — flusso completo cerca->raccolta->mazzo (senza DON!!)->cap 4 copie->Leader->sort->drag->salva->riapri, nessun errore console/eccezione.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
