@@ -31,7 +31,7 @@ import { DAILY_MISSIONS_META } from './js/missions.js';
 function searchCards(query, game = 'yugioh') { return getGameAdapter(game).searchCards(query); }
 function findCard(name, game = 'yugioh') { return getGameAdapter(game).findCard(name); }
 
-const ROUTES = new Set(['home','cards','collection','fastscan','decks','simulator','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
+const ROUTES = new Set(['home','cards','collection','fastscan','decks','simulator','academy','new','loans','market','team','settings','more','requests','stats','admin','market-variants']);
 const SHARE_HASH = /^#\/share\/([0-9a-f-]{36})$/i;
 const JOIN_HASH = /^#\/join\/([0-9a-f]{16})$/i;
 let guestShare;
@@ -191,6 +191,28 @@ function onePieceSimulatorView() {
     });
   }
   return onePieceSimulator.view();
+}
+// Accademia del Duellante (tutorial Yu-Gi-Oh!, js/academy.js): per tutti i
+// membri, con Yu-Gi-Oh! attivo. CSS e modulo si caricano alla prima apertura.
+let academy = null;
+function academyView() {
+  if (state.game !== 'yugioh') return `<section class="page-stack"><div class="surface empty-state"><h1>Accademia del Duellante</h1><p>Il tutorial è dedicato a Yu-Gi-Oh!: passa a Yu-Gi-Oh! dal menu dei giochi.</p></div></section>`;
+  if (!document.querySelector('link[data-academy-css]')) {
+    const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/academy.css'; link.dataset.academyCss = 'true'; document.head.append(link);
+  }
+  const module = lazyPageModule('academy', 'academy', () => import('./js/academy.js'));
+  if (!module) return lazyLoadingView('Accademia del Duellante');
+  if (!academy || academy.memberSlug !== state.currentUser) {
+    academy = new module.Academy({
+      getMember:() => { const u = member(state.currentUser); return u ? { slug:state.currentUser, name:u.name } : null; },
+      claimReward:() => api.claimAcademyReward(),
+      onRender:() => { if (page === 'academy') renderRoute(); },
+      onToast:(message, tone) => toast(message, tone),
+      onRewardClaimed:async () => { try { await stats?.load?.(); } catch {} render(); }
+    });
+    academy.memberSlug = state.currentUser;
+  }
+  return academy.view();
 }
 function lazyLoadingView(label) {
   return `<section class="page-stack lazy-page-loading" aria-busy="true"><div class="inline-empty">${icon('card')}<div><strong>Caricamento ${esc(label)}…</strong><span>Un attimo, sto preparando la pagina.</span></div></div></section>`;
@@ -352,7 +374,7 @@ function renderRoute() {
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
-    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats','simulator'].includes(page)));
+    button.classList.toggle('active', target === page || (target === 'more' && ['team','settings','requests','stats','simulator','academy'].includes(page)));
   });
   // Questi nodi sono piccoli: clonarli elimina i vecchi listener senza
   // ricostruire la pagina e le sue immagini.
@@ -574,7 +596,7 @@ function bindProgressionHeader(root) {
 }
 
 function navButton(id, iconName, label, notifications) {
-  const active = page === id || (id === 'more' && ['team','settings','requests','stats','simulator'].includes(page));
+  const active = page === id || (id === 'more' && ['team','settings','requests','stats','simulator','academy'].includes(page));
   return `<button data-page="${id}" class="${active ? 'active' : ''}"><span>${icon(iconName)}${id === 'loans' && notifications ? `<i>${notifications}</i>` : ''}</span>${label}</button>`;
 }
 
@@ -586,6 +608,7 @@ function pageContent() {
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScanPageView();
   if (page === 'simulator') return onePieceSimulatorView();
+  if (page === 'academy') return academyView();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch ? marketWatch.view() : appControllerPageView('Market Watch');
   if (page === 'decks') return decks ? decks.view() : appControllerPageView('Mazzi');
@@ -683,6 +706,7 @@ function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   if (canUseOnePieceSimulator()) links.unshift(['simulator','deck','Simulatore One Piece','Tavolo manuale privato e test dei mazzi']);
+  if (state.game === 'yugioh') links.unshift(['academy','info','Accademia del Duellante','Tutorial con Blattaman per iniziare a giocare']);
   const tools = [];
   if (canManageArtwork()) tools.push(['admin','card','Artwork Resolver','Stampe con più illustrazioni']);
   if (state.role === 'admin') tools.push(['market-variants','chart','Market Variant Resolver','Rarità Cardmarket ambigue']);
@@ -1560,6 +1584,7 @@ function bind() {
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks' && decks) decks.bind(document);
   if (page === 'simulator' && canUseOnePieceSimulator()) onePieceSimulator?.bind(document);
+  if (page === 'academy') academy?.bind(document);
   if (page === 'market' && marketWatch) marketWatch.bind(document);
   if (page === 'fastscan') fastScan?.bind(document);
   if (page === 'stats' && stats) stats.bind(document);

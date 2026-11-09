@@ -83,7 +83,9 @@ export const COSMETICS = [
   // insieme in un colpo solo da checkDeckArchetypeUnlocks().
   { id:'title_apocaliptic_symphony', type:'title', label:'Apocaliptic Symphony', unlock:{ type:'event', value:'archetype_sacred_beast_orcust' } },
   { id:'title_rivelo_abakiri', type:'title', label:'Rivelo Abakiri', unlock:{ type:'event', value:'archetype_mitsurugi' } },
-  { id:'title_heaven_striker', type:'title', label:'Heaven Striker', unlock:{ type:'event', value:'archetype_skystriker' } }
+  { id:'title_heaven_striker', type:'title', label:'Heaven Striker', unlock:{ type:'event', value:'archetype_skystriker' } },
+  // Diploma dell'Accademia del Duellante (claim_academy_reward).
+  { id:'title_terza_media', type:'title', label:'Terza Media', unlock:{ type:'event', value:'academy_complete' } }
 ];
 
 export function isCosmeticUnlocked(cosmetic, progression, context = {}) {

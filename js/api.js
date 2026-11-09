@@ -504,6 +504,8 @@ export const api = {
   async registerMatch(payload) { ensure(); return unwrap(await client.rpc('register_match', { p_token:token(), p_game:payload.game, p_deck_id:payload.deckId, p_result:payload.result, p_opponent_label:payload.opponentLabel || '', p_opponent_deck:payload.opponentDeck || '', p_notes:payload.notes || '', p_opponent_member_slug:payload.opponentMemberSlug || null, p_opponent_deck_id:payload.opponentDeckId || null, p_opponent_deck_name:payload.opponentDeckName || '', p_went_first:payload.wentFirst ?? null })); },
   async deleteMatch(id) { ensure(); return unwrap(await client.rpc('delete_match', { p_token:token(), p_id:id })); },
   async myCosmetics() { ensure(); return unwrap(await client.rpc('get_my_cosmetics', { p_token:token() })); },
+  // Accademia del Duellante: 500 XP + titolo "Terza Media", una volta sola.
+  async claimAcademyReward() { ensure(); return unwrap(await client.rpc('claim_academy_reward', { p_token:token() })); },
   async claimCosmetic(cosmeticId) { ensure(); return unwrap(await client.rpc('claim_cosmetic', { p_token:token(), p_cosmetic_id:cosmeticId })); },
   async equipCosmetic(type, cosmeticId) { ensure(); return unwrap(await client.rpc('equip_cosmetic', { p_token:token(), p_type:type, p_cosmetic_id:cosmeticId })); },
   async dailyMissions() { ensure(); return unwrap(await client.rpc('get_my_daily_missions', { p_token:token() })); },

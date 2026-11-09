@@ -61,6 +61,7 @@
     "test:fast-scan-quick-menu": "node scripts/fast-scan-quick-menu-smoke.mjs",
     "test:deck-stats": "node scripts/deck-stats-smoke.mjs",
     "test:deck-sort": "node scripts/deck-sort-smoke.mjs",
+    "test:academy": "node scripts/academy-smoke.mjs",
     "test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs",
     "test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs",
     "test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs",
