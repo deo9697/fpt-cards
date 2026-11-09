@@ -15,6 +15,7 @@ const ARCHETYPE_DECK_BOX_KEYS = new Set(['sacred_beast_orcust', 'mitsurugi', 'sk
 // Leader/Main/DON!! per One Piece) — mai un elenco fisso, sempre l'adapter.
 function sectionsFor(deck) { return getGameAdapter(deck?.game).sections; }
 function labelsFor(deck) { return getGameAdapter(deck?.game).labels; }
+function todayIsoDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
 const DRAFTS_KEY = 'fpt-cards-deck-drafts-v1';
 const DECK_100_CELEBRATED_KEY = 'fpt-cards-deck-100-celebrated-v1';
 const BATTLE_READY_CLAIMED_KEY = 'fpt-cards-title-battle-ready-claimed-v1';
@@ -61,10 +62,13 @@ export class DeckController {
     // stesso artwork. imageExportCanvas traccia l'elemento <canvas> montato
     // per accorgersi quando onRender() lo ricrea (innerHTML replace) e
     // servirebbe un ridisegno — mai un dato di stato del mazzo.
-    this.imageExportOpen = false; this.imageExportMode = 'clean'; this.imageExportBusy = false; this.imageExportError = ''; this.imageExportCanvas = null;
-    // V1.1: preset di layout (leggibilità vs scenico) e logo, indipendenti
-    // dallo sfondo (imageExportMode resta clean/signature/theme).
-    this.imageExportLayoutMode = 'readable'; this.imageExportLogo = 'fpt';
+    this.imageExportOpen = false; this.imageExportBusy = false; this.imageExportError = ''; this.imageExportCanvas = null;
+    // Stile 'arena' (predefinito) o 'list'; evento/piazzamento/data restano
+    // per tutta la sessione, così più mazzi dello stesso torneo non vanno
+    // riscritti ogni volta.
+    this.imageExportStyle = 'arena';
+    this.imageExportDetails = { event: '', place: '', date: todayIsoDate() };
+    this.imageExportRedraw = null;
     // model/layout dell'ultima preview disegnata: servono a exportDeckImageBlob
     // per un eventuale ultimo redraw dopo aver atteso le immagini ancora
     // pendenti, senza ricalcolare nulla (mai una seconda normalizzazione).
@@ -338,7 +342,8 @@ export class DeckController {
   // esplicito: mai renderizzare a risoluzione inferiore su mobile), scalato
   // solo via CSS (styles.css .deck-image-preview canvas).
   imageExportView(deck) {
-    const canShareSignature = Boolean(resolveDeckSignature(deck)?.imageUrl);
+    const details = this.imageExportDetails;
+    const places = ['', '1° posto', '2° posto', 'Top 4', 'Top 8', 'Top 16', 'Top 32'];
     return `<div class="detail-backdrop deck-dialog-backdrop" data-deck-image-close><aside class="card-detail deck-image-export" role="dialog" aria-modal="true" aria-label="Genera immagine mazzo">
       <button class="detail-close" data-deck-image-close aria-label="Chiudi">×</button>
       <span class="eyebrow">Condividi</span><h2>Genera immagine</h2>
@@ -347,18 +352,14 @@ export class DeckController {
         <div class="deck-image-loading" data-deck-image-loading ${this.imageExportBusy ? '' : 'hidden'}><span class="loading-spinner"></span> Generazione…</div>
       </div>
       ${this.imageExportError ? `<div class="connection-banner error">${esc(this.imageExportError)}</div>` : ''}
-      <div class="deck-image-modes" role="group" aria-label="Stile layout">
-        <button type="button" class="btn secondary ${this.imageExportLayoutMode === 'readable' ? 'active' : ''}" data-deck-image-layout="readable">Readable</button>
-        <button type="button" class="btn secondary ${this.imageExportLayoutMode === 'poster' ? 'active' : ''}" data-deck-image-layout="poster">Poster</button>
+      <div class="deck-image-modes" role="group" aria-label="Stile immagine">
+        <button type="button" class="btn secondary ${this.imageExportStyle === 'arena' ? 'active' : ''}" data-deck-image-style="arena">Arena FPT</button>
+        <button type="button" class="btn secondary ${this.imageExportStyle === 'list' ? 'active' : ''}" data-deck-image-style="list">Lista torneo</button>
       </div>
-      <div class="deck-image-modes" role="group" aria-label="Sfondo immagine">
-        <button type="button" class="btn secondary ${this.imageExportMode === 'clean' ? 'active' : ''}" data-deck-image-mode="clean">Clean</button>
-        <button type="button" class="btn secondary ${this.imageExportMode === 'signature' ? 'active' : ''}" data-deck-image-mode="signature">Signature${canShareSignature ? '' : ' (fallback Clean)'}</button>
-        <button type="button" class="btn secondary ${this.imageExportMode === 'theme' ? 'active' : ''}" data-deck-image-mode="theme">Deck Theme</button>
-      </div>
-      <div class="deck-image-modes" role="group" aria-label="Logo">
-        <button type="button" class="btn secondary ${this.imageExportLogo === 'fpt' ? 'active' : ''}" data-deck-image-logo="fpt">Logo FPT Cards</button>
-        <button type="button" class="btn secondary ${this.imageExportLogo === 'none' ? 'active' : ''}" data-deck-image-logo="none">Nessun logo</button>
+      <div class="deck-image-details">
+        <label>Evento<input type="text" data-deck-image-detail="event" value="${esc(details.event)}" maxlength="48" placeholder="Es. Locals del venerdì"></label>
+        <label>Piazzamento<select data-deck-image-detail="place">${places.map(place => `<option value="${esc(place)}" ${details.place === place ? 'selected' : ''}>${place || 'Nessuno'}</option>`).join('')}</select></label>
+        <label>Data<input type="date" data-deck-image-detail="date" value="${esc(details.date)}"></label>
       </div>
       <div class="deck-image-actions">
         <button type="button" class="btn wide" data-deck-image-download ${this.imageExportBusy ? 'disabled' : ''}>Scarica PNG</button>
@@ -368,26 +369,22 @@ export class DeckController {
   }
   openImageExport() {
     if (!this.active()) return;
-    this.imageExportOpen = true; this.imageExportMode = 'clean'; this.imageExportLayoutMode = 'readable'; this.imageExportLogo = 'fpt'; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
-    this.imageExportModel = null; this.imageExportLayout = null;
+    this.imageExportOpen = true; this.imageExportBusy = true; this.imageExportError = ''; this.imageExportCanvas = null;
+    this.imageExportModel = null; this.imageExportLayout = null; this.imageExportRedraw = null;
     this.moreMenuOpen = false;
     this.onRender();
   }
-  closeImageExport() { this.imageExportOpen = false; this.imageExportCanvas = null; this.imageExportModel = null; this.imageExportLayout = null; this.onRender(); }
-  setImageExportMode(mode) {
-    if (mode === this.imageExportMode || this.imageExportBusy) return;
-    this.imageExportMode = mode; this.imageExportBusy = true; this.imageExportError = '';
+  closeImageExport() { this.imageExportOpen = false; this.imageExportCanvas = null; this.imageExportModel = null; this.imageExportLayout = null; this.imageExportRedraw = null; this.onRender(); }
+  setImageExportStyle(style) {
+    if (style === this.imageExportStyle || this.imageExportBusy) return;
+    this.imageExportStyle = style; this.imageExportBusy = true; this.imageExportError = '';
     this.onRender();
   }
-  setImageExportLayoutMode(layoutMode) {
-    if (layoutMode === this.imageExportLayoutMode || this.imageExportBusy) return;
-    this.imageExportLayoutMode = layoutMode; this.imageExportBusy = true; this.imageExportError = '';
-    this.onRender();
-  }
-  setImageExportLogo(logo) {
-    if (logo === this.imageExportLogo || this.imageExportBusy) return;
-    this.imageExportLogo = logo; this.imageExportBusy = true; this.imageExportError = '';
-    this.onRender();
+  // Solo il canvas si ridisegna: un onRender() ricreerebbe il campo che si
+  // sta scrivendo, facendo perdere il focus a ogni lettera.
+  setImageExportDetail(key, value) {
+    this.imageExportDetails = { ...this.imageExportDetails, [key]: value };
+    this.imageExportRedraw?.(this.imageExportDetails);
   }
   // Disegna nel <canvas> già montato SENZA un secondo onRender() al
   // successo: onRender() sostituisce l'innerHTML e ricreerebbe il canvas,
@@ -413,14 +410,15 @@ export class DeckController {
     };
     try {
       const ownerName = member(deck.ownerSlug || this.state.currentUser)?.name || deck.ownerName || '';
-      const { model, layout, ready } = renderDeckImagePreview(deck, {
-        mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo,
+      const { model, layout, ready, redraw } = renderDeckImagePreview(deck, {
+        style: this.imageExportStyle, details: this.imageExportDetails,
         ownerName, cardTypes:this.cardTypes, proxyUrl: '/api/card-image-proxy',
         cache: this.imageExportCache, canvas,
         onProgress: unlockControls
       });
       this.imageExportModel = model;
       this.imageExportLayout = layout;
+      this.imageExportRedraw = redraw;
       ready.catch(() => {}); // ogni fallimento per-immagine è già un placeholder, mai un throw qui
     } catch (error) {
       this.imageExportError = error?.message || 'Generazione immagine non riuscita';
@@ -435,7 +433,7 @@ export class DeckController {
     try {
       await this.resolveCardTypes(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
-      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo });
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, style: this.imageExportStyle, details: this.imageExportDetails });
       downloadDeckImageBlob(blob, this.active()?.name || 'mazzo');
     } catch (error) { this.onToast?.(error?.message || 'Download non riuscito'); }
   }
@@ -443,7 +441,7 @@ export class DeckController {
     try {
       await this.resolveCardTypes(this.active());
       const canvas = document.querySelector('[data-deck-image-canvas]'); if (!canvas) return;
-      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, mode: this.imageExportMode, layoutMode: this.imageExportLayoutMode, logo: this.imageExportLogo });
+      const blob = await exportDeckImageBlob(canvas, { cache: this.imageExportCache, model: this.imageExportModel, layout: this.imageExportLayout, style: this.imageExportStyle, details: this.imageExportDetails });
       const deckName = this.active()?.name || 'mazzo';
       if (canShareDeckImageBlob(blob, deckName)) await shareDeckImageBlob(blob, deckName, { title: deckName });
       else downloadDeckImageBlob(blob, deckName);
@@ -492,9 +490,8 @@ export class DeckController {
     root.querySelector('[data-deck-cover-open]')?.addEventListener('click', () => { this.coverPickerOpen = true; this.moreMenuOpen = false; this.onRender(); });
     root.querySelector('[data-deck-image-open]')?.addEventListener('click', () => this.openImageExport());
     root.querySelectorAll('[data-deck-image-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeImageExport(); }));
-    root.querySelectorAll('[data-deck-image-mode]').forEach(button => button.addEventListener('click', () => this.setImageExportMode(button.dataset.deckImageMode)));
-    root.querySelectorAll('[data-deck-image-layout]').forEach(button => button.addEventListener('click', () => this.setImageExportLayoutMode(button.dataset.deckImageLayout)));
-    root.querySelectorAll('[data-deck-image-logo]').forEach(button => button.addEventListener('click', () => this.setImageExportLogo(button.dataset.deckImageLogo)));
+    root.querySelectorAll('[data-deck-image-style]').forEach(button => button.addEventListener('click', () => this.setImageExportStyle(button.dataset.deckImageStyle)));
+    root.querySelectorAll('[data-deck-image-detail]').forEach(field => field.addEventListener(field.tagName === 'SELECT' ? 'change' : 'input', () => this.setImageExportDetail(field.dataset.deckImageDetail, field.value)));
     root.querySelector('[data-deck-image-download]')?.addEventListener('click', () => void this.downloadImageExport());
     root.querySelector('[data-deck-image-share]')?.addEventListener('click', () => void this.shareImageExport());
     // Il canvas viene ricreato ad ogni onRender() (innerHTML replace): un

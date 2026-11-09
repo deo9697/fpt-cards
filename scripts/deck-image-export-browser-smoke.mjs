@@ -131,18 +131,17 @@ try {
   if (!afterOpen.overlayHidden || afterOpen.busy) throw Error('Il loading overlay doveva nascondersi da solo a fine generazione, senza un secondo onRender() che ricrea il canvas: ' + JSON.stringify(afterOpen));
   console.log('PASS apertura preview: bottone nel menu azioni, modale con canvas 1080x1350, loading nascosto a fine generazione senza ricreare il canvas');
 
-  // Switch a Signature: il bottone diventa attivo, il canvas viene
-  // ricreato (nuovo riferimento) e ridisegnato di nuovo.
-  const canvasBefore = await evaluate(`document.querySelector('[data-deck-image-canvas]').outerHTML.length`); // proxy indiretto, il riferimento reale si verifica sotto
-  await evaluate(`document.querySelector('[data-deck-image-mode="signature"]').click()`);
+  // Switch Arena FPT -> Lista torneo: il bottone diventa attivo, il canvas
+  // viene ricreato e ridisegnato di nuovo.
+  await evaluate(`document.querySelector('[data-deck-image-style="list"]').click()`);
   await delay(600);
   const afterSwitch = await evaluate(`(()=>{
-    const active = document.querySelector('[data-deck-image-mode].active')?.dataset.deckImageMode;
-    return {active, mode: window.__controller.imageExportMode, busy: window.__controller.imageExportBusy};
+    const active = document.querySelector('[data-deck-image-style].active')?.dataset.deckImageStyle;
+    return {active, style: window.__controller.imageExportStyle, busy: window.__controller.imageExportBusy};
   })()`);
-  if (afterSwitch.active !== 'signature' || afterSwitch.mode !== 'signature') throw Error('Lo switch a Signature non ha aggiornato lo stato/la UI: ' + JSON.stringify(afterSwitch));
-  if (afterSwitch.busy) throw Error('Il ridisegno dopo lo switch modalità non si è mai concluso: ' + JSON.stringify(afterSwitch));
-  console.log('PASS switch Clean/Signature: bottone attivo aggiornato, ridisegno completato');
+  if (afterSwitch.active !== 'list' || afterSwitch.style !== 'list') throw Error('Lo switch a Lista torneo non ha aggiornato lo stato/la UI: ' + JSON.stringify(afterSwitch));
+  if (afterSwitch.busy) throw Error('Il ridisegno dopo lo switch di stile non si è mai concluso: ' + JSON.stringify(afterSwitch));
+  console.log('PASS switch Arena FPT/Lista torneo: bottone attivo aggiornato, ridisegno completato');
 
   // Download: click deve tentare un <a download> (spy su HTMLAnchorElement.prototype.click).
   const downloadResult = await evaluate(`(async()=>{
@@ -304,29 +303,29 @@ try {
     controller.toggleMoreMenu();
     document.querySelector('[data-deck-image-open]').click();
     await new Promise(r => setTimeout(r, 500));
-    const initialLayoutMode = controller.imageExportLayoutMode;
+    const initialStyle = controller.imageExportStyle;
+    const canvasBefore = document.querySelector('[data-deck-image-canvas]');
+    const pixel = () => canvasBefore.toDataURL('image/png');
+    const pixelBefore = pixel();
 
-    document.querySelector('[data-deck-image-layout="poster"]').click();
-    await new Promise(r => setTimeout(r, 400));
-    const afterPoster = { layoutMode: controller.imageExportLayoutMode, active: document.querySelector('[data-deck-image-layout].active')?.dataset.deckImageLayout };
-
-    document.querySelector('[data-deck-image-mode="theme"]').click();
-    await new Promise(r => setTimeout(r, 400));
-    const afterTheme = { mode: controller.imageExportMode, active: document.querySelector('[data-deck-image-mode].active')?.dataset.deckImageMode };
-
-    document.querySelector('[data-deck-image-logo="none"]').click();
-    await new Promise(r => setTimeout(r, 400));
-    const afterLogo = { logo: controller.imageExportLogo, active: document.querySelector('[data-deck-image-logo].active')?.dataset.deckImageLogo };
+    // Evento/piazzamento: solo il canvas si ridisegna, il campo resta lo
+    // stesso elemento (nessun onRender che farebbe perdere il focus).
+    const eventField = document.querySelector('[data-deck-image-detail="event"]');
+    eventField.focus(); eventField.value = 'Locals del venerdì'; eventField.dispatchEvent(new Event('input', { bubbles: true }));
+    const place = document.querySelector('[data-deck-image-detail="place"]');
+    place.value = '1° posto'; place.dispatchEvent(new Event('change', { bubbles: true }));
+    const sameField = document.querySelector('[data-deck-image-detail="event"]') === eventField && document.activeElement === eventField;
+    const sameCanvas = document.querySelector('[data-deck-image-canvas]') === canvasBefore;
 
     const canvas = document.querySelector('[data-deck-image-canvas]');
-    return { initialLayoutMode, afterPoster, afterTheme, afterLogo, canvasSize: { w: canvas.width, h: canvas.height } };
+    return { initialStyle, details: controller.imageExportDetails, sameField, sameCanvas, redrawn: pixel() !== pixelBefore, canvasSize: { w: canvas.width, h: canvas.height } };
   })()`);
-  if (v11UiResult.initialLayoutMode !== 'readable') throw Error('Il layout di default deve essere Readable: ' + JSON.stringify(v11UiResult));
-  if (v11UiResult.afterPoster.layoutMode !== 'poster' || v11UiResult.afterPoster.active !== 'poster') throw Error('Lo switch a Poster non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
-  if (v11UiResult.afterTheme.mode !== 'theme' || v11UiResult.afterTheme.active !== 'theme') throw Error('Lo switch a Deck Theme non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
-  if (v11UiResult.afterLogo.logo !== 'none' || v11UiResult.afterLogo.active !== 'none') throw Error('Lo switch a "Nessun logo" non ha aggiornato stato/UI: ' + JSON.stringify(v11UiResult));
-  if (v11UiResult.canvasSize.w !== 1080 || v11UiResult.canvasSize.h !== 1350) throw Error('Il canvas deve restare sempre 1080x1350 qualunque combinazione di layout/sfondo/logo: ' + JSON.stringify(v11UiResult));
-  console.log('PASS V1.1 controlli UI reali: Readable di default, switch a Poster/Deck Theme/Nessun logo tutti funzionanti, canvas sempre 1080x1350');
+  if (v11UiResult.initialStyle !== 'arena') throw Error('Lo stile predefinito deve essere Arena FPT: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.details.event !== 'Locals del venerdì' || v11UiResult.details.place !== '1° posto') throw Error('Evento/piazzamento non salvati nello stato del popup: ' + JSON.stringify(v11UiResult));
+  if (!v11UiResult.sameField || !v11UiResult.sameCanvas) throw Error('Scrivere evento/piazzamento non deve ricreare il popup (focus perso): ' + JSON.stringify(v11UiResult));
+  if (!v11UiResult.redrawn) throw Error('Evento/piazzamento non hanno ridisegnato il canvas: ' + JSON.stringify(v11UiResult));
+  if (v11UiResult.canvasSize.w !== 1080 || v11UiResult.canvasSize.h !== 1350) throw Error('Il canvas deve restare sempre 1080x1350: ' + JSON.stringify(v11UiResult));
+  console.log('PASS controlli UI reali: Arena FPT di default, evento/piazzamento ridisegnano il canvas senza ricreare il popup, canvas sempre 1080x1350');
 
   if ((await evaluate('window.__consoleErrors')).length) throw Error('Browser errors: ' + JSON.stringify(await evaluate('window.__consoleErrors')));
   console.log('PASS deck-image-export (browser reale): rendering/export/artwork/Web Share/UI/preview progressiva/One Piece completa senza errori console');
