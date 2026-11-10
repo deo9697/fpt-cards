@@ -174,9 +174,11 @@ function bestGridFor(rowsForColumns, columnsCandidates, availableHeight, content
 const rowsForSingleSection = cardCount => columns => Math.ceil(cardCount / columns);
 const rowsForMultipleSections = sections => columns => sections.reduce((sum, section) => sum + Math.ceil(section.cards.length / columns), 0);
 
-export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT, layoutMode = 'readable' } = {}) {
+export function computeDeckImageLayout(model, { width = DECK_IMAGE_WIDTH, height = DECK_IMAGE_HEIGHT, layoutMode = 'readable', footerExtra = 0 } = {}) {
   const preset = LAYOUT_PRESETS[layoutMode] || LAYOUT_PRESETS.readable;
-  const { headerHeight, footerHeight, mainHeightShare } = preset;
+  const { headerHeight, mainHeightShare } = preset;
+  // footerExtra: spazio in basso per il logo FPT rotondo (stili Arena/Lista), così non copre mai una carta.
+  const footerHeight = preset.footerHeight + Math.max(0, Number(footerExtra) || 0);
   const compactColumns = preset.compactColumns || COMPACT_COLUMNS_CANDIDATES;
   const compactMaxWidthRatio = preset.compactMaxWidthRatio || COMPACT_MAX_WIDTH_RATIO;
   const contentX = PADDING;
@@ -354,6 +356,10 @@ function raceWithTimeout(promise, timeoutMs) {
 }
 
 export const ARENA_BACKGROUND_URL = 'assets/backgrounds/deck-image-arena.jpg';
+// Logo del team, in un cerchio in basso a destra (stili Arena/Lista). details.logo === false lo toglie.
+export const FPT_LOGO_URL = 'assets/fpt-logo.jpeg';
+const FPT_LOGO_ROOM = 70, FPT_LOGO_RADIUS = 50;
+export const showFptLogo = details => details?.logo !== false;
 export const DECK_IMAGE_STYLES = ['arena', 'list'];
 const isFptStyle = style => DECK_IMAGE_STYLES.includes(style);
 
@@ -361,7 +367,7 @@ export function resolveDeckImageUrls(model, { style = '' } = {}) {
   const seen = new Set();
   const urls = [];
   const add = url => { if (url && !seen.has(url)) { seen.add(url); urls.push(url); } };
-  if (isFptStyle(style)) { add(ARENA_BACKGROUND_URL); add(model.signatureArtUrl); }
+  if (isFptStyle(style)) { add(ARENA_BACKGROUND_URL); add(FPT_LOGO_URL); add(model.signatureArtUrl); }
   for (const section of model.sections) for (const card of section.cards) add(card.imageUrl);
   add(model.signatureCard?.imageUrl);
   return urls;
@@ -483,7 +489,7 @@ function drawLeaderMark(ctx, card, accent) {
   ctx.strokeStyle = accent; ctx.lineWidth = 3;
   roundedRect(ctx, card.x + 1.5, card.y + 1.5, card.w - 3, card.h - 3, 7); ctx.stroke();
   const bandH = Math.max(16, Math.round(card.w * 0.17));
-  ctx.beginPath(); ctx.rect(card.x + 3, card.y + 3, card.w - 6, bandH); ctx.fillStyle = accent; ctx.fill();
+  ctx.fillStyle = accent; ctx.fillRect(card.x + 3, card.y + 3, card.w - 6, bandH);
   ctx.fillStyle = '#0b0812'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `800 ${Math.round(bandH * 0.62)}px "Manrope FPT", "Segoe UI", sans-serif`;
   if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
@@ -775,6 +781,26 @@ function drawPlacementRibbon(ctx, parts, x, y, w, h, accent) {
   ctx.restore();
 }
 
+// Logo FPT rotondo in basso a destra, dentro la cornice: anello oro, ombra,
+// immagine ritagliata a cerchio sul centro (lupo e scritta F.P.T.).
+function drawFptLogo(ctx, images, width, height, accent, details) {
+  if (!showFptLogo(details)) return;
+  const image = images.get(FPT_LOGO_URL), r = FPT_LOGO_RADIUS, cx = width - 46 - r, cy = height - 42 - r;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, Math.PI * 2); ctx.fillStyle = '#0b0812'; ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  if (image) { const side = Math.min(image.width, image.height) * 0.92; ctx.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, cx - r, cy - r, r * 2, r * 2); }
+  else { ctx.fillStyle = '#151025'; ctx.fillRect(cx - r, cy - r, r * 2, r * 2); }
+  ctx.restore();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, Math.PI * 2); ctx.strokeStyle = withAlpha(accent, 0.35); ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+}
+
 function drawFptFooter(ctx, width, height, accent) {
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -829,6 +855,7 @@ export function drawArenaDeckImage(ctx, model, layout, images, details = {}) {
   if (parts) drawPlacementRibbon(ctx, parts, right - ribbonW, 104, ribbonW, 150, accent);
   drawFptSections(ctx, layout, images, accent);
   drawFptFooter(ctx, width, height, accent);
+  drawFptLogo(ctx, images, width, height, accent, details);
   ctx.restore();
 }
 
@@ -903,7 +930,7 @@ export function drawListDeckImage(ctx, model, layout, images, details = {}) {
   ctx.fillStyle = withAlpha(accent, 0.9); ctx.font = `700 18px ${FPT_BODY}`; letterSpacing(ctx, 2.5);
   ctx.fillText(truncateToWidth(ctx, countsFor(model), width - left * 2), left, y + 82); letterSpacing(ctx, 0);
   const columns = deckListColumns(model);
-  const top = bandH + 24, bottom = height - 86, gap = 26;
+  const top = bandH + 24, bottom = height - 86 - (showFptLogo(details) ? FPT_LOGO_ROOM : 0), gap = 26;
   const columnW = (width - left * 2 - gap * 2) / 3;
   const units = column => column.reduce((sum, group) => sum + group.cards.length + 1.7, 0) - 0.5;
   const rowH = Math.min(46, (bottom - top) / Math.max(1, ...columns.map(units)));
@@ -932,6 +959,7 @@ export function drawListDeckImage(ctx, model, layout, images, details = {}) {
     }
   });
   drawFptFooter(ctx, width, height, accent);
+  drawFptLogo(ctx, images, width, height, accent, details);
   ctx.restore();
 }
 
@@ -968,7 +996,7 @@ function resolveEffectiveMode(mode, model) {
 export async function renderDeckImage(deck, { mode = 'clean', layoutMode = 'readable', logo = 'fpt', style = '', details = {}, ownerName = '', cardTypes = {}, keepOrder = false, proxyUrl = '', cache = createDeckImageCache(), canvas } = {}) {
   const model = normalizeDeckForImage(deck, { ownerName, cardTypes, keepOrder });
   const effectiveMode = resolveEffectiveMode(mode, model);
-  const layout = layoutForStyle(model, style, layoutMode);
+  const layout = layoutForStyle(model, style, layoutMode, details);
   // Il pool progressivo libera uno slot dopo previewTimeoutMs anche se il
   // caricamento reale non è ancora finito (per definizione, serve alla
   // concorrenza). Qui però il contratto è bloccante: dopo il pool si
@@ -985,8 +1013,8 @@ export async function renderDeckImage(deck, { mode = 'clean', layoutMode = 'read
 
 // style: 'arena' | 'list' (stili FPT, con details {event, place, date}),
 // oppure nessuno per il disegno classico con mode/layoutMode/logo.
-function layoutForStyle(model, style, layoutMode) {
-  return computeDeckImageLayout(model, { layoutMode: isFptStyle(style) ? 'arena' : layoutMode });
+function layoutForStyle(model, style, layoutMode, details = {}) {
+  return computeDeckImageLayout(model, { layoutMode: isFptStyle(style) ? 'arena' : layoutMode, footerExtra: isFptStyle(style) && showFptLogo(details) ? FPT_LOGO_ROOM : 0 });
 }
 function paintDeckImage(ctx, model, layout, images, { style = '', details = {}, background = 'clean', layoutMode = 'readable', logo = 'fpt' } = {}) {
   if (style === 'arena') return drawArenaDeckImage(ctx, model, layout, images, details);
@@ -1013,7 +1041,7 @@ export function renderDeckImagePreview(deck, {
 } = {}) {
   const model = normalizeDeckForImage(deck, { ownerName, cardTypes, keepOrder });
   const effectiveMode = resolveEffectiveMode(mode, model);
-  const layout = layoutForStyle(model, style, layoutMode);
+  const layout = layoutForStyle(model, style, layoutMode, details);
   const target = prepareCanvasTarget(canvas);
   const ctx = target.getContext('2d');
 

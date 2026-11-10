@@ -193,6 +193,25 @@ try {
   })()`);
   if (rejected.background || !rejected.toasts.some(message => /immagine/i.test(message))) throw Error('Un file non immagine non viene rifiutato con un avviso: ' + JSON.stringify(rejected));
   console.log('PASS sfondo personalizzato: foto dell\'utente come sfondo in Lista torneo e Arena FPT, resta al cambio stile, export PNG ok, Rimuovi ripristina, file non immagine rifiutato');
+  // Logo FPT rotondo: attivo di default, nella scheda dello sfondo; tolto lascia più spazio alle carte.
+  const logoResult = await evaluate(`(async()=>{
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const toggle = document.querySelector('.deck-image-background [data-deck-image-logo]');
+    if (!toggle) return { error:'interruttore Logo FPT assente nella scheda dello sfondo' };
+    const bottom = () => Math.max(...window.__controller.imageExportLayout.sections.flatMap(s => s.cards.map(c => c.y + c.h)));
+    const on = { checked:toggle.checked, logo:window.__controller.imageExportDetails.logo !== false, bottom:bottom() };
+    toggle.click(); await wait(300);
+    const off = { checked:document.querySelector('[data-deck-image-logo]').checked, logo:window.__controller.imageExportDetails.logo, bottom:bottom() };
+    document.querySelector('[data-deck-image-logo]').click(); await wait(300);
+    let exportable = true; try { document.querySelector('[data-deck-image-canvas]').toDataURL('image/png'); } catch { exportable = false; }
+    return { on, off, back:window.__controller.imageExportDetails.logo, exportable, logoBottomEdge: 1350 - 42 - 100 - 5 };
+  })()`);
+  if (logoResult.error) throw Error(logoResult.error);
+  if (!logoResult.on.checked || !logoResult.on.logo) throw Error('Il logo FPT non è attivo di default: ' + JSON.stringify(logoResult));
+  if (logoResult.on.bottom > logoResult.logoBottomEdge) throw Error('Con il logo le carte arrivano sotto al cerchio: ' + JSON.stringify(logoResult));
+  if (logoResult.off.checked || logoResult.off.logo !== false || !(logoResult.off.bottom >= logoResult.on.bottom)) throw Error('Togliere la spunta non toglie il logo: ' + JSON.stringify(logoResult));
+  if (logoResult.back !== true || !logoResult.exportable) throw Error('Rimettere la spunta non riattiva il logo: ' + JSON.stringify(logoResult));
+  console.log('PASS logo FPT: attivo di default nella scheda dello sfondo, le carte non arrivano mai sotto il cerchio, la spunta lo toglie e lo rimette');
   // Il resto del test riparte da Lista torneo, come prima di questo blocco.
   await evaluate(`document.querySelector('[data-deck-image-style="list"]').click()`);
   await delay(600);

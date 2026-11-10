@@ -451,6 +451,7 @@ export class DeckController {
         <div class="deck-image-background-copy"><strong>Sfondo personalizzato</strong><small>${details.background ? esc(details.backgroundName || 'Immagine caricata') : 'Usa una tua foto come sfondo dell\u2019immagine. Resta sul tuo dispositivo.'}</small></div>
         <label class="btn secondary deck-image-background-pick">${details.background ? 'Cambia' : 'Carica sfondo'}<input type="file" accept="image/*" data-deck-image-background class="sr-only"></label>
         ${details.background ? '<button type="button" class="btn secondary" data-deck-image-background-clear>Rimuovi</button>' : ''}
+        <label class="deck-image-logo-toggle"><input type="checkbox" data-deck-image-logo ${details.logo === false ? '' : 'checked'}><span class="deck-image-logo-thumb" aria-hidden="true"><img src="assets/fpt-logo.jpeg" alt=""></span><span><strong>Logo FPT</strong><small>In un cerchio, in basso a destra</small></span></label>
       </div>
       <div class="deck-image-actions">
         <button type="button" class="btn wide" data-deck-image-download ${this.imageExportBusy ? 'disabled' : ''}>Scarica PNG</button>
@@ -499,6 +500,7 @@ export class DeckController {
     }
   }
   bindImageExportBackground(root) {
+    root.querySelectorAll('[data-deck-image-logo]').forEach(input => input.addEventListener('change', () => { this.imageExportDetails = { ...this.imageExportDetails, logo: input.checked }; this.drawImageExportPreview(); }));
     root.querySelectorAll('[data-deck-image-background]').forEach(input => input.addEventListener('change', () => { void this.setImageExportBackground(input.files?.[0]); input.value = ''; }));
     root.querySelectorAll('[data-deck-image-background-clear]').forEach(button => button.addEventListener('click', () => this.clearImageExportBackground()));
   }

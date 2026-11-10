@@ -368,7 +368,8 @@ function fakeCanvas() {
   try {
     const { canvas, calls } = fakeCanvas();
     const { ready, model, cache } = renderDeckImagePreview(deck, { canvas, previewTimeoutMs: 1000, concurrency: 6 });
-    assert.equal(model.sections.map(s => s.key).join(','), 'leader,main', 'la pipeline progressiva deve riusare le sezioni reali dell\'adapter One Piece (leader/main, niente DON!!), non main/extra/side');
+    assert.equal(model.sections.map(s => s.key).join(','), 'main', 'One Piece: il Leader è la prima carta del Main (niente sezione Leader separata, niente DON!!), non main/extra/side');
+    assert.equal(model.main[0].catalogCardId, 'OP01-001'); assert.equal(model.main[0].isLeader, true);
     await ready;
     assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-001.jpg'), undefined);
     assert.notEqual(cache.images.get('https://optcgapi.com/media/static/Card_Images/OP01-016.jpg'), undefined);
