@@ -3992,3 +3992,7 @@ body.pinpad-open { overflow:hidden; }
 }
 @media (prefers-reduced-motion:reduce) { .deck-search-sheet.open, .deck-search-sheet.open .deck-search-fx::before, .deck-search-sheet.open .deck-search-fx::after, .deck-search-tab::before { animation:none; } }
 .deck-search-sheet.open.is-dragging { animation:none;clip-path:inset(0 0 0 0);transform:translateX(72%); }
+
+/* Il livello della ricerca è figlio di <body>: sopra barra in alto (12) e navigazione (30), solo nella pagina Mazzi. */
+#deck-search-layer { position:relative;z-index:60; }
+body:not([data-page='decks']) #deck-search-layer { display:none; }

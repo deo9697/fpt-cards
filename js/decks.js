@@ -332,7 +332,7 @@ export class DeckController {
     // Più printing della stessa carta logica (regular/parallel, Fase 4.1)
     // diventano più tile distinte in griglia: data-deck-card-select-printing
     // è ciò che le distingue quando si seleziona/modifica/rimuove.
-    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''} ${this.cardSort === 'manual' ? 'manual-sort' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="" loading="lazy">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
+    return `<button type="button" class="deck-tile ${selected ? 'selected' : ''} ${this.cardSort === 'manual' ? 'manual-sort' : ''}" data-card-type="${esc(this.cardTypes[item.catalogCardId] || '')}" data-deck-card-select="${esc(item.catalogCardId)}" data-deck-card-select-section="${item.section}" data-deck-card-select-printing="${esc(item.printingId || '')}" aria-label="${esc(item.cardName)}, quantità ${item.quantity}"><span class="deck-tile-art">${item.imageUrl ? `<img src="${esc(deckTileImage(item.imageUrl))}" alt="" loading="lazy" decoding="async">` : icon('card')}${restrictionBadge(item.banTcg)}${info?.borrowed > 0 ? `<i class="deck-loan-badge" title="In prestito">${icon('swap')}</i>` : ''}<b>${item.quantity}</b></span></button>`;
   }
   cardSheet(item, report, deck, { readonly = false } = {}) {
     // DON!! non è più raggiungibile dalla griglia (P1.0, gestito in automatico):
@@ -641,6 +641,7 @@ export class DeckController {
     root.querySelectorAll('[data-deck-cover-card]').forEach(button => button.addEventListener('click', () => this.chooseCover(button.dataset.deckCoverCard)));
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
+    this.mountSearchLayer(root);
     root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
     root.querySelector('[data-deck-search-open]')?.addEventListener('click', () => this.openSearch());
     root.querySelector('[data-deck-search-scrim]')?.addEventListener('click', event => { event.preventDefault(); root.querySelector('[data-deck-search-close]')?.click(); });
@@ -959,6 +960,19 @@ export class DeckController {
         <div data-deck-search-results class="deck-search-results"></div>
         <div class="deck-result-peek" data-deck-result-peek-box hidden></div>
       </section>`;
+  }
+  // Linguetta, fascia scura e pannello vivono in un livello figlio di <body>:
+  // dentro .page-stage (view-transition-name = contesto di sovrapposizione)
+  // la barra in alto e la navigazione finivano sopra al pannello e
+  // coprivano il campo di ricerca. Il livello si vede solo nella pagina Mazzi.
+  mountSearchLayer(root) {
+    if (typeof document === 'undefined' || !document.body) return;
+    let layer = document.getElementById('deck-search-layer');
+    const fresh = [...(root.querySelectorAll?.('.deck-mobile [data-deck-search-open], .deck-mobile [data-deck-search-scrim], .deck-mobile [data-deck-search-sheet]') || [])];
+    if (fresh.length) {
+      if (!layer) { layer = document.createElement('div'); layer.id = 'deck-search-layer'; document.body.append(layer); }
+      layer.replaceChildren(...fresh);
+    } else if (layer && !document.querySelector('.deck-mobile')) layer.replaceChildren();
   }
   searchTargetText(deck) {
     if (deck.game === 'onepiece') return this.targetSection === 'leader' ? 'Le carte toccate diventano il tuo Leader' : 'Le carte vanno nel Main Deck';
@@ -1363,6 +1377,13 @@ function stripOnePieceDon(deck) { if (deck?.game === 'onepiece' && Array.isArray
 function mapTeamDeck(row) { return { ...mapDeck(row), ownerName: row.owner_name || row.ownerName || 'Membro del team' }; }
 function uniqueDeckCards(cards = []) { const seen = new Set(); return cards.filter(card => { const key = String(card.catalogCardId); if (seen.has(key)) return false; seen.add(key); return true; }); }
 function readDrafts() { try { const value = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); return Array.isArray(value) ? value.map(stripOnePieceDon) : []; } catch { return []; } }
+// Le tessere della griglia sono piccole: per Yu-Gi-Oh! basta la versione
+// "cards_small" di YGOPRODeck (~28 KB invece di ~176 KB), nitida anche su schermi
+// 2x a questa dimensione. Con 40+ carte era la causa del ritardo all'apertura
+// del mazzo su rete mobile. La scheda della carta continua a usare l'immagine grande.
+export function deckTileImage(url) {
+  return String(url || '').replace(/^(https:\/\/images\.ygoprodeck\.com\/images\/)cards\/(\d+\.jpg)(?=$|[?#])/i, '$1cards_small/$2');
+}
 export function isExtraDeckCard(card) { return /fusion|synchro|xyz|link/i.test(String(card?.type || '')); }
 function sectionTotal(deck, section) { return deck.cards.filter(card => card.section === section).reduce((sum, card) => sum + card.quantity, 0); }
 // Limite copie per singolo catalogCardId in una sezione: 1 per il Leader

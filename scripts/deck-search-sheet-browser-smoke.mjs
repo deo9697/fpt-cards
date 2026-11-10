@@ -61,6 +61,7 @@ try {
     });
     controller.markDirty = () => {};
     controller.activeId = 'd1'; controller.screen = 'detail';
+    document.body.dataset.page = 'decks';
     window.__controller = controller; window.__results = results;
     controller.onRender();
     return Boolean(document.querySelector('[data-deck-search-open]'));
@@ -74,7 +75,9 @@ try {
   await evaluate(`(()=>{const i=document.querySelector('[data-deck-search]');i.value='carta di prova';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await wait(`document.querySelectorAll('[data-deck-result-card]').length===20`, 'I 20 risultati non sono tutti mostrati');
   await shot('mobile-search-open');
-  pass('apertura col tocco e 20 risultati su 20 (niente più tetto di 12)');
+  // Il pannello vive in un livello figlio di <body> (sopra barra in alto e navigazione dell'app vera).
+  if (!await evaluate(`document.querySelector('[data-deck-search-sheet]').parentElement?.id==='deck-search-layer' && document.getElementById('deck-search-layer').parentElement===document.body`)) throw new Error('Il pannello non è nel livello sopra le barre dell\'app');
+  pass('apertura col tocco e 20 risultati su 20 (niente più tetto di 12), pannello nel livello sopra le barre');
 
   // 2) "+" con Main/Extra automatici; il pannello resta aperto
   const fusion = await evaluate(`window.__results.findIndex(c=>c.type==='Fusion Monster')`);
