@@ -6,7 +6,7 @@ const fixture = suffix => ({
   cards: [
     { catalogCardId: 'OP01-001', cardName: 'Leader', section: 'leader', quantity: 1, colors: ['Red'], power: 5000 },
     ...Array.from({ length: 12 }, (_, index) => ({ catalogCardId: `OP01-${String(index + 2).padStart(3, '0')}`, cardName: `Personaggio ${index}`, section: 'main', quantity: 4, colors: ['Red'], power: 3000 })),
-    { catalogCardId: 'OP01-014', cardName: 'Stage', section: 'main', quantity: 2, colors: ['Red'], type: 'Stage' }
+    { catalogCardId: 'OP01-014', cardName: 'Carta senza tipo', section: 'main', quantity: 2, colors: ['Red'] }
   ]
 });
 const deckA = fixture('a'), deckB = fixture('b');
@@ -40,6 +40,41 @@ assert.throws(() => createSession({ decks: [deckA, deckB], life: [0, 5] }), /Lif
 assert.throws(() => createSession({ decks: [deckA, deckB], firstPlayer: 2 }), /iniziale/);
 const wrongColors = clone(deckA); wrongColors.cards[1].colors = ['Blue'];
 assert.equal(validateSimulatorDeck(wrongColors).valid, false);
+
+// The advanced move form must respect known card types just like tap-to-play.
+// Legacy cards without metadata remain movable so existing tables still load.
+for (const type of ['Stage', 'stage', 'Event', 'EVENT', 'Evento', 'Leader']) {
+  let typed = started();
+  const card = typed.players[0].hand[0]; card.type = type;
+  const before = clone(typed);
+  assert.throws(() => act(typed, 'move', { cardId: card.id, to: 'characters' }), /soltanto carte Personaggio/);
+  assert.deepEqual(typed, before, `${type}: illegal Character play preserves the original state`);
+  typed = act(typed, 'move', { cardId: card.id, to: 'trash' });
+  assert.equal(typed.players[0].trash.at(-1).id, card.id, `${type}: manual disposal remains available`);
+}
+for (const type of ['Character', 'CHARACTER', 'Personaggio', 'Event', 'evento', 'Leader']) {
+  const typed = started(), card = typed.players[0].hand[0]; card.type = type;
+  const before = clone(typed);
+  assert.throws(() => act(typed, 'move', { cardId: card.id, to: 'stage' }), /soltanto carte Stage/);
+  assert.deepEqual(typed, before, `${type}: illegal Stage play preserves the original state`);
+}
+for (const [type, to] of [['Character', 'characters'], ['Personaggio', 'characters'], ['Stage', 'stage'], ['', 'characters'], ['', 'stage']]) {
+  let typed = started(); const id = typed.players[0].hand[0].id;
+  typed.players[0].hand[0].type = type;
+  typed = act(typed, 'move', { cardId: id, to });
+  assert.equal(typed.players[0][to][0].id, id, `${type || 'legacy unknown'} can enter ${to}`);
+  integrity(typed);
+}
+for (const zone of ['hand', 'deck', 'life', 'trash']) {
+  let offBoard = started();
+  const id = offBoard.players[0].hand[0].id;
+  offBoard = act(offBoard, 'move', { cardId: id, to: zone });
+  const before = clone(offBoard);
+  for (const command of ['toggleRest', 'attachDon', 'detachDon', 'power']) {
+    assert.throws(() => act(offBoard, command, { cardId: id, delta: 1000 }), /non presente/);
+    assert.deepEqual(offBoard, before, `${command}: ${zone} cannot be activated or modified as a board card`);
+  }
+}
 
 let session = fresh();
 const original = clone(session);
@@ -327,4 +362,4 @@ for (let round = 0; round < 4; round++) {
     integrity(fuzzed);
   }
 }
-console.log('One Piece simulator engine: setup, mulligan, Life ordering, fixed Character slots, cards, DON!!, phases, result, save integrity and conservation passed.');
+console.log('One Piece simulator engine: setup, mulligan, Life ordering, fixed Character slots, typed play areas, board-only commands, DON!!, phases, result, save integrity and conservation passed.');

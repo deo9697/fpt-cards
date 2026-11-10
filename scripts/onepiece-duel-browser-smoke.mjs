@@ -17,13 +17,17 @@ const hostDeckId = 'a0000000-0000-4000-8000-000000000001';
 const guestDeckId = 'b0000000-0000-4000-8000-000000000002';
 const redNames = ['Usopp','Uta','Otama','Carrot','Komachiyo','Sai','Sanji','Jinbe','Tony Tony.Chopper','Nami','Nico Robin','Bartolomeo','Roronoa Zoro'];
 const redCodes = [4,5,6,9,10,12,13,14,15,16,17,19,25];
+const greenCodes = [33,51,53,54,55,56,57,58,59,60,61,62,63];
 const makeDeck = (ownerSlug, id, leaderCode, name, color, index) => ({
   id, ownerSlug, name, game:'onepiece', persisted:true,
   cards:[{catalogCardId:leaderCode,cardName:index ? 'Eustass.Kid' : 'Roronoa Zoro',imageUrl:`/preview/card/${leaderCode}.png`,section:'leader',quantity:1,type:'Leader',colors:[color],power:5000,life:5},
     ...Array.from({length:13},(_,cardIndex)=>{
-      const code = `OP01-${String(index ? cardIndex + 33 : redCodes[cardIndex]).padStart(3,'0')}`;
-      return {catalogCardId:code,cardName:index ? `Personaggio verde ${cardIndex+1}` : redNames[cardIndex],imageUrl:`/preview/card/${code}.png`,section:'main',quantity:cardIndex===12?2:4,type:'Character',colors:[color],power:3000,cost:2};
-    })]
+      const code = `OP01-${String(index ? greenCodes[cardIndex] : redCodes[cardIndex]).padStart(3,'0')}`;
+      return {catalogCardId:code,cardName:index ? `Carta prova ${code}` : redNames[cardIndex],imageUrl:`/preview/card/${code}.png`,section:'main',quantity:cardIndex===12||(!index&&cardIndex===0)?2:4,type:'Character',colors:[color],power:3000,cost:2};
+    }), ...(!index ? [
+      {catalogCardId:'ST01-017',cardName:'Thousand Sunny · Prova Stage',imageUrl:'/preview/card/ST01-017.png',section:'main',quantity:1,type:'Stage',colors:[color],cost:2},
+      {catalogCardId:'ST01-015',cardName:'Gum-Gum Jet Pistol · Prova Event',imageUrl:'/preview/card/ST01-015.png',section:'main',quantity:1,type:'Event',colors:[color],cost:4}
+    ] : [])]
 });
 const decks = [makeDeck('duel-host',hostDeckId,'OP01-001','Zoro · Rosso','Red',0),makeDeck('duel-guest',guestDeckId,'ST02-001','Kid · Verde','Green',1)];
 const rows = new Map(), notifications = [], requests = [];
@@ -109,11 +113,16 @@ async function run(){
     const evaluate=async expression=>{const result=await cdp.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value;};
     const wait=async(expression,label)=>{for(let attempt=0;attempt<200;attempt++){if(await evaluate(expression))return;await delay(80);}throw new Error(`${member}: ${label}\n${await evaluate('document.body.innerText.slice(0,2200)')}\n${JSON.stringify(exceptions)}`);};
     const click=async selector=>{assert(await evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`),`${member}: controllo assente ${selector}`);await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);};
+    const tap=async selector=>{
+      const point=await evaluate(`(()=>{const target=document.querySelector(${JSON.stringify(selector)});if(!target||target.disabled)throw Error('Controllo touch assente o disabilitato');target.scrollIntoView({block:'nearest',inline:'nearest'});const box=target.getBoundingClientRect();return {x:(Math.max(0,box.left)+Math.min(innerWidth,box.right))/2,y:(Math.max(0,box.top)+Math.min(innerHeight,box.bottom))/2};})()`);
+      await cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,radiusX:3,radiusY:3,force:1}]});
+      await cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
     const fill=async(selector,value)=>evaluate(`(()=>{const field=document.querySelector(${JSON.stringify(selector)});if(!field)throw Error('Controllo assente: '+${JSON.stringify(selector)});field.value=${JSON.stringify(String(value))};field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     const submit=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).requestSubmit()`);
     const screenshot=async(name,full=true)=>{if(!process.argv.includes('--screenshots'))return;await evaluate('document.fonts.ready');await evaluate('Promise.all(Array.from(document.images,image=>image.complete?Promise.resolve():new Promise(resolve=>{image.onload=resolve;image.onerror=resolve})))');const params={format:'png',captureBeyondViewport:full};if(full){const layout=await cdp.call('Page.getLayoutMetrics'),size=layout.cssContentSize||layout.contentSize;params.clip={x:0,y:0,width:size.width,height:Math.min(size.height,8000),scale:1};}const shot=await cdp.call('Page.captureScreenshot',params);const directory=path.join(root,'artifacts','onepiece-duel');fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,`${name}.png`),Buffer.from(shot.data,'base64'));};
     await cdp.call('Page.navigate',{url:`${origin}/scripts/fixtures/onepiece-duel-harness.html?member=${member}`});
-    return {member,cdp,evaluate,wait,click,fill,submit,screenshot};
+    return {member,cdp,evaluate,wait,click,tap,fill,submit,screenshot};
   }
   const host=await page('duel-host'),guest=await page('duel-guest');
   await host.wait('window.__fixtureReady && document.querySelector("[data-op-invite]")','Preparazione invito assente');
@@ -211,7 +220,7 @@ async function run(){
   await host.wait(`window.__sim.session.players[0].hand.length===${beforeDraw+1}`,'Pesca host non applicata');
   await guest.wait(`window.__sim.session.players[0].hand.length===${beforeDraw+1}`,'Pesca host non sincronizzata');
   async function playFirstCard(page,viewer){
-    const card=await page.evaluate(`window.__sim.session.players[${viewer}].hand[0].id`);
+    const card=await page.evaluate(`window.__sim.session.players[${viewer}].hand.find(card=>card.type==='Character').id`);
     const selector=`[data-op-card="${card}"][data-player="${viewer}"]`;
     if(!await page.evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`))await page.click(`[data-op-hand="${viewer}"]`);
     await page.click(selector);await page.wait('Boolean(document.querySelector("[data-op-move]"))','Inspector carta assente');
@@ -221,7 +230,7 @@ async function run(){
   const firstHostCard=await playFirstCard(host,0);
   await guest.wait('window.__sim.session.players[0].characters.length===1','Personaggio host non pubblico');
   assert.equal(await host.evaluate(`window.__sim.session.players[0].characters.find(card=>card.id===${JSON.stringify(firstHostCard)}).slot`),0,'Il primo personaggio non occupa il primo slot disponibile');
-  const placedHostCard=await host.evaluate('window.__sim.session.players[0].hand[0].id');
+  const placedHostCard=await host.evaluate('window.__sim.session.players[0].hand.find(card=>card.type==="Character").id');
   await host.click(`[data-op-card="${placedHostCard}"][data-player="0"]`);
   await host.wait('Boolean(document.querySelector("[data-op-command=battle-place]"))','Comando di piazzamento sul campo assente');
   await host.click('[data-op-command="battle-place"]');
@@ -273,6 +282,64 @@ async function run(){
   const outsider=await fetch(`${origin}/api/onepiece-duel`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'duel-observer',op:'state',duelId})});
   assert.equal(outsider.status,404,'Un terzo membro può leggere il tavolo');
   console.log('PASS stale-version conflicts and API boundaries preserve hidden information and participant privacy');
+  // Card-sheet commands: actual buttons, public results on both independent seats.
+  {
+    const both=async(expression,label)=>{await host.wait(expression,label+' (host)');await guest.wait(expression,label+' (ospite)');};
+    const cardExpression=`window.__sim.session.players[0].characters.find(card=>card.id===${JSON.stringify(placedHostCard)})`;
+    const cardAction=async(type,condition,label)=>{
+      await host.wait('!window.__sim.pending','Scheda carta ancora in sincronizzazione');
+      await host.click(`[data-op-card="${placedHostCard}"][data-player="0"]`);
+      await host.click(`[data-op-action="${type}"][data-player="0"]`);
+      await both(condition,label);
+    };
+    await cardAction('toggleRest',`${cardExpression}.rested===false`,'Attiva carta');
+    await cardAction('toggleRest',`${cardExpression}.rested===true`,'Riposa carta');
+    await cardAction('attachDon',`${cardExpression}.don===1 && window.__sim.session.players[0].don.active===1`,'Assegna DON!!');
+    await cardAction('powerUp',`${cardExpression}.powerModifier===1000`,'Aumenta potere');
+    assert.equal(await host.evaluate(`document.querySelector('[data-op-card="${placedHostCard}"] .op-battle-power').textContent`),'5000','Il potere sul campo non include DON!! e modificatore');
+    await cardAction('powerDown',`${cardExpression}.powerModifier===0`,'Riduci potere');
+    await cardAction('detachDon',`${cardExpression}.don===0 && window.__sim.session.players[0].don.rested===1`,'Rimuovi DON!! verso costo rested');
+    await cardAction('attachDon',`${cardExpression}.don===1 && window.__sim.session.players[0].don.active===0`,'Riassegna DON!!');
+    await cardAction('returnAttachedDon',`${cardExpression}.don===0 && window.__sim.session.players[0].don.deck===9`,'DON!!− assegnato verso mazzo DON!!');
+    await closeCard(host);
+    // The cards may start in hand, deck or Life: use the same private inspection
+    // and move controls available during a manual test; never replace match state.
+    async function putTypedCardInHand(code){
+      const player=rows.get(duelId).state.players[0];
+      const zone=['hand','deck','life'].find(zone=>player[zone].some(card=>card.catalogCardId===code));
+      assert(zone,`Carta di prova assente: ${code}`);
+      const card=player[zone].find(card=>card.catalogCardId===code);
+      if(zone!=='hand'){
+        const handCount=player.hand.length;
+        await host.click('[data-op-command="battle-tools"]');
+        await host.click(`[data-op-command="battle-inspect-${zone}"]`);
+        await host.wait(`window.__sim.pile?.cards?.some(card=>card.id===${JSON.stringify(card.id)})`,'Ispezione privata della carta di prova non riuscita');
+        await host.click(`.op-battle-pile-cards [data-op-card="${card.id}"]`);
+        await host.fill('[data-op-move] [name=to]','hand');await host.submit('[data-op-move]');
+        await host.wait(`window.__sim.session.players[0].hand.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca privata → mano');
+        await guest.wait(`window.__sim.session.players[0].hand.length===${handCount+1} && window.__sim.session.players[0].hand.every(card=>card.hidden)`,'Ricerca privata → mano coperta (ospite)');
+      }
+      await host.click(`[data-op-card="${card.id}"][data-player="0"]`);
+      return card.id;
+    }
+    const stageId=await putTypedCardInHand('ST01-017');
+    assert(!await host.evaluate('Array.from(document.querySelector("[data-op-move] [name=to]").options).some(option=>option.value==="characters")'),'Il modulo Stage propone Personaggi');
+    await host.click('[data-op-command="battle-place"]');
+    assert(await host.evaluate('Boolean(document.querySelector("[data-op-zone=stage][data-player=\\"0\\"].is-legal-target"))'),'Stage non evidenzia la propria zona');
+    assert(!await host.evaluate('Boolean(document.querySelector("[data-op-slot].is-legal-target"))'),'Stage suggerisce una posizione Personaggio');
+    await host.click('[data-op-zone="stage"][data-player="0"]');
+    await both(`window.__sim.session.players[0].stage[0]?.id===${JSON.stringify(stageId)}`,'Gioca Stage nella zona corretta');
+    await host.click(`[data-op-card="${stageId}"][data-player="0"]`);
+    await host.click('[data-op-action="toggleRest"][data-player="0"]');
+    await both('window.__sim.session.players[0].stage[0].rested===true','Riposa Stage');
+    await closeCard(host);
+    const eventId=await putTypedCardInHand('ST01-015');
+    assert(!await host.evaluate('Boolean(document.querySelector("[data-op-command=battle-place]"))'),'Evento ha il comando per entrare nel campo');
+    assert(!await host.evaluate('Array.from(document.querySelector("[data-op-move] [name=to]").options).some(option=>["characters","stage"].includes(option.value))'),'Il modulo Evento propone zone del campo');
+    await host.click('[data-op-command="battle-to-trash"]');
+    await both(`window.__sim.session.players[0].trash.some(card=>card.id===${JSON.stringify(eventId)})`,'Risolvi Evento → Trash');
+    console.log('PASS card activation/Rest, DON!! attachment/removal/return, visible power modifiers, Stage placement and manual Event → Trash');
+  }
   // ---- Every control on the desktop table, one by one, synchronised on both seats ----
   {
     const both=async(expr,label)=>{await host.wait(expr,label+' (host)');await guest.wait(expr,label+' (ospite)');};
@@ -305,7 +372,7 @@ async function run(){
     // Refresh: rested cards and DON!! return active
     await toolAction(host,'restDon',0);await both(P0+'.don.rested>=1','DON!! riposato per il Refresh');await idle(host);
     assert(await host.evaluate(P0+'.characters.some(card=>card.rested)'),'Serve un personaggio Rest per provare il Refresh');
-    await toolAction(host,'refresh',0);await both(P0+'.don.rested===0 && '+P0+'.characters.every(card=>!card.rested)','Refresh');await idle(host);
+    await toolAction(host,'refresh',0);await both(P0+'.don.rested===0 && '+P0+'.characters.every(card=>!card.rested) && '+P0+'.stage.every(card=>!card.rested)','Refresh');await idle(host);
     // Shuffles write to the shared log
     let log=await host.evaluate('window.__sim.session.log.length');
     await toolAction(host,'shuffle',0);await both('window.__sim.session.log.length==='+(log+1),'Mescola mazzo');await idle(host);
@@ -316,7 +383,21 @@ async function run(){
     await closePile(host);
     await tools(host);await host.click('.op-battle-tools [data-op-command="battle-inspect-life"]');
     await host.wait('window.__sim.pile?.zone==="life" && window.__sim.privateLife?.cards?.length===window.__sim.session.players[0].life.length','Guarda le Life non mostra le carte');
+    await host.click('[data-op-command="battle-life"][data-player="1"]');
+    assert(await host.evaluate('window.__sim.pile.player===1 && !window.__sim.pile.cards && !document.querySelector(".op-battle-pile-cards [data-op-card]")'),'La Life avversaria riutilizza le carte private del proprietario');
+    assert(!await host.evaluate('Boolean(document.querySelector(".op-battle-tools [data-op-action=takeLife]"))'),'La Life avversaria presenta comandi di modifica');
     await closePile(host);
+    // An effect can expose a Life and cover it again without changing its order.
+    await tools(host);await host.click('.op-battle-tools [data-op-command="battle-inspect-life"]');
+    await host.wait('Boolean(window.__sim.pile?.cards?.length)','Ispezione Life per effetto non disponibile');
+    const exposedLife=await host.evaluate('window.__sim.pile.cards[0].id');
+    await host.click(`.op-battle-pile-cards [data-op-card="${exposedLife}"]`);
+    await host.click('[data-op-action="toggleFaceUp"][data-player="0"]');
+    await both(P0+`.life[0].id===${JSON.stringify(exposedLife)} && `+P0+'.life[0].faceUp===true','Life scoperta sincronizzata');await idle(host);
+    await host.click('[data-op-command="battle-life"][data-player="0"]');
+    await host.click(`.op-battle-pile-cards [data-op-card="${exposedLife}"]`);
+    await host.click('[data-op-action="toggleFaceUp"][data-player="0"]');
+    await both(P0+'.life[0].hidden===true && '+P0+'.life[0].faceUp===false','Life ricoperta sincronizzata');await idle(host);
     // Field piles: Mazzo, Life, Trash (own and opponent)
     let hand=await host.evaluate(P0+'.hand.length');
     await host.click('[data-op-command="battle-deck"][data-player="0"]');await host.wait('window.__sim.pile?.zone==="deck"','Mazzo sul campo non apre la zona');
@@ -363,15 +444,26 @@ async function run(){
     assert(await host.evaluate('document.querySelector(".op-rail-profile.is-self").classList.contains("is-active")'),'Il profilo di turno non è evidenziato');
     console.log('PASS every table control: tools, DON!! deck/chips, Refresh, shuffles, searches, piles, hand, card sheet, tabs, lobby round trip, phases and turns');
   }
+  // A representative board reached exclusively through normal controls.
+  await closeCard(host);await closeTools(host);
+  await playFirstCard(host,0);await guest.wait('window.__sim.session.players[0].characters.length===2','Secondo personaggio host non sincronizzato');
+  await closeCard(host);
+  await playFirstCard(guest,1);await host.wait('window.__sim.session.players[1].characters.length===2','Secondo personaggio ospite non sincronizzato');
+  await closeCard(guest);
+  await host.click(`[data-op-card="${placedHostCard}"][data-player="0"]`);await host.click('[data-op-action="attachDon"][data-player="0"]');
+  await host.wait(`window.__sim.session.players[0].characters.find(card=>card.id===${JSON.stringify(placedHostCard)}).don===1`,'DON!! nella partita di esempio non assegnato');
+  await host.click(`[data-op-card="${placedHostCard}"][data-player="0"]`);await host.click('[data-op-action="toggleRest"][data-player="0"]');
+  await host.wait(`window.__sim.session.players[0].characters.find(card=>card.id===${JSON.stringify(placedHostCard)}).rested`,'Carta Rest nella partita di esempio non applicata');
+  await closeCard(host);
   await host.cdp.call('Page.navigate',{url:`${origin}/scripts/fixtures/onepiece-duel-harness.html?member=duel-host&duel=${duelId}`});
-  await host.wait(`window.__sim?.duel?.id===${JSON.stringify(duelId)} && window.__sim.session?.players[0].characters.length===1`,'Ripresa sessione remota non riuscita');
+  await host.wait(`window.__sim?.duel?.id===${JSON.stringify(duelId)} && window.__sim.session?.players[0].characters.length===2`,'Ripresa sessione remota non riuscita');
   assert(await host.evaluate('window.__sim.session.players[1].hand.every(card=>card.hidden)'),'Refresh rivela mano avversaria');
   await host.wait('Array.from(document.querySelectorAll(".op-battlefield img"),image=>image.complete&&image.naturalWidth>0).every(Boolean)','Immagini del campo non caricate');
   await assertArena(host,0,'desktop 1440×1000');
-  await host.screenshot('battlefield-desktop');await host.screenshot('battlefield-desktop-viewport',false);
+  await host.screenshot('commands-desktop');await host.screenshot('commands-desktop-viewport',false);
   await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:1440,height:876,deviceScaleFactor:1,mobile:false});
   await assertArena(host,0,'desktop 1440×876');
-  await host.screenshot('battlefield-desktop-reference',false);
+  await host.screenshot('commands-desktop-reference',false);
   await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await host.cdp.call('Page.navigate',{url:`${origin}/scripts/fixtures/onepiece-duel-harness.html?member=duel-host&duel=${duelId}`});
   await host.wait('window.__sim?.session && document.querySelector(".op-battlefield")','Il telefono non apre il campo da battaglia');
@@ -381,20 +473,31 @@ async function run(){
   const inViewport='element=>{const box=element.getBoundingClientRect();return box.width>0&&box.height>0&&box.top>=0&&box.bottom<=innerHeight+1&&box.left>=0&&box.right<=innerWidth+1}';
   assert(await host.evaluate(`(${inViewport})(document.querySelector('[data-op-action="draw"][data-player="0"]'))`),'Pesca non raggiungibile nel viewport portrait');
   assert(await host.evaluate('getComputedStyle(document.querySelector(".mobile-nav")).display==="none"'),'La navigazione generale occupa spazio durante la partita');
-  await host.screenshot('battlefield-mobile');
-  await host.screenshot('battlefield-mobile-viewport',false);
-  const mobileCard=await host.evaluate('window.__sim.session.players[0].hand[0].id');
-  await host.click(`[data-op-card="${mobileCard}"][data-player="0"]`);
+  await host.screenshot('commands-mobile');
+  await host.screenshot('commands-mobile-viewport',false);
+  const mobileCard=await host.evaluate('window.__sim.session.players[0].hand.find(card=>card.type==="Character").id');
+  await host.tap(`[data-op-card="${mobileCard}"][data-player="0"]`);
   await host.wait('Boolean(document.querySelector(".op-sim-inspector.has-selection"))','Azioni touch non aperte');
   assert.equal(await host.evaluate('getComputedStyle(document.querySelector(".op-sim-inspector.has-selection")).position'),'fixed','Inspector mobile non è un pannello fisso');
-  await host.screenshot('battlefield-mobile-card',false);
-  await host.click('.op-sim-inspector.has-selection [data-op-command="deselect"]');
+  await host.screenshot('commands-mobile-card',false);
+  await host.tap('.op-sim-inspector.has-selection [data-op-command="deselect"]');
   assert(!await host.evaluate('Boolean(document.querySelector(".op-sim-inspector.has-selection"))'),'Il pannello carta non si chiude');
+  await host.tap(`[data-op-card="${mobileCard}"][data-player="0"]`);
+  await host.wait('Boolean(document.querySelector("[data-op-command=battle-place]"))','Posizionamento touch assente');
+  await host.tap('[data-op-command="battle-place"]');
+  await host.tap('[data-op-slot="1"][data-player="0"]');
+  await host.wait(`window.__sim.session.players[0].characters.some(card=>card.id===${JSON.stringify(mobileCard)}&&card.slot===1)`,'Il tap non gioca la carta nella posizione scelta');
+  await guest.wait('window.__sim.session.players[0].characters.length===3','Giocata touch non sincronizzata');
+  await host.tap(`[data-op-card="${mobileCard}"][data-player="0"]`);
+  await host.wait('Boolean(document.querySelector("[data-op-command=battle-to-trash]"))','Comando touch Trash assente');
+  await host.tap('[data-op-command="battle-to-trash"]');
+  await host.wait('window.__sim.session.players[0].characters.length===2','KO touch non riuscito');
+  await guest.wait('window.__sim.session.players[0].characters.length===2','KO touch non sincronizzato');
   await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true});
   await delay(150);
   await assertArena(host,0,'smartphone landscape 844×390');
   assert(await host.evaluate(`(${inViewport})(document.querySelector('[data-op-action="draw"][data-player="0"]'))`),'Pesca non raggiungibile nel viewport landscape');
-  await host.screenshot('battlefield-landscape',false);
+  await host.screenshot('commands-landscape',false);
   console.log('PASS mirrored mobile battlefield, five fixed Character slots per side, reachable actions, portrait/landscape fit and touch card sheet');
   // ---- Finish the test, then decline and cancel flows from the lobby ----
   {

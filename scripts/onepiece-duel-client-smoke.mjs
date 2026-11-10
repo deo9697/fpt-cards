@@ -33,9 +33,11 @@ try {
   const abandoned=deferred();
   const navigation=controller(async payload=>payload.op==='lobby'?{members:[],duels:[]}:abandoned.promise);
   const navigationPoll=navigation.poll();
+  navigation.battleTools=true;
   await navigation.click(button({opCommand:'lobby'}));
   abandoned.resolve({duel:snapshot(1)}); await navigationPoll;
   assert.equal(navigation.duel,null,'A delayed response must not reopen a departed game');
+  assert.equal(navigation.battleTools,false,'Leaving a table must close its tools');
   console.log('PASS leaving a table invalidates its pending responses');
 
   const inspection=deferred();
@@ -46,6 +48,21 @@ try {
   assert.equal(privacy.pile,null,'Covering private cards must invalidate an outstanding inspection');
   assert.equal(privacy.privateLife,null);
   console.log('PASS late inspection responses respect the cover command');
+
+  const lifeInspection=controller(async()=>({version:1,cards:full.players[0].life}));
+  await lifeInspection.click(button({opCommand:'battle-inspect-life'}));
+  assert.deepEqual(lifeInspection.pile.cards,full.players[0].life,'Own Life inspection must show the inspected cards');
+  await lifeInspection.click(button({opCommand:'battle-life',player:'1'}));
+  assert.equal(lifeInspection.pile.player,1);
+  assert.equal(lifeInspection.pile.cards,undefined,'Opening opponent Life must never reuse the private inspection of own Life');
+  assert(lifeInspection.session.players[1].life.every(card=>card.hidden),'Opponent Life must stay covered');
+  await lifeInspection.click(button({opCommand:'battle-life',player:'0'}));
+  assert.deepEqual(lifeInspection.pile.cards,full.players[0].life,'Returning to own Life may use its private inspection');
+  await lifeInspection.click(button({opCommand:'battle-inspect-life'}));
+  assert.equal(lifeInspection.privateLife,null,'Toggling Life inspection off must clear its private response');
+  assert.equal(lifeInspection.pile.cards,undefined,'Toggling Life inspection off must also clear the gallery copy');
+  assert.equal(lifeInspection.peekLife[0],false);
+  console.log('PASS private Life inspections stay attached to their owner');
 
   const quiet=controller(async payload=>{
     assert.equal(payload.knownVersion,1);
@@ -61,5 +78,21 @@ try {
   const fresh=controller(async()=>({})); fresh.finishDraft.notes='Do not copy to another opponent';
   fresh.receive({...snapshot(1),id:'b0000000-0000-4000-8000-000000000002'}); assert.equal(fresh.finishDraft.notes,'');
   console.log('PASS expired access, closed tables and opponent changes clear sensitive UI state');
+
+  const typedCards=controller(async()=>({}));
+  const typedHand=typedCards.session.players[0].hand[0];
+  typedCards.selected={player:0,cardId:typedHand.id};
+  typedHand.type='Event';
+  assert(!typedCards.inspectorView().includes('<option value="characters"'),'Event command must not offer the Character area');
+  assert(!typedCards.inspectorView().includes('<option value="stage"'),'Event command must not offer the Stage area');
+  assert(typedCards.inspectorView().includes('<option value="trash" selected>'),'Event command should default to resolving into Trash');
+  assert(!typedCards.tableView().includes('data-op-command="battle-place"'),'Event must not offer a battlefield placement shortcut');
+  typedHand.type='Stage';
+  assert(typedCards.inspectorView().includes('<option value="stage" selected>'),'Stage command should default to its own area');
+  assert(!typedCards.inspectorView().includes('<option value="characters"'),'Stage command must not offer the Character area');
+  typedHand.type='Personaggio';
+  assert(typedCards.inspectorView().includes('<option value="characters" selected>'),'Italian Character type should offer the Character area');
+  assert(!typedCards.inspectorView().includes('<option value="stage"'),'Character command must not offer the Stage area');
+  console.log('PASS card commands offer only compatible battlefield destinations');
   console.log('onepiece-duel-client-smoke: OK');
 } finally { controllers.forEach(instance=>instance.reset()); }

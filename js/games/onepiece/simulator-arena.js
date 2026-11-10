@@ -1,4 +1,4 @@
-import { characterSlots, PHASES } from './simulator-engine.js';
+import { characterSlots, canMoveCardToZone, PHASES } from './simulator-engine.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const logo = 'assets/game-logos/onepiece.webp';
@@ -23,18 +23,14 @@ export function battlefieldCard(controller, card, player, { hand = false } = {})
 
 export function canPlace(controller, player, destination) {
   const selected = controller.selectedCard();
-  if (!selected || player !== controller.viewer || selected.player !== player || !controller.canControl(player) || controller.session.phase === 'setup' || selected.zone === 'leader') return false;
-  const type = String(selected.card.type || '').toLowerCase();
-  if (destination === 'characters' && (type.includes('event') || type.includes('stage') || type.includes('leader'))) return false;
-  if (destination === 'stage' && (type.includes('character') || type.includes('event') || type.includes('leader'))) return false;
-  return true;
+  return Boolean(selected && !controller.pending && ['characters', 'stage'].includes(destination) && player === controller.viewer && selected.player === player && controller.canControl(player) && controller.session.phase !== 'setup' && selected.zone !== 'leader' && canMoveCardToZone(selected.card, destination));
 }
 
 function characterSlot(controller, player, card, slot) {
   const legal = !card && canPlace(controller, player, 'characters');
   const label = `<small class="op-battle-slot-label">${slot + 1}</small>`;
   if (card) return `<div class="op-battle-slot" data-zone="characters" data-slot="${slot}" data-player="${player}">${label}${battlefieldCard(controller,card,player)}</div>`;
-  return `<button type="button" class="op-battle-slot is-empty ${legal ? 'is-legal-target' : ''}" data-zone="characters" data-slot="${slot}" data-op-slot="${slot}" data-player="${player}" ${player !== controller.viewer || !controller.canControl(player) || controller.session.phase === 'setup' ? 'disabled' : ''} aria-label="Posizione Personaggio ${slot + 1}${legal ? ', gioca qui la carta selezionata' : ', vuota'}">${label}<span class="op-battle-slot-name">PERSONAGGIO</span></button>`;
+  return `<button type="button" class="op-battle-slot is-empty ${legal ? 'is-legal-target' : ''}" data-zone="characters" data-slot="${slot}" data-op-slot="${slot}" data-player="${player}" ${controller.pending || player !== controller.viewer || !controller.canControl(player) || controller.session.phase === 'setup' ? 'disabled' : ''} aria-label="Posizione Personaggio ${slot + 1}${legal ? ', gioca qui la carta selezionata' : ', vuota'}">${label}<span class="op-battle-slot-name">PERSONAGGIO</span></button>`;
 }
 
 function handView(controller, player) {
@@ -80,7 +76,7 @@ function railPhases(controller) {
 function inspectorView(controller) {
   const selected = controller.selectedCard(), visible = selected && !controller.battlePlacing;
   const mine = selected?.player === controller.viewer && controller.canControl(controller.viewer) && controller.session.phase !== 'setup';
-  const canPlay = mine && selected.zone !== 'leader' && selected.zone !== 'characters' && !/event|leader/i.test(selected.card.type || '');
+  const canPlay = mine && !['leader', 'characters', 'stage'].includes(selected.zone) && (canMoveCardToZone(selected.card, 'characters') || canMoveCardToZone(selected.card, 'stage'));
   const quick = mine ? `<div class="op-battle-quick-actions">${canPlay ? command('battle-place', /stage/i.test(selected.card.type || '') ? 'Posiziona Stage' : 'Gioca sul campo') : ''}${selected.zone === 'characters' ? command('battle-place','Sposta posizione') : ''}${selected.zone !== 'leader' ? command('battle-to-trash',/event/i.test(selected.card.type || '') ? 'Risolvi evento → Trash' : 'Sposta nel Trash') : ''}</div>` : '';
   const content = selected ? controller.inspectorView() : '<h2>Il campo di battaglia</h2><p>Seleziona una carta per leggerla e scegliere un’azione. Per giocare, scegli la carta e una posizione libera sul tuo campo.</p>';
   return `${visible ? '<button type="button" class="op-sim-inspector-backdrop" data-op-command="deselect" aria-label="Chiudi carta"></button>' : ''}<aside class="op-battle-inspector op-sim-inspector op-sim-panel ${visible ? 'has-selection' : ''}" tabindex="-1" aria-label="Carta e azioni">${visible ? command('deselect','Chiudi carta') : ''}${visible ? quick : ''}${content}</aside>`;
@@ -89,7 +85,7 @@ function inspectorView(controller) {
 function toolsView(controller) {
   if (!controller.battleTools) return '';
   const s = controller.session, player = controller.viewer, p = s.players[player], disabled = controller.pending || !controller.canControl(player) || s.phase === 'setup';
-  return `<button type="button" class="op-sim-inspector-backdrop" data-op-command="battle-tools-close" aria-label="Chiudi strumenti"></button><section class="op-battle-tools op-sim-panel" role="dialog" aria-modal="true" aria-label="Strumenti del duello">${command('battle-tools-close','Chiudi strumenti')}<h2>Strumenti del duello</h2><div class="op-sim-actions">${button('refresh','Refresh',player,disabled)}${button('addDon','+1 DON!!',player,disabled || !p.don.deck)}${button('addDon2','+2 DON!!',player,disabled || p.don.deck < 2)}${button('restDon','Riposa DON!!',player,disabled || !p.don.active)}${button('activateDon','Attiva DON!!',player,disabled || !p.don.rested)}${button('returnDon','DON!!− attivo',player,disabled || !p.don.active)}${button('returnRestedDon','DON!!− rested',player,disabled || !p.don.rested)}${button('shuffle','Mescola mazzo',player,disabled)}${button('shuffleLife','Mescola Life',player,disabled)}${command('battle-inspect-deck','Cerca nel mio mazzo')}${command('battle-inspect-life','Guarda le mie Life')}</div><div class="op-sim-actions"><button type="button" class="btn secondary" data-op-tab="rules">Regole e ruling</button><button type="button" class="btn secondary" data-op-tab="history">Test e statistiche</button></div><details><summary>Registro condiviso · ${s.log.length}</summary><ol>${s.log.slice(-50).reverse().map(row=>`<li>T${row.turn} · ${esc(row.text)}</li>`).join('')}</ol></details>${!s.result && s.phase !== 'setup' ? `<details><summary>Concludi il test</summary><form data-op-finish><label>Risultato<select name="winner">${s.players.map((p,i)=>`<option value="${i}" ${controller.finishDraft.winner === String(i) ? 'selected' : ''}>Vince ${esc(p.name)}</option>`).join('')}<option value="draw" ${controller.finishDraft.winner === 'draw' ? 'selected' : ''}>Pareggio</option></select></label><label>Note condivise<textarea name="notes" rows="3" maxlength="2000">${esc(controller.finishDraft.notes)}</textarea></label><button type="submit" class="btn">Concludi test</button></form></details>` : ''}<p>Effetti, costi, attacchi, Counter e Trigger restano manuali.</p></section>`;
+  return `<button type="button" class="op-sim-inspector-backdrop" data-op-command="battle-tools-close" aria-label="Chiudi strumenti"></button><section class="op-battle-tools op-sim-panel" role="dialog" aria-modal="true" aria-label="Strumenti del duello">${command('battle-tools-close','Chiudi strumenti')}<h2>Strumenti del duello</h2><div class="op-sim-actions">${button('refresh','Refresh',player,disabled)}${button('addDon','+1 DON!!',player,disabled || !p.don.deck)}${button('addDon2','+2 DON!!',player,disabled || p.don.deck < 2)}${button('restDon','Riposa DON!!',player,disabled || !p.don.active)}${button('activateDon','Attiva DON!!',player,disabled || !p.don.rested)}${button('returnDon','DON!!− attivo',player,disabled || !p.don.active)}${button('returnRestedDon','DON!!− rested',player,disabled || !p.don.rested)}${button('shuffle','Mescola mazzo',player,disabled)}${button('shuffleLife','Mescola Life',player,disabled)}${command('battle-inspect-deck','Cerca nel mio mazzo')}${command('battle-inspect-life',controller.privateLife ? 'Copri le mie Life' : 'Guarda le mie Life')}</div><div class="op-sim-actions"><button type="button" class="btn secondary" data-op-tab="rules">Regole e ruling</button><button type="button" class="btn secondary" data-op-tab="history">Test e statistiche</button></div><details><summary>Registro condiviso · ${s.log.length}</summary><ol>${s.log.slice(-50).reverse().map(row=>`<li>T${row.turn} · ${esc(row.text)}</li>`).join('')}</ol></details>${!s.result && s.phase !== 'setup' ? `<details><summary>Concludi il test</summary><form data-op-finish><label>Risultato<select name="winner">${s.players.map((p,i)=>`<option value="${i}" ${controller.finishDraft.winner === String(i) ? 'selected' : ''}>Vince ${esc(p.name)}</option>`).join('')}<option value="draw" ${controller.finishDraft.winner === 'draw' ? 'selected' : ''}>Pareggio</option></select></label><label>Note condivise<textarea name="notes" rows="3" maxlength="2000">${esc(controller.finishDraft.notes)}</textarea></label><button type="submit" class="btn">Concludi test</button></form></details>` : ''}<p>Effetti, costi, attacchi, Counter e Trigger restano manuali.</p></section>`;
 }
 
 function pileView(controller) {
@@ -100,7 +96,7 @@ function pileView(controller) {
   const own = player === controller.viewer;
   const disabled = controller.pending || !controller.canControl(player);
   const actions = own && zone === 'deck' ? `${button('draw','Pesca una carta',player,disabled || !p.deck.length)}${command('battle-inspect-deck','Cerca nel mazzo')}${button('shuffle','Mescola',player,disabled)}`
-    : own && zone === 'life' ? `${button('takeLife','Life → mano',player,disabled || !p.life.length)}${command('battle-inspect-life','Guarda Life per effetto')}` : '';
+    : own && zone === 'life' ? `${button('takeLife','Life → mano',player,disabled || !p.life.length)}${command('battle-inspect-life',controller.privateLife ? 'Copri le Life' : 'Guarda Life per effetto')}` : '';
   return `<button type="button" class="op-sim-inspector-backdrop" data-op-command="close-pile" aria-label="Chiudi zona"></button><section class="op-battle-tools op-sim-panel" role="dialog" aria-modal="true" aria-label="Carte della zona">${command('close-pile','Chiudi zona')}<h2>${zone === 'deck' ? 'Mazzo' : zone === 'life' ? 'Life' : 'Trash'}</h2><div class="op-sim-actions">${actions}</div><div class="op-battle-pile-cards">${list.map(card=>battlefieldCard(controller,card,player)).join('') || `<p>${zone === 'deck' ? `${p.deck.length} carte coperte` : 'Zona vuota'}</p>`}</div></section>`;
 }
 

@@ -158,6 +158,21 @@ function findCard(player, id, boardOnly = false) {
   fail('Carta non presente nella zona richiesta.');
 }
 
+export function canMoveCardToZone(card, destination) {
+  // Unknown types in older saves remain usable at a manual table. Known card
+  // types still have to respect their physical play areas, including moves
+  // submitted through the advanced form rather than the battlefield shortcut.
+  if (!card || !ZONES.includes(destination)) return false;
+  const type = String(card.type || '').trim().toLowerCase();
+  const kind = /\bleader\b/.test(type) ? 'leader'
+    : /\bstage\b/.test(type) ? 'stage'
+    : /\b(?:character|personaggio)\b/.test(type) ? 'character'
+    : /\b(?:event|evento)\b/.test(type) ? 'event' : null;
+  if (destination === 'characters' && kind && kind !== 'character') return false;
+  if (destination === 'stage' && kind && kind !== 'stage') return false;
+  return true;
+}
+
 export function validateSession(session) {
   const errors = [];
   try {
@@ -252,6 +267,7 @@ export function applyAction(session, action) {
       if (action.slot !== undefined && (action.to !== 'characters' || !integer(action.slot, 0, 4))) fail('La posizione del Personaggio deve essere un intero tra 0 e 4.');
       const found = findCard(player, action.cardId);
       if (found.zone === 'leader') fail('Il Leader resta nella sua area.');
+      if (!canMoveCardToZone(found.card, action.to)) fail(action.to === 'characters' ? 'Nell’area Personaggi puoi giocare soltanto carte Personaggio.' : 'Nell’area Stage puoi giocare soltanto carte Stage.');
       if (action.to === 'characters' && found.zone !== 'characters' && player.characters.length >= 5) fail('Ci sono già 5 Personaggi: spostane prima uno nel trash.');
       if (action.to === 'stage' && found.zone !== 'stage' && player.stage.length >= 1) fail('È già presente uno Stage: spostalo prima nel trash.');
       let targetSlot = null;

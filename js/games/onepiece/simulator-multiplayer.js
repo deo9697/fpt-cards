@@ -108,6 +108,7 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     this.session = ['setup','playing','finished'].includes(duel.status) ? duel.state || null : null;
     if (changed) { this.inspectionGeneration++; this.selected = null; this.pile = null; this.privateLife = null; this.peekLife = [false, false]; this.battlePlacing = false; this.battleInspectedCard = null; }
     if (newTable && [0, 1].includes(this.viewer)) {
+      this.battleTools = false;
       this.revealHands = [false, false]; this.revealHands[this.viewer] = true;
       this.finishDraft = { winner:String(this.viewer), notes:'' };
       this.playerFocus = globalThis.matchMedia?.('(max-width: 700px)').matches ? String(this.viewer) : 'both';
@@ -275,7 +276,7 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     if (battle === 'battle-life' || battle === 'battle-deck' || battle === 'battle-trash') {
       const player=Number(button.dataset.player), zone=battle.slice('battle-'.length);
       this.selected=null;this.battlePlacing=false;this.battleTools=false;
-      this.pile={player,zone,cards:zone==='life' && this.privateLife?.version===this.duel.version ? this.privateLife.cards : undefined};this.render();return;
+      this.pile={player,zone,cards:player===this.viewer && zone==='life' && this.privateLife?.version===this.duel.version ? this.privateLife.cards : undefined};this.render();return;
     }
     if (battle === 'battle-inspect-deck' || battle === 'battle-inspect-life') {
       this.battleTools=false;
@@ -291,6 +292,7 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     if (button.dataset.opCommand === 'lobby') {
       this.navigationGeneration++;
       this.duel = null; this.session = null; this.selected = null; this.pile = null; this.privateLife = null;
+      this.battleTools = false; this.battlePlacing = false; this.battleInspectedCard = null;
       const response = await this.perform({ op:'lobby' }); if (response && this.allowed()) { this.lobby = response; this.render(); } return;
     }
     if (button.dataset.opTab === 'history') {
@@ -301,7 +303,11 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
       const zone = button.dataset.opPile || 'life';
       const duelId = this.duel.id;
       const inspection = this.inspectionGeneration;
-      if (zone === 'life' && this.privateLife) { this.privateLife = null; this.peekLife[player] = false; this.selected = null; this.render(); return; }
+      if (zone === 'life' && this.privateLife) {
+        this.inspectionGeneration++; this.privateLife = null; this.peekLife[player] = false; this.selected = null; this.battleInspectedCard = null;
+        if (this.pile?.zone === 'life' && this.pile.player === player) this.pile = { player, zone };
+        this.render(); return;
+      }
       const response = await this.perform({ op:'inspect', duelId:this.duel.id, zone });
       if (!response || !this.allowed() || inspection !== this.inspectionGeneration || this.duel?.id !== duelId || response.version !== this.duel.version) return;
       if (zone === 'life') { this.privateLife = { cards:response.cards, version:response.version }; this.peekLife[player] = true; }
