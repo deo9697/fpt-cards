@@ -204,7 +204,7 @@ try {
     const off = { checked:document.querySelector('[data-deck-image-logo]').checked, logo:window.__controller.imageExportDetails.logo, bottom:bottom() };
     document.querySelector('[data-deck-image-logo]').click(); await wait(300);
     let exportable = true; try { document.querySelector('[data-deck-image-canvas]').toDataURL('image/png'); } catch { exportable = false; }
-    return { on, off, back:window.__controller.imageExportDetails.logo, exportable, logoBottomEdge: 1350 - 42 - 100 - 5 };
+    return { on, off, back:window.__controller.imageExportDetails.logo, exportable, logoBottomEdge: 1350 - 42 - 144 - 5 };
   })()`);
   if (logoResult.error) throw Error(logoResult.error);
   if (!logoResult.on.checked || !logoResult.on.logo) throw Error('Il logo FPT non è attivo di default: ' + JSON.stringify(logoResult));

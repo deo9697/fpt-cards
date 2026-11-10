@@ -358,7 +358,7 @@ function raceWithTimeout(promise, timeoutMs) {
 export const ARENA_BACKGROUND_URL = 'assets/backgrounds/deck-image-arena.jpg';
 // Logo del team, in un cerchio in basso a destra (stili Arena/Lista). details.logo === false lo toglie.
 export const FPT_LOGO_URL = 'assets/fpt-logo.jpeg';
-const FPT_LOGO_ROOM = 70, FPT_LOGO_RADIUS = 50;
+const FPT_LOGO_ROOM = 110, FPT_LOGO_RADIUS = 72;
 export const showFptLogo = details => details?.logo !== false;
 export const DECK_IMAGE_STYLES = ['arena', 'list'];
 const isFptStyle = style => DECK_IMAGE_STYLES.includes(style);
