@@ -37,7 +37,9 @@ export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {}, ke
   for (const card of deck?.cards || []) {
     // I DON!! non fanno parte della lista One Piece: una vecchia riga 'don'
     // non deve finire nel primo bucket (sarebbe comparsa come Leader).
-    if (game === 'onepiece' && card?.section === 'don') continue;
+    // One Piece ha solo Leader e Main: una riga di un'altra sezione non deve
+    // finire nel primo bucket e diventare il Leader dell'immagine.
+    if (game === 'onepiece' && !['leader', 'main'].includes(card?.section)) continue;
     const bucket = buckets.get(card?.section) || buckets.get(sectionKeys[0]);
     if (!bucket) continue;
     const id = canonicalCatalogCardId(card.catalogCardId, game) || String(card.catalogCardId || '').trim();
@@ -48,7 +50,15 @@ export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {}, ke
     else bucket.set(id, { catalogCardId: id, cardName: card.cardName || '', imageUrl: card.imageUrl || card.croppedImageUrl || '', cardType:cardTypes[card.catalogCardId] || cardTypes[id] || card.cardType || card.type || '', quantity });
   }
 
-  const sections = sectionKeys.map(key => ({ key, label: labels[key] || key, cards: [...(buckets.get(key)?.values() || [])] }));
+  let sections = sectionKeys.map(key => ({ key, label: labels[key] || key, cards: [...(buckets.get(key)?.values() || [])] }));
+  // One Piece: il Leader è la prima carta della lista (richiesta del team
+  // 2026-11-10), in alto a sinistra nel Main e non in una sezione a parte.
+  // Il conteggio del Main resta 50: sectionTotalQuantity salta il Leader.
+  if (game === 'onepiece') {
+    const leaders = (sections.find(section => section.key === 'leader')?.cards || []).map(card => ({ ...card, isLeader: true }));
+    const main = sections.find(section => section.key === 'main');
+    if (main && leaders.length) { main.cards = [...leaders, ...main.cards]; sections = sections.filter(section => section.key !== 'leader'); }
+  }
   if (game === 'yugioh' && !keepOrder) {
     const rank = card => {
       const type = String(card.cardType || '').toLowerCase();
@@ -87,7 +97,7 @@ export function normalizeDeckForImage(deck, { ownerName = '', cardTypes = {}, ke
 }
 
 export function sectionTotalQuantity(cards = []) {
-  return cards.reduce((sum, card) => sum + (Number(card.quantity) || 0), 0);
+  return cards.reduce((sum, card) => sum + (card?.isLeader ? 0 : Number(card.quantity) || 0), 0);
 }
 
 // --- Tema --------------------------------------------------------------
@@ -466,6 +476,21 @@ export async function loadDeckImageBackground(file, { maxSide = 2160 } = {}) {
   return canvas;
 }
 
+// Cornice oro e fascia "LEADER" sulla carta Leader One Piece.
+function drawLeaderMark(ctx, card, accent) {
+  if (!card?.isLeader) return;
+  ctx.save();
+  ctx.strokeStyle = accent; ctx.lineWidth = 3;
+  roundedRect(ctx, card.x + 1.5, card.y + 1.5, card.w - 3, card.h - 3, 7); ctx.stroke();
+  const bandH = Math.max(16, Math.round(card.w * 0.17));
+  ctx.beginPath(); ctx.rect(card.x + 3, card.y + 3, card.w - 6, bandH); ctx.fillStyle = accent; ctx.fill();
+  ctx.fillStyle = '#0b0812'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `800 ${Math.round(bandH * 0.62)}px "Manrope FPT", "Segoe UI", sans-serif`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
+  ctx.fillText('LEADER', card.x + card.w / 2, card.y + 3 + bandH / 2 + 1);
+  ctx.restore();
+}
+
 function drawCoverImage(ctx, image, x, y, w, h) {
   if (!image) return;
   const scale = Math.max(w / image.width, h / image.height);
@@ -620,6 +645,7 @@ export function drawDeckImage(ctx, model, layout, images, { background = 'clean'
         ctx.restore();
       }
       drawQuantityBadge(ctx, card.quantity, card.x, card.y, card.w, card.h, accent);
+      drawLeaderMark(ctx, card, accent);
     }
   }
 
@@ -723,6 +749,7 @@ function drawFptSections(ctx, layout, images, accent) {
         ctx.fillText(`×${card.quantity}`, badgeX + badgeW / 2, badgeY + badgeH / 2 + 1);
         ctx.restore();
       }
+      drawLeaderMark(ctx, card, accent);
     }
   }
 }
@@ -896,7 +923,7 @@ export function drawListDeckImage(ctx, model, layout, images, details = {}) {
         if (image) drawCoverImage(ctx, image, x, cy + 4, thumbW, thumbH); else drawPlaceholder(ctx, x, cy + 4, thumbW, thumbH);
         ctx.restore();
         ctx.textAlign = 'left'; ctx.fillStyle = accent; ctx.font = `800 ${Math.round(rowH * 0.46)}px ${FPT_BODY}`;
-        ctx.fillText(String(card.quantity), x + thumbW + 12, cy + rowH * 0.66);
+        ctx.fillText(card.isLeader ? 'L' : String(card.quantity), x + thumbW + 12, cy + rowH * 0.66);
         ctx.fillStyle = '#f3eee2';
         ctx.fillText(fitFont(ctx, card.cardName || '', columnW - thumbW - 40, Math.round(rowH * 0.4), 600, FPT_BODY, Math.round(rowH * 0.31)), x + thumbW + 34, cy + rowH * 0.66);
         cy += rowH;

@@ -3996,3 +3996,12 @@ body.pinpad-open { overflow:hidden; }
 /* Il livello della ricerca è figlio di <body>: sopra barra in alto (12) e navigazione (30), solo nella pagina Mazzi. */
 #deck-search-layer { position:relative;z-index:60; }
 body:not([data-page='decks']) #deck-search-layer { display:none; }
+
+/* Campo di ricerca: X per cancellare il testo; filtri colore/espansione sempre tutti visibili nel pannello, scelta evidente */
+.deck-search-clear-text { flex:none;width:34px;height:34px;display:grid;place-items:center;margin-right:-6px;padding:0;border:1px solid var(--fpt-line,#2a2140);border-radius:0;background:var(--fpt-panel-2,#151025);color:var(--text);font:900 1.05rem/1 var(--fpt-mono,monospace);cursor:pointer; }
+.deck-search-clear-text[hidden] { display:none; }
+.deck-search-sheet .deck-mh-filters { margin:0; }
+.deck-search-sheet .deck-mh-chip-scroll { flex-wrap:wrap;overflow:visible;gap:6px; }
+.deck-search-sheet .chip { min-height:34px;padding:0 10px;font-size:.72rem; }
+.deck-search-sheet .chip.active { border-color:var(--fpt-gold,#e8b84f);background:var(--fpt-gold,#e8b84f);color:#120d02;box-shadow:0 0 12px #e8b84f55; }
+.deck-search-sheet .chip.active .leader-color-dot { box-shadow:0 0 0 2px #120d02; }

@@ -641,12 +641,20 @@ export class DeckController {
     root.querySelectorAll('[data-deck-cover-card]').forEach(button => button.addEventListener('click', () => this.chooseCover(button.dataset.deckCoverCard)));
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
-    this.mountSearchLayer(root);
-    root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
-    root.querySelector('[data-deck-search-open]')?.addEventListener('click', () => this.openSearch());
-    root.querySelector('[data-deck-search-scrim]')?.addEventListener('click', event => { event.preventDefault(); root.querySelector('[data-deck-search-close]')?.click(); });
-    if (this.searchOpen && root.querySelector?.('[data-deck-search-results]')) { this.syncSearchSheet(); this.renderSearchResultsList(); }
-    root.querySelector('[data-deck-search-close]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (!this.searchOpen) return; const ownsEntry = history.state?.deckSearch; this.closeSearch(); this.onRender(); if (ownsEntry) history.back(); });
+    const freshLayer = this.mountSearchLayer(root);
+    if (freshLayer) {
+      const layer = document.getElementById('deck-search-layer');
+      const input = layer.querySelector('[data-deck-search]'), clear = layer.querySelector('[data-deck-search-clear]');
+      input?.addEventListener('input', event => { if (clear) clear.hidden = !event.target.value; this.search(event.target.value); });
+      clear?.addEventListener('click', event => { event.preventDefault(); if (!input) return; input.value = ''; clear.hidden = true; this.search(''); input.focus({ preventScroll:true }); });
+      layer.querySelector('[data-deck-search-open]')?.addEventListener('click', () => this.openSearch());
+      layer.querySelector('[data-deck-search-scrim]')?.addEventListener('click', event => { event.preventDefault(); layer.querySelector('[data-deck-search-close]')?.click(); });
+      (document.getElementById('deck-search-layer') || root).querySelector('[data-deck-search-close]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (!this.searchOpen) return; const ownsEntry = history.state?.deckSearch; this.closeSearch(); this.onRender(); if (ownsEntry) history.back(); });
+      if (this.searchOpen) this.renderSearchResultsList();
+    }
+    // Il pannello resta in pagina tra un ridisegno e l'altro (aggiungere una
+    // carta non lo ricrea più): qui si aggiornano solo stato e contatori.
+    if (typeof document !== 'undefined' && document.getElementById('deck-search-layer')?.querySelector('[data-deck-search-sheet]')) { this.syncSearchSheet(); if (!freshLayer && this.searchOpen) this.refreshResultBadges(); }
     root.querySelectorAll('[data-deck-printing]').forEach(button => button.addEventListener('click', () => void this.openPrintingPicker(button.dataset.deckPrinting, button.dataset.deckPrintingSection)));
     root.querySelectorAll('[data-deck-printing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.printingPicker = null; this.onRender(); }));
     root.querySelectorAll('[data-deck-printing-option]').forEach(button => button.addEventListener('click', () => void this.choosePrinting(button.dataset.deckPrintingOption)));
@@ -954,7 +962,7 @@ export class DeckController {
       <section class="deck-search-sheet ${this.searchOpen ? 'open' : ''} ${this.searchExpanded ? 'full' : ''}" data-deck-search-sheet aria-label="Cerca carte">
         <i class="deck-search-fx" aria-hidden="true"></i>
         <div class="deck-search-head"><strong>// Cerca carte</strong></div>
-        <div class="deck-search-row"><label class="deck-search-box">${icon('search')}<input data-deck-search autocomplete="off" enterkeyhint="search" placeholder="Cerca una carta…" value="${esc(this.searchQuery || '')}" aria-label="Nome della carta"></label><button type="button" class="deck-search-close" data-deck-search-close aria-label="Chiudi ricerca">×</button></div>
+        <div class="deck-search-row"><label class="deck-search-box">${icon('search')}<input data-deck-search autocomplete="off" enterkeyhint="search" placeholder="Cerca una carta…" value="${esc(this.searchQuery || '')}" aria-label="Nome della carta"><button type="button" class="deck-search-clear-text" data-deck-search-clear aria-label="Cancella il testo" ${this.searchQuery ? '' : 'hidden'}>×</button></label><button type="button" class="deck-search-close" data-deck-search-close aria-label="Chiudi ricerca">›</button></div>
         <p class="deck-search-target" data-deck-search-target>${esc(this.searchTargetText(deck))}</p>
         ${isOnePiece ? '<div data-deck-catalog-filters></div>' : '<div class="deck-mh-chip-scroll deck-result-filters" data-deck-result-filters></div>'}
         <div data-deck-search-results class="deck-search-results"></div>
@@ -969,10 +977,29 @@ export class DeckController {
     if (typeof document === 'undefined' || !document.body) return;
     let layer = document.getElementById('deck-search-layer');
     const fresh = [...(root.querySelectorAll?.('.deck-mobile [data-deck-search-open], .deck-mobile [data-deck-search-scrim], .deck-mobile [data-deck-search-sheet]') || [])];
+    const deck = this.active(), key = deck ? `${deck.id}:${deck.game}` : '';
     if (fresh.length) {
       if (!layer) { layer = document.createElement('div'); layer.id = 'deck-search-layer'; document.body.append(layer); }
-      layer.replaceChildren(...fresh);
-    } else if (layer && !document.querySelector('.deck-mobile')) layer.replaceChildren();
+      if (this.searchLayerKey === key && layer.querySelector('[data-deck-search-sheet]')) { fresh.forEach(node => node.remove()); return false; }
+      layer.replaceChildren(...fresh); this.searchLayerKey = key; return true;
+    }
+    if (layer && !document.querySelector('.deck-mobile')) { layer.replaceChildren(); this.searchLayerKey = ''; }
+    return false;
+  }
+  // Dopo un'aggiunta: aggiorna sul posto copie, destinazione e "pieno" di ogni
+  // risultato, senza ricreare le immagini (niente sfarfallio, scroll intatto).
+  refreshResultBadges() {
+    const deck = this.active(), list = this.visibleResults || []; if (!deck) return;
+    const labels = labelsFor(deck);
+    document.querySelectorAll('[data-deck-result-card]').forEach(tile => {
+      const card = list[Number(tile.dataset.deckResultCard)]; if (!card) return;
+      const owned = this.resultOwned(deck, card), destination = this.resultDestination(deck, card), name = (labels[destination] || destination).replace(' Deck', '');
+      tile.classList.toggle('is-full', owned.full); tile.dataset.dest = destination;
+      const badge = tile.querySelector('.deck-result-owned'); if (badge) badge.textContent = `${owned.used}/${owned.cap}`;
+      const dest = tile.querySelector('.deck-result-dest'); if (dest) dest.textContent = name.toUpperCase();
+      const add = tile.querySelector('[data-deck-result]');
+      if (add) { if (owned.full) add.setAttribute('aria-disabled', 'true'); else add.removeAttribute('aria-disabled'); add.setAttribute('aria-label', `Aggiungi ${card.name} al ${name}`); }
+    });
   }
   searchTargetText(deck) {
     if (deck.game === 'onepiece') return this.targetSection === 'leader' ? 'Le carte toccate diventano il tuo Leader' : 'Le carte vanno nel Main Deck';
@@ -1051,7 +1078,18 @@ export class DeckController {
     current.querySelectorAll('[data-deck-result-peek]').forEach(button => button.addEventListener('click', event => { if (this.resultDrag?.justDropped) { event.preventDefault(); return; } this.resultPeek = Number(button.dataset.deckResultPeek); this.renderResultPeek(deck, list[this.resultPeek]); }));
     if (this.resultsScroll) { current.scrollTop = this.resultsScroll; this.resultsScroll = 0; }
   }
-  closeSearch() { this.searchOpen = false; this.searchExpanded = false; this.resultPeek = -1; this.resultsScroll = 0; this.searchQuery = ''; this.searchResults = []; this.catalogExpansion = 'all'; this.catalogColorsTouched = false; this.catalogColors = new Set(); clearTimeout(this.searchTimer); }
+  closeSearch() {
+    if (typeof document !== 'undefined') {
+      const layer = document.getElementById('deck-search-layer');
+      const input = layer?.querySelector('[data-deck-search]'); if (input) input.value = '';
+      const clear = layer?.querySelector('[data-deck-search-clear]'); if (clear) clear.hidden = true;
+      const results = layer?.querySelector('[data-deck-search-results]'); if (results) results.innerHTML = '';
+      layer?.querySelector('[data-deck-catalog-filters]')?.replaceChildren();
+      const peek = layer?.querySelector('[data-deck-result-peek-box]'); if (peek) { peek.hidden = true; peek.innerHTML = ''; }
+    }
+    this.closeSearchState();
+  }
+  closeSearchState() { this.searchOpen = false; this.searchExpanded = false; this.resultPeek = -1; this.resultsScroll = 0; this.searchQuery = ''; this.searchResults = []; this.catalogExpansion = 'all'; this.catalogColorsTouched = false; this.catalogColors = new Set(); clearTimeout(this.searchTimer); }
   add(card, section = this.targetSection, quantity = 1) {
     const deck = this.active(); if (!deck || !card) return;
     // Yu-Gi-Oh!: Main ed Extra si decidono dal tipo, anche con la scheda Extra
@@ -1087,6 +1125,7 @@ export class DeckController {
     // La ricerca resta aperta: bind() rimette query e risultati (con lo stesso
     // scroll). Il focus torna all'input solo se si stava scrivendo, così sul
     // telefono la tastiera non si riapre a ogni carta aggiunta.
+    if (this.searchOpen && destination === 'leader') this.renderSearchResultsList();
     if (this.searchOpen && typing) {
       const input = document.querySelector('[data-deck-search]');
       if (input) { input.focus({ preventScroll:true }); const pos = input.value.length; input.setSelectionRange(pos, pos); }

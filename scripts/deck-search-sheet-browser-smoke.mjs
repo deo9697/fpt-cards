@@ -80,16 +80,25 @@ try {
   pass('apertura col tocco e 20 risultati su 20 (niente più tetto di 12), pannello nel livello sopra le barre');
 
   // 2) "+" con Main/Extra automatici; il pannello resta aperto
+  await evaluate(`window.__sheetRef = document.querySelector('[data-deck-search-sheet]'); window.__imgRef = document.querySelector('[data-deck-result-card="0"] img'); document.querySelector('[data-deck-search-results]').scrollTop = 120;`);
   const fusion = await evaluate(`window.__results.findIndex(c=>c.type==='Fusion Monster')`);
   await tap(`[data-deck-result="${fusion}"]`);
   await wait(`window.__deck.cards.some(c=>c.catalogCardId===window.__results[${fusion}].id&&c.section==='extra')`, 'Il mostro Fusione non va nell\'Extra');
   if (!await evaluate(`document.querySelector('[data-deck-search-sheet]').classList.contains('open') && document.querySelectorAll('[data-deck-result-card]').length===20`)) throw new Error('Dopo + il pannello si chiude o perde i risultati');
+  const persisted = await evaluate(`JSON.stringify({ sameSheet: window.__sheetRef === document.querySelector('[data-deck-search-sheet]'), sameImg: window.__imgRef === document.querySelector('[data-deck-result-card="0"] img'), scroll: document.querySelector('[data-deck-search-results]').scrollTop })`);
+  if (!/"sameSheet":true/.test(persisted) || !/"sameImg":true/.test(persisted) || /"scroll":0[,}]/.test(persisted)) throw new Error('Aggiungere una carta ricrea il pannello o la lista: ' + persisted);
   await evaluate(`document.querySelector('[data-deck-section="extra"]')?.click()`); await delay(200);
   const spell = await evaluate(`window.__results.findIndex(c=>c.type==='Spell Card')`);
   await tap(`[data-deck-result="${spell}"]`);
   await wait(`window.__deck.cards.some(c=>c.catalogCardId===window.__results[${spell}].id&&c.section==='main')`, 'Con la scheda Extra aperta la Magia non va nel Main');
   if (!await evaluate(`window.__toasts.some(t=>t.includes('→ Extra')) && window.__toasts.some(t=>t.includes('→ Main'))`)) throw new Error('Manca l\'avviso con la sezione di destinazione');
-  pass('+ manda Fusione nell\'Extra e la Magia nel Main anche con la scheda Extra aperta, pannello e risultati restano');
+  // X nel campo: cancella il testo e lascia scrivere subito
+  if (!await evaluate(`!document.querySelector('[data-deck-search-clear]').hidden`)) throw new Error('La X per cancellare il testo non compare con del testo scritto');
+  await tap('[data-deck-search-clear]');
+  await wait(`document.querySelector('[data-deck-search]').value==='' && document.querySelector('[data-deck-search-clear]').hidden && document.activeElement===document.querySelector('[data-deck-search]') && !document.querySelector('[data-deck-result-card]')`, 'La X non cancella il testo o non rimette il cursore nel campo');
+  await evaluate(`(()=>{const i=document.querySelector('[data-deck-search]');i.value='carta di prova';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await wait(`document.querySelectorAll('[data-deck-result-card]').length===20`, 'Dopo la X una nuova ricerca non funziona');
+  pass('+ manda Fusione nell\'Extra e la Magia nel Main anche con la scheda Extra aperta; il pannello NON si ricrea (stesse immagini, scroll intatto); la X svuota il campo e si riscrive subito');
 
   // 3) limite 3 copie Yu-Gi-Oh! tra tutte le sezioni
   await tap('[data-deck-result="0"]'); await tap('[data-deck-result="0"]'); await tap('[data-deck-result="0"]');
@@ -167,6 +176,33 @@ try {
   const blockedDesk = await covered(); if (blockedDesk.length) throw new Error('Pulsanti coperti su PC: ' + JSON.stringify(blockedDesk));
   await shot('desktop-search');
   pass('PC: la ricerca è una colonna a destra alta tutta la pagina, senza scroll orizzontale né pulsanti coperti');
+
+  // 8b) One Piece: i filtri colore nel pannello si selezionano col dito e filtrano i risultati
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await evaluate(`(async()=>{
+    const {DeckController} = await import('/js/decks.js');
+    const results = [['Red'],['Green'],['Red','Green'],['Blue'],['Red'],['Green']].map((colors, i) => ({ id:'OP01-0' + (10 + i), name:'Carta OP ' + i, type:'Character', colors, cost:i + 1, setCode:'OP01', image:'/icon-192.png', fullImage:'/icon-192.png' }));
+    const deck = { id:'op1', persisted:true, ownerSlug:'daniele', name:'Zoro', format:'', game:'onepiece', cards:[{ catalogCardId:'OP01-001', cardName:'Zoro', section:'leader', quantity:1, colors:['Red'], imageUrl:'/icon-192.png' }] };
+    window.__opDeck = deck;
+    const controller = new DeckController({ api:{}, getState:() => ({ decks:[deck], game:'onepiece', currentUser:'daniele', collection:[], loans:[] }), searchCards: async () => results,
+      onRender:() => { document.querySelector('#app').innerHTML = controller.view(); controller.bind(document); }, onToast:message => window.__toasts.push(String(message)) });
+    controller.markDirty = () => {}; controller.activeId = 'op1'; controller.screen = 'detail';
+    window.__controller = controller; controller.onRender(); return true;
+  })()`);
+  await tap('[data-deck-search-open]');
+  await evaluate(`(()=>{const i=document.querySelector('[data-deck-search]');i.value='carta op';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await wait(`document.querySelectorAll('[data-deck-result-card]').length===3 && document.querySelector('[data-deck-catalog-color="Red"]')?.classList.contains('active')`, 'One Piece: il prefiltro sul colore del Leader (Rosso) non è applicato');
+  await tap('[data-deck-catalog-color="Green"]');
+  await wait(`document.querySelector('[data-deck-catalog-color="Green"]').classList.contains('active') && document.querySelectorAll('[data-deck-result-card]').length===5`, 'One Piece: il tocco su "Verde" non aggiunge il colore ai filtri');
+  await tap('[data-deck-catalog-color="Red"]');
+  await wait(`!document.querySelector('[data-deck-catalog-color="Red"]').classList.contains('active') && document.querySelectorAll('[data-deck-result-card]').length===3`, 'One Piece: il tocco su "Rosso" non toglie il colore dai filtri');
+  const chips = await evaluate(`(()=>{const s=document.querySelector('[data-deck-search-sheet]').getBoundingClientRect();const all=[...document.querySelectorAll('[data-deck-catalog-color]')];return {n:all.length,inside:all.every(b=>{const r=b.getBoundingClientRect();return r.left>=s.left-1&&r.right<=s.right+1&&r.top>=0&&r.bottom<=innerHeight;}),green:getComputedStyle(document.querySelector('[data-deck-catalog-color="Green"]')).backgroundColor};})()`);
+  if (chips.n !== 6 || !chips.inside) throw new Error('One Piece: non tutti i 6 colori sono visibili nel pannello: ' + JSON.stringify(chips));
+  if (chips.green !== 'rgb(232, 184, 79)') throw new Error('One Piece: il colore scelto non è evidenziato in oro: ' + JSON.stringify(chips));
+  await shot('mobile-op-colors');
+  pass('One Piece: tutti e 6 i colori visibili, si selezionano/deselezionano col dito, il colore scelto diventa oro e filtra i risultati');
+
 
   if (errors.length) throw new Error('Errori JavaScript: ' + JSON.stringify(errors));
   console.log(`deck-search-sheet-browser-smoke: ${passed}/${passed} PASS`);

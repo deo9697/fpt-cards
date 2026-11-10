@@ -94,10 +94,15 @@ function ygoDeck(cards, overrides = {}) {
   ] };
   const model = normalizeDeckForImage(deck);
   const totalCards = model.sections.reduce((sum, s) => sum + sectionTotalQuantity(s.cards), 0);
-  assert.equal(totalCards, 5, 'Leader + Main contati; i 10 DON!! non fanno parte della lista e restano fuori dall\'immagine');
-  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main');
+  assert.equal(totalCards, 4, 'Il Main conta 4 (il Leader non entra nel conteggio del Main); i 10 DON!! restano fuori dall\'immagine');
+  assert.equal(model.sections.map(s => s.key).join(','), 'main', 'Il Leader non è più una sezione a parte');
+  assert.equal(model.main[0].catalogCardId, 'OP01-001', 'Il Leader è la prima carta della lista, in alto a sinistra');
+  assert.equal(model.main[0].isLeader, true);
+  assert.equal(model.main.filter(card => card.isLeader).length, 1);
+  const placed = computeDeckImageLayout(model, { layoutMode: 'arena' }).sections[0].cards;
+  assert.equal(placed[0].catalogCardId, 'OP01-001'); assert(placed[0].x <= Math.min(...placed.map(card => card.x)) && placed[0].y <= Math.min(...placed.map(card => card.y)), 'Il Leader è nella prima cella in alto a sinistra');
   assert.equal(model.extra.length, 0, 'One Piece non ha una sezione extra: la vista di comodo resta vuota, ma i dati vivono in sections');
-  console.log('PASS One Piece: sezioni leader/main dall\'adapter, DON!! esclusi dall\'immagine, main/extra/side restano solo un alias di comodo');
+  console.log('PASS One Piece: il Leader è la prima carta del Main in alto a sinistra, DON!! esclusi, conteggio del Main senza il Leader');
 }
 
 // --- Layout: 40 main / 15 extra / 15 side, nessun overflow ---------------
