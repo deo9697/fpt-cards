@@ -23,6 +23,9 @@ assert.deepEqual(normalizeColorList('Red'), ['Red']);
 assert.deepEqual(normalizeColorList('Red/Green'), ['Red', 'Green']);
 assert.deepEqual(normalizeColorList('Red, Green'), ['Red', 'Green']);
 assert.deepEqual(normalizeColorList(''), []);
+assert.deepEqual(normalizeColorList('Green Yellow'), ['Green', 'Yellow'], 'multicolore con lo spazio (EB05-010 Nico Robin)');
+assert.deepEqual(normalizeColorList('Blue Green Purple Red Black Yellow'), ['Blue', 'Green', 'Purple', 'Red', 'Black', 'Yellow']);
+assert.deepEqual(normalizeColorList('Character'), [], 'un valore estraneo non è un colore');
 assert.deepEqual(normalizeTraits('Straw Hat Crew/Animal'), ['Straw Hat Crew', 'Animal']);
 console.log('PASS colori e traits normalizzati come array');
 

@@ -1,4 +1,5 @@
 import { createSession, applyAction, validateSimulatorDeck } from '../js/games/onepiece/simulator-engine.js';
+import { summarizeDeckErrors } from '../js/games/onepiece/rules.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const terminal = new Set(['finished', 'declined', 'cancelled']);
@@ -66,7 +67,7 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     const selected = await store.deck(needUuid(id, 'Mazzo'), actor.slug);
     if (!selected || selected.ownerSlug !== actor.slug || selected.game !== 'onepiece') fail(404, 'deck_not_found', 'Scegli un tuo mazzo One Piece salvato.');
     const result = validateSimulatorDeck(selected);
-    if (!result.valid) fail(400, 'invalid_deck', result.errors.join(' '));
+    if (!result.valid) fail(400, 'invalid_deck', summarizeDeckErrors(result.errors).join(' '));
     return selected;
   }
   async function cas(row, patch, actor, people, requestId) {

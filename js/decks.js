@@ -5,6 +5,7 @@ import { canonicalCatalogCardId, validCatalogCardId } from './cards.js';
 import { DEFAULT_DECK_BOX_TEMPLATE, DEFAULT_DECK_THEME, DECK_BOX_TEMPLATES, DECK_THEMES, deckThemeOptions, normalizeDeckBoxTemplate, normalizeDeckTheme, preferredDeckArtwork, renderDeckBoxCard, renderDeckBoxVisual, resolveDeckSignature } from './deck-box.js';
 import { DECK_ROLES, ROLE_LABELS, DEFAULT_ITERATIONS, deckPool, simulateOpeningHands, exactOpeningHands, chanceAtLeastOne, readDeckRoles, writeDeckRoles } from './deck-stats.js';
 import { getGameAdapter } from './games/index.js';
+import { splitOnePieceColors } from './games/onepiece/rules.js';
 import { deckCardIdentityKey, normalizeDeckCardName, deckUsageIndex, deckNamesForCollectionItem } from './deck-usage.js';
 export { deckUsageIndex, deckNamesForCollectionItem };
 import { renderDeckImagePreview, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
@@ -241,7 +242,7 @@ export class DeckController {
     return `<div class="leader-hero">
       <button type="button" class="leader-hero-main" data-deck-card-select="${esc(leader.catalogCardId)}" data-deck-card-select-section="leader" data-deck-card-select-printing="${esc(leader.printingId || '')}">
         <span class="leader-hero-art">${leader.imageUrl ? `<img src="${esc(leader.imageUrl)}" alt="">` : icon('card')}</span>
-        <span class="leader-hero-copy"><small>Leader</small><strong>${esc(leader.cardName)}</strong>${(leader.colors || []).length ? `<span class="leader-hero-meta">${leader.colors.map(color => `<i class="leader-color-dot ${esc(String(color).toLowerCase())}" title="${esc(colorLabel(color))}"></i>`).join('')}</span>` : ''}</span>
+        <span class="leader-hero-copy"><small>Leader</small><strong>${esc(leader.cardName)}</strong>${onePieceColorList(leader.colors).length ? `<span class="leader-hero-meta">${onePieceColorList(leader.colors).map(color => `<i class="leader-color-dot ${esc(String(color).toLowerCase())}" title="${esc(colorLabel(color))}"></i>`).join('')}</span>` : ''}</span>
       </button>
       ${readonly ? '' : `<button type="button" class="leader-change" data-deck-pick-leader>Cambia</button>`}
     </div>`;
@@ -862,7 +863,7 @@ export class DeckController {
     if (this.targetSection !== 'main') return new Set();
     if (this.catalogColorsTouched) return this.catalogColors;
     const leaderColors = deck?.cards.find(item => item.section === 'leader')?.colors;
-    return new Set(Array.isArray(leaderColors) ? leaderColors : []);
+    return new Set(onePieceColorList(leaderColors));
   }
   filteredCatalogResults() {
     const deck = this.active();
@@ -870,7 +871,7 @@ export class DeckController {
     let list = this.searchResults;
     if (this.catalogExpansion !== 'all') list = list.filter(card => (card.setCode || '') === this.catalogExpansion);
     const colors = this.activeCatalogColors(deck);
-    if (colors.size) list = list.filter(card => !Array.isArray(card.colors) || !card.colors.length || card.colors.some(color => colors.has(color)));
+    if (colors.size) list = list.filter(card => { const cardColors = onePieceColorList(card.colors); return !cardColors.length || cardColors.some(color => colors.has(color)); });
     return list;
   }
   // Espansione + Colore vivono nella stessa zona imperativa dei risultati
@@ -1172,6 +1173,8 @@ function copyBudget(deck, section, catalogCardId, excludeItem) {
 }
 const ONE_PIECE_COLOR_LABELS = { Red: 'Rosso', Blue: 'Blu', Green: 'Verde', Purple: 'Viola', Black: 'Nero', Yellow: 'Giallo' };
 const ONE_PIECE_COLORS = Object.keys(ONE_PIECE_COLOR_LABELS);
+// "Green Yellow" (multicolore scritto dalla fonte con lo spazio) -> ["Green","Yellow"].
+const onePieceColorList = value => splitOnePieceColors(value).map(color => color[0].toUpperCase() + color.slice(1));
 function colorLabel(color) { return ONE_PIECE_COLOR_LABELS[color] || color; }
 function coarseCardType(rawType) { const type = String(rawType || '').toLowerCase(); if (!type) return ''; if (type.includes('spell')) return 'spell'; if (type.includes('trap')) return 'trap'; return 'monster'; }
 function readTypeCache() { try { const value = JSON.parse(localStorage.getItem(CARD_TYPE_CACHE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }

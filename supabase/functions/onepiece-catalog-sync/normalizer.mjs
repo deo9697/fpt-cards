@@ -33,9 +33,13 @@ export function deriveSetCode(catalogCardId) {
   return prefix || 'UNKNOWN';
 }
 
-// "Red" -> ["Red"], "Red/Green" -> ["Red","Green"], "Red, Green" -> ["Red","Green"].
+// "Red" -> ["Red"], "Red/Green" e "Red, Green" -> ["Red","Green"]; la fonte scrive
+// i multicolore anche con lo spazio ("Green Yellow"). Restano solo i sei colori
+// del gioco, con la maiuscola: un valore estraneo ("Character") non diventa un colore.
+const COLOR_NAMES = { red:'Red', green:'Green', blue:'Blue', purple:'Purple', black:'Black', yellow:'Yellow' };
 export function normalizeColorList(value) {
-  return String(value || '').split(/[/,]/).map(part => part.trim()).filter(Boolean);
+  const parts = String(value || '').split(/[\s/,]+/).map(part => COLOR_NAMES[part.trim().toLowerCase()]).filter(Boolean);
+  return [...new Set(parts)];
 }
 
 export function normalizeTraits(value) {

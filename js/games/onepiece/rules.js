@@ -4,6 +4,22 @@
 export const ONE_PIECE_SECTIONS = ['leader', 'main'];
 export const ONE_PIECE_LABELS = { leader: 'Leader', main: 'Main Deck' };
 
+// I colori One Piece sono sei. La fonte del catalogo scrive i multicolore come
+// "Green Yellow" (con lo spazio): qui diventano ["green","yellow"], e i valori
+// estranei (es. "Character") vengono ignorati invece di bloccare il mazzo.
+export const ONE_PIECE_COLORS = Object.freeze(['red', 'green', 'blue', 'purple', 'black', 'yellow']);
+export function splitOnePieceColors(value) {
+  const parts = (Array.isArray(value) ? value : [value]).flatMap(item => String(item ?? '').split(/[\s/,]+/));
+  return [...new Set(parts.map(part => part.trim().toLowerCase()).filter(part => ONE_PIECE_COLORS.includes(part)))];
+}
+
+// Al massimo qualche riga di errore: con un Leader sbagliato l'elenco di tutte
+// le carte riempirebbe lo schermo del telefono.
+export function summarizeDeckErrors(errors, limit = 3) {
+  const list = Array.isArray(errors) ? errors : [];
+  return list.length <= limit ? list : [...list.slice(0, limit), `…e altri ${list.length - limit} problemi.`];
+}
+
 const LEADER_COUNT = 1;
 const MAIN_DECK_SIZE = 50;
 const MAIN_CARD_COPY_LIMIT = 4;
@@ -67,10 +83,11 @@ export function validateOnePieceDeck(deck) {
     mainByCard.set(card.catalogCardId, entry);
   }
   for (const entry of mainByCard.values()) if (entry.quantity > MAIN_CARD_COPY_LIMIT) errors.push(`${entry.cardName}: massimo ${MAIN_CARD_COPY_LIMIT} copie (attuali: ${entry.quantity})`);
-  const leaderColors = leaderCards[0]?.colors;
-  if (Array.isArray(leaderColors) && leaderColors.length) {
+  const leaderColors = splitOnePieceColors(leaderCards[0]?.colors);
+  if (leaderColors.length) {
     for (const card of mainCards) {
-      if (Array.isArray(card.colors) && card.colors.length && !card.colors.some(color => leaderColors.includes(color))) errors.push(`${card.cardName}: colore non compatibile con il Leader`);
+      const cardColors = splitOnePieceColors(card.colors);
+      if (cardColors.length && !cardColors.some(color => leaderColors.includes(color))) errors.push(`${card.cardName}: colore non compatibile con il Leader`);
     }
   }
   return {

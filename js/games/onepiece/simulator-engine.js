@@ -1,3 +1,5 @@
+import { splitOnePieceColors } from './rules.js';
+
 // Local, manual tabletop. Card effects, costs and victory conditions are resolved
 // by the player; this module only protects the integrity of cards and DON!!.
 export const PHASES = Object.freeze(['refresh', 'draw', 'don', 'main', 'end']);
@@ -35,9 +37,10 @@ export function validateSimulatorDeck(deck) {
   if (counts.don !== 0 && counts.don !== 10) errors.push('Inserisci 10 DON!! oppure lascia vuota la sezione DON!!.');
   for (const [code, quantity] of copies) if (quantity > 4) errors.push(`${code}: massimo 4 copie, comprese le diverse illustrazioni.`);
   const leader = deck.cards.find(card => card?.section === 'leader');
-  const colors = Array.isArray(leader?.colors) ? leader.colors.map(color => label(color).toLowerCase()) : [];
+  const colors = splitOnePieceColors(leader?.colors);
   if (colors.length) for (const card of deck.cards.filter(card => card?.section === 'main')) {
-    if (Array.isArray(card.colors) && card.colors.length && !card.colors.some(color => colors.includes(label(color).toLowerCase()))) errors.push(`${card.cardName}: colore non compatibile con il Leader.`);
+    const cardColors = splitOnePieceColors(card.colors);
+    if (cardColors.length && !cardColors.some(color => colors.includes(color))) errors.push(`${card.cardName}: colore non compatibile con il Leader.`);
   }
   return { valid: errors.length === 0, errors, counts };
 }
