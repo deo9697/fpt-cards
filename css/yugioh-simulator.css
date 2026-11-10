@@ -1,0 +1,209 @@
+/* FPT's private manual duel. All visual rules are contained in this module. */
+.ygo-simulator { --duel-blue:#53bde8;--duel-gold:#e8c26b;--duel-ink:#eaf0ef;--duel-panel:#101e28;--duel-line:#637d8980;color:var(--text,#eaf0ef);min-width:0; }
+.ygo-simulator *, .ygo-simulator *::before, .ygo-simulator *::after { box-sizing:border-box; }
+.ygo-simulator button, .ygo-simulator input, .ygo-simulator select, .ygo-simulator textarea { font:inherit; }
+.ygo-simulator button { min-height:40px;padding:9px 14px;border:1px solid var(--duel-line);border-radius:2px;background:linear-gradient(#22333e,#101b25);color:var(--duel-ink);font-size:.75rem;font-weight:700;line-height:1.3;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent; }
+.ygo-simulator button:hover:not(:disabled) { border-color:var(--duel-gold);background:linear-gradient(#344047,#19252d); }
+.ygo-simulator button:disabled { opacity:.46;cursor:default; }
+.ygo-simulator :is(button,input,select,textarea,summary,a):focus-visible { outline:2px solid var(--duel-gold);outline-offset:3px; }
+.ygo-simulator :is(input,select,textarea) { width:100%;min-width:0;min-height:42px;padding:9px 11px;border:1px solid #586a7e;background:#0b1520;color:#ecf4fb;border-radius:3px; }
+.ygo-simulator label { display:grid;gap:7px;color:#b7c6ce;font-size:.76rem;font-weight:600; }
+.ygo-simulator form { display:grid;gap:16px; }
+.ygo-simulator details { margin:14px 0;border-top:1px solid #54707855;padding-top:13px; }
+.ygo-simulator summary { color:#d9e5eb;font-size:.8rem;cursor:pointer;padding-block:6px; }
+.ygo-simulator a { color:#8cdbff; }
+.ygo-simulator .ygo-primary { color:#17212b;border-color:#ffe1a1;background:linear-gradient(115deg,#bda05e,#f2d994 55%,#bba05e);text-shadow:0 1px #fff5; }
+.ygo-simulator .ygo-primary:hover:not(:disabled) { background:linear-gradient(115deg,#dbc17b,#fff0bd 55%,#d7b96c);color:#111d24; }
+.ygo-private { align-self:center;display:inline-flex;padding:7px 11px;border:1px solid #647b9155;background:#182532;color:#a3d0e7;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em; }
+.ygo-tabs { display:flex;flex-wrap:wrap;gap:8px; }
+.ygo-tabs button.is-current { border-color:var(--duel-gold);color:var(--duel-gold); }
+.ygo-lobby { padding:clamp(20px,4vw,36px);background:radial-gradient(ellipse at 10% 0,#273f5540,transparent 60%),var(--surface,#141923); }
+.ygo-lobby-title { margin-bottom:26px; }
+.ygo-lobby-title>span { color:var(--duel-gold);font-size:.7rem;font-weight:800;letter-spacing:.24em; }
+.ygo-lobby-title h2 { margin:12px 0 10px;font-size:clamp(1.4rem,3vw,2rem); }
+.ygo-lobby p, .ygo-muted { color:var(--muted,#adbac7);font-size:.82rem;line-height:1.65; }
+.ygo-versus { display:grid;grid-template-columns:minmax(0,1fr) 60px minmax(0,1fr);align-items:stretch; }
+.ygo-versus-side { display:flex;flex-direction:column;gap:18px;padding:23px;border:1px solid #6c89a959;background:linear-gradient(150deg,#25415935,#0b14293d); }
+.ygo-versus-side:last-child { border-color:#c499764f;background:linear-gradient(200deg,#704b2d26,#111c2e3d); }
+.ygo-versus-side>small { color:#8ebed8;font-size:.67rem;font-weight:800;letter-spacing:.13em; }
+.ygo-versus-side:last-child>small { color:#d3b181; }
+.ygo-versus-mark { display:grid;place-items:center;color:var(--duel-gold);font:italic 800 1.7rem Georgia,serif;text-shadow:0 0 17px #dfb95765; }
+.ygo-deck-summary { display:grid;gap:7px;padding:17px;border:1px solid #6b829344;background:#050a143f; }
+.ygo-deck-summary strong { color:#edf4fa;font-size:.87rem; }.ygo-deck-summary span { color:#9caebe;font-size:.72rem; }
+.ygo-deck-summary .is-valid { color:#9dcda8; }.ygo-deck-summary .is-invalid { color:#f4a79e;line-height:1.6; }
+.ygo-lobby-settings { display:grid;grid-template-columns:130px minmax(150px,1fr) minmax(150px,1fr);align-items:end;gap:18px;margin-top:9px; }
+.ygo-invitations { display:grid;gap:12px; }.ygo-invitations>h2 { font-size:1rem; }
+.ygo-invitation { display:flex;justify-content:space-between;align-items:center;gap:15px;padding:20px; }
+.ygo-invitation small { color:var(--duel-gold);font-size:.65rem;text-transform:uppercase;letter-spacing:.07em; }.ygo-invitation h3 { margin:7px 0;font-size:1rem; }.ygo-invitation p { margin:0;color:#a5b9c7;font-size:.73rem; }
+.ygo-lobby>form { max-width:700px; }.ygo-lobby-title+form { max-width:none; }
+.ygo-form-actions { display:flex;gap:10px;flex-wrap:wrap; }
+.ygo-history-row { display:flex;align-items:center;justify-content:space-between;gap:15px;padding:18px 0;border-top:1px solid #4c62744f; }.ygo-history-row h3 { margin:0;font-size:.9rem; }.ygo-history-row small { color:#a6b7c0; }
+.ygo-error { padding:12px 16px;border:1px solid #b85f5f;color:#ffd0cc;background:#502b2b77;font-size:.8rem; }
+
+/* The arena gets its own immersive canvas while retaining the PWA route. */
+body[data-page='simulator']:has(.ygo-arena) :is(.sidebar,.topbar,.mobile-nav) { display:none; }
+body[data-page='simulator']:has(.ygo-arena) .app-shell { display:block;min-height:100dvh; }
+body[data-page='simulator']:has(.ygo-arena) .app-main { width:100%;max-width:none;margin:0;padding:0; }
+body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:none;min-height:100dvh;margin:0;padding:0;view-transition-name:none; }
+.ygo-simulator.is-playing { min-height:100dvh;background:radial-gradient(ellipse at 50% 45%,#233738,#071017 80%); }
+.ygo-arena { --slot-h:clamp(48px,9dvh,104px);--field-gap:clamp(3px,.6vw,9px);display:grid;grid-template-columns:200px minmax(0,1fr) 100px;grid-template-rows:48px auto;align-content:start;align-items:start;gap:12px 22px;width:100%;max-width:1600px;min-height:100dvh;margin:auto;padding:max(10px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(10px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));color:#eff5f5;font-family:var(--fpt-font,'Manrope',sans-serif); }
+.ygo-arena-header { grid-column:1/-1;display:flex;align-items:center;gap:14px;min-width:0;z-index:2; }
+.ygo-arena-header>button { flex:none;min-height:34px;padding:7px 13px;background:#0b1924dc;border-color:#63879e; }
+.ygo-arena-brand { flex:1;display:grid;gap:3px; }.ygo-arena-brand>b { color:#e4d19a;letter-spacing:.23em;font-size:.83rem; }.ygo-arena-brand>small { color:#819fac;font-size:.5rem;letter-spacing:.17em; }
+.ygo-online { display:flex;align-items:center;gap:5px;font-size:.58rem;color:#99bbc2; }.ygo-online:before { content:'';width:5px;height:5px;border-radius:50%;background:#6ce3c1;box-shadow:0 0 7px #6ce3c177; }.ygo-online.is-offline:before { background:#f2a06e; }
+.ygo-idle-preview { grid-column:1;grid-row:2;display:flex;flex-direction:column;align-items:center;gap:20px;min-width:0;align-self:center;padding:20px 16px;text-align:center;background:linear-gradient(145deg,#203445bb,#0e1826a8);border:1px solid #526b7c77;border-top:3px solid #8eb3c6;box-shadow:0 9px 20px #0005; }
+.ygo-idle-preview img { width:140px;max-width:100%;height:65px;object-fit:contain; }.ygo-idle-preview>span { color:#cbb985;font-size:.69rem;letter-spacing:.19em; }.ygo-idle-preview p { color:#b5c4c8;font-size:.75rem;line-height:1.8; }.ygo-idle-preview small { font-size:.61rem;line-height:1.8;color:#7e9ba9; }.ygo-preview-line { width:70%;height:1px;background:linear-gradient(90deg,transparent,#aa9564,transparent); }
+.ygo-battle-stage { grid-column:2;grid-row:2;position:relative;min-width:0; }
+.ygo-playmat { position:relative;isolation:isolate;padding:17px 24px 0;overflow:hidden;border:1px solid #a2b4a35c;border-radius:12px 12px 4px 4px;background:linear-gradient(180deg,#101c164a,#151f1229 45%,#050c14a6),url('../assets/backgrounds/yugioh-duel-arena.jpg') center/cover;box-shadow:0 8px 26px #0009,inset 0 0 60px #000a; }
+.ygo-playmat:before { content:'';position:absolute;z-index:-1;inset:0;border:7px solid #a0ad8f16;box-shadow:inset 0 0 25px #0007;pointer-events:none; }
+.ygo-mat-atmosphere { position:absolute;z-index:-1;inset:0;opacity:.45;background:radial-gradient(ellipse at 70% 20%,#eff5b719,transparent 40%),linear-gradient(90deg,#0004,transparent 15%,transparent 85%,#0005);pointer-events:none; }
+.ygo-half { position:relative;display:flex;flex-direction:column;gap:7px;min-width:0; }
+.ygo-field { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-areas:'fi m0 m1 m2 m3 m4 gy' 'ex s0 s1 s2 s3 s4 de';gap:var(--field-gap);align-items:stretch;min-width:0; }
+.ygo-half.is-opponent .ygo-field { grid-template-areas:'de s4 s3 s2 s1 s0 ex' 'gy m4 m3 m2 m1 m0 fi'; }
+.ygo-field>.ygo-zone-field { grid-area:fi; }.ygo-field>.ygo-pile-extra { grid-area:ex; }.ygo-field>.ygo-pile-deck { grid-area:de; }.ygo-grave-piles { grid-area:gy;display:flex;flex-direction:column;gap:2px;min-width:0; }
+.ygo-field>[data-zone='monsters'][data-slot='0'] { grid-area:m0; }.ygo-field>[data-zone='monsters'][data-slot='1'] { grid-area:m1; }.ygo-field>[data-zone='monsters'][data-slot='2'] { grid-area:m2; }.ygo-field>[data-zone='monsters'][data-slot='3'] { grid-area:m3; }.ygo-field>[data-zone='monsters'][data-slot='4'] { grid-area:m4; }
+.ygo-field>[data-zone='spells'][data-slot='0'] { grid-area:s0; }.ygo-field>[data-zone='spells'][data-slot='1'] { grid-area:s1; }.ygo-field>[data-zone='spells'][data-slot='2'] { grid-area:s2; }.ygo-field>[data-zone='spells'][data-slot='3'] { grid-area:s3; }.ygo-field>[data-zone='spells'][data-slot='4'] { grid-area:s4; }
+.ygo-arena .ygo-zone { position:relative;display:grid;place-items:center;isolation:isolate;min-width:0;width:100%;height:var(--slot-h);min-height:0;margin:0;padding:3px;border:1px solid #a9c5c43d;border-radius:6px;background:linear-gradient(135deg,#243b2a09,#0c1c2433);box-shadow:inset 0 0 0 3px #d5d1ab08,inset 0 2px 7px #0006; }
+.ygo-arena .ygo-zone.is-empty { color:#cadbd855;opacity:1; }
+.ygo-zone>small { position:absolute;z-index:0;bottom:4px;left:1px;right:1px;color:#e2e5cf68;font-size:clamp(.28rem,.5vw,.43rem);font-weight:700;line-height:1;text-align:center;white-space:nowrap;pointer-events:none; }
+.ygo-zone.is-occupied>small { opacity:.35; }
+.ygo-zone>i { width:35%;aspect-ratio:1;border:1px solid #d8e2c840;transform:rotate(45deg);box-shadow:inset 0 0 0 3px #d5e4cf0b; }
+.ygo-zone-monsters>i { border-radius:6px; }.ygo-zone-spells>i { border-radius:50%;border-color:#8fcbbf3d; }
+.ygo-zone-spells { border-color:#c9d5ce36!important;background:#0a202c21!important; }
+.ygo-arena .ygo-zone.is-legal-target { border-color:#78daffa8!important;background:#268cd257!important;box-shadow:inset 0 0 14px #57cbff80,0 0 9px #9ee3ff52;animation:ygo-target-pulse 1.4s ease-in-out infinite; }
+.ygo-zone.is-legal-target>i { border-color:#b4f0ff; }.ygo-zone.is-legal-target>small { color:#e2faff; }
+.ygo-arena .ygo-zone:not(:disabled):hover { border-color:#e1cd86a6; }
+.ygo-arena .ygo-zone:disabled { opacity:1; }
+.ygo-card { position:relative;z-index:1;display:block;flex:none;width:calc(var(--slot-h)*.685);height:calc(var(--slot-h)*.96);min-width:0;min-height:0!important;max-width:100%;max-height:100%;margin:0;padding:0!important;overflow:visible;border:1px solid #c5b995!important;border-radius:2px!important;background:#162128!important;box-shadow:1px 3px 5px #000a;transition:filter .18s ease,outline-color .18s ease; }
+.ygo-card>img { display:block;width:100%;height:100%;min-height:0;object-fit:fill;border-radius:1px;pointer-events:none; }
+.ygo-arena .ygo-card:not(:disabled):hover { filter:brightness(1.12);border-color:#e3ddbf!important; }
+.ygo-card.is-defense { transform:rotate(90deg) scale(.75); }
+.ygo-card.is-set>img { filter:brightness(.65) saturate(.6); }
+.ygo-card.is-selected { outline:2px solid #ffd776;outline-offset:2px; }
+.ygo-card.is-covered { display:block;border-color:#6b4427!important;cursor:default; }
+.ygo-card-title { display:grid;place-items:center;width:100%;height:100%;padding:5px;overflow:hidden;color:#dce8f1;font-size:clamp(.31rem,.6vw,.58rem);line-height:1.4;text-align:center;overflow-wrap:anywhere;background:radial-gradient(circle at 50% 40%,#79a4b03b,#111e30); }
+.ygo-card.is-token .ygo-card-title { border:2px solid #839aa5;background:radial-gradient(circle,#d0e8e84a,#274654); }
+.ygo-card-stat { position:absolute;z-index:3;bottom:-3px;left:50%;transform:translateX(-50%);padding:2px 4px;max-width:130%;color:#fffde1;border:1px solid #d4bf76;background:#0c1921f5;font:800 clamp(.35rem,.65vw,.64rem)/1.2 monospace;white-space:nowrap;text-shadow:0 1px #000;box-shadow:0 1px 3px #000;pointer-events:none; }
+.ygo-card.is-defense>.ygo-card-stat { transform:translateX(-50%) rotate(-90deg);bottom:50%;left:110%; }
+.ygo-card-set-label { position:absolute;left:50%;bottom:2px;transform:translateX(-50%);color:#f9d38b;font-size:.4rem;font-weight:800;background:#15202bce;padding:2px 4px; }
+.ygo-material-badge,.ygo-counter-badge { position:absolute;top:-3px;right:-5px;z-index:3;min-width:16px;min-height:16px;display:grid;place-items:center;padding:2px 3px;border:1px solid #dccf8a;background:#17252d;color:#ffffcc;border-radius:50%;font:800 .56rem/1 monospace;pointer-events:none; }.ygo-counter-badge { right:auto;left:-6px;top:auto;bottom:12px;border-color:#60c7f7;color:#9debff;border-radius:3px; }
+.ygo-card-back { position:relative;display:block;width:100%;height:100%;overflow:hidden;border:1px solid #a06b34;border-radius:2px;background:#281b13;box-shadow:inset 0 0 10px #000; }
+.ygo-card-back>img { display:block;width:100%;height:100%;object-fit:fill; }
+.ygo-arena .ygo-pile { position:relative;display:grid;place-items:center;width:100%;height:var(--slot-h);min-height:0;margin:0;padding:4px;border:1px solid #b2b99370;border-radius:7px;background:#0c191d36;box-shadow:inset 0 1px 5px #0007; }
+.ygo-pile>small { position:absolute;z-index:2;top:2px;left:0;right:0;color:#e2e4d3a1;font-size:clamp(.26rem,.5vw,.43rem);line-height:1;text-align:center;white-space:nowrap; }
+.ygo-pile-art { position:relative;width:calc(var(--slot-h)*.6);height:calc(var(--slot-h)*.82);max-width:100%;display:grid;place-items:center; }
+.ygo-pile-art>img { width:100%;height:100%;object-fit:contain;filter:brightness(.9); }.ygo-pile-art:has(.ygo-card-back):before,.ygo-pile-art:has(.ygo-card-back):after { content:'';position:absolute;z-index:-1;inset:2px -2px -2px 2px;border:1px solid #97744d;background:#322716; }.ygo-pile-art:has(.ygo-card-back):before { inset:4px -4px -4px 4px; }
+.ygo-pile>b { position:absolute;z-index:3;bottom:0;left:50%;transform:translateX(-50%);min-width:19px;padding:1px 4px;border:1px solid #c6bf83;background:#101c25ec;color:#f4e3a0;font:bold clamp(.43rem,.8vw,.76rem)/1.1 monospace;text-shadow:0 1px #000; }
+.ygo-arena .ygo-pile:disabled { opacity:1; }
+.ygo-pile-symbol { color:#6fc1ddd2;font-size:1.5rem;text-shadow:0 0 7px #6fc1dd7a;font-style:normal; }
+.ygo-simulator button>.icon { width:14px;height:14px;vertical-align:-3px;margin-right:4px; }.ygo-pile-symbol>.icon { width:23px;height:23px; }.ygo-counter-badge>.icon { width:8px;height:8px; }.ygo-banish-count>.icon { width:9px;height:9px;flex:none; }
+.ygo-counter-badge { display:inline-flex;align-items:center;justify-content:center;gap:2px;width:max-content;max-width:34px; }
+.ygo-grave-piles .ygo-pile { flex:1;min-height:0;height:auto; }.ygo-grave-piles .ygo-pile-art { height:calc(var(--slot-h)*.53);width:calc(var(--slot-h)*.45); }
+.ygo-arena .ygo-banish-count { display:flex;align-items:center;justify-content:center;gap:3px;min-height:17px;height:17px;padding:1px 3px;font:700 .45rem/1 monospace;border:1px solid #8497ae66;background:#142033a8;color:#c9d8e0; }.ygo-banish-count>span { color:#9babb7;font-size:.37rem;text-transform:uppercase; }
+.ygo-shared-extra { display:flex;align-items:center;justify-content:center;gap:clamp(24px,5vw,70px);height:calc(var(--slot-h)*.82);padding:4px 0; }
+.ygo-shared-extra>.ygo-zone { width:calc(var(--slot-h)*1.1);height:calc(var(--slot-h)*.76);border-color:#e5d79f59;background:#1727242e; }
+.ygo-shared-extra>.ygo-zone>small { font-size:clamp(.25rem,.4vw,.35rem); }.ygo-shared-extra .ygo-card { height:100%;width:calc(var(--slot-h)*.5); }
+.ygo-field-divider { flex:1;height:1px;background:linear-gradient(90deg,transparent,#bdc59b6e,transparent); }
+.ygo-hand { position:relative;display:flex;align-items:center;justify-content:center;gap:7px;min-width:0; }
+.ygo-hand>small { position:absolute;left:0;z-index:2;display:grid;gap:3px;color:#c1ccc6;font-size:.43rem;font-weight:700;line-height:1.1;letter-spacing:.05em;pointer-events:none; }.ygo-hand>small>b { color:#fff3c2;font-size:.75rem;text-align:center; }
+.ygo-hand-cards { display:flex;align-items:end;justify-content:safe center;gap:3px;min-width:0;max-width:100%;padding:5px 36px 8px;overflow:auto;scrollbar-width:thin;scrollbar-color:#657b87 #08131a55; }
+.ygo-hand-cards>.ygo-card { flex:0 0 auto;width:calc(var(--slot-h)*.64);height:calc(var(--slot-h)*.92);max-width:none;max-height:none;border-color:#e4ca78!important; }
+.ygo-hand.is-self { margin-inline:-10px;padding-top:3px;background:radial-gradient(ellipse at 50% 100%,#121c35c7,transparent 75%); }
+.ygo-hand.is-self .ygo-hand-cards>.ygo-card:nth-child(odd) { transform:translateY(2px); }.ygo-hand.is-self .ygo-hand-cards>.ygo-card:hover { transform:translateY(-3px); }
+.ygo-hand.is-opponent { min-height:calc(var(--slot-h)*.38);margin-top:0; }
+.ygo-hand.is-opponent .ygo-hand-cards { padding:0 24px 4px;gap:2px; }.ygo-hand.is-opponent .ygo-card { width:calc(var(--slot-h)*.25);height:calc(var(--slot-h)*.34);border-width:0!important;transform:rotate(180deg); }.ygo-hand.is-opponent .ygo-card-back { border-width:1px; }.ygo-hand.is-opponent .ygo-card-back>b,.ygo-hand.is-opponent .ygo-card-back>small { display:none; }
+.ygo-hand>button { position:absolute;right:0;bottom:12px;z-index:2;min-height:27px;padding:4px 7px;font-size:.48rem;background:#0a1d2ae8; }
+.ygo-battle-profiles { display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:10px; }
+.ygo-duelist { position:relative;display:flex;align-items:center;gap:8px;min-width:0;width:45%;max-width:260px;padding:8px 12px 9px 7px;border:1px solid #95bdcf94;background:linear-gradient(110deg,#223e53f2,#07151ef0);box-shadow:inset 0 1px 0 #e5faff35,0 3px 8px #0006;clip-path:polygon(0 0,91% 0,100% 28%,100% 100%,0 100%); }
+.ygo-duelist.is-opponent { order:2;background:linear-gradient(110deg,#3e3025ec,#1e1612e8);border-color:#baaa8494; }
+.ygo-duelist.is-self { order:1; }.ygo-duelist.is-active { border-color:#e4d394;box-shadow:inset 0 1px 0 #fff5cc7d,0 0 10px #d7c36d21; }
+.ygo-duelist-avatar { display:grid;place-items:center;flex:none;width:38px;height:42px;border:2px solid #719bb5;clip-path:polygon(25% 0,80% 0,100% 25%,100% 75%,75% 100%,20% 100%,0 75%,0 25%);background:radial-gradient(circle at 35% 30%,#506980,#102c40);color:#e2f0f8;font-size:.78rem;font-weight:800; }
+.ygo-duelist.is-opponent .ygo-duelist-avatar { border-color:#b79871;background:radial-gradient(circle at 35% 30%,#6f4f42,#362a28); }
+.ygo-duelist-info { display:grid;flex:1;gap:4px;min-width:0; }.ygo-duelist-info>strong { overflow:hidden;max-width:100%;color:#eef5f4;font-size:.66rem;font-weight:700;text-overflow:ellipsis;white-space:nowrap; }.ygo-duelist-info>span { display:flex;align-items:baseline;gap:7px; }.ygo-duelist-info small { font-size:.55rem;font-weight:700;letter-spacing:.1em;color:#b4c9d3; }.ygo-duelist-info b { font:700 clamp(1.2rem,2.2vw,2rem)/.95 monospace;letter-spacing:.03em;text-shadow:1px 2px #000; }.ygo-duelist-info>i { display:block;height:3px;width:100%;background:linear-gradient(90deg,#8ed1ed var(--lp),#182936 var(--lp));box-shadow:0 0 3px #89d7f54d; }.ygo-duelist.is-opponent .ygo-duelist-info>i { background:linear-gradient(90deg,#d8b975 var(--lp),#342b26 var(--lp)); }
+.ygo-duelist-seat { position:absolute;top:5px;right:15px;font-size:.35rem;letter-spacing:.08em;color:#8facbb; }
+.ygo-phase-panel { grid-column:3;grid-row:2;display:grid;gap:12px;align-self:center;min-width:0;text-align:center; }
+.ygo-phase-panel>span { color:#8aa6b5;font-size:.56rem;letter-spacing:.12em; }.ygo-phase-panel>span>b { color:#f0e1aa; }.ygo-phase-panel>strong { color:#d7bf7b;font-size:.6rem;line-height:1.5;overflow-wrap:anywhere; }
+.ygo-phase-panel>ol { display:grid;gap:3px;list-style:none;margin:0;padding:0; }
+.ygo-phase-panel li { position:relative;min-height:31px;display:grid;place-items:center;padding:7px 3px;color:#7f9ca9;background:#12212bba;border:1px solid #53697970;border-radius:2px;font-size:.63rem;font-weight:700;text-transform:uppercase; }
+.ygo-phase-panel li.is-current { color:#fff2b1;border-color:#e2c77b;background:radial-gradient(ellipse,#5c4d27,#1f2b2b);box-shadow:0 0 12px #d3bf6a38,inset 0 0 8px #c5ae5d40; }
+.ygo-phase-controls { display:grid;gap:7px; }.ygo-phase-controls>button { min-height:37px;font-size:.62rem;padding:7px 6px; }.ygo-phase-controls>button[data-ygo-action=ready] { border-color:var(--duel-gold);color:#f8e4a5; }
+.ygo-chain-bar { display:flex;align-items:center;justify-content:center;gap:8px;min-height:24px;padding:5px 9px;background:linear-gradient(90deg,transparent,#08151cbd,transparent);font-size:.6rem; }
+.ygo-chain-bar>small { color:#6d8d9c;font-size:.45rem;letter-spacing:.18em; }.ygo-chain-bar>strong { color:#b2eeff;white-space:nowrap; }.ygo-chain-bar>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#bdcbd1; }.ygo-chain-bar>button { min-height:23px;padding:3px 8px;font-size:.5rem; }.ygo-chain-bar.has-chain { border-top:1px solid #85d0e961; }
+.ygo-arena-status { display:flex;align-items:center;justify-content:center;gap:9px;min-height:20px;margin:3px 0 0;color:#b6c6ca;text-align:center;font-size:.64rem;line-height:1.5; }.ygo-arena-status.is-error { color:#ffb8ad; }.ygo-arena-status>button { min-height:24px;padding:4px 9px;font-size:.52rem; }
+
+/* Card and zone panels keep all manual commands reachable on a phone. */
+.ygo-arena .ygo-overlay { position:fixed;z-index:600;inset:0;display:block;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;background:#01070cb8;backdrop-filter:blur(5px); }
+.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog) { position:fixed;z-index:601;top:50%;left:50%;width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;transform:translate(-50%,-50%);padding:19px 22px;border:1px solid #9eb8c7;border-top:3px solid #d0bd7f;border-radius:3px;background:linear-gradient(130deg,#1b303d,#0c1721 65%);color:#e6eef2;box-shadow:0 16px 80px #000c,inset 0 1px #fff2; }
+.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog)>header { display:flex;align-items:center;justify-content:space-between;gap:13px;min-width:0;padding-bottom:13px;margin-bottom:16px;border-bottom:1px solid #68828d77; }
+.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog)>header>div { min-width:0; }.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog)>header small { color:#9dc7da;font-size:.57rem;font-weight:700;letter-spacing:.07em; }.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog) h2 { margin:6px 0 0;color:#f5e7b6;font-size:1.1rem;line-height:1.4; }.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog)>header>button { flex:none;min-height:31px;padding:6px 11px;font-size:.64rem; }
+.ygo-card-dialog-layout { display:grid;grid-template-columns:minmax(140px,240px) minmax(0,1fr);gap:24px;align-items:start; }
+.ygo-card-full-art { display:grid;gap:10px;min-width:0; }.ygo-card-full-art>img { display:block;width:100%;height:auto;max-height:390px;object-fit:contain;filter:drop-shadow(0 3px 8px #0009); }.ygo-card-full-art>div { display:grid;place-items:center;aspect-ratio:59/86;border:1px solid #aab5ab;background:#2a3e48;color:#e2eceb;font-size:1.3rem;text-align:center; }
+.ygo-card-detail-stats { display:flex;gap:10px;justify-content:space-around;margin:0;padding:10px 0;border-top:1px solid #78939e55; }.ygo-card-detail-stats>div { display:flex;gap:8px;align-items:center; }.ygo-card-detail-stats dt { color:#9cc6d8;font-size:.6rem; }.ygo-card-detail-stats dd { margin:0;color:#f5e3a3;font:bold 1rem monospace; }
+.ygo-card-dialog-content { min-width:0; }.ygo-card-type { color:#9ac8d6;font-size:.67rem;line-height:1.5; }.ygo-card-effect { margin:12px 0 18px;color:#cfdbde;font-size:.76rem;line-height:1.75;white-space:pre-wrap; }.ygo-card-dialog-content>button { width:100%; }
+.ygo-card-actions { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:15px; }.ygo-card-actions>button { min-height:39px;font-size:.66rem;padding:8px; }.ygo-card-actions>button:is([data-ygo-command=summon],[data-ygo-command=play-spell],[data-ygo-action=activate]) { border-color:#b4a572;color:#ffe6a3;background:linear-gradient(#3e4335,#22302e); }
+.ygo-counter-tools { display:flex;align-items:center;gap:6px;margin-top:15px; }.ygo-counter-tools>span { flex:1;color:#9eb9c7;font-size:.7rem; }.ygo-counter-tools>button { min-height:29px;min-width:32px;padding:5px;font-size:.8rem; }
+.ygo-inline-form { display:flex!important;align-items:end;gap:8px;flex-wrap:wrap;margin-top:17px; }.ygo-inline-form>label { flex:1;min-width:90px; }.ygo-inline-form>button { min-height:42px; }.ygo-inline-form select,.ygo-inline-form input { font-size:.72rem; }
+.ygo-materials { display:grid;gap:6px;margin-top:8px; }.ygo-materials>div { display:flex;align-items:center;gap:8px;color:#c6d2d8;font-size:.7rem; }.ygo-materials>div>span { flex:1; }.ygo-materials button { min-height:27px;padding:4px 9px;font-size:.63rem; }
+.ygo-advanced-move form { margin-top:13px; }.ygo-form-pair { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+.ygo-manual-note { margin:16px 0 0;color:#8da9b5;font-size:.62rem;line-height:1.7; }
+.ygo-arena .ygo-zone-dialog { width:min(850px,calc(100vw - 32px)); }.ygo-zone-dialog h2>span { color:#9daaa7;font-size:.8em; }
+.ygo-dialog-actions { display:flex;flex-wrap:wrap;gap:8px;margin-bottom:17px; }
+.ygo-zone-cards { --slot-h:160px;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:16px 10px;align-items:start;justify-items:center;padding:10px 0; }.ygo-zone-cards>.ygo-card { width:90px;height:131px;max-width:100%;max-height:none; }.ygo-zone-cards>.ygo-card.is-set>img { filter:none; }.ygo-zone-cards .ygo-card-set-label { display:none; }.ygo-zone-cards>.ygo-card.is-defense { transform:none; }.ygo-zone-cards>p { grid-column:1/-1;color:#9eb9c5;font-size:.8rem; }
+.ygo-arena .ygo-tools-dialog { width:min(500px,calc(100vw - 32px)); }.ygo-tools-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px; }.ygo-tools-grid button { font-size:.69rem; }.ygo-lp-shortcuts { display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:10px; }.ygo-lp-shortcuts button { min-height:30px;font-size:.65rem;padding:6px; }.ygo-tools-dialog>.ygo-tabs { margin:20px 0; }.ygo-duel-log { display:grid;gap:8px;padding-left:20px;color:#b6c8ce;font-size:.68rem;line-height:1.6; }.ygo-duel-log small { color:#76a0b5; }
+.ygo-duel-result { position:fixed;z-index:590;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;gap:13px;justify-items:center;width:min(430px,calc(100vw - 40px));padding:27px 24px;border:1px solid #e0cb86;background:linear-gradient(140deg,#2b404d,#12212c);box-shadow:0 0 80px #000c;text-align:center; }.ygo-duel-result>small { color:#b7c7cd;letter-spacing:.23em;font-size:.55rem; }.ygo-duel-result>strong { color:#f3dda5;font:700 clamp(1.7rem,5vw,2.4rem)/1.2 Georgia,serif;letter-spacing:.14em; }.ygo-duel-result>p { color:#b8c9d0;font-size:.75rem;line-height:1.6; }
+@keyframes ygo-target-pulse { 50% { box-shadow:inset 0 0 22px #73daff9e,0 0 12px #b9edff5c; } }
+
+@media(min-width:1250px) and (min-height:700px) {
+  .ygo-arena { padding-top:16px;grid-template-columns:220px minmax(0,1fr) 110px;gap:14px 26px; }
+  .ygo-battle-profiles { margin-bottom:12px; }.ygo-playmat { padding-inline:30px; }
+  .ygo-duelist { width:43%; }.ygo-idle-preview { padding:27px 20px; }
+}
+@media(max-width:1050px) {
+  .ygo-arena { grid-template-columns:145px minmax(0,1fr) 80px;gap:9px 12px;padding-inline:10px; }.ygo-idle-preview { padding:16px 10px;gap:12px; }.ygo-idle-preview img { width:110px;height:50px; }.ygo-idle-preview p { font-size:.62rem; }.ygo-idle-preview small { font-size:.52rem; }.ygo-idle-preview>span { font-size:.53rem; }.ygo-playmat { padding-inline:12px; }.ygo-phase-panel li { font-size:.56rem;min-height:28px; }.ygo-phase-controls>button { font-size:.55rem; }
+}
+@media(max-width:700px) and (min-height:501px) {
+  .ygo-arena { --slot-h:clamp(45px,12vw,78px);--field-gap:4px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;gap:11px;padding:8px max(7px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(7px,env(safe-area-inset-left,0px)); }
+  .ygo-arena-header { grid-column:1;grid-row:1;gap:7px; }.ygo-arena-header>button { min-height:32px;padding:6px 10px;font-size:.62rem; }.ygo-arena-brand>b { font-size:.64rem;letter-spacing:.13em; }.ygo-arena-brand>small { font-size:.38rem;letter-spacing:.08em; }.ygo-online { font-size:.47rem; }
+  .ygo-idle-preview { display:none; }.ygo-battle-stage { grid-column:1;grid-row:2; }.ygo-playmat { padding:11px 7px 0;border-radius:7px 7px 3px 3px; }
+  .ygo-battle-profiles { gap:9px;margin-bottom:8px; }.ygo-duelist { width:50%;max-width:none;gap:6px;padding:6px 10px 7px 5px; }.ygo-duelist-avatar { width:28px;height:33px;font-size:.57rem; }.ygo-duelist-info { gap:3px; }.ygo-duelist-info>strong { max-width:105px;font-size:.52rem; }.ygo-duelist-info b { font-size:1.45rem; }.ygo-duelist-info small { font-size:.48rem; }.ygo-duelist-seat { font-size:.26rem;right:11px; }
+  .ygo-half { gap:5px; }.ygo-zone>small { font-size:.25rem;bottom:2px; }.ygo-zone>i { width:40%; }.ygo-card-stat { padding:1px 2px;font-size:.32rem; }.ygo-card-set-label { font-size:.3rem;padding:1px 2px; }.ygo-material-badge,.ygo-counter-badge { min-width:12px;min-height:12px;padding:1px 2px;font-size:.43rem;right:-3px; }.ygo-counter-badge { left:-3px; }
+  .ygo-pile>small { font-size:.25rem; }.ygo-pile>b { min-width:14px;padding:1px 3px;font-size:.38rem; }.ygo-pile-symbol { font-size:1rem; }.ygo-arena .ygo-banish-count { min-height:14px;height:14px;font-size:.35rem; }.ygo-banish-count>span { display:none; }
+  .ygo-hand>small { font-size:.28rem;left:-2px; }.ygo-hand>small>b { font-size:.55rem; }.ygo-hand-cards { gap:2px;padding:5px 25px 7px; }.ygo-hand.is-self .ygo-hand-cards>.ygo-card { width:calc(var(--slot-h)*.8);height:calc(var(--slot-h)*1.16); }.ygo-hand.is-self { margin-inline:0; }.ygo-hand>button { min-height:22px;bottom:9px;padding:3px 4px;font-size:.35rem; }
+  .ygo-shared-extra { height:calc(var(--slot-h)*.9);gap:34px; }.ygo-shared-extra>.ygo-zone { height:calc(var(--slot-h)*.82);width:calc(var(--slot-h)*1.1); }.ygo-shared-extra>.ygo-zone>small { font-size:.22rem; }
+  .ygo-chain-bar { min-height:23px;font-size:.49rem; }.ygo-chain-bar>small { font-size:.32rem; }.ygo-arena-status { min-height:23px;font-size:.54rem;margin-top:4px; }
+  .ygo-phase-panel { grid-column:1;grid-row:3;grid-template-columns:auto minmax(0,1fr);gap:7px 9px;align-items:center;text-align:left;align-self:start; }.ygo-phase-panel>span { font-size:.52rem;grid-column:1;grid-row:1; }.ygo-phase-panel>strong { grid-column:2;grid-row:1;text-align:right;font-size:.5rem; }.ygo-phase-panel>ol { grid-column:1/-1;grid-row:2;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px; }.ygo-phase-panel li { min-height:25px;padding:5px 1px;font-size:.46rem; }.ygo-phase-controls { grid-column:1/-1;grid-row:3;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px; }.ygo-phase-controls>button { min-height:35px;font-size:.57rem; }.ygo-phase-controls:has([data-ygo-action=ready]) { grid-template-columns:1fr; }
+  .ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog) { top:auto;bottom:max(7px,env(safe-area-inset-bottom,0px));left:7px;width:calc(100vw - 14px);max-height:calc(100dvh - 20px);transform:none;padding:15px 15px 18px; }
+  .ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog)>header { margin-bottom:12px;padding-bottom:10px; }.ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog) h2 { font-size:.99rem; }.ygo-card-dialog-layout { grid-template-columns:minmax(0,1fr);gap:12px; }.ygo-card-full-art { justify-items:center; }.ygo-card-full-art>img { width:154px;max-height:224px; }.ygo-card-detail-stats { width:100%;max-width:280px;padding:6px 0; }.ygo-card-dialog-content>p:first-child { margin-top:0; }.ygo-card-actions { gap:6px; }.ygo-card-actions>button { min-height:37px;font-size:.64rem; }.ygo-card-effect { max-height:180px;overflow:auto;font-size:.7rem; }.ygo-zone-cards { grid-template-columns:repeat(auto-fill,minmax(75px,1fr));gap:12px 8px; }.ygo-zone-cards>.ygo-card { width:75px;height:110px; }
+  .ygo-versus { grid-template-columns:1fr;gap:10px; }.ygo-versus-mark { min-height:25px;font-size:1.3rem; }.ygo-versus-side { padding:18px;gap:13px; }.ygo-lobby-settings { grid-template-columns:1fr 1fr;gap:12px; }.ygo-lobby-settings>button { grid-column:1/-1; }.ygo-invitation { flex-wrap:wrap; }.ygo-invitation>button { width:100%; }.ygo-history-row { align-items:start;flex-direction:column; }
+}
+@media(max-height:500px) and (min-width:701px) {
+  .ygo-arena { --slot-h:clamp(32px,10dvh,49px);--field-gap:3px;grid-template-columns:100px minmax(0,1fr) 82px;grid-template-rows:27px auto;gap:4px 10px;padding:4px max(8px,env(safe-area-inset-right,0px)) max(4px,env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px)); }
+  .ygo-arena-header { gap:9px; }.ygo-arena-header>button { min-height:25px;padding:4px 9px;font-size:.52rem; }.ygo-arena-brand { display:flex;align-items:center;gap:12px; }.ygo-arena-brand>b { font-size:.61rem; }.ygo-arena-brand>small { font-size:.36rem; }.ygo-online { font-size:.43rem; }
+  .ygo-idle-preview { gap:10px;padding:11px 8px; }.ygo-idle-preview img { width:80px;height:40px; }.ygo-idle-preview>span { font-size:.43rem;letter-spacing:.12em; }.ygo-idle-preview p { margin:0;font-size:.48rem;line-height:1.6; }.ygo-idle-preview small { font-size:.4rem; }.ygo-idle-preview .ygo-preview-line { margin:0; }
+  .ygo-battle-profiles { position:absolute;z-index:3;left:5px;right:5px;top:4px;pointer-events:none;margin:0; }.ygo-duelist { width:30%;max-width:155px;padding:3px 8px 4px 3px;gap:5px;opacity:.96; }.ygo-duelist-avatar { width:21px;height:25px;font-size:.44rem; }.ygo-duelist-info { gap:2px; }.ygo-duelist-info>strong { font-size:.4rem; }.ygo-duelist-info>span { gap:4px; }.ygo-duelist-info b { font-size:1rem; }.ygo-duelist-info small { font-size:.35rem; }.ygo-duelist-info>i { height:2px; }.ygo-duelist-seat { display:none; }
+  .ygo-playmat { padding:7px 10px 0;border-radius:6px; }.ygo-half { gap:3px; }.ygo-hand.is-opponent { height:25px;min-height:25px; }.ygo-hand.is-opponent .ygo-hand-cards { height:25px;padding-top:0;padding-bottom:3px; }.ygo-hand.is-opponent .ygo-card { width:15px;height:21px; }.ygo-hand.is-opponent>small { display:none; }.ygo-hand-cards { padding:4px 24px 5px;gap:2px; }.ygo-hand-cards>.ygo-card { height:calc(var(--slot-h)*1.1);width:calc(var(--slot-h)*.76); }.ygo-hand>small { font-size:.26rem; }.ygo-hand>small>b { font-size:.5rem; }.ygo-hand>button { min-height:18px;bottom:7px;padding:3px 4px;font-size:.3rem; }
+  .ygo-zone>small { font-size:.22rem;bottom:2px; }.ygo-zone>i { width:26%; }.ygo-card-stat { font-size:.28rem;bottom:-2px;padding:1px 2px; }.ygo-card-set-label { font-size:.24rem;padding:1px 2px; }.ygo-pile>small { font-size:.22rem; }.ygo-pile>b { min-width:12px;padding:1px 2px;font-size:.31rem; }.ygo-pile-symbol { font-size:.85rem; }.ygo-arena .ygo-banish-count { height:11px;min-height:11px;font-size:.3rem; }.ygo-banish-count>span { font-size:.25rem; }.ygo-grave-piles .ygo-pile-art { height:calc(var(--slot-h)*.48); }.ygo-shared-extra { height:calc(var(--slot-h)*.8);gap:40px;padding:2px 0; }.ygo-shared-extra>.ygo-zone { height:calc(var(--slot-h)*.72);width:calc(var(--slot-h)*1.1); }.ygo-shared-extra>.ygo-zone>small { font-size:.2rem; }.ygo-material-badge,.ygo-counter-badge { min-width:10px;min-height:10px;padding:1px 2px;font-size:.3rem; }
+  .ygo-phase-panel { gap:6px; }.ygo-phase-panel>span { font-size:.42rem; }.ygo-phase-panel>strong { font-size:.44rem; }.ygo-phase-panel>ol { gap:2px; }.ygo-phase-panel li { min-height:21px;padding:4px 1px;font-size:.43rem; }.ygo-phase-controls { gap:4px; }.ygo-phase-controls>button { min-height:25px;padding:5px 3px;font-size:.47rem; }.ygo-chain-bar { min-height:15px;padding:2px 5px;font-size:.43rem; }.ygo-chain-bar>small { font-size:.28rem; }.ygo-chain-bar>button { min-height:17px;padding:2px 5px;font-size:.37rem; }.ygo-arena-status { min-height:15px;margin-top:2px;font-size:.4rem; }.ygo-arena-status>button { min-height:18px;padding:2px 6px;font-size:.37rem; }
+  .ygo-arena .ygo-card-dialog { width:min(760px,calc(100vw - 24px));max-height:calc(100dvh - 16px);padding:12px 16px; }.ygo-card-dialog-layout { grid-template-columns:145px minmax(0,1fr);gap:18px; }.ygo-card-full-art>img { max-height:200px; }.ygo-card-dialog-content { max-height:calc(100dvh - 95px);overflow:auto;padding-right:4px; }.ygo-card-effect { font-size:.64rem; }.ygo-card-actions { margin-top:9px; }.ygo-card-actions>button { min-height:31px;font-size:.58rem;padding:6px; }.ygo-arena .ygo-card-dialog>header { margin-bottom:10px;padding-bottom:8px; }.ygo-arena .ygo-card-dialog h2 { font-size:.92rem; }.ygo-card-detail-stats { padding:5px 0; }.ygo-card-detail-stats dd { font-size:.8rem; }.ygo-manual-note { margin-top:9px;font-size:.52rem; }
+}
+/* Duel HUD follows the two opposing corners in the landscape arena. */
+@media(min-width:701px) and (min-height:501px) {
+  .ygo-battle-profiles { justify-content:flex-end;min-height:59px;margin-bottom:3px; }
+  .ygo-duelist.is-self { position:fixed;z-index:4;left:max(10px,calc((100vw - 1568px)/2));bottom:max(22px,env(safe-area-inset-bottom,0px));width:145px;max-width:145px;padding:8px 10px 10px 5px; }
+  .ygo-duelist.is-self .ygo-duelist-info b { font-size:1.5rem; }.ygo-duelist.is-self .ygo-duelist-avatar { width:29px;height:35px;font-size:.56rem; }
+  .ygo-duelist.is-opponent { max-width:235px;padding-block:5px; }.ygo-duelist.is-opponent .ygo-duelist-info b { font-size:1.65rem; }
+  .ygo-hand.is-self .ygo-hand-cards>.ygo-card { height:clamp(80px,calc(var(--slot-h)*1.22),105px);width:clamp(55px,calc(var(--slot-h)*.84),72px); }
+}
+@media(min-width:1051px) and (min-height:501px) {
+  .ygo-duelist.is-self { left:max(16px,calc((100vw - 1568px)/2));width:200px;max-width:200px; }.ygo-duelist.is-self .ygo-duelist-avatar { width:35px;height:41px; }.ygo-duelist.is-self .ygo-duelist-info b { font-size:1.9rem; }
+}
+@media(min-width:1250px) and (min-height:700px) {
+  .ygo-duelist.is-self { width:220px;max-width:220px; }
+}
+@media(max-height:500px) and (min-width:701px) {
+  .ygo-battle-profiles { justify-content:flex-end; }
+  .ygo-duelist.is-self { position:fixed;left:max(8px,env(safe-area-inset-left,0px));top:auto;bottom:max(10px,env(safe-area-inset-bottom,0px));width:100px;max-width:100px;padding:5px 6px; }
+  .ygo-duelist.is-self .ygo-duelist-info>strong { max-width:58px; }
+}
+.ygo-arena .ygo-counter-badge { right:auto; }
+@media(prefers-reduced-motion:reduce) { .ygo-simulator * { animation:none!important;transition:none!important; } }

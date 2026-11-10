@@ -165,6 +165,31 @@ function lazyPageModule(key, pageId, loader) {
 }
 const loadedPageModule = key => lazyPageModules.get(key)?.module || null;
 let onePieceSimulator = null;
+let yugiohSimulator = null;
+function canUseSimulator() { return Boolean(state.currentUser && !state.standalone && ['onepiece', 'yugioh'].includes(state.game) && member(state.currentUser)); }
+function canUseYugiohSimulator() { return canUseSimulator() && state.game === 'yugioh'; }
+function yugiohSimulatorContext() { return { member:state.currentUser, team:state.team?.id || 'legacy-fpt', allowed:canUseYugiohSimulator() }; }
+function yugiohSimulatorView() {
+  if (!canUseYugiohSimulator()) return `<section class="page-stack"><div class="surface empty-state"><h1>Simulatore Yu-Gi-Oh!</h1><p>Il tavolo privato è disponibile ai membri del team nella sezione Yu-Gi-Oh!.</p></div></section>`;
+  if (!document.querySelector('link[data-yugioh-simulator]')) {
+    const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/yugioh-simulator.css'; link.dataset.yugiohSimulator = 'true'; document.head.append(link);
+  }
+  const module = lazyPageModule('yugioh-simulator', 'simulator', () => import('./js/games/yugioh/simulator-multiplayer.js'));
+  if (!module) return lazyLoadingView('Simulatore Yu-Gi-Oh!');
+  const context = yugiohSimulatorContext();
+  if (!yugiohSimulator || yugiohSimulator.context.member !== context.member || yugiohSimulator.context.team !== context.team) {
+    yugiohSimulator?.reset();
+    yugiohSimulator = new module.YugiohMultiplayer({
+      getContext:yugiohSimulatorContext, getDecks:()=>state.decks, getMembers:()=>MEMBERS,
+      call:payload=>api.yugiohDuel(payload), requestedDuel:yugiohDuelFromHash, isVisible:()=>page === 'simulator',
+      loadDecks:async()=>{ await loadAppControllers(); await decks.load(); },
+      verifyAccess:async()=>{ const slug=state.currentUser; const members=await api.teamMembers(); return slug===state.currentUser && canUseYugiohSimulator() && Array.isArray(members) && members.some(item=>(item.slug||item.id)===slug); },
+      lookupCard:async id=>findCardById(id), onRender:()=>{if(page==='simulator')renderRoute();}, onToast:toast,
+      confirm:message=>fptConfirm(message,{title:'Simulatore Yu-Gi-Oh!',confirmLabel:'Conferma'})
+    });
+  }
+  return yugiohSimulator.view();
+}
 function canUseOnePieceSimulator() {
   return Boolean(state.currentUser && !state.standalone && state.game === 'onepiece' && member(state.currentUser));
 }
@@ -299,7 +324,10 @@ function installCardImageRecovery() {
   }, true);
 }
 function routeFromHash() { const value = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0]; return ROUTES.has(value) ? value : 'home'; }
-function onePieceDuelFromHash() { const id = new URLSearchParams(location.hash.split('?')[1] || '').get('duel') || ''; return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : ''; }
+function simulatorDuelFromHash() { const id = new URLSearchParams(location.hash.split('?')[1] || '').get('duel') || ''; return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : ''; }
+function simulatorGameFromHash() { return new URLSearchParams(location.hash.split('?')[1] || '').get('game') === 'yugioh' ? 'yugioh' : 'onepiece'; }
+function onePieceDuelFromHash() { return simulatorGameFromHash() === 'onepiece' ? simulatorDuelFromHash() : ''; }
+function yugiohDuelFromHash() { return simulatorGameFromHash() === 'yugioh' ? simulatorDuelFromHash() : ''; }
 function fastScanModeFromHash(){return location.hash.replace(/^#\/?/,'').split('/')[1]==='review'?'review':'scan';}
 function setFastScanRoute(mode){
   if(mode==='collection'){navigate('collection');return;}
@@ -438,7 +466,7 @@ function appView() {
   const game = GAMES[state.game];
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
   const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['stats','trophy','Statistiche'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
-  if (canUseOnePieceSimulator()) desktopNav.push(['more','more','Altro']);
+  if (canUseSimulator()) desktopNav.push(['more','more','Altro']);
   const mobileNav = [['home','home','Home'],['market','chart','Market Watch'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
   // Va renderizzato qui (fuori da .page-stage), non dentro loansView(): .page-stage
   // ha view-transition-name, che in Chrome le dà una propria stacking context.
@@ -612,7 +640,7 @@ function pageContent() {
   if (page === 'team') return teamView();
   if (page === 'cards') return cardsView();
   if (page === 'fastscan') return fastScanPageView();
-  if (page === 'simulator') return onePieceSimulatorView();
+  if (page === 'simulator') return state.game === 'yugioh' ? yugiohSimulatorView() : onePieceSimulatorView();
   if (page === 'academy') return academyView();
   if (page === 'collection') return inventoryCollectionView(state.collection, collectionFilters, state.game, online(), collectionError, collectionVisibleCount, deckUsageIndex(state.decks, state.currentUser, state.game));
   if (page === 'market') return marketWatch ? marketWatch.view() : appControllerPageView('Market Watch');
@@ -711,6 +739,7 @@ function moreView() {
   const pendingRequests = collectionShareRequests.filter(request => request.status === 'pending').length;
   const links = [['requests','bell','Richieste',pendingRequests ? `${pendingRequests} in attesa` : 'Interesse dalla raccolta condivisa'],['stats','trophy','Statistiche','Match, mazzi e progressione'],['team','team','Team','Membri e amministrazione'],['settings','settings','Impostazioni','Notifiche e sessione']];
   if (canUseOnePieceSimulator()) links.unshift(['simulator','deck','Simulatore One Piece','Tavolo manuale privato e test dei mazzi']);
+  if (canUseYugiohSimulator()) links.unshift(['simulator','deck','Simulatore Yu-Gi-Oh!','Arena privata del team e test dei mazzi']);
   if (state.game === 'yugioh') links.unshift(['academy','info','Accademia del Duellante','Tutorial con Blattaman per iniziare a giocare']);
   const tools = [];
   if (canManageArtwork()) tools.push(['admin','card','Artwork Resolver','Stampe con più illustrazioni']);
@@ -1589,6 +1618,7 @@ function bind() {
   document.querySelector('[data-rick-secret]')?.addEventListener('click', secretRickroll);
   if (page === 'decks' && decks) decks.bind(document);
   if (page === 'simulator' && canUseOnePieceSimulator()) onePieceSimulator?.bind(document);
+  if (page === 'simulator' && canUseYugiohSimulator()) yugiohSimulator?.bind(document);
   if (page === 'academy') academy?.bind(document);
   if (page === 'market' && marketWatch) marketWatch.bind(document);
   if (page === 'fastscan') fastScan?.bind(document);
@@ -1915,7 +1945,8 @@ function selectGame(game) {
   state.game = game; gameMenuOpen = false;
   if (changed) {
     onePieceSimulator?.reset(); onePieceSimulator = null;
-    if (page === 'simulator' && game !== 'onepiece') { page = 'home'; history.replaceState(null, '', '#/home'); }
+    yugiohSimulator?.reset(); yugiohSimulator = null;
+    if (page === 'simulator') { page = 'home'; history.replaceState(null, '', '#/home'); }
     draftCards = [];
     loanBuilderDraft = { borrower:'', notes:'', query:'', mode:'lend' };
     loanSearchResults = []; loanSearchStatus = 'idle';
@@ -2718,7 +2749,7 @@ async function login(e) {
     if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
-    if (page === 'simulator' && onePieceDuelFromHash()) state.game = 'onepiece';
+    if (page === 'simulator' && simulatorDuelFromHash()) state.game = simulatorGameFromHash();
     state.role = profile.role;
     state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
     loginDraft = { member:'', pin:'', mode:loginDraft.mode };
@@ -2745,6 +2776,7 @@ async function login(e) {
 async function logout() {
   await fastScan?.leave();
   onePieceSimulator?.close(); onePieceSimulator = null;
+  yugiohSimulator?.reset(); yugiohSimulator = null;
   api.unsubscribe();
   await api.logout();
   state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; state.team = null; teamInvites = null; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
@@ -3191,7 +3223,7 @@ async function start() {
     history.replaceState(null, '', '#/home');
     setTimeout(() => toast('Sei già connesso: esci per usare un invito'), 600);
   }
-  if (page === 'simulator' && onePieceDuelFromHash() && state.currentUser && !state.standalone) state.game = 'onepiece';
+  if (page === 'simulator' && simulatorDuelFromHash() && state.currentUser && !state.standalone) state.game = simulatorGameFromHash();
   installCardImageRecovery();
   installCollectionControls();
   // fastScan.restore() ora gira dentro loadFastScan(), alla prima apertura della pagina Scan.
@@ -3331,8 +3363,8 @@ window.addEventListener('hashchange', () => {
   const joinMatch = location.hash.match(JOIN_HASH);
   if (joinMatch && !state.currentUser) { void startJoin(joinMatch[1]); return; }
   const next = routeFromHash();
-  const switchToOnePiece = next === 'simulator' && onePieceDuelFromHash() && state.currentUser && !state.standalone && state.game !== 'onepiece';
-  if (switchToOnePiece) { state.game = 'onepiece'; saveState(); }
+  const switchSimulatorGame = next === 'simulator' && simulatorDuelFromHash() && state.currentUser && !state.standalone && state.game !== simulatorGameFromHash();
+  if (switchSimulatorGame) { onePieceSimulator?.reset(); onePieceSimulator=null; yugiohSimulator?.reset(); yugiohSimulator=null; state.game = simulatorGameFromHash(); saveState(); }
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();
     if(!fastScan)return;
@@ -3340,14 +3372,14 @@ window.addEventListener('hashchange', () => {
     else if(mode==='scan'&&fastScan.phase==='review')void fastScan.start();
     return;
   }
-  if (next === page) { if (switchToOnePiece) render(); if (page === 'simulator') void onePieceSimulator?.openRequested(); return; }
+  if (next === page) { if (switchSimulatorGame) render(); if (page === 'simulator') { void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); } return; }
   if (page === 'fastscan' && next !== 'fastscan') {
     if(['scanning','paused'].includes(fastScan?.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
     void fastScan?.leave();
   }
   const previous = page;
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
-  if(switchToOnePiece||previous==='fastscan'||page==='fastscan')render();else renderRoute();
+  if(switchSimulatorGame||previous==='fastscan'||page==='fastscan')render();else renderRoute();
   dispatchPageEnterRefresh(previous, page);
 });
 // Il dettaglio carta della Raccolta pusha una entry di history senza cambiare
@@ -3406,11 +3438,12 @@ navigator.serviceWorker?.addEventListener('message', event => {
   const target = url.hash.replace(/^#\//, '').split('?')[0] || 'home';
   const params = new URLSearchParams(url.hash.split('?')[1] || '');
   if (target === 'simulator' && /^[0-9a-f-]{36}$/i.test(params.get('duel') || '') && !state.standalone) {
-    if (state.currentUser) { state.game = 'onepiece'; saveState(); }
+    const duelGame = params.get('game') === 'yugioh' ? 'yugioh' : 'onepiece';
+    if (state.currentUser) { onePieceSimulator?.reset(); onePieceSimulator=null; yugiohSimulator?.reset(); yugiohSimulator=null; state.game = duelGame; saveState(); }
     const previous = page; page = 'simulator';
-    history.pushState(null, '', `#/simulator?duel=${encodeURIComponent(params.get('duel'))}`);
+    history.pushState(null, '', `#/simulator?${duelGame === 'yugioh' ? 'game=yugioh&' : ''}duel=${encodeURIComponent(params.get('duel'))}`);
     render(); dispatchPageEnterRefresh(previous, page);
-    void onePieceSimulator?.openRequested(); return;
+    void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); return;
   }
   if (!state.currentUser) return;
   if (target === 'market' && params.get('printingId')) { navigate('market'); void loadAppControllers().then(() => { marketWatch.selected = params.get('printingId'); render(true); }).catch(() => {}); }

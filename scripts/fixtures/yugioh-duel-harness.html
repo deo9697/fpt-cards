@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>F.P.T Cards · Yu-Gi-Oh! private duel preview</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/css/yugioh-simulator.css">
+</head>
+<body data-game="yugioh" data-page="simulator">
+  <main class="app-shell">
+    <aside class="sidebar"><h1>F.P.T Cards</h1><nav><button data-page="more" class="active">Altro</button></nav></aside>
+    <section class="app-main"><header class="topbar">F.P.T Cards · Yu-Gi-Oh!</header><section class="page-stage" id="fixture-stage"></section></section>
+    <nav class="mobile-nav"><button data-page="more" class="active">Altro</button></nav>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module">
+    import { YugiohMultiplayer } from '/js/games/yugioh/simulator-multiplayer.js';
+    const params = new URLSearchParams(location.search), member = params.get('member') || 'duel-host';
+    const response = await fetch(`/__duel-fixtures?member=${encodeURIComponent(member)}`);
+    if (!response.ok) throw new Error('Fixture account not found');
+    window.__fixtures = await response.json();
+    window.__context = { member, team:window.__fixtures.teamId, allowed:true };
+    window.__duelResponses = []; window.__toasts = [];
+    window.__render = () => { const root = document.getElementById('fixture-stage'); root.innerHTML = window.__sim.view(); window.__sim.bind(root); };
+    window.__sim = new YugiohMultiplayer({
+      getContext:()=>({...window.__context}), getDecks:()=>window.__fixtures.decks,
+      getMembers:()=>window.__fixtures.members.map(person=>({...person,id:person.slug})),
+      loadDecks:async()=>window.__fixtures.decks, verifyAccess:async()=>window.__context.allowed,
+      requestedDuel:()=>new URLSearchParams(location.search).get('duel') || '',
+      lookupCard:async id=>window.__fixtures.catalog[id] || null,
+      call:async payload=>{
+        const result = await fetch('/api/yugioh-duel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,token:member})});
+        const body = await result.json(); window.__duelResponses.push({op:payload.op,status:result.status,body});
+        if (!result.ok) throw Object.assign(new Error(body.message || body.error || 'Operazione non riuscita'),body,{status:result.status,data:body});
+        return body;
+      },
+      onRender:()=>window.__render(),
+      onToast:message=>{window.__toasts.push(String(message));const toast=document.getElementById('toast');toast.textContent=message;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2500);},
+      confirm:async()=>true
+    });
+    window.__render(); window.__fixtureReady = true;
+    window.addEventListener('pagehide',()=>window.__sim?.reset());
+  </script>
+</body>
+</html>
