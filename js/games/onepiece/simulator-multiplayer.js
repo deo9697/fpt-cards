@@ -1,11 +1,15 @@
 import { OnePieceSimulator } from './simulator.js';
 import { validateSimulatorDeck, PHASES } from './simulator-engine.js';
+import { battlefieldView, canPlace } from './simulator-arena.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const phases = { setup:'Preparazione', refresh:'Refresh', draw:'Draw', don:'DON!!', main:'Main', end:'End' };
 const zones = { leader:'Leader', characters:'Personaggi', stage:'Stage', hand:'Mano', life:'Life', deck:'Mazzo', trash:'Trash' };
 const actionButton = (type, text, player, disabled = false) => `<button type="button" class="btn secondary" data-op-action="${type}" ${player == null ? '' : `data-player="${player}"`} ${disabled ? 'disabled' : ''}>${text}</button>`;
+const initials = name => esc(String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '?');
+const leaderImage = value => { try { const url = new URL(value || '', globalThis.location?.href || 'http://localhost'); return value && ['http:','https:'].includes(url.protocol) ? esc(url.href) : ''; } catch { return ''; } };
+const leaderArt = value => { const src = leaderImage(value); return src && !/['"()\\\s]/.test(src) ? src : ''; };
 const statusNames = { waiting:'Invito in attesa', setup:'Preparazione', playing:'In partita', finished:'Test concluso', declined:'Invito rifiutato', cancelled:'Invito annullato' };
 
 export class OnePieceMultiplayer extends OnePieceSimulator {
@@ -27,6 +31,9 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     this.requested = '';
     this.navigationGeneration = 0;
     this.inspectionGeneration = 0;
+    this.battlePlacing = false;
+    this.battleTools = false;
+    this.battleInspectedCard = null;
   }
   get decks() { return super.decks.filter(deck => deck.persisted !== false && UUID.test(deck.id)); }
   canControl(player) { return player === this.viewer && ['setup','playing'].includes(this.duel?.status); }
@@ -98,7 +105,7 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     const newTable = this.duel?.id !== duel.id || !this.session;
     this.duel = duel; this.viewer = duel.viewer;
     this.session = ['setup','playing','finished'].includes(duel.status) ? duel.state || null : null;
-    if (changed) { this.inspectionGeneration++; this.selected = null; this.pile = null; this.privateLife = null; this.peekLife = [false, false]; }
+    if (changed) { this.inspectionGeneration++; this.selected = null; this.pile = null; this.privateLife = null; this.peekLife = [false, false]; this.battlePlacing = false; this.battleInspectedCard = null; }
     if (newTable && [0, 1].includes(this.viewer)) {
       this.revealHands = [false, false]; this.revealHands[this.viewer] = true;
       this.finishDraft = { winner:String(this.viewer), notes:'' };
@@ -137,45 +144,59 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
   }
   deckOptions(value) { return `<option value="">Scegli il tuo mazzo</option>${this.decks.map(deck => `<option value="${esc(deck.id)}" ${deck.id === value ? 'selected' : ''}>${esc(deck.name)}</option>`).join('')}`; }
   memberName(slug) { return this.lobby.members.find(member => member.slug === slug)?.name || this.options.getMembers?.().find(member => (member.id || member.slug) === slug)?.name || slug; }
+  deckSummary(deck) {
+    if (!deck) return '<div class="op-vs-deck is-empty"><span class="op-vs-deck-art" aria-hidden="true">?</span><div><b>Nessun mazzo scelto</b><small>Scegli uno dei tuoi mazzi One Piece</small></div></div>';
+    const leader = deck.cards?.find(card => card.section === 'leader');
+    const count = (deck.cards || []).filter(card => card.section !== 'leader').reduce((sum, card) => sum + Number(card.quantity || 0), 0);
+    const validation = validateSimulatorDeck(deck);
+    const src = leaderImage(leader?.imageUrl);
+    return `<div class="op-vs-deck">${src ? `<img class="op-vs-deck-art" src="${src}" alt="">` : '<span class="op-vs-deck-art" aria-hidden="true">OP</span>'}<div><b>${leader ? `Leader · ${esc(leader.cardName)}` : esc(deck.name)}</b><small>${count} carte${leader?.colors?.length ? ` · ${esc(leader.colors.join(' / '))}` : ''}</small><small class="${validation.valid ? 'is-valid' : 'is-invalid'}">${validation.valid ? 'Mazzo valido' : 'Mazzo da completare'}</small></div></div>`;
+  }
+  lifePicker(value) {
+    const current = Number(value);
+    return `<div class="op-vs-field"><span>Life del tuo Leader</span><div class="op-vs-seg" role="group" aria-label="Life del tuo Leader">${[4,5,6].map(n => `<button type="button" class="${current === n ? 'is-on' : ''}" data-op-life-pick="${n}" aria-pressed="${current === n}">${n}</button>`).join('')}<label class="op-vs-life-custom"><span class="sr-only">Altro valore di Life</span><input name="lifeCount" type="number" required min="1" max="10" step="1" value="${esc(value)}" aria-label="Life del tuo Leader"></label></div></div>`;
+  }
+  vsCard({ side, eyebrow, name, art = '', body }) {
+    return `<div class="op-vs-card is-${side}" ${art ? `style="--vs-art:url('${art}')"` : ''}><div class="op-vs-who"><span class="op-vs-avatar" aria-hidden="true">${initials(name)}</span><div><small>${eyebrow}</small><strong>${esc(name)}</strong></div></div>${body}</div>`;
+  }
   lobbyView() {
     const opponents = this.lobby.members.filter(member => member.slug !== this.context.member);
     const selected = opponents.find(member => member.slug === this.inviteDraft.opponentSlug);
     const deck = this.decks.find(item => item.id === this.inviteDraft.deckId);
     const validation = deck ? validateSimulatorDeck(deck) : null;
+    const leader = deck?.cards?.find(card => card.section === 'leader');
     const rows = this.lobby.duels.filter(duel => ['waiting', 'setup', 'playing'].includes(duel.status));
-    return `<section class="op-sim-panel surface"><h2>Invita al tavolo</h2><p>Tu scegli il tuo mazzo; il compagno sceglierà il suo quando accetta.</p><form class="op-sim-setup" data-op-invite><fieldset class="op-sim-deck-picker"><legend>Tu · ${esc(this.memberName(this.context.member))}</legend><label>Il tuo mazzo<select name="deckId" required>${this.deckOptions(this.inviteDraft.deckId)}</select></label><label>Life del tuo Leader<input name="lifeCount" type="number" required min="1" max="10" step="1" value="${esc(this.inviteDraft.lifeCount)}"></label>${validation && !validation.valid ? `<p class="op-sim-validation">${validation.errors.map(esc).join('<br>')}</p>` : ''}${!this.decks.length ? '<p>Salva un mazzo One Piece completo nella sezione Mazzi per poter giocare.</p><button type="button" class="btn secondary" data-page="decks">Apri i mazzi</button>' : ''}</fieldset><fieldset class="op-sim-deck-picker"><legend>Il tuo avversario</legend><label>Membro del team<select name="opponentSlug" required><option value="">Scegli un compagno</option>${opponents.map(member => `<option value="${esc(member.slug)}" ${member.slug === this.inviteDraft.opponentSlug ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select></label>${selected ? `<div class="op-sim-member-summary"><span class="op-sim-member-avatar" aria-hidden="true">${esc(selected.name.slice(0, 2).toUpperCase())}</span><div><strong>${esc(selected.name)}</strong><small>${selected.pushEnabled ? 'Notifiche configurate · invito con push' : 'Invito disponibile qui in Altro'}</small></div></div>` : '<p>Scegli una persona del tuo team per invitarla a una partita privata.</p>'}<label>Chi inizia?<select name="firstPlayer"><option value="0" ${this.inviteDraft.firstPlayer === '0' ? 'selected' : ''}>Tu</option><option value="1" ${this.inviteDraft.firstPlayer === '1' ? 'selected' : ''}>Il compagno</option></select></label></fieldset><div class="op-sim-setup-actions"><button type="submit" class="btn" ${this.pending || !this.decks.length || !opponents.length ? 'disabled' : ''}>Invita al tavolo</button></div></form></section><section class="op-sim-lobby"><h2>Inviti e partite</h2>${rows.length ? rows.map(duel => this.invitationView(duel)).join('') : '<div class="op-sim-panel op-sim-empty surface"><p>Nessun invito in attesa. Scegli un compagno per iniziare.</p></div>'}</section>`;
+    const me = this.vsCard({ side:'self', eyebrow:'Tu', name:this.memberName(this.context.member), art:leaderArt(leader?.imageUrl), body:`<label class="op-vs-field"><span>Il tuo mazzo</span><select name="deckId" required>${this.deckOptions(this.inviteDraft.deckId)}</select></label>${this.deckSummary(deck)}${validation && !validation.valid ? `<p class="op-sim-validation">${validation.errors.map(esc).join('<br>')}</p>` : ''}${!this.decks.length ? '<p class="op-vs-note">Salva un mazzo One Piece completo nella sezione Mazzi per poter giocare.</p><button type="button" class="btn secondary" data-page="decks">Apri i mazzi</button>' : ''}` });
+    const them = this.vsCard({ side:'opponent', eyebrow:'Avversario', name:selected?.name || 'Scegli un compagno', body:`<label class="op-vs-field"><span>Membro del team</span><select name="opponentSlug" required><option value="">Scegli un compagno</option>${opponents.map(member => `<option value="${esc(member.slug)}" ${member.slug === this.inviteDraft.opponentSlug ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select></label>${selected ? `<div class="op-vs-deck is-empty op-sim-member-summary"><span class="op-vs-deck-art" aria-hidden="true">?</span><div><b>Mazzo a sorpresa</b><small>${esc(selected.name)} lo sceglie quando accetta</small><small class="op-vs-push ${selected.pushEnabled ? 'is-on' : ''}">${selected.pushEnabled ? 'Notifiche attive · riceve il push' : 'Vede l’invito qui in Altro'}</small></div></div>` : `<p class="op-vs-note">${opponents.length ? 'Scegli una persona del tuo team per invitarla a una partita privata.' : 'Nel team non ci sono altri membri da invitare.'}</p>`}` });
+    const first = this.inviteDraft.firstPlayer === '1' ? '1' : '0';
+    return `<section class="op-sim-panel op-lobby surface"><div class="op-lobby-head"><h2>Invita al tavolo</h2><p>Tu scegli il tuo mazzo; il compagno sceglierà il suo quando accetta.</p></div><form class="op-sim-setup op-lobby-form" data-op-invite><div class="op-versus">${me}<div class="op-vs-mark" aria-hidden="true"><i></i><b>VS</b><i></i></div>${them}</div><div class="op-vs-settings">${this.lifePicker(this.inviteDraft.lifeCount)}<fieldset class="op-vs-field op-vs-first"><legend>Chi inizia?</legend><div class="op-vs-seg"><label class="${first === '0' ? 'is-on' : ''}"><input type="radio" name="firstPlayer" value="0" ${first === '0' ? 'checked' : ''}>Tu</label><label class="${first === '1' ? 'is-on' : ''}"><input type="radio" name="firstPlayer" value="1" ${first === '1' ? 'checked' : ''}>${esc(selected?.name || 'Il compagno')}</label></div></fieldset><div class="op-sim-setup-actions op-vs-cta"><button type="submit" class="btn" ${this.pending || !this.decks.length || !opponents.length ? 'disabled' : ''}>Invita al tavolo</button></div></div></form></section><section class="op-sim-lobby op-lobby-list"><h2>Inviti e partite${rows.length ? ` · ${rows.length}` : ''}</h2>${rows.length ? rows.map(duel => this.invitationView(duel)).join('') : '<div class="op-sim-panel op-sim-empty surface"><p>Nessun invito in attesa. Scegli un compagno per iniziare.</p></div>'}</section>`;
   }
   invitationView(duel) {
     const other = duel.viewer === 0 ? duel.guestName : duel.hostName;
-    return `<article class="op-sim-panel op-sim-invite surface"><div><small>${esc(statusNames[duel.status] || duel.status)}</small><h3>${esc(other)}</h3><p>${duel.viewer === 0 ? 'Il tuo invito' : 'Ti ha invitato a giocare'} · One Piece</p></div><button type="button" class="btn secondary" data-op-open="${esc(duel.id)}" ${this.pending ? 'disabled' : ''}>${duel.status === 'waiting' ? 'Apri invito' : 'Rientra al tavolo'}</button></article>`;
+    const tone = duel.status === 'waiting' ? duel.viewer === 0 ? 'wait' : 'new' : duel.status === 'playing' ? 'play' : 'setup';
+    const chip = { wait:'In attesa', new:'Nuovo invito', play:'In partita', setup:'Preparazione' }[tone];
+    const detail = tone === 'wait' ? `Il tuo invito · ${esc(other)} deve scegliere il mazzo` : tone === 'new' ? 'Ti ha invitato a giocare · One Piece' : [duel.hostDeckName, duel.guestDeckName].filter(Boolean).map(esc).join(' vs ') || 'One Piece';
+    return `<article class="op-sim-panel op-sim-invite op-invite-tile is-${tone} surface"><span class="op-invite-avatar" aria-hidden="true">${initials(other)}</span><div><span class="op-invite-chip">${chip}</span><h3>${esc(other)}</h3><p>${detail}</p></div><button type="button" class="btn secondary" data-op-open="${esc(duel.id)}" ${this.pending ? 'disabled' : ''}>${duel.status === 'waiting' ? 'Apri invito' : 'Rientra al tavolo'}</button></article>`;
   }
   waitingView() {
     const d = this.duel, waiting = d.status === 'waiting';
-    return `<section class="op-sim-panel op-sim-waiting surface"><span class="eyebrow">// Tavolo privato</span><h2>${esc(d.hostName)} vs ${esc(d.guestName)}</h2>${waiting ? d.viewer === 0 ? `<p>Invito inviato. Aspettiamo che ${esc(d.guestName)} scelga il suo mazzo.</p><button type="button" class="btn secondary" data-op-response="cancel" data-duel="${esc(d.id)}" ${this.pending ? 'disabled' : ''}>Annulla invito</button>` : `<p>${esc(d.hostName)} ti invita a un test One Piece. Scegli il tuo mazzo per entrare.</p><form data-op-accept><label>Il tuo mazzo<select name="deckId" required>${this.deckOptions(this.acceptDraft.deckId)}</select></label><label>Life del tuo Leader<input type="number" name="lifeCount" required min="1" max="10" step="1" value="${esc(this.acceptDraft.lifeCount)}"></label><div class="op-sim-actions"><button class="btn" type="submit" ${this.pending || !this.decks.length ? 'disabled' : ''}>Accetta e scegli il mazzo</button><button type="button" class="btn secondary" data-op-response="decline" data-duel="${esc(d.id)}" ${this.pending ? 'disabled' : ''}>Rifiuta invito</button></div></form>` : `<p>${esc(statusNames[d.status] || 'Tavolo non disponibile')}</p>`}<button type="button" class="btn secondary" data-op-command="lobby">Torna agli inviti</button></section>`;
+    if (waiting && d.viewer === 1) {
+      const deck = this.decks.find(item => item.id === this.acceptDraft.deckId), leader = deck?.cards?.find(card => card.section === 'leader');
+      const host = this.vsCard({ side:'opponent', eyebrow:'Ti invita', name:d.hostName, body:`<div class="op-vs-deck is-empty"><span class="op-vs-deck-art" aria-hidden="true">OP</span><div><b>${esc(d.hostDeckName || 'Mazzo One Piece')}</b><small>Ha già scelto il suo mazzo</small></div></div>` });
+      const me = this.vsCard({ side:'self', eyebrow:'Tu', name:d.guestName, art:leaderArt(leader?.imageUrl), body:`<label class="op-vs-field"><span>Il tuo mazzo</span><select name="deckId" required>${this.deckOptions(this.acceptDraft.deckId)}</select></label>${this.deckSummary(deck)}` });
+      return `<section class="op-sim-panel op-sim-waiting op-lobby surface"><div class="op-lobby-head"><span class="eyebrow">// Tavolo privato</span><h2>${esc(d.hostName)} ti sfida</h2><p>Scegli il tuo mazzo per entrare nel test One Piece.</p></div><form class="op-lobby-form" data-op-accept><div class="op-versus">${host}<div class="op-vs-mark" aria-hidden="true"><i></i><b>VS</b><i></i></div>${me}</div><div class="op-vs-settings">${this.lifePicker(this.acceptDraft.lifeCount)}<div class="op-sim-actions op-vs-cta"><button class="btn" type="submit" ${this.pending || !this.decks.length ? 'disabled' : ''}>Accetta la sfida</button><button type="button" class="btn secondary" data-op-response="decline" data-duel="${esc(d.id)}" ${this.pending ? 'disabled' : ''}>Rifiuta invito</button></div></div></form><button type="button" class="btn secondary" data-op-command="lobby">Torna agli inviti</button></section>`;
+    }
+    const body = waiting ? `<p>Invito inviato. Aspettiamo che ${esc(d.guestName)} scelga il suo mazzo.</p><button type="button" class="btn secondary" data-op-response="cancel" data-duel="${esc(d.id)}" ${this.pending ? 'disabled' : ''}>Annulla invito</button>` : `<p>${esc(statusNames[d.status] || 'Tavolo non disponibile')}</p>`;
+    const versus = waiting ? `<div class="op-versus">${this.vsCard({ side:'self', eyebrow:'Tu', name:d.hostName, body:`<div class="op-vs-deck is-empty"><span class="op-vs-deck-art" aria-hidden="true">OP</span><div><b>${esc(d.hostDeckName || 'Il tuo mazzo')}</b><small>Pronto per il tavolo</small></div></div>` })}<div class="op-vs-mark" aria-hidden="true"><i></i><b>VS</b><i></i></div>${this.vsCard({ side:'opponent', eyebrow:'In attesa', name:d.guestName, body:'<div class="op-vs-deck is-empty is-pending"><span class="op-vs-deck-art" aria-hidden="true">?</span><div><b>Sta scegliendo il mazzo</b><small>Il tavolo si apre appena accetta</small></div></div>' })}</div>` : '';
+    return `<section class="op-sim-panel op-sim-waiting op-lobby surface"><div class="op-lobby-head"><span class="eyebrow">// Tavolo privato</span><h2>${esc(d.hostName)} vs ${esc(d.guestName)}</h2></div>${versus}${body}<button type="button" class="btn secondary" data-op-command="lobby">Torna agli inviti</button></section>`;
   }
-  tableView() {
-    const s = this.session, d = this.duel, setup = s.phase === 'setup', ended = Boolean(s.result), myTurn = s.activePlayer === this.viewer;
-    return `<div class="op-sim-toolbar"><div><strong>${setup ? 'Preparazione · Mulligan' : `Turno ${s.turn} · ${esc(s.players[s.activePlayer].name)}`}</strong><small>${setup ? 'Controlla la tua mano, poi conferma quando sei pronto.' : myTurn ? 'È il tuo turno. Risolvi manualmente azioni ed effetti.' : 'Turno dell’avversario. Puoi risolvere Counter ed effetti sul tuo campo.'}</small></div><button type="button" class="btn secondary" data-op-command="lobby">Inviti e partite</button></div>${setup ? `<section class="op-sim-panel surface"><div class="op-sim-actions">${actionButton('ready', d.ready?.[this.viewer] ? 'Sei pronto · attesa avversario' : 'Sono pronto · inizia il duello', this.viewer, this.pending || d.ready?.[this.viewer])}</div><p>Le Life vengono distribuite quando entrambi siete pronti.</p></section>` : `<div class="op-sim-phasebar" aria-label="Fasi del turno">${PHASES.map(phase => `<span class="${s.phase === phase ? 'active' : ''}">${phases[phase]}</span>`).join('')}${actionButton('nextPhase', 'Fase successiva', null, this.pending || !myTurn || ended)}${actionButton('nextTurn', 'Passa il turno', null, this.pending || !myTurn || ended)}</div>`}${ended ? `<div class="op-sim-result"><strong>${s.result.winner === 'draw' ? 'Pareggio' : `Vince ${esc(s.players[s.result.winner].name)}`}</strong><p>${esc(s.result.notes)}</p></div>` : ''}${this.opponentStripView()}<div class="op-sim-zones-tabs" role="group" aria-label="Campo da visualizzare">${[['both','Entrambi i campi'],[String(this.viewer),'Il mio campo'],[String(1 - this.viewer),'Avversario']].map(([id, name]) => `<button type="button" class="btn secondary ${this.playerFocus === id ? 'active' : ''}" data-op-side="${id}" aria-pressed="${this.playerFocus === id}">${name}</button>`).join('')}<button type="button" class="btn secondary" data-op-command="cover">Copri le mie carte</button></div><div class="op-sim-layout"><div class="op-sim-table">${[1 - this.viewer, this.viewer].filter(player => this.playerFocus === 'both' || String(player) === this.playerFocus).map(player => this.playerView(player)).join('')}</div>${this.inspectorPanelView()}</div><details class="op-sim-panel op-sim-log surface"><summary>Registro condiviso · ${s.log.length}</summary><ol>${s.log.slice(-70).reverse().map(row => `<li><small>T${row.turn}</small> ${esc(row.text)}</li>`).join('')}</ol></details>${!setup && !ended ? `<details class="op-sim-panel surface"><summary>Concludi il test</summary><form data-op-finish><label>Risultato<select name="winner">${s.players.map((p, i) => `<option value="${i}" ${this.finishDraft.winner === String(i) ? 'selected' : ''}>Vittoria ${esc(p.name)}</option>`).join('')}<option value="draw" ${this.finishDraft.winner === 'draw' ? 'selected' : ''}>Pareggio</option></select></label><label>Note condivise<textarea name="notes" rows="3" maxlength="2000">${esc(this.finishDraft.notes)}</textarea></label><button type="submit" class="btn" ${this.pending ? 'disabled' : ''}>Concludi e registra il risultato</button></form></details>` : ''}`;
-  }
-  opponentStripView() {
-    const player = 1 - this.viewer, p = this.session.players[player];
-    return `<div class="op-sim-opponent-strip"><div><strong>${esc(p.name)}</strong><small>Life ${p.life.length} · Mano ${p.hand.length} · Personaggi ${p.characters.length}/5</small></div><button type="button" class="btn secondary" data-op-side="${player}">Vedi avversario</button></div>`;
-  }
-  inspectorPanelView() {
-    const selected = this.selectedCard();
-    return `${selected ? '<button type="button" class="op-sim-inspector-backdrop" data-op-command="deselect" aria-label="Chiudi azioni carta"></button>' : ''}<aside class="op-sim-inspector op-sim-panel surface ${selected ? 'has-selection' : ''}" tabindex="-1" aria-label="Carta selezionata e azioni">${selected ? '<button type="button" class="btn secondary op-sim-inspector-close" data-op-command="deselect">Chiudi carta</button>' : ''}${this.inspectorView()}</aside>`;
-  }
-  playerView(player) {
-    const p = this.session.players[player], mine = player === this.viewer, setup = this.session.phase === 'setup', disabled = this.pending || !this.canControl(player) || Boolean(this.session.result);
-    const zone = (id, cards) => `<section class="op-sim-zone"><h3 class="op-sim-zone-label">${zones[id]} <span>${cards.length}${id === 'characters' ? '/5' : ''}</span></h3><div class="op-sim-cards">${cards.map(card => this.cardView(card, player)).join('') || '<span class="op-sim-empty-zone">Zona libera</span>'}</div></section>`;
-    const life = mine && this.privateLife?.version === this.duel.version ? this.privateLife.cards : p.life;
-    return `<section class="op-sim-player ${this.session.activePlayer === player ? 'is-active' : ''}" aria-label="Campo ${esc(p.name)}"><header class="op-sim-player-head"><div><h2>${esc(p.name)} <small>${mine ? 'TU' : 'AVVERSARIO'}</small></h2><p>${esc(p.deckName)}</p></div><div class="op-sim-actions">${setup ? actionButton('mulligan', p.mulliganUsed ? 'Mulligan usato' : 'Mulligan', player, disabled || p.mulliganUsed || this.duel.ready?.[player]) : `${actionButton('draw','Pesca 1',player,disabled || !p.deck.length)}${actionButton('refresh','Esegui Refresh',player,disabled)}`}</div></header><div class="op-sim-board-row">${zone('leader',[p.leader])}${zone('characters',p.characters)}${zone('stage',p.stage)}</div><div class="op-sim-piles"><div class="op-sim-pile"><b>Mazzo · ${p.deck.length}</b><div class="op-sim-card-back" aria-hidden="true">FPT</div><button type="button" class="btn secondary" data-op-pile="deck" data-player="${player}" ${!mine || this.pending || setup ? 'disabled' : ''}>Cerca nel mazzo</button>${actionButton('shuffle','Mescola',player,disabled || setup)}</div><div class="op-sim-pile"><b>Life · ${p.life.length}</b><div class="op-sim-cards">${life.map((card, index) => card.hidden ? `<span class="op-sim-card op-sim-card-back" aria-label="Life coperta"><span>${index === 0 ? 'Cima' : index + 1}</span></span>` : `<button type="button" class="op-sim-card" data-op-card="${esc(card.id)}" data-player="${player}">${this.cardFace(card)}</button>`).join('')}</div>${actionButton('takeLife','Life → mano',player,disabled || setup || !p.life.length)}<button type="button" class="btn secondary" data-op-peek="${player}" ${!mine || this.pending || setup ? 'disabled' : ''}>${this.privateLife ? 'Copri Life' : 'Guarda Life (effetto)'}</button>${actionButton('shuffleLife','Mescola Life',player,disabled || setup || p.life.length < 2)}</div><div class="op-sim-pile"><b>Trash · ${p.trash.length}</b>${p.trash.length ? this.cardView(p.trash.at(-1),player) : '<span class="op-sim-empty-zone">Vuoto</span>'}<button type="button" class="btn secondary" data-op-pile="trash" data-player="${player}">Apri trash</button></div></div><div class="op-sim-don"><strong>DON!!</strong>${[['deck','Mazzo'],['active','Attivi'],['rested','Rested']].map(([key, name]) => `<span class="op-sim-don-count">${name} <b>${p.don[key]}</b></span>`).join('')}<span class="op-sim-don-count">Assegnati <b>${[p.leader,...p.characters].reduce((n,c)=>n+c.don,0)}</b></span><div class="op-sim-actions">${[['addDon','+1 DON!!',!p.don.deck],['addDon2','+2 DON!!',p.don.deck < 2],['restDon','Riposa 1',!p.don.active],['activateDon','Attiva 1',!p.don.rested],['returnDon','DON!!− attivo',!p.don.active],['returnRestedDon','DON!!− rested',!p.don.rested]].map(([type,label,empty])=>actionButton(type,label,player,disabled || setup || empty)).join('')}</div></div><section class="op-sim-hand"><div class="op-sim-player-head"><h3 class="op-sim-zone-label">Mano · ${p.hand.length}</h3>${mine ? `<button type="button" class="btn secondary" data-op-hand="${player}">${this.revealHands[player] ? 'Copri mano' : 'Mostra la mia mano'}</button>` : '<small class="op-sim-private">Visibile soltanto al proprietario</small>'}</div><div class="op-sim-cards">${p.hand.map(card=>this.cardView(card,player,!mine || !this.revealHands[player])).join('')}</div></section>${this.pile?.player === player ? `<details open class="op-sim-panel surface"><summary>${zones[this.pile.zone]}</summary><div class="op-sim-cards">${(this.pile.cards || p[this.pile.zone]).map(card=>this.cardView(card,player)).join('')}</div><button type="button" class="btn secondary" data-op-command="close-pile">Chiudi zona</button></details>` : ''}</section>`;
-  }
+  tableView() { return battlefieldView(this); }
   cardView(card, player, hidden = false) {
     if (card.hidden || hidden) return '<span class="op-sim-card op-sim-card-back" aria-label="Carta coperta"><span>FPT</span></span>';
     return super.cardView(card, player, false);
   }
   selectedCard() {
+    if (this.battleInspectedCard && this.battleInspectedCard.version === this.duel?.version && this.battleInspectedCard.card.id === this.selected?.cardId) return this.battleInspectedCard;
     if (this.selected?.player === this.viewer) {
       for (const [zone, cards] of [['deck', this.pile?.zone === 'deck' ? this.pile.cards : []], ['life',this.privateLife?.cards]]) {
         const card = cards?.find(item => item.id === this.selected.cardId);
@@ -197,6 +218,24 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     element.addEventListener('change', event=>{ this.updateDraft(event.target); if (event.target.name === 'opponentSlug' || event.target.name === 'deckId' && event.target.closest('[data-op-invite]')) this.render(); });
     element.addEventListener('submit', event=>{ event.preventDefault(); if (this.allowed()) void this.submit(event.target); });
     element.addEventListener('click', event=>{ const button = event.target.closest('button'); if (button && !button.disabled && this.allowed()) void this.click(button); });
+    element.addEventListener('dragstart', event=>{
+      const card = event.target.closest('[data-op-card][draggable="true"]');
+      if (!card || !this.allowed() || Number(card.dataset.player) !== this.viewer || !event.dataTransfer) return;
+      event.dataTransfer.setData('application/x-fpt-onepiece', JSON.stringify({ cardId:card.dataset.opCard, player:this.viewer, duelId:this.duel.id, version:this.duel.version }));
+      event.dataTransfer.effectAllowed = 'move';
+      this.selected = { cardId:card.dataset.opCard, player:this.viewer };
+    });
+    element.addEventListener('dragover', event=>{ if (event.target.closest('[data-op-slot],[data-op-zone]')?.dataset.player === String(this.viewer)) event.preventDefault(); });
+    element.addEventListener('drop', event=>{
+      const target = event.target.closest('[data-op-slot],[data-op-zone]'); if (!target || !this.allowed() || !event.dataTransfer) return;
+      event.preventDefault();
+      try {
+        const card = JSON.parse(event.dataTransfer.getData('application/x-fpt-onepiece'));
+        if (card.duelId !== this.duel?.id || card.version !== this.duel.version || card.player !== this.viewer) return;
+        this.selected = { cardId:card.cardId, player:card.player };
+        void this.placeBattleCard(Number(target.dataset.player), target.hasAttribute('data-op-slot') ? 'characters' : target.dataset.opZone, Number(target.dataset.opSlot));
+      } catch { /* A drop from outside the private table has no effect. */ }
+    });
   }
   updateDraft(field) {
     if (!this.allowed() || !field.name) return;
@@ -216,6 +255,36 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     if (form.matches('[data-op-finish]') && await this.options.confirm('Concludere il test e condividere questo risultato con l’avversario?')) await this.act({ type:'finish', winner:data.get('winner') === 'draw' ? 'draw' : Number(data.get('winner')), notes:data.get('notes') });
   }
   async click(button) {
+    if (button.dataset.opLifePick) {
+      const draft = button.closest('[data-op-accept]') ? this.acceptDraft : this.inviteDraft;
+      draft.lifeCount = Number(button.dataset.opLifePick); this.render(); return;
+    }
+    if (button.hasAttribute('data-op-slot') || button.hasAttribute('data-op-zone')) {
+      await this.placeBattleCard(Number(button.dataset.player), button.hasAttribute('data-op-slot') ? 'characters' : button.dataset.opZone, Number(button.dataset.opSlot)); return;
+    }
+    if (button.hasAttribute('data-op-card')) {
+      const selected = this.pile && (this.pile.cards || this.session.players[this.pile.player][this.pile.zone]).find(card=>card.id === button.dataset.opCard);
+      this.battleInspectedCard = selected ? { card:selected, zone:this.pile.zone, player:this.pile.player, version:this.duel.version } : null;
+      this.pile = null; this.battlePlacing = false; this.battleTools = false;
+    }
+    const battle = button.dataset.opCommand;
+    if (battle === 'battle-tools' || battle === 'battle-tools-close') { this.battleTools = battle === 'battle-tools'; this.selected = null; this.battlePlacing = false; this.render(); return; }
+    if (battle === 'battle-place') { this.battlePlacing = true; this.battleTools = false; this.render(); return; }
+    if (battle === 'battle-to-trash') { const selected=this.selectedCard(); if(selected?.player===this.viewer)await this.act({type:'move',player:this.viewer,cardId:selected.card.id,to:'trash'}); return; }
+    if (battle === 'battle-life' || battle === 'battle-deck' || battle === 'battle-trash') {
+      const player=Number(button.dataset.player), zone=battle.slice('battle-'.length);
+      this.selected=null;this.battlePlacing=false;this.battleTools=false;
+      this.pile={player,zone,cards:zone==='life' && this.privateLife?.version===this.duel.version ? this.privateLife.cards : undefined};this.render();return;
+    }
+    if (battle === 'battle-inspect-deck' || battle === 'battle-inspect-life') {
+      this.battleTools=false;
+      const zone=battle.endsWith('life')?'life':'deck';
+      const target={dataset:{opPile:zone==='deck'?'deck':undefined,opPeek:zone==='life'?String(this.viewer):undefined,player:String(this.viewer)},hasAttribute:name=>zone==='life' && name==='data-op-peek'};
+      await this.click(target);
+      if (zone==='life' && this.privateLife) { this.pile={player:this.viewer,zone,cards:this.privateLife.cards};this.render(); }
+      return;
+    }
+    if (battle === 'deselect') { this.battlePlacing=false;this.battleInspectedCard=null; }
     if (button.dataset.opOpen) { await this.open(button.dataset.opOpen); return; }
     if (button.dataset.opResponse) { await this.perform({ op:button.dataset.opResponse, duelId:button.dataset.duel, expectedVersion:this.duel.version, requestId:crypto.randomUUID() }); return; }
     if (button.dataset.opCommand === 'lobby') {
@@ -241,5 +310,10 @@ export class OnePieceMultiplayer extends OnePieceSimulator {
     if (['cover','close-pile'].includes(button.dataset.opCommand) || button.hasAttribute('data-op-side')) { this.inspectionGeneration++; this.privateLife = null; }
     if (button.dataset.opCommand === 'reload') { this.ready = false; await this.initialize(); return; }
     await super.click(button);
+  }
+  async placeBattleCard(player, destination, slot) {
+    if (!canPlace(this,player,destination) || this.pending) { this.error='Seleziona una tua carta adatta a questa zona.';this.render();return; }
+    const selected=this.selectedCard();
+    await this.act({type:'move',player,cardId:selected.card.id,to:destination,...(destination==='characters'?{slot}:{})});
   }
 }

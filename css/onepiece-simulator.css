@@ -321,3 +321,77 @@
   .op-simulator.is-playing .op-sim-tabs button { font-size: .61rem; }
   .op-simulator.is-playing :is(.op-sim-player-head .btn, .op-sim-zones-tabs .btn, .op-sim-don .btn, .op-sim-pile > .btn) { font-size: .62rem; }
 }
+
+/* ---- Versus lobby (2026-11-10): player cards around a neon VS, segmented settings, status-tone invite tiles ---- */
+.op-simulator .op-lobby { --vs-cyan: #4fd8ff; display: grid; gap: 18px; }
+.op-simulator .op-lobby-head { display: grid; gap: 6px; }
+.op-simulator .op-lobby-head h2 { margin: 0; }
+.op-simulator .op-lobby-head p { margin: 0; }
+.op-simulator .op-lobby-form, .op-simulator .op-sim-setup.op-lobby-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.op-simulator .op-versus { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 18px; align-items: stretch; }
+.op-simulator .op-vs-card { --vs: var(--vs-cyan); position: relative; isolation: isolate; display: grid; align-content: start; gap: 14px; min-width: 0; padding: 18px; overflow: hidden; border: 1px solid var(--vs); background: var(--fpt-panel); clip-path: var(--fpt-cut); box-shadow: inset 0 0 30px color-mix(in srgb, var(--vs) 14%, transparent); }
+.op-simulator .op-vs-card.is-opponent { --vs: var(--fpt-pink); }
+.op-simulator .op-vs-card::before { content: ''; position: absolute; z-index: -2; inset: 0; background: var(--vs-art, none) 70% 18% / cover no-repeat; opacity: .36; filter: saturate(1.15); -webkit-mask-image: linear-gradient(90deg, transparent 15%, #000 90%); mask-image: linear-gradient(90deg, transparent 15%, #000 90%); }
+.op-simulator .op-vs-card::after { content: ''; position: absolute; z-index: -1; inset: 0; background: repeating-linear-gradient(0deg, #ffffff05 0 1px, transparent 1px 3px); pointer-events: none; }
+.op-simulator .op-vs-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.op-simulator .op-vs-avatar { display: grid; flex: none; place-items: center; width: 56px; height: 56px; border: 2px solid var(--vs); background: var(--fpt-panel-2); box-shadow: 0 0 14px color-mix(in srgb, var(--vs) 45%, transparent); color: var(--vs); font: 900 1rem var(--fpt-mono); }
+.op-simulator .op-vs-who > div { display: grid; gap: 3px; min-width: 0; }
+.op-simulator .op-vs-who small { color: var(--vs); font: 800 .56rem var(--fpt-mono); letter-spacing: .14em; text-transform: uppercase; }
+.op-simulator .op-vs-who strong { overflow: hidden; font: 700 1.1rem/1.2 'Cinzel FPT', Georgia, serif; letter-spacing: .03em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.op-simulator .op-vs-field { display: grid; gap: 7px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.op-simulator .op-vs-field > span, .op-simulator .op-vs-field > legend { padding: 0; color: var(--muted); font: 700 .58rem var(--fpt-mono); letter-spacing: .1em; text-transform: uppercase; }
+.op-simulator .op-vs-card select { width: 100%; border-color: color-mix(in srgb, var(--vs) 55%, var(--fpt-line)); background-color: #07060de0; }
+.op-simulator .op-vs-deck { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px; border: 1px solid var(--fpt-line); background: #07060dd0; }
+.op-simulator .op-vs-deck.is-empty { border-style: dashed; }
+.op-simulator .op-vs-deck-art { display: grid; flex: none; place-items: center; width: 46px; aspect-ratio: 63 / 88; object-fit: cover; border: 1px solid var(--fpt-gold); box-shadow: 0 0 10px #e8b84f55; color: var(--vs); font: 900 .85rem var(--fpt-mono); }
+.op-simulator .op-vs-deck.is-empty .op-vs-deck-art { border: 1px dashed var(--vs); box-shadow: none; }
+.op-simulator .op-vs-deck.is-pending .op-vs-deck-art { animation: op-vs-wait 1.8s ease-in-out infinite; }
+.op-simulator .op-vs-deck > div { display: grid; gap: 3px; min-width: 0; }
+.op-simulator .op-vs-deck b { overflow: hidden; font: 800 .74rem var(--fpt-mono); text-overflow: ellipsis; white-space: nowrap; }
+.op-simulator .op-vs-deck small { color: var(--muted); font: 600 .62rem var(--fpt-mono); }
+.op-simulator .op-vs-deck small.is-valid { color: var(--fpt-ok); }
+.op-simulator .op-vs-deck small.is-invalid { color: var(--fpt-danger); }
+.op-simulator .op-vs-deck small.is-valid::before { content: '◆ '; }
+.op-simulator .op-vs-push { display: flex; align-items: center; gap: 6px; }
+.op-simulator .op-vs-push.is-on::before { content: ''; width: 6px; height: 6px; background: var(--fpt-ok); transform: rotate(45deg); box-shadow: 0 0 6px var(--fpt-ok); }
+.op-simulator .op-vs-note { margin: 0; color: var(--muted); font-size: .78rem; }
+.op-simulator .op-vs-mark { display: grid; align-content: center; justify-items: center; gap: 8px; }
+.op-simulator .op-vs-mark b { color: var(--fpt-gold); font: 900 2.1rem/1 'Cinzel FPT', Georgia, serif; letter-spacing: .06em; text-shadow: 0 0 6px #e8b84f, 0 0 22px #e8b84f99; }
+.op-simulator .op-vs-mark i { width: 1px; height: 56px; background: linear-gradient(transparent, var(--fpt-violet), transparent); box-shadow: 0 0 8px var(--fpt-violet); }
+.op-simulator .op-vs-settings { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: end; gap: 18px; }
+.op-simulator .op-vs-seg { display: flex; flex-wrap: wrap; border: 1px solid var(--fpt-line); }
+.op-simulator .op-vs-seg > button, .op-simulator .op-vs-seg > label { display: grid; place-items: center; min-width: 46px; min-height: 44px; margin: 0; padding: 8px 12px; border: 0; border-left: 1px solid var(--fpt-line); border-radius: 0; background: var(--fpt-panel); color: var(--muted); font: 800 .7rem var(--fpt-mono); cursor: pointer; }
+.op-simulator .op-vs-seg > :first-child { border-left: 0; }
+.op-simulator .op-vs-seg > :is(button.is-on, label:has(input:checked)) { background: var(--fpt-gold); color: #120d02; box-shadow: 0 0 14px #e8b84f66; }
+.op-simulator .op-vs-seg > label input[type='radio'] { position: absolute; opacity: 0; pointer-events: none; }
+.op-simulator .op-vs-seg > label:has(input:focus-visible) { outline: 2px solid var(--fpt-violet-hi); outline-offset: -2px; }
+.op-simulator .op-vs-seg > .op-vs-life-custom { padding: 4px; cursor: auto; }
+.op-simulator .op-vs-life-custom input { width: 58px; min-height: 34px; padding: 4px 6px; border: 0; background: transparent; color: var(--text); font: 800 .72rem var(--fpt-mono); text-align: center; }
+.op-simulator .op-vs-cta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 0; }
+.op-simulator .op-vs-cta > .btn[type='submit'] { min-height: 48px; padding-inline: 28px; box-shadow: 0 0 24px #e8b84f44; }
+.op-simulator .op-lobby-list { display: grid; gap: 10px; }
+.op-simulator .op-invite-tile { --tone: var(--fpt-gold); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 0; padding: 12px 14px; border: 1px solid var(--fpt-line); border-left: 2px solid var(--tone); background: var(--fpt-panel); }
+.op-simulator .op-invite-tile.is-new { --tone: var(--fpt-pink); box-shadow: 0 0 18px #ff4fd822; animation: op-vs-ping 2.2s ease-in-out infinite; }
+.op-simulator .op-invite-tile.is-play { --tone: var(--fpt-ok); }
+.op-simulator .op-invite-tile.is-setup { --tone: var(--fpt-violet-hi); }
+.op-simulator .op-invite-avatar { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--tone); color: var(--tone); font: 900 .7rem var(--fpt-mono); }
+.op-simulator .op-invite-tile > div { display: grid; gap: 3px; min-width: 0; }
+.op-simulator .op-invite-tile h3 { margin: 0; font: 800 .82rem var(--fpt-mono); text-transform: uppercase; }
+.op-simulator .op-invite-tile p { margin: 0; overflow: hidden; color: var(--muted); font: 600 .62rem var(--fpt-mono); text-overflow: ellipsis; }
+.op-simulator .op-invite-chip { justify-self: start; padding: 2px 7px; border: 1px solid var(--tone); color: var(--tone); font: 800 .52rem var(--fpt-mono); letter-spacing: .12em; text-transform: uppercase; }
+.op-simulator .op-invite-tile > .btn { border-color: var(--tone); color: var(--tone); white-space: nowrap; }
+@keyframes op-vs-ping { 50% { box-shadow: 0 0 26px #ff4fd855; } }
+@keyframes op-vs-wait { 50% { opacity: .35; } }
+@media (max-width: 760px) {
+  .op-simulator .op-versus { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .op-simulator .op-vs-mark { grid-auto-flow: column; align-items: center; }
+  .op-simulator .op-vs-mark i { width: 60px; height: 1px; background: linear-gradient(90deg, transparent, var(--fpt-violet), transparent); }
+  .op-simulator .op-vs-mark b { font-size: 1.4rem; }
+  .op-simulator .op-vs-card { padding: 14px; gap: 10px; }
+  .op-simulator .op-vs-settings { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .op-simulator .op-vs-cta { justify-content: stretch; }
+  .op-simulator .op-vs-cta > .btn { flex: 1 1 100%; }
+  .op-simulator .op-invite-tile { grid-template-columns: auto minmax(0, 1fr); }
+  .op-simulator .op-invite-tile > .btn { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .op-simulator .op-invite-tile.is-new, .op-simulator .op-vs-deck.is-pending .op-vs-deck-art { animation: none; } }

@@ -176,6 +176,9 @@ function onePieceSimulatorView() {
   if (!document.querySelector('link[data-onepiece-simulator]')) {
     const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/onepiece-simulator.css'; link.dataset.onepieceSimulator = 'true'; document.head.append(link);
   }
+  if (!document.querySelector('link[data-onepiece-battlefield]')) {
+    const link=document.createElement('link');link.rel='stylesheet';link.href='css/onepiece-battlefield.css';link.dataset.onepieceBattlefield='true';document.head.append(link);
+  }
   const module = lazyPageModule('onepiece-simulator', 'simulator', () => import('./js/games/onepiece/simulator-multiplayer.js'));
   if (!module) return lazyLoadingView('Simulatore One Piece');
   const context = onePieceSimulatorContext();

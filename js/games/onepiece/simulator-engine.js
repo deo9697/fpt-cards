@@ -58,7 +58,8 @@ function snapshotCard(card, id) {
     don: 0,
     rested: false,
     powerModifier: 0,
-    faceUp: false
+    faceUp: false,
+    slot: null
   };
 }
 
@@ -126,6 +127,25 @@ export function createSession({ decks, firstPlayer = 0, life = [5, 5], names = [
 
 function boardCards(player) { return [player.leader, ...player.characters, ...player.stage]; }
 function allCards(player) { return [player.leader, ...ZONES.flatMap(zone => player[zone])]; }
+
+// Positions belong to cards, so removing a Character never shifts its neighbours.
+// Earlier saves have no slot: reserve explicit positions before placing those
+// legacy cards in their original order into the remaining spaces.
+export function characterSlots(player) {
+  const slots = Array(5).fill(null);
+  const legacy = [];
+  for (const card of Array.isArray(player?.characters) ? player.characters : []) {
+    if (card?.slot === undefined || card?.slot === null) legacy.push(card);
+    else if (integer(card.slot, 0, 4) && slots[card.slot] === null) slots[card.slot] = card;
+  }
+  for (const card of legacy) {
+    const slot = slots.indexOf(null);
+    if (slot === -1) break;
+    slots[slot] = card;
+  }
+  return slots;
+}
+
 function findCard(player, id, boardOnly = false) {
   if (player.leader.id === id) return { card: player.leader, zone: 'leader', index: 0 };
   for (const zone of boardOnly ? ['characters', 'stage'] : ZONES) {
@@ -150,6 +170,11 @@ export function validateSession(session) {
       if (!player.leader || player.leader.id !== `p${index}-leader`) { errors.push('Leader non valido.'); continue; }
       const cards = allCards(player);
       if (cards.length !== 51) errors.push('Il salvataggio ha perso o duplicato carte.');
+      const occupiedSlots = new Set();
+      for (const card of player.characters) if (integer(card?.slot, 0, 4)) {
+        if (occupiedSlots.has(card.slot)) errors.push('Due Personaggi occupano la stessa posizione.');
+        occupiedSlots.add(card.slot);
+      }
       let attached = 0;
       for (const card of cards) {
         if (!card || !text(card.id, 100) || seen.has(card.id) || !text(card.catalogCardId, 100) || !card.catalogCardId.trim() || !text(card.cardName, 300) || !card.cardName.trim()) { errors.push('Identità delle carte non valida.'); continue; }
@@ -157,6 +182,7 @@ export function validateSession(session) {
         if (card.id !== `p${index}-leader` && !new RegExp(`^p${index}-main-(?:[0-9]|[1-4][0-9])$`).test(card.id)) errors.push('Una carta appartiene a un altro lato.');
         if (!integer(card.don, 0, 10) || typeof card.rested !== 'boolean' || !integer(card.powerModifier, -1000000, 1000000)) errors.push('Stato di una carta non valido.');
         if (card.faceUp !== undefined && typeof card.faceUp !== 'boolean') errors.push('Orientamento di una carta non valido.');
+        if (card.slot !== undefined && card.slot !== null && (!integer(card.slot, 0, 4) || !player.characters.includes(card))) errors.push('Posizione di un Personaggio non valida.');
         if (!text(card.imageUrl, 2000) || !text(card.printingId, 100) || !text(card.type, 100) || !text(card.text, 10000) || !Array.isArray(card.colors) || card.colors.length > 6 || card.colors.some(color => !text(color, 30))) errors.push('Metadati di una carta non validi.');
         if ((card.cost !== null && (!Number.isFinite(card.cost) || Math.abs(card.cost) > 1000000)) || (card.power !== null && (!Number.isFinite(card.power) || Math.abs(card.power) > 1000000))) errors.push('Valori di una carta non validi.');
         attached += card.don;
@@ -186,6 +212,7 @@ export function applyAction(session, action) {
   if (!action || typeof action.type !== 'string') fail('Azione non valida.');
   if (session.result) fail('La partita è conclusa. Annulla il risultato per riprendere.');
   const next = clone(session);
+  for (const side of next.players) characterSlots(side).forEach((card, slot) => { if (card) card.slot = slot; });
   const at = new Date().toISOString();
   let message = '';
   let playerIndex = null;
@@ -219,10 +246,17 @@ export function applyAction(session, action) {
     case 'move': {
       if (!ZONES.includes(action.to)) fail('Zona di destinazione non valida.');
       if (action.position !== undefined && !['top', 'bottom'].includes(action.position)) fail('Posizione non valida.');
+      if (action.slot !== undefined && (action.to !== 'characters' || !integer(action.slot, 0, 4))) fail('La posizione del Personaggio deve essere un intero tra 0 e 4.');
       const found = findCard(player, action.cardId);
       if (found.zone === 'leader') fail('Il Leader resta nella sua area.');
       if (action.to === 'characters' && found.zone !== 'characters' && player.characters.length >= 5) fail('Ci sono già 5 Personaggi: spostane prima uno nel trash.');
       if (action.to === 'stage' && found.zone !== 'stage' && player.stage.length >= 1) fail('È già presente uno Stage: spostalo prima nel trash.');
+      let targetSlot = null;
+      if (action.to === 'characters') {
+        const slots = characterSlots(player);
+        targetSlot = action.slot ?? (found.zone === 'characters' ? found.card.slot : slots.indexOf(null));
+        if (slots[targetSlot] && slots[targetSlot].id !== found.card.id) fail('La posizione scelta è già occupata da un Personaggio.');
+      }
       const [card] = player[found.zone].splice(found.index, 1);
       const hidden = ['deck', 'hand', 'life'];
       const concealed = hidden.includes(found.zone) && hidden.includes(action.to) && !(found.zone === 'life' && card.faceUp);
@@ -232,6 +266,7 @@ export function applyAction(session, action) {
         card.rested = false;
         card.powerModifier = 0;
       }
+      card.slot = targetSlot;
       if (['deck', 'hand', 'life'].includes(action.to)) card.faceUp = false;
       if (action.position === 'bottom' || !['deck', 'life'].includes(action.to)) player[action.to].push(card);
       else player[action.to].unshift(card);

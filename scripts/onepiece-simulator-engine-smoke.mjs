@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createSession, applyAction, validateSimulatorDeck, validateSession, PHASES, ZONES } from '../js/games/onepiece/simulator-engine.js';
+import { createSession, applyAction, characterSlots, validateSimulatorDeck, validateSession, PHASES, ZONES } from '../js/games/onepiece/simulator-engine.js';
 
 const fixture = suffix => ({
   id: `deck-${suffix}`, name: `Test ${suffix}`, game: 'onepiece',
@@ -48,6 +48,7 @@ assert.equal(session.activePlayer, 1);
 assert.equal(session.players[0].hand.length, 5);
 assert.equal(session.players[0].deck.length, 45);
 assert.equal(session.players[0].life.length, 0, 'Life not dealt before mulligan');
+assert.ok(session.players.every(player => [player.leader, ...ZONES.flatMap(zone => player[zone])].every(card => card.slot === null)), 'cards begin without a Character position');
 assert.equal(new Set(session.players.flatMap(player => [player.leader, ...ZONES.flatMap(zone => player[zone])]).map(card => card.id)).size, 102);
 assert.throws(() => act(session, 'draw'), /preparazione/);
 session = act(session, 'mulligan');
@@ -190,8 +191,64 @@ assert.deepEqual(session.players[0].life.map(card => card.id).sort(), lifeCards)
 assert.throws(() => act(session, 'shuffle', { zone: 'hand' }), /mescolare/);
 integrity(session);
 
+// A five-position battlefield keeps holes and does not detach DON!! on a reposition.
+let field = started();
+const [rightId, middleId, leftId, refillId] = field.players[0].hand.map(card => card.id);
+field = act(field, 'move', { cardId: rightId, to: 'characters', slot: 4 });
+field = act(field, 'move', { cardId: middleId, to: 'characters', slot: 2 });
+field = act(field, 'move', { cardId: leftId, to: 'characters' });
+const slotIds = value => characterSlots(value.players[0]).map(card => card?.id ?? null);
+assert.deepEqual(slotIds(field), [leftId, null, middleId, null, rightId], 'explicit slots are reserved and default play takes the first free one');
+const occupiedBefore = clone(field);
+assert.throws(() => act(field, 'move', { cardId: leftId, to: 'characters', slot: 2 }), /occupata/);
+assert.throws(() => act(field, 'move', { cardId: refillId, to: 'characters', slot: 4 }), /occupata/);
+assert.deepEqual(field, occupiedBefore, 'a rejected occupied-slot move never changes cards or positions');
+for (const slot of [-1, 5, 1.2, '1', null, NaN, Infinity]) assert.throws(() => act(field, 'move', { cardId: refillId, to: 'characters', slot }), /posizione/);
+assert.throws(() => act(field, 'move', { cardId: leftId, to: 'trash', slot: 0 }), /posizione/);
+field = act(field, 'addDon', { count: 4 });
+field = act(field, 'attachDon', { cardId: leftId, count: 2 });
+field = act(field, 'toggleRest', { cardId: leftId });
+field = act(field, 'power', { cardId: leftId, delta: 1500 });
+const resourcesBeforeReposition = clone(field.players[0].don);
+field = act(field, 'move', { cardId: leftId, to: 'characters', slot: 3 });
+assert.deepEqual(slotIds(field), [null, null, middleId, leftId, rightId]);
+assert.deepEqual(field.players[0].don, resourcesBeforeReposition, 'moving between Character positions never refunds DON!!');
+assert.equal(characterSlots(field.players[0])[3].don, 2);
+assert.equal(characterSlots(field.players[0])[3].rested, true);
+assert.equal(characterSlots(field.players[0])[3].powerModifier, 1500);
+field = act(field, 'move', { cardId: leftId, to: 'characters' });
+assert.equal(characterSlots(field.players[0])[3].id, leftId, 'a Character move without a requested slot keeps its current position');
+field = act(field, 'move', { cardId: middleId, to: 'trash' });
+assert.deepEqual(slotIds(field), [null, null, null, leftId, rightId], 'KO leaves the other Characters in place');
+assert.equal(field.players[0].trash.find(card => card.id === middleId).slot, null);
+field = act(field, 'move', { cardId: refillId, to: 'characters' });
+assert.deepEqual(slotIds(field), [refillId, null, null, leftId, rightId], 'the next default play fills the first empty position');
+field = act(field, 'move', { cardId: leftId, to: 'trash' });
+assert.deepEqual(slotIds(field), [refillId, null, null, null, rightId]);
+assert.equal(field.players[0].trash.find(card => card.id === leftId).slot, null);
+assert.equal(field.players[0].don.rested, 2, 'leaving the Character area still returns attached DON!! rested');
+assert.deepEqual(slotIds(JSON.parse(JSON.stringify(field))), slotIds(field), 'position gaps survive a saved-session round trip');
+integrity(field);
+
+// Existing games load without migrating the save, then normalize only a cloned action state.
+const legacySlots = clone(occupiedBefore);
+for (const player of legacySlots.players) for (const card of [player.leader, ...ZONES.flatMap(zone => player[zone])]) delete card.slot;
+const legacyBefore = clone(legacySlots);
+assert.equal(validateSession(legacySlots).valid, true, 'earlier version-1 saves without slots remain valid');
+assert.deepEqual(slotIds(legacySlots), [rightId, middleId, leftId, null, null], 'legacy Characters retain array order when first assigned positions');
+assert.deepEqual(legacySlots, legacyBefore, 'reading legacy positions is pure');
+const normalizedSlots = act(legacySlots, 'nextPhase');
+assert.deepEqual(normalizedSlots.players[0].characters.map(card => card.slot), [0, 1, 2]);
+assert.deepEqual(legacySlots, legacyBefore, 'normalizing an action never mutates the stored input');
+const mixedSlots = clone(legacySlots);
+mixedSlots.players[0].characters[1].slot = 0;
+assert.deepEqual(slotIds(mixedSlots), [middleId, rightId, leftId, null, null], 'explicit slots take priority over legacy fallback positions');
+assert.deepEqual(act(mixedSlots, 'nextPhase').players[0].characters.map(card => card.slot), [1, 0, 2]);
+integrity(normalizedSlots);
+
 // Full Character area requires an explicit discard, never silently loses a card.
 while (session.players[0].characters.length < 5) session = act(session, 'move', { cardId: session.players[0].hand[0].id, to: 'characters' });
+assert.deepEqual(characterSlots(session.players[0]).map(card => card.slot), [0, 1, 2, 3, 4]);
 assert.throws(() => act(session, 'move', { cardId: session.players[0].deck[0].id, to: 'characters' }), /5 Personaggi/);
 
 const manuallyUnchanged = session.players.map(player => ({ don: clone(player.don), hand: player.hand.length, leaderRest: player.leader.rested }));
@@ -219,6 +276,13 @@ for (const tamper of [
   value => { value.players[0].deck[0].don = 1; },
   value => { value.players[0].deck[0].powerModifier = Infinity; },
   value => { value.players[0].life[0].faceUp = 'true'; },
+  value => { value.players[0].characters[1].slot = value.players[0].characters[0].slot; },
+  value => { value.players[0].characters[0].slot = 5; },
+  value => { value.players[0].characters[0].slot = -1; },
+  value => { value.players[0].characters[0].slot = 1.5; },
+  value => { value.players[0].characters[0].slot = '1'; },
+  value => { value.players[0].deck[0].slot = 0; },
+  value => { value.players[0].leader.slot = 0; },
   value => { value.phase = 'fake'; },
   value => { value.players = null; },
   value => { value.log = [{ text: '<script>' }]; },
@@ -263,4 +327,4 @@ for (let round = 0; round < 4; round++) {
     integrity(fuzzed);
   }
 }
-console.log('One Piece simulator engine: setup, mulligan, Life ordering, cards, DON!!, phases, result, save integrity and conservation passed.');
+console.log('One Piece simulator engine: setup, mulligan, Life ordering, fixed Character slots, cards, DON!!, phases, result, save integrity and conservation passed.');
