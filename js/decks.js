@@ -643,7 +643,7 @@ export class DeckController {
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
     root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
     root.querySelector('[data-deck-search-open]')?.addEventListener('click', () => this.openSearch());
-    root.querySelector('[data-deck-search-expand]')?.addEventListener('click', () => { this.searchExpanded = !this.searchExpanded; this.syncSearchSheet(); });
+    root.querySelector('[data-deck-search-scrim]')?.addEventListener('click', event => { event.preventDefault(); root.querySelector('[data-deck-search-close]')?.click(); });
     if (this.searchOpen && root.querySelector?.('[data-deck-search-results]')) { this.syncSearchSheet(); this.renderSearchResultsList(); }
     root.querySelector('[data-deck-search-close]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (!this.searchOpen) return; const ownsEntry = history.state?.deckSearch; this.closeSearch(); this.onRender(); if (ownsEntry) history.back(); });
     root.querySelectorAll('[data-deck-printing]').forEach(button => button.addEventListener('click', () => void this.openPrintingPicker(button.dataset.deckPrinting, button.dataset.deckPrintingSection)));
@@ -948,9 +948,11 @@ export class DeckController {
   // telefono, colonna a destra su PC. Il mazzo resta visibile sopra.
   searchSheet(deck) {
     const isOnePiece = deck.game === 'onepiece';
-    return `<button type="button" class="deck-search-fab ${this.searchOpen ? 'hidden' : ''}" data-deck-search-open>${icon('search')} Cerca carte</button>
+    return `<button type="button" class="deck-search-fab deck-search-tab ${this.searchOpen ? 'hidden' : ''}" data-deck-search-open aria-label="Cerca carte">${icon('search')}<span>Cerca</span></button>
+      <button type="button" class="deck-search-scrim ${this.searchOpen ? 'on' : ''}" data-deck-search-scrim aria-label="Chiudi ricerca" tabindex="-1"></button>
       <section class="deck-search-sheet ${this.searchOpen ? 'open' : ''} ${this.searchExpanded ? 'full' : ''}" data-deck-search-sheet aria-label="Cerca carte">
-        <button type="button" class="deck-search-handle" data-deck-search-expand aria-label="${this.searchExpanded ? 'Riduci' : 'Ingrandisci'} la ricerca"><i></i></button>
+        <i class="deck-search-fx" aria-hidden="true"></i>
+        <div class="deck-search-head"><strong>// Cerca carte</strong></div>
         <div class="deck-search-row"><label class="deck-search-box">${icon('search')}<input data-deck-search autocomplete="off" enterkeyhint="search" placeholder="Cerca una carta…" value="${esc(this.searchQuery || '')}" aria-label="Nome della carta"></label><button type="button" class="deck-search-close" data-deck-search-close aria-label="Chiudi ricerca">×</button></div>
         <p class="deck-search-target" data-deck-search-target>${esc(this.searchTargetText(deck))}</p>
         ${isOnePiece ? '<div data-deck-catalog-filters></div>' : '<div class="deck-mh-chip-scroll deck-result-filters" data-deck-result-filters></div>'}
@@ -995,6 +997,7 @@ export class DeckController {
     document.querySelector('[data-deck-search-sheet]')?.classList.toggle('open', this.searchOpen);
     document.querySelector('[data-deck-search-sheet]')?.classList.toggle('full', this.searchExpanded);
     document.querySelector('[data-deck-search-open]')?.classList.toggle('hidden', this.searchOpen);
+    document.querySelector('[data-deck-search-scrim]')?.classList.toggle('on', this.searchOpen);
     const target = document.querySelector('[data-deck-search-target]'); if (target && deck) target.textContent = this.searchTargetText(deck);
     document.querySelector('.deck-mobile')?.classList.toggle('search-open', this.searchOpen);
   }
@@ -1090,6 +1093,8 @@ export class DeckController {
       const drag = this.resultDrag; if (!drag) return;
       clearTimeout(drag.timer); drag.tile?.classList.remove('is-pressing'); drag.ghost?.remove();
       document.querySelector('.deck-mobile')?.classList.remove('deck-drop-active', 'deck-drop-over');
+      document.querySelector('[data-deck-search-sheet]')?.classList.remove('is-dragging');
+      document.querySelector('[data-deck-search-scrim]')?.classList.remove('is-dragging');
       this.resultDrag = drag.dropped ? { justDropped:true } : null;
       if (drag.dropped) setTimeout(() => { if (this.resultDrag?.justDropped) this.resultDrag = null; }, 400);
     };
@@ -1109,6 +1114,8 @@ export class DeckController {
       ghost.innerHTML = `${drag.card.image ? `<img src="${esc(drag.card.image)}" alt="">` : ''}<span>→ ${esc((labelsFor(deck)[destination] || destination).replace(' Deck', '').toUpperCase())}</span>`;
       document.body.append(ghost); drag.ghost = ghost; move(drag.x, drag.y);
       document.querySelector('.deck-mobile')?.classList.add('deck-drop-active');
+      document.querySelector('[data-deck-search-sheet]')?.classList.add('is-dragging');
+      document.querySelector('[data-deck-search-scrim]')?.classList.add('is-dragging');
       try { navigator.vibrate?.(25); } catch {}
     };
     const move = (x, y) => {

@@ -106,10 +106,14 @@ try {
   const from = await centre(`[data-deck-result-card="${trap}"] .deck-result-art`);
   await touch('touchStart', from.x, from.y); await delay(650);
   if (!await evaluate(`Boolean(document.querySelector('.deck-drag-ghost'))`)) throw new Error('Tenere premuto non prende la carta');
-  for (let i = 1; i <= 12; i++) { await touch('touchMove', from.x, from.y - i * ((from.y - 160) / 12)); await delay(20); }
+  // Il pannello laterale scivola quasi tutto a destra: il mazzo torna visibile e la carta si porta a sinistra.
+  await wait(`document.querySelector('[data-deck-search-sheet]').classList.contains('is-dragging') && document.querySelector('[data-deck-search-sheet]').getBoundingClientRect().left > 250`, 'Durante il trascinamento il pannello non si sposta per mostrare il mazzo');
+  const dropX = 40, dropY = 300;
+  for (let i = 1; i <= 12; i++) { await touch('touchMove', from.x + (dropX - from.x) * i / 12, from.y + (dropY - from.y) * i / 12); await delay(20); }
   if (!await evaluate(`document.querySelector('.deck-mobile').classList.contains('deck-drop-over')`)) throw new Error('Il mazzo non si illumina sotto la carta trascinata');
   await shot('mobile-drag');
-  await touch('touchEnd', from.x, 160); await delay(400);
+  await touch('touchEnd', dropX, dropY); await delay(400);
+  if (await evaluate(`document.querySelector('[data-deck-search-sheet]').classList.contains('is-dragging')`)) throw new Error('Dopo il rilascio il pannello non torna al suo posto');
   await wait(`window.__deck.cards.some(c=>c.catalogCardId===window.__results[${trap}].id&&c.section==='main') && !document.querySelector('.deck-drag-ghost')`, 'La carta trascinata non entra nel mazzo');
   pass('tieni premuto e trascina: la carta segue il dito, il mazzo si illumina, al rilascio entra nel Main');
 
@@ -132,13 +136,19 @@ try {
   await wait(`window.__deck.cards.some(c=>c.catalogCardId===window.__results[4].id&&c.section==='side')`, 'Con la scheda Side aperta la carta non va nel Side');
   pass('scheda Side aperta: destinazione Side indicata su ogni carta e rispettata');
 
-  // 8) nessun pulsante coperto, maniglia, chiusura
+  // 8) nessun pulsante coperto, chiusura con la X e con la parte scura, linguetta e barra "% pronto"
   const blocked = await covered(); if (blocked.length) throw new Error('Pulsanti coperti nel pannello: ' + JSON.stringify(blocked));
-  await tap('[data-deck-search-expand]');
-  await wait(`document.querySelector('[data-deck-search-sheet]').classList.contains('full')`, 'La maniglia non ingrandisce il pannello');
   await tap('[data-deck-search-close]');
   await wait(`!document.querySelector('[data-deck-search-sheet]').classList.contains('open') && !document.querySelector('[data-deck-search-open]').classList.contains('hidden')`, 'La X non chiude il pannello');
-  pass('nessun pulsante coperto, la maniglia ingrandisce, la X chiude e torna "Cerca carte"');
+  await tap('[data-deck-search-open]');
+  await wait(`document.querySelector('[data-deck-search-sheet]').classList.contains('open') && document.querySelector('[data-deck-search-scrim]').classList.contains('on')`, 'La linguetta non riapre il pannello');
+  { const { x, y } = await evaluate(`(()=>{const s=document.querySelector('[data-deck-search-sheet]').getBoundingClientRect();return {x:Math.max(8,s.left/2),y:innerHeight/2};})()`); await touch('touchStart', x, y); await delay(60); await touch('touchEnd', x, y); await delay(300); }
+  await wait(`!document.querySelector('[data-deck-search-sheet]').classList.contains('open')`, 'Toccare la parte scura non chiude il pannello');
+  await delay(350); await shot('mobile-tab-closed');
+  const tab = await evaluate(`(()=>{const t=document.querySelector('[data-deck-search-open]').getBoundingClientRect(),p=document.querySelector('.deck-peek')?.getBoundingClientRect();return {right:Math.round(innerWidth-t.right),width:Math.round(t.width),overlapsPeek:Boolean(p&&!(t.bottom<=p.top||t.top>=p.bottom||t.right<=p.left||t.left>=p.right)),peekDisplay:document.querySelector('.deck-peek')?getComputedStyle(document.querySelector('.deck-peek')).display:'assente'};})()`);
+  if (tab.right !== 0 || tab.width > 40 || tab.overlapsPeek) throw new Error('La linguetta non è sul bordo destro o tocca la barra "% pronto": ' + JSON.stringify(tab));
+  if (tab.peekDisplay === 'none') throw new Error('La barra "% pronto" è stata nascosta');
+  pass('nessun pulsante coperto, chiusura con la X e con la parte scura, linguetta stretta sul bordo destro che non tocca la barra "% pronto"');
 
   // 9) PC: colonna a destra
   await send('Emulation.setTouchEmulationEnabled', { enabled: false });
