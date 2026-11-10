@@ -12,9 +12,12 @@ export async function searchCards(query) {
   const key = value.toLowerCase();
   if (cache.has(key)) return cache.get(key);
   let rows = [];
-  try { rows = await api.onePieceCatalogSearch(value, 60) || []; } catch { rows = []; }
-  const results = groupPrintingsIntoCards(rows).slice(0, 8);
-  cache.set(key, results);
+  // 200 stampe = il massimo che la RPC accetta; raggruppate per carta, senza
+  // più il vecchio tetto di 8 risultati. Le ricerche vuote non si ricordano
+  // (un errore di rete non deve bloccare quel nome fino al ricaricamento).
+  try { rows = await api.onePieceCatalogSearch(value, 200) || []; } catch { rows = []; }
+  const results = groupPrintingsIntoCards(rows);
+  if (results.length) cache.set(key, results);
   return results;
 }
 

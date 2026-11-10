@@ -55,6 +55,8 @@ export class DeckController {
   constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics } = {}) {
     Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics });
     this.cardLevels = {}; this.cardFrames = {}; this.levelsRequest = null;
+    this.searchExpanded = false; this.resultFilter = 'all'; this.resultPeek = -1; this.resultsScroll = 0; this.resultDrag = null;
+    if (typeof document !== 'undefined') this.installResultDrag();
     this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchQuery = ''; this.searchOpen = false; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
     // Import/export OPTCGSim (P1.1) sono un flusso a parte dal generico YDK,
     // non lo riusano: formati e logiche di risoluzione troppo diversi.
@@ -215,9 +217,9 @@ export class DeckController {
     const sheetCard = this.selectedCard ? deck.cards.find(item => item.catalogCardId === this.selectedCard.catalogCardId && item.section === this.selectedCard.section && (item.printingId || null) === (this.selectedCard.printingId || null)) : null;
     if (this.selectedCard && !sheetCard) this.selectedCard = null;
     const isOnePiece = deck.game === 'onepiece';
-    return `<div class="deck-mobile">
+    return `<div class="deck-mobile ${this.searchOpen ? 'search-open' : ''}">
       ${this.editorHeader(deck, total, report)}
-      <div class="deck-mh-search"><label>${icon('search')}<input data-deck-search autocomplete="off" placeholder="Cerca una carta da aggiungere…" value="${esc(this.searchQuery || '')}"><button type="button" class="deck-search-clear ${this.searchOpen ? '' : 'hidden'}" data-deck-search-close aria-label="Chiudi ricerca">×</button></label>${isOnePiece ? '<div data-deck-catalog-filters></div>' : ''}<div data-deck-search-results class="deck-search-results"></div></div>
+      ${this.searchSheet(deck)}
       ${isOnePiece ? this.leaderHero(deck) : `<div class="deck-mh-tabs" role="tablist" aria-label="Sezioni mazzo">${sectionsFor(deck).map(section => `<button type="button" data-deck-section="${section}" class="${this.activeSection === section ? 'active' : ''}" role="tab" aria-selected="${this.activeSection === section}">${labelsFor(deck)[section].replace(' Deck', '')} <i>${sectionTotal(deck, section)}</i></button>`).join('')}</div>`}
       ${deck.game === 'yugioh' ? `<div class="deck-mh-filters" role="group" aria-label="Filtra e ordina"><div class="deck-mh-chip-scroll">${this.typeChips(deck)}</div>${this.sortButton(deck)}</div>${this.typesLoading ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto identificando i tipi delle carte…</div>' : ''}` : isOnePiece ? `<div class="deck-mh-filters" role="group" aria-label="Ordina">${this.sortButton(deck)}</div>${this.costsLoading && this.cardSort === 'cost-asc' ? '<div class="deck-mh-types-loading"><span class="loading-spinner"></span> Sto calcolando i costi…</div>' : this.cardSort === 'manual' ? '<div class="data-note deck-manual-sort-hint">Tieni premuta una carta e trascinala per riordinarla</div>' : ''}` : ''}
       ${isOnePiece ? `<div class="section-head"><h2>Main Deck</h2><small>${sectionTotal(deck, 'main')}/50</small></div>` : ''}
@@ -640,6 +642,9 @@ export class DeckController {
     root.querySelectorAll('[data-deck-box-template]').forEach(button => button.addEventListener('click', () => this.chooseDeckBoxTemplate(button.dataset.deckBoxTemplate)));
     root.querySelectorAll('[data-deck-open]').forEach(button => button.addEventListener('click', () => this.open(button.dataset.deckOpen)));
     root.querySelector('[data-deck-search]')?.addEventListener('input', event => this.search(event.target.value));
+    root.querySelector('[data-deck-search-open]')?.addEventListener('click', () => this.openSearch());
+    root.querySelector('[data-deck-search-expand]')?.addEventListener('click', () => { this.searchExpanded = !this.searchExpanded; this.syncSearchSheet(); });
+    if (this.searchOpen && root.querySelector?.('[data-deck-search-results]')) { this.syncSearchSheet(); this.renderSearchResultsList(); }
     root.querySelector('[data-deck-search-close]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (!this.searchOpen) return; const ownsEntry = history.state?.deckSearch; this.closeSearch(); this.onRender(); if (ownsEntry) history.back(); });
     root.querySelectorAll('[data-deck-printing]').forEach(button => button.addEventListener('click', () => void this.openPrintingPicker(button.dataset.deckPrinting, button.dataset.deckPrintingSection)));
     root.querySelectorAll('[data-deck-printing-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); this.printingPicker = null; this.onRender(); }));
@@ -785,8 +790,7 @@ export class DeckController {
     this.targetSection = 'leader';
     if (!this.searchOpen) { this.searchOpen = true; history.pushState({ deckSearch:true }, '', location.href); }
     this.onRender();
-    this.renderSearchResultsList();
-    setTimeout(() => document.querySelector('[data-deck-search]')?.focus(), 0);
+    this.openSearch();
   }
   setTypeFilter(value) { if (!TYPE_FILTERS.some(f => f.value === value)) return; this.cardTypeFilter = value; this.onRender(); }
   selectCard(catalogCardId, section, printingId = null) { const deck = this.screen === 'team-detail' ? this.activeTeamDeck() : this.active(); if (!deck?.cards.some(item => item.catalogCardId === catalogCardId && item.section === section && (item.printingId || null) === (printingId || null))) return; this.selectedCard = { catalogCardId, section, printingId: printingId || null }; this.missingPanelOpen = false; this.onRender(); }
@@ -884,15 +888,15 @@ export class DeckController {
     if (query.trim().length >= 3 && !this.searchOpen) {
       this.searchOpen = true;
       history.pushState({ deckSearch:true }, '', location.href);
-      // Niente full render qui (romperebbe il focus mentre si digita): la X
-      // va mostrata a mano sull'elemento già in pagina.
-      document.querySelector('[data-deck-search-close]')?.classList.remove('hidden');
+      // Niente full render qui (romperebbe il focus mentre si digita): il
+      // pannello si apre a mano sull'elemento già in pagina.
+      this.syncSearchSheet();
     }
     clearTimeout(this.searchTimer);
     const box = document.querySelector('[data-deck-search-results]');
     if (!box) return;
-    if (query.trim().length < 3) { box.innerHTML = ''; this.searchResults = []; document.querySelector('[data-deck-catalog-filters]')?.replaceChildren(); return; }
-    box.innerHTML = '<span>Ricerca…</span>';
+    if (query.trim().length < 3) { this.searchResults = []; document.querySelector('[data-deck-catalog-filters]')?.replaceChildren(); this.renderSearchResultsList(); return; }
+    box.innerHTML = '<p class="deck-search-hint"><span class="loading-spinner"></span> Ricerca…</p>';
     this.searchTimer = setTimeout(async () => {
       this.searchResults = await this.searchCards(query, this.state.game);
       this.renderSearchResultsList();
@@ -940,20 +944,102 @@ export class DeckController {
     root.querySelectorAll('[data-deck-catalog-color]').forEach(button => button.addEventListener('click', () => { this.toggleCatalogColor(button.dataset.deckCatalogColor); this.renderSearchResultsList(); }));
     root.querySelector('[data-deck-catalog-color-reset]')?.addEventListener('click', () => { this.catalogColorsTouched = true; this.catalogColors = new Set(); this.renderSearchResultsList(); });
   }
+  // Ricerca a pannello (2026-11-10, approvata in artifact): sale dal basso sul
+  // telefono, colonna a destra su PC. Il mazzo resta visibile sopra.
+  searchSheet(deck) {
+    const isOnePiece = deck.game === 'onepiece';
+    return `<button type="button" class="deck-search-fab ${this.searchOpen ? 'hidden' : ''}" data-deck-search-open>${icon('search')} Cerca carte</button>
+      <section class="deck-search-sheet ${this.searchOpen ? 'open' : ''} ${this.searchExpanded ? 'full' : ''}" data-deck-search-sheet aria-label="Cerca carte">
+        <button type="button" class="deck-search-handle" data-deck-search-expand aria-label="${this.searchExpanded ? 'Riduci' : 'Ingrandisci'} la ricerca"><i></i></button>
+        <div class="deck-search-row"><label class="deck-search-box">${icon('search')}<input data-deck-search autocomplete="off" enterkeyhint="search" placeholder="Cerca una carta…" value="${esc(this.searchQuery || '')}" aria-label="Nome della carta"></label><button type="button" class="deck-search-close" data-deck-search-close aria-label="Chiudi ricerca">×</button></div>
+        <p class="deck-search-target" data-deck-search-target>${esc(this.searchTargetText(deck))}</p>
+        ${isOnePiece ? '<div data-deck-catalog-filters></div>' : '<div class="deck-mh-chip-scroll deck-result-filters" data-deck-result-filters></div>'}
+        <div data-deck-search-results class="deck-search-results"></div>
+        <div class="deck-result-peek" data-deck-result-peek-box hidden></div>
+      </section>`;
+  }
+  searchTargetText(deck) {
+    if (deck.game === 'onepiece') return this.targetSection === 'leader' ? 'Le carte toccate diventano il tuo Leader' : 'Le carte vanno nel Main Deck';
+    return this.activeSection === 'side' ? 'Le carte vanno nel Side Deck' : 'Main o Extra in automatico · per il Side apri la scheda Side';
+  }
+  // Dove finisce una carta della ricerca: Yu-Gi-Oh! decide da solo Main/Extra
+  // dal tipo (Fusione, Synchro, Xyz, Link -> Extra) e usa il Side solo se è
+  // la scheda aperta; One Piece usa la sezione puntata (Leader o Main).
+  resultDestination(deck, card) {
+    if (deck.game !== 'yugioh') return this.targetSection;
+    if (this.activeSection === 'side') return 'side';
+    return isExtraDeckCard(card) ? 'extra' : 'main';
+  }
+  resultOwned(deck, card) {
+    const id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
+    const destination = this.resultDestination(deck, card);
+    const cap = copyCap(deck, destination);
+    const used = deck.cards.filter(item => item.catalogCardId === id && (deck.game === 'yugioh' || item.section === destination)).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    return { used, cap, full: used >= cap };
+  }
+  visibleSearchResults(deck) {
+    const list = this.filteredCatalogResults();
+    if (deck.game !== 'yugioh' || this.resultFilter === 'all') return list;
+    return list.filter(card => this.resultFilter === 'extra' ? isExtraDeckCard(card) : !isExtraDeckCard(card) && coarseCardType(card.type || '') === this.resultFilter);
+  }
+  openSearch() {
+    if (!this.searchOpen) { this.searchOpen = true; history.pushState({ deckSearch:true }, '', location.href); }
+    this.syncSearchSheet();
+    this.renderSearchResultsList();
+    setTimeout(() => document.querySelector('[data-deck-search]')?.focus({ preventScroll:true }), 60);
+  }
+  // Aggiorna solo classi e testo del pannello già in pagina: un onRender()
+  // farebbe perdere il focus all'input mentre si scrive.
+  syncSearchSheet() {
+    const deck = this.active();
+    document.querySelector('[data-deck-search-sheet]')?.classList.toggle('open', this.searchOpen);
+    document.querySelector('[data-deck-search-sheet]')?.classList.toggle('full', this.searchExpanded);
+    document.querySelector('[data-deck-search-open]')?.classList.toggle('hidden', this.searchOpen);
+    const target = document.querySelector('[data-deck-search-target]'); if (target && deck) target.textContent = this.searchTargetText(deck);
+    document.querySelector('.deck-mobile')?.classList.toggle('search-open', this.searchOpen);
+  }
+  resultFiltersView(deck, list) {
+    if (deck.game !== 'yugioh') return '';
+    const options = [['all', 'Tutte'], ['monster', 'Mostri'], ['spell', 'Magie'], ['trap', 'Trappole'], ['extra', 'Extra']];
+    return options.map(([value, text]) => `<button type="button" class="chip ${this.resultFilter === value ? 'active' : ''}" data-deck-result-filter="${value}">${text}</button>`).join('') + `<span class="chip deck-result-count">${list.length} risultati</span>`;
+  }
+  renderResultPeek(deck, card) {
+    const box = document.querySelector('[data-deck-result-peek-box]'); if (!box) return;
+    if (!card) { box.hidden = true; box.innerHTML = ''; return; }
+    const owned = this.resultOwned(deck, card), destination = this.resultDestination(deck, card), labels = labelsFor(deck);
+    const yugioh = deck.game === 'yugioh', autoSection = yugioh ? (isExtraDeckCard(card) ? 'extra' : 'main') : this.targetSection;
+    box.innerHTML = `<div class="deck-result-peek-card" role="dialog" aria-label="${esc(card.name)}"><img src="${esc(card.fullImage || card.image || '')}" alt=""><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')} · ${owned.used}/${owned.cap} nel mazzo</small><div class="deck-result-peek-actions"><button type="button" class="btn" data-deck-peek-add="${autoSection}" ${owned.full && destination !== 'side' ? 'disabled' : ''}>+ ${esc((labels[autoSection] || autoSection).replace(' Deck', ''))}</button>${yugioh ? `<button type="button" class="btn secondary" data-deck-peek-add="side" ${owned.full ? 'disabled' : ''}>+ Side</button>` : ''}<button type="button" class="btn secondary deck-result-peek-close" data-deck-peek-close>Chiudi</button></div></div>`;
+    box.hidden = false;
+    box.querySelectorAll('[data-deck-peek-add]').forEach(button => button.addEventListener('click', () => { this.resultPeek = -1; box.hidden = true; this.add(card, button.dataset.deckPeekAdd); }));
+    box.querySelector('[data-deck-peek-close]')?.addEventListener('click', () => { this.resultPeek = -1; this.renderResultPeek(deck, null); });
+  }
   renderSearchResultsList() {
     const deck = this.active();
     const filtersBox = document.querySelector('[data-deck-catalog-filters]');
     if (filtersBox && deck?.game === 'onepiece') { filtersBox.innerHTML = this.catalogFiltersView(deck); this.bindCatalogFilters(filtersBox); }
     const current = document.querySelector('[data-deck-search-results]');
     if (!current) return;
-    const list = this.filteredCatalogResults();
-    current.innerHTML = list.map((card, index) => `<button data-deck-result="${index}">${card.image ? `<img src="${esc(card.image)}" alt="">` : ''}<span><strong>${esc(card.name)}</strong><small>${esc(card.type || 'Carta')}</small></span>${icon('plus')}</button>`).join('') || '<span>Nessuna carta trovata</span>';
-    current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => this.add(list[Number(button.dataset.deckResult)])));
+    const list = this.visibleSearchResults(deck);
+    this.visibleResults = list;
+    const filters = document.querySelector('[data-deck-result-filters]');
+    if (filters && deck) { filters.innerHTML = this.resultFiltersView(deck, list); filters.querySelectorAll('[data-deck-result-filter]').forEach(button => button.addEventListener('click', () => { this.resultFilter = button.dataset.deckResultFilter; this.renderSearchResultsList(); })); }
+    const labels = deck ? labelsFor(deck) : {};
+    const query = String(this.searchQuery || '').trim();
+    current.innerHTML = list.map((card, index) => {
+      const owned = this.resultOwned(deck, card), destination = this.resultDestination(deck, card);
+      const name = (labels[destination] || destination).replace(' Deck', '');
+      return `<div class="deck-result ${owned.full ? 'is-full' : ''}" data-deck-result-card="${index}" data-dest="${esc(destination)}"><button type="button" class="deck-result-art" data-deck-result-peek="${index}" aria-label="Vedi ${esc(card.name)}">${card.image ? `<img src="${esc(card.image)}" alt="" loading="lazy" draggable="false">` : `<span>${esc(card.name)}</span>`}</button><span class="deck-result-dest">${esc(name.toUpperCase())}</span><span class="deck-result-owned">${owned.used}/${owned.cap}</span><button type="button" class="deck-result-add" data-deck-result="${index}" ${owned.full ? 'aria-disabled="true"' : ''} aria-label="Aggiungi ${esc(card.name)} al ${esc(name)}">+<span class="sr-only">${esc(card.name)}</span></button></div>`;
+    }).join('') + (list.length ? '<p class="deck-search-hint">Tocca + per aggiungere · tieni premuta una carta e trascinala nel mazzo · tocca l’immagine per vederla</p>' : `<p class="deck-search-hint">${query.length < 3 ? 'Scrivi il nome di una carta per iniziare.' : this.searchResults.length ? 'Nessuna carta con questi filtri.' : 'Nessuna carta trovata. Prova con una parola sola del nome.'}</p>`);
+    current.querySelectorAll('[data-deck-result]').forEach(button => button.addEventListener('click', () => { const card = list[Number(button.dataset.deckResult)]; if (button.getAttribute('aria-disabled') === 'true') { this.onToast?.(`Hai già il massimo di copie di ${card.name}`); return; } this.add(card); }));
+    current.querySelectorAll('[data-deck-result-peek]').forEach(button => button.addEventListener('click', event => { if (this.resultDrag?.justDropped) { event.preventDefault(); return; } this.resultPeek = Number(button.dataset.deckResultPeek); this.renderResultPeek(deck, list[this.resultPeek]); }));
+    if (this.resultsScroll) { current.scrollTop = this.resultsScroll; this.resultsScroll = 0; }
   }
-  closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchResults = []; this.catalogExpansion = 'all'; this.catalogColorsTouched = false; this.catalogColors = new Set(); clearTimeout(this.searchTimer); }
+  closeSearch() { this.searchOpen = false; this.searchExpanded = false; this.resultPeek = -1; this.resultsScroll = 0; this.searchQuery = ''; this.searchResults = []; this.catalogExpansion = 'all'; this.catalogColorsTouched = false; this.catalogColors = new Set(); clearTimeout(this.searchTimer); }
   add(card, section = this.targetSection, quantity = 1) {
     const deck = this.active(); if (!deck || !card) return;
-    const destination = section === 'main' && isExtraDeckCard(card) ? 'extra' : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
+    // Yu-Gi-Oh!: Main ed Extra si decidono dal tipo, anche con la scheda Extra
+    // aperta (prima una Magia finiva nell'Extra); il Side resta una scelta esplicita.
+    const destination = deck.game === 'yugioh' && (section === 'main' || section === 'extra') ? (isExtraDeckCard(card) ? 'extra' : 'main') : section, id = canonicalCatalogCardId(card.id, deck.game) || String(card.id);
     // One Piece: il Leader è uno slot unico (sostituisce, non si accumula).
     // Una volta scelto, la ricerca torna a targetizzare il Main di default
     // (P1.0 — "Cambia" sulla hero è l'unico modo per riaprirla sul Leader).
@@ -965,6 +1051,7 @@ export class DeckController {
     // righe separate e non vengono toccate qui.
     const existing = deck.cards.find(item => item.catalogCardId === id && item.section === destination && !item.printingId);
     const budget = copyBudget(deck, destination, id, existing);
+    if (budget <= (existing?.quantity || 0)) { this.onToast?.(`Hai già il massimo di copie di ${card.name}`); return; }
     if (existing) { existing.quantity = Math.min(budget, existing.quantity + quantity); existing.banTcg = card.banTcg || existing.banTcg || ''; if (colors) existing.colors = colors; }
     else deck.cards.push({ catalogCardId: id, cardName: card.name, imageUrl: card.fullImage || card.image || '', banTcg: card.banTcg || '', section: destination, quantity: Math.min(budget, quantity), ...(colors ? { colors } : {}) });
     deck.cover = deck.cover || card.fullImage || card.image || '';
@@ -973,15 +1060,88 @@ export class DeckController {
     this.rememberCardLevel(id, card.level, deck);
     this.rememberCardCost(id, card.cost);
     this.markDirty(deck);
+    const doc = typeof document === 'undefined' ? null : document;
+    const typing = doc?.activeElement?.matches?.('[data-deck-search]');
+    this.resultsScroll = doc?.querySelector('[data-deck-search-results]')?.scrollTop || 0;
+    this.lastAddedKey = `${id}:${destination}`;
     this.onRender();
-    // La ricerca resta aperta: dopo il re-render pieno (che rimette l'input
-    // e il box risultati vuoti) ripristina query, focus e la lista appena
-    // aggiunta, così si può continuare ad aggiungere senza ridigitare nulla.
-    if (this.searchOpen) {
+    this.onToast?.(`+1 ${card.name} → ${(labelsFor(deck)[destination] || destination).replace(' Deck', '')}`);
+    try { navigator.vibrate?.(15); } catch {}
+    // La ricerca resta aperta: bind() rimette query e risultati (con lo stesso
+    // scroll). Il focus torna all'input solo se si stava scrivendo, così sul
+    // telefono la tastiera non si riapre a ogni carta aggiunta.
+    if (this.searchOpen && typing) {
       const input = document.querySelector('[data-deck-search]');
-      if (input) { input.focus(); const pos = input.value.length; input.setSelectionRange(pos, pos); }
-      this.renderSearchResultsList();
+      if (input) { input.focus({ preventScroll:true }); const pos = input.value.length; input.setSelectionRange(pos, pos); }
     }
+  }
+  // Tieni premuta una carta dei risultati (~0,45 s) e trascinala sul mazzo:
+  // uno scorrimento veloce resta uno scroll della lista. Touch e mouse.
+  installResultDrag() {
+    const point = event => event.touches?.[0] || event.changedTouches?.[0] || event;
+    const overDeck = (x, y) => {
+      const sheet = document.querySelector('[data-deck-search-sheet]')?.getBoundingClientRect();
+      const area = document.querySelector('.deck-mobile')?.getBoundingClientRect();
+      if (!area || x < area.left || x > area.right || y < 0) return false;
+      if (sheet && x >= sheet.left && x <= sheet.right && y >= sheet.top && y <= sheet.bottom) return false;
+      return true;
+    };
+    const stop = () => {
+      const drag = this.resultDrag; if (!drag) return;
+      clearTimeout(drag.timer); drag.tile?.classList.remove('is-pressing'); drag.ghost?.remove();
+      document.querySelector('.deck-mobile')?.classList.remove('deck-drop-active', 'deck-drop-over');
+      this.resultDrag = drag.dropped ? { justDropped:true } : null;
+      if (drag.dropped) setTimeout(() => { if (this.resultDrag?.justDropped) this.resultDrag = null; }, 400);
+    };
+    const start = (event) => {
+      const tile = event.target.closest?.('[data-deck-result-card]');
+      if (!tile || event.target.closest('[data-deck-result]') || tile.classList.contains('is-full') || (event.button !== undefined && event.button !== 0 && !event.touches)) return;
+      const { clientX:x, clientY:y } = point(event);
+      const card = this.visibleResults?.[Number(tile.dataset.deckResultCard)]; if (!card) return;
+      this.resultDrag = { tile, card, x, y, dragging:false, timer:setTimeout(() => begin(), 450) };
+      tile.classList.add('is-pressing');
+    };
+    const begin = () => {
+      const drag = this.resultDrag; if (!drag || drag.dragging) return;
+      drag.dragging = true; drag.tile.classList.remove('is-pressing');
+      const deck = this.active(), destination = deck ? this.resultDestination(deck, drag.card) : 'main';
+      const ghost = document.createElement('div'); ghost.className = 'deck-drag-ghost';
+      ghost.innerHTML = `${drag.card.image ? `<img src="${esc(drag.card.image)}" alt="">` : ''}<span>→ ${esc((labelsFor(deck)[destination] || destination).replace(' Deck', '').toUpperCase())}</span>`;
+      document.body.append(ghost); drag.ghost = ghost; move(drag.x, drag.y);
+      document.querySelector('.deck-mobile')?.classList.add('deck-drop-active');
+      try { navigator.vibrate?.(25); } catch {}
+    };
+    const move = (x, y) => {
+      const drag = this.resultDrag; if (!drag?.ghost) return;
+      drag.ghost.style.left = `${x}px`; drag.ghost.style.top = `${y}px`;
+      document.querySelector('.deck-mobile')?.classList.toggle('deck-drop-over', overDeck(x, y));
+    };
+    const track = (event) => {
+      const drag = this.resultDrag; if (!drag || drag.justDropped) return;
+      const { clientX:x, clientY:y } = point(event);
+      if (drag.dragging) { if (event.cancelable) event.preventDefault(); move(x, y); return; }
+      if (Math.hypot(x - drag.x, y - drag.y) > 10) stop(); else { drag.x = x; drag.y = y; }
+    };
+    const end = (event) => {
+      const drag = this.resultDrag; if (!drag || drag.justDropped) return;
+      if (drag.dragging) {
+        const { clientX:x, clientY:y } = point(event);
+        drag.dropped = true;
+        const inside = overDeck(x, y), card = drag.card;
+        stop();
+        if (inside) this.add(card); else this.onToast?.('Rilascia la carta sopra il mazzo');
+        return;
+      }
+      stop();
+    };
+    document.addEventListener('touchstart', start, { passive:true });
+    document.addEventListener('touchmove', track, { passive:false });
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', stop);
+    document.addEventListener('mousedown', start);
+    document.addEventListener('mousemove', track);
+    document.addEventListener('mouseup', end);
+    document.addEventListener('contextmenu', event => { if (event.target.closest?.('[data-deck-result-card]')) event.preventDefault(); });
   }
   rememberCardLevel(id, level, deck) {
     if (deck?.game !== 'yugioh' || id in this.cardLevels) return;
@@ -1202,6 +1362,7 @@ function sectionTotal(deck, section) { return deck.cards.filter(card => card.sec
 // (slot unico), 4 per il Main One Piece, 99 (invariato) per tutto il resto.
 function copyCap(deck, section) {
   if (deck?.game === 'onepiece') { if (section === 'leader') return 1; if (section === 'main') return 4; }
+  if (deck?.game === 'yugioh') return 3;
   return 99;
 }
 // Quanto puoi ancora aggiungere a `excludeItem` (riga esistente, o null per
@@ -1209,8 +1370,9 @@ function copyCap(deck, section) {
 // (catalogCardId), non per singola riga printing — 2x regular + 2x parallel
 // dello stesso catalogCardId contano 4, non 2+2 "carte diverse" (Fase 4.1).
 function copyBudget(deck, section, catalogCardId, excludeItem) {
+  // Yu-Gi-Oh!: le 3 copie valgono per Main, Extra e Side insieme.
   const usedElsewhere = deck.cards
-    .filter(card => card.section === section && card.catalogCardId === catalogCardId && card !== excludeItem)
+    .filter(card => (deck.game === 'yugioh' || card.section === section) && card.catalogCardId === catalogCardId && card !== excludeItem)
     .reduce((sum, card) => sum + Number(card.quantity || 0), 0);
   return Math.max(0, copyCap(deck, section) - usedElsewhere);
 }

@@ -64,6 +64,7 @@
     "test:deck-sort": "node scripts/deck-sort-smoke.mjs",
     "test:academy": "node scripts/academy-smoke.mjs",
     "test:onepiece-multicolor": "node scripts/onepiece-multicolor-leader-smoke.mjs",
+    "test:deck-search-sheet": "node scripts/deck-search-sheet-browser-smoke.mjs",
     "test:dashboard-movers": "node scripts/dashboard-movers-smoke.mjs",
     "test:dashboard-trends-browser": "node scripts/dashboard-trends-browser-smoke.mjs",
     "test:deck-image-export-v11-layout": "node scripts/deck-image-export-v11-layout-smoke.mjs",

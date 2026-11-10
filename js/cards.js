@@ -73,6 +73,7 @@ export function catalogImageNeedsRepair(catalogCardId, imageUrl, game = 'yugioh'
   return Boolean(imageId && canonicalCatalogCardId(imageId, game) !== canonicalCatalogCardId(catalogCardId, game));
 }
 
+export const SEARCH_RESULT_LIMIT = 150;
 export async function searchCards(query, game = 'yugioh') {
   const value = query.trim();
   if (value.length < 3) return [];
@@ -88,6 +89,9 @@ export async function searchCards(query, game = 'yugioh') {
   // L'API richiede spesso la punteggiatura ufficiale (es. dell'Incubo).
   // Se la frase non produce risultati, cerchiamo la parola più distintiva e
   // filtriamo/ordiniamo localmente ignorando apostrofi, accenti e trattini.
+  // Le parole possono anche non essere consecutive ("sky raye" -> "Sky Striker
+  // Ace - Raye"): si cerca la parola più distintiva e si tengono le carte che
+  // contengono tutte le parole scritte.
   if (!cards.length) {
     const fallback = fallbackToken(value);
     if (fallback && normalizeName(fallback) !== normalizeName(value)) {
@@ -95,7 +99,10 @@ export async function searchCards(query, game = 'yugioh') {
         requestCards({ fname:fallback, language:'it' }),
         requestCards({ fname:fallback })
       ]);
-      cards = [...italianFallback, ...englishFallback];
+      const words = normalizeName(value).split(' ').filter(word => word.length >= 2);
+      const all = [...italianFallback, ...englishFallback];
+      const every = all.filter(card => { const name = normalizeName(card.name); return words.every(word => name.includes(word)); });
+      cards = every.length ? every : all;
     }
   }
 
@@ -105,8 +112,12 @@ export async function searchCards(query, game = 'yugioh') {
     .sort((a, b) => b.score - a.score || a.card.name.localeCompare(b.card.name, 'it'));
   const unique = new Map();
   ranked.forEach(({ card }) => { if (!unique.has(String(card.id))) unique.set(String(card.id), card); });
-  const results = [...unique.values()].slice(0, 12);
-  cache.set(key, results);
+  // Niente più tetto a 12: il pannello di ricerca mostra tutte le carte
+  // trovate (fino a SEARCH_RESULT_LIMIT, per non appesantire il telefono).
+  const results = [...unique.values()].slice(0, SEARCH_RESULT_LIMIT);
+  // Una ricerca vuota per un problema di rete non va ricordata: altrimenti
+  // quel nome resterebbe senza risultati finché non si ricarica l'app.
+  if (results.length) cache.set(key, results);
   return results;
 }
 
