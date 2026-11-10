@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>F.P.T Cards · One Piece private duel preview</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/css/onepiece-simulator.css">
+</head>
+<body data-game="onepiece" data-page="simulator">
+  <main id="app" class="app-shell">
+    <aside class="sidebar">
+      <div class="brand sidebar-brand"><img src="/icon-384.webp" alt="" width="384" height="384"><div><h1>F.P.T Cards</h1><p>One Piece</p></div></div>
+      <nav id="fixture-sidebar"></nav>
+      <div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger"><span class="avatar" data-fixture-initials></span><div><strong data-fixture-name></strong><small>Membro del team</small></div></button><button type="button" aria-label="Esci" data-fixture-icon="logout"></button></div>
+    </aside>
+    <section class="app-main">
+      <header class="topbar">
+        <div class="game-switcher"><button type="button" class="menu-trigger" aria-label="Scegli gioco"><span data-fixture-icon="menu"></span><span class="game-trigger-chip"><img src="/assets/game-logos/onepiece.webp" alt=""></span></button></div>
+        <button type="button" class="xp-strip" aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV 12</span><span class="xp-bar"><i style="--progress:.56"></i></span><span class="xp-strip-detail">280 / 500 XP</span></span><span class="xp-strip-identity"><span data-fixture-name></span> · Duellante del team</span></button>
+        <button type="button" class="top-icon" aria-label="Notifiche" data-fixture-icon="bell"></button>
+        <button type="button" class="mobile-profile" aria-label="Profilo"><span class="avatar" data-fixture-initials></span></button>
+      </header>
+      <section class="page-stage" id="fixture-stage"></section>
+    </section>
+    <nav id="fixture-mobile" class="nav mobile-nav"></nav>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module">
+    import { OnePieceMultiplayer } from '/js/games/onepiece/simulator-multiplayer.js';
+    import { icon } from '/js/icons.js';
+    const params = new URLSearchParams(location.search);
+    const member = params.get('member') || 'duel-host';
+    const response = await fetch(`/__duel-fixtures?member=${encodeURIComponent(member)}`);
+    if (!response.ok) throw new Error('Fixture account not found');
+    window.__fixtures = await response.json();
+    window.__context = { member, team:window.__fixtures.teamId, allowed:true };
+    window.__duelResponses = [];
+    window.__toasts = [];
+    const desktop = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['stats','trophy','Statistiche'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni'],['more','more','Altro']];
+    const mobile = [['home','home','Home'],['market','chart','Market Watch'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
+    const nav = items => items.map(([id,symbol,label])=>`<button type="button" class="${id==='more'?'active':''}" data-page="${id}"><span>${icon(symbol)}</span>${label}</button>`).join('');
+    document.getElementById('fixture-sidebar').innerHTML = nav(desktop);
+    document.getElementById('fixture-mobile').innerHTML = nav(mobile);
+    document.querySelectorAll('[data-fixture-icon]').forEach(element=>{element.innerHTML=icon(element.dataset.fixtureIcon);});
+    document.querySelectorAll('[data-fixture-name]').forEach(element=>{element.textContent=window.__fixtures.name;});
+    document.querySelectorAll('[data-fixture-initials]').forEach(element=>{element.textContent=window.__fixtures.name.split(' ').map(word=>word[0]).slice(0,2).join('');});
+    window.__render = () => {
+      const root = document.getElementById('fixture-stage');
+      root.innerHTML = window.__sim.view();
+      window.__sim.bind(root);
+    };
+    window.__sim = new OnePieceMultiplayer({
+      getContext:()=>({...window.__context}),
+      getDecks:()=>window.__fixtures.decks,
+      getMembers:()=>window.__fixtures.members.map(person=>({...person,id:person.slug})),
+      loadDecks:async()=>window.__fixtures.decks,
+      verifyAccess:async()=>window.__context.allowed,
+      requestedDuel:()=>new URLSearchParams(location.search).get('duel') || '',
+      lookupCard:async id=>window.__fixtures.catalog[id] || null,
+      call:async payload=>{
+        const result = await fetch('/api/onepiece-duel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,token:member})});
+        const body = await result.json();
+        window.__duelResponses.push({op:payload.op,status:result.status,body});
+        if (!result.ok) throw Object.assign(new Error(body.message || body.error || 'Operazione non riuscita'),body,{status:result.status,data:body});
+        return body;
+      },
+      onRender:()=>window.__render(),
+      onToast:message=>{window.__toasts.push(String(message));const toast=document.getElementById('toast');toast.textContent=message;toast.classList.add('show');},
+      confirm:async()=>true
+    });
+    window.__render();
+    window.__fixtureReady = true;
+    window.addEventListener('pagehide',()=>window.__sim?.reset());
+  </script>
+</body>
+</html>

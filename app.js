@@ -176,13 +176,14 @@ function onePieceSimulatorView() {
   if (!document.querySelector('link[data-onepiece-simulator]')) {
     const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/onepiece-simulator.css'; link.dataset.onepieceSimulator = 'true'; document.head.append(link);
   }
-  const module = lazyPageModule('onepiece-simulator', 'simulator', () => import('./js/games/onepiece/simulator.js'));
+  const module = lazyPageModule('onepiece-simulator', 'simulator', () => import('./js/games/onepiece/simulator-multiplayer.js'));
   if (!module) return lazyLoadingView('Simulatore One Piece');
   const context = onePieceSimulatorContext();
   if (!onePieceSimulator || onePieceSimulator.context.member !== context.member || onePieceSimulator.context.team !== context.team) {
     onePieceSimulator?.reset();
-    onePieceSimulator = new module.OnePieceSimulator({
-      getContext:onePieceSimulatorContext, getDecks:()=>state.decks,
+    onePieceSimulator = new module.OnePieceMultiplayer({
+      getContext:onePieceSimulatorContext, getDecks:()=>state.decks, getMembers:()=>MEMBERS,
+      call:payload=>api.onePieceDuel(payload), requestedDuel:onePieceDuelFromHash, isVisible:()=>page === 'simulator',
       loadDecks:async()=>{ await loadAppControllers(); await decks.load(); },
       verifyAccess:async()=>{ const slug = state.currentUser; const members = await api.teamMembers(); return slug === state.currentUser && canUseOnePieceSimulator() && Array.isArray(members) && members.some(item => (item.slug || item.id) === slug); },
       lookupCard:async id => { const rows = await api.onePieceCatalogSearch(id, 60); return rows?.find(row => String(row.catalog_card_id).toUpperCase() === String(id).toUpperCase())?.game_metadata || null; },
@@ -294,7 +295,8 @@ function installCardImageRecovery() {
     image.classList.add('card-image-unavailable');
   }, true);
 }
-function routeFromHash() { const value = location.hash.replace(/^#\/?/, '').split('/')[0]; return ROUTES.has(value) ? value : 'home'; }
+function routeFromHash() { const value = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0]; return ROUTES.has(value) ? value : 'home'; }
+function onePieceDuelFromHash() { const id = new URLSearchParams(location.hash.split('?')[1] || '').get('duel') || ''; return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : ''; }
 function fastScanModeFromHash(){return location.hash.replace(/^#\/?/,'').split('/')[1]==='review'?'review':'scan';}
 function setFastScanRoute(mode){
   if(mode==='collection'){navigate('collection');return;}
@@ -2713,6 +2715,7 @@ async function login(e) {
     if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
+    if (page === 'simulator' && onePieceDuelFromHash()) state.game = 'onepiece';
     state.role = profile.role;
     state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
     loginDraft = { member:'', pin:'', mode:loginDraft.mode };
@@ -3185,6 +3188,7 @@ async function start() {
     history.replaceState(null, '', '#/home');
     setTimeout(() => toast('Sei già connesso: esci per usare un invito'), 600);
   }
+  if (page === 'simulator' && onePieceDuelFromHash() && state.currentUser && !state.standalone) state.game = 'onepiece';
   installCardImageRecovery();
   installCollectionControls();
   // fastScan.restore() ora gira dentro loadFastScan(), alla prima apertura della pagina Scan.
@@ -3324,6 +3328,8 @@ window.addEventListener('hashchange', () => {
   const joinMatch = location.hash.match(JOIN_HASH);
   if (joinMatch && !state.currentUser) { void startJoin(joinMatch[1]); return; }
   const next = routeFromHash();
+  const switchToOnePiece = next === 'simulator' && onePieceDuelFromHash() && state.currentUser && !state.standalone && state.game !== 'onepiece';
+  if (switchToOnePiece) { state.game = 'onepiece'; saveState(); }
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();
     if(!fastScan)return;
@@ -3331,14 +3337,14 @@ window.addEventListener('hashchange', () => {
     else if(mode==='scan'&&fastScan.phase==='review')void fastScan.start();
     return;
   }
-  if (next === page) return;
+  if (next === page) { if (switchToOnePiece) render(); if (page === 'simulator') void onePieceSimulator?.openRequested(); return; }
   if (page === 'fastscan' && next !== 'fastscan') {
     if(['scanning','paused'].includes(fastScan?.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
     void fastScan?.leave();
   }
   const previous = page;
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
-  if(previous==='fastscan'||page==='fastscan')render();else renderRoute();
+  if(switchToOnePiece||previous==='fastscan'||page==='fastscan')render();else renderRoute();
   dispatchPageEnterRefresh(previous, page);
 });
 // Il dettaglio carta della Raccolta pusha una entry di history senza cambiare
@@ -3392,10 +3398,18 @@ setInterval(() => {
 // invece di navigare da solo, perché è la pagina già aperta a sapere come
 // interpretare la rotta (vedi notificationclick in sw.js).
 navigator.serviceWorker?.addEventListener('message', event => {
-  if (event.data?.type !== 'fpt-notification-click' || !state.currentUser) return;
+  if (event.data?.type !== 'fpt-notification-click') return;
   const url = new URL(event.data.url, location.href);
   const target = url.hash.replace(/^#\//, '').split('?')[0] || 'home';
   const params = new URLSearchParams(url.hash.split('?')[1] || '');
+  if (target === 'simulator' && /^[0-9a-f-]{36}$/i.test(params.get('duel') || '') && !state.standalone) {
+    if (state.currentUser) { state.game = 'onepiece'; saveState(); }
+    const previous = page; page = 'simulator';
+    history.pushState(null, '', `#/simulator?duel=${encodeURIComponent(params.get('duel'))}`);
+    render(); dispatchPageEnterRefresh(previous, page);
+    void onePieceSimulator?.openRequested(); return;
+  }
+  if (!state.currentUser) return;
   if (target === 'market' && params.get('printingId')) { navigate('market'); void loadAppControllers().then(() => { marketWatch.selected = params.get('printingId'); render(true); }).catch(() => {}); }
   else navigate(target);
 });

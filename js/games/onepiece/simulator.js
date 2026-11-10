@@ -35,6 +35,7 @@ export class OnePieceSimulator {
     this.disposed = false;
   }
   allowed() { const context = this.options.getContext(); return !this.disposed && context?.allowed === true && simulatorScope(context) === this.scope; }
+  canControl() { return true; }
   render() { if (this.allowed()) this.options.onRender(); }
   selectCard(player, cardId) {
     this.selected = { player, cardId };
@@ -168,7 +169,7 @@ export class OnePieceSimulator {
     const { card, zone, player } = selected;
     const metadata = this.metadata.get(card.catalogCardId);
     const board = ['leader', 'characters', 'stage'].includes(zone);
-    const finished = Boolean(this.session.result), setup = this.session.phase === 'setup';
+    const finished = Boolean(this.session.result) || !this.canControl(player), setup = this.session.phase === 'setup';
     const effect = metadata?.effect || card.text || '';
     const power = metadata?.power ?? card.power;
     const image = safeImage(card.imageUrl);

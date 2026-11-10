@@ -16,9 +16,17 @@ const authMock = new Function(`${block}\nreturn fakeSupabaseSource;`)()
 const mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8',
   '.css':'text/css; charset=utf-8','.png':'image/png','.webp':'image/webp','.jpg':'image/jpeg',
   '.svg':'image/svg+xml','.woff2':'font/woff2','.webmanifest':'application/manifest+json'};
-const server = http.createServer((req,res) => {
+const server = http.createServer(async (req,res) => {
   const url = new URL(req.url,'http://localhost');
   if (url.pathname === '/test-simulator-supabase.js') {res.setHeader('Content-Type',mime['.js']);res.end(authMock);return;}
+  if (url.pathname === '/api/onepiece-duel') {
+    let raw='';for await (const chunk of req) raw+=chunk;
+    const payload=JSON.parse(raw||'{}');
+    const value=payload.op==='state'
+      ? {duel:{id:payload.duelId,status:'waiting',version:1,viewer:0,hostSlug:'existing-member',guestSlug:'synthetic-guest',hostName:'Existing Member',guestName:'Invited Teammate',ready:[false,false],state:null}}
+      : {members:[{slug:'existing-member',name:'Existing Member',pushEnabled:false}],duels:[],serverTime:'2026-11-10T12:00:00Z'};
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));return;
+  }
   if (url.pathname === '/favicon.ico') {res.writeHead(204).end();return;}
   const file = path.resolve(root,url.pathname === '/' ? 'index.html' : `.${decodeURIComponent(url.pathname)}`);
   if (!file.startsWith(`${root}${path.sep}`)) {res.writeHead(403).end();return;}
@@ -80,10 +88,10 @@ async function run() {
     await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
   };
   const loaded=file=>requested.some(url=>url.split('?')[0]===`${origin}/${file}`);
-  const simulatorFiles=['js/games/onepiece/simulator.js','js/games/onepiece/simulator-engine.js','js/games/onepiece/simulator-storage.js','css/onepiece-simulator.css'];
+  const simulatorFiles=['js/games/onepiece/simulator-multiplayer.js','js/games/onepiece/simulator.js','js/games/onepiece/simulator-engine.js','js/games/onepiece/simulator-storage.js','css/onepiece-simulator.css'];
   await call('Runtime.enable');await call('Network.enable');await call('Page.enable');
   await call('Fetch.enable',{patterns:[{urlPattern:'https://*',requestStage:'Request'}]});
-  await call('Page.addScriptToEvaluateOnNewDocument',{source:"Object.defineProperty(navigator,'serviceWorker',{value:undefined,configurable:true});"});
+  await call('Page.addScriptToEvaluateOnNewDocument',{source:"const sw = new EventTarget(); sw.register = async () => ({update:async()=>{}}); Object.defineProperty(navigator,'serviceWorker',{value:sw,configurable:true});"});
   await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
   await call('Page.navigate',{url:`${origin}/#/home`});
   await waitFor('document.querySelectorAll("#member option").length===3','Login non disponibile');
@@ -138,7 +146,18 @@ async function run() {
   await click('.mobile-nav [data-page="more"]');
   await waitFor('Boolean(document.querySelector(".more-grid"))','Pagina Altro dopo cambio gioco assente');
   assert(!await evaluate('Boolean(document.querySelector(".more-grid [data-page=simulator]"))'),'Voce simulatore rimasta in Altro Yu-Gi-Oh! dopo il cambio gioco');
+  const inviteId='c0000000-0000-4000-8000-000000000001';
+  await evaluate(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'fpt-notification-click',url:'/#/simulator?duel=${inviteId}'}}))`);
+  await waitFor('document.body.dataset.game==="onepiece" && Boolean(document.querySelector(".op-sim-waiting"))','Push non apre la partita One Piece da Yu-Gi-Oh!');
+  assert(await evaluate(`location.hash.includes(${JSON.stringify(inviteId)})`),'Identificativo partita perso dalla notifica');
+  await click('.game-switcher .menu-trigger');await click('[data-game="yugioh"]');
+  await call('Page.navigate',{url:`${origin}/#/simulator?duel=${inviteId}`});
+  await waitFor('document.body.dataset.game==="onepiece" && Boolean(document.querySelector(".op-sim-waiting"))','Apertura diretta invito non riprende One Piece');
+  console.log('PASS invitation push and direct links preserve the selected private duel');
   await click('[data-logout]');await waitFor('Boolean(document.querySelector("#login-form"))','Logout non completato');
+  await evaluate(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'fpt-notification-click',url:'/#/simulator?duel=${inviteId}'}}))`);
+  assert(await evaluate(`location.hash.includes(${JSON.stringify(inviteId)})`),'Notifica ricevuta prima del login persa');
+  assert(!await evaluate('Boolean(document.querySelector(".op-simulator, [data-op-setup], [data-op-action]"))'),'Invito prima del login espone un tavolo');
   await evaluate("location.hash='#/simulator'");await delay(200);
   assert(!await evaluate('Boolean(document.querySelector(".op-simulator, [data-op-setup], [data-op-action]"))'),'Route pubblica espone il tavolo');
   console.log('PASS game switch returns home and logout blocks the private route');

@@ -30,6 +30,25 @@ function unwrap(result) { if (result.error) throw result.error; return result.da
 
 export const api = {
   configured,
+  async onePieceDuel(payload) {
+    ensure();
+    const headers = { 'Content-Type':'application/json' };
+    if (client.auth?.getSession) {
+      try {
+        const { data } = await client.auth.getSession();
+        if (data?.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
+      } catch { /* A legacy PIN session remains valid without a browser Auth session. */ }
+    }
+    let response;
+    try {
+      response = await fetch('/api/onepiece-duel', { method:'POST', cache:'no-store', credentials:'same-origin', headers,
+        body:JSON.stringify({ ...payload, token:token() }), signal:AbortSignal.timeout(20000) });
+    } catch { throw new Error('Il tavolo non è raggiungibile. Controlla la connessione e riprova.'); }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw Object.assign(new Error(data?.message || 'Il tavolo multiplayer non è disponibile. Riprova tra poco.'), { status:response.status, data });
+    if (!data) throw new Error('Risposta del tavolo non valida. Riprova.');
+    return data;
+  },
   async members() { ensure(); return unwrap(await client.rpc('list_login_members')); },
   // Vetrina pubblica del login (solo nome/rarità/immagine/copie, mai i proprietari).
   // Prima della migration login_showcase la RPC non esiste: vetrina vuota.

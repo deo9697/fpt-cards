@@ -14,15 +14,17 @@ Aprire `http://localhost:8080` nel browser.
 
 ## Simulatore manuale One Piece
 
-I membri autenticati del team trovano **Simulatore One Piece** esclusivamente nella pagina **Altro**, quando è selezionato **One Piece**. Su desktop, **Altro** compare anche nella barra laterale della sezione One Piece. Il tavolo è locale, senza multiplayer o link di condivisione. L'accesso verifica l'appartenenza al team tramite le API esistenti; gli account standalone e le raccolte pubbliche non mostrano il simulatore.
+I membri autenticati del team trovano **Simulatore One Piece** esclusivamente nella pagina **Altro**, quando è selezionato **One Piece**. La PWA privilegia lo smartphone: apre il proprio campo, mantiene un riepilogo dell'avversario, usa una mano scorrevole e un pannello touch per le azioni delle carte. Lo stile riprende i pannelli, i caratteri e i colori F.P.T. già presenti nell'app.
 
-Si scelgono due dei propri mazzi (anche lo stesso per un mirror), il primo giocatore e le Life dei Leader. Servono un Leader e 50 carte Main; le 10 risorse DON!! vengono create sul tavolo anche senza carte DON!! nel catalogo. Il setup mescola e pesca 5 carte, consente un mulligan completo per lato e distribuisce le Life all'avvio del duello.
+Il multiplayer è privato: si sceglie un membro attivo del proprio team, il proprio mazzo salvato, le Life e chi inizia. Il compagno riceve l'invito nella lobby e una push se dispone di una sottoscrizione valida e il servizio è configurato. Accetta dal suo dispositivo scegliendo il suo mazzo. Entrambi confermano la mano iniziale, con un mulligan disponibile, prima di distribuire le Life. Le 10 risorse DON!! sono virtuali; il Main deve avere 50 carte e un Leader.
 
-Sono disponibili movimenti tra zone, ricerca e mescolamento del mazzo, Life coperte/scoperte, attivazione/riposo, gestione e assegnazione dei DON!!, modificatori di potere, fasi e turno, registro e annullamento delle ultime 30 azioni. Costi, attacchi, Counter, Trigger, effetti e condizioni di vittoria si risolvono manualmente. La scheda **Regole e ruling** rimanda a regolamento, Q&A ed errata Bandai.
+Movimenti, Life coperte/scoperte, riposo/attivazione, DON!!, modificatori di potere e fasi sono manuali. Costi, attacchi, Counter, Trigger, effetti e vittoria si risolvono tra i giocatori. Il server applica soltanto le operazioni sul proprio campo e protegge carte e risorse; il cambio turno spetta al giocatore attivo. Non viene esposto l'annullamento di mosse condivise. **Regole e ruling** rimanda a regolamento, Q&A ed errata Bandai.
 
-Il tavolo usa `sessionStorage`, separato per team e membro: sopravvive al refresh della stessa scheda e viene rimosso al logout dal menu dell'app. I test conclusi, le note e le copie delle liste usate vengono salvati in `localStorage` per lo stesso profilo/dispositivo (ultimi 100 test), con statistiche e esportazione JSON. Non vengono inviati al database o aggiunti ai match/XP del team. Lo storico locale può essere cancellato dalla scheda **Test e statistiche**.
+La partita condivisa è persistita sul server e si riprende dopo un refresh. L'API `/api/onepiece-duel` verifica la sessione e i due partecipanti a ogni richiesta: gli altri membri non possono leggere il tavolo. Mano avversaria, mazzi e Life coperte non vengono trasmessi al browser; nessuna policy o pubblicazione Realtime espone lo stato completo. Gli aggiornamenti usano versioni atomiche e polling leggero, sospeso a pagina nascosta. Inviti e partite in corso scadono dopo 24 ore; i risultati conclusi restano nello storico privato dei partecipanti, separati dai match/XP.
 
-Verifica: `npm run test:onepiece-simulator` (engine, salvataggi e browser Chrome con dati sintetici). Nessuna migration o dipendenza aggiuntiva richiesta.
+Backend: applicare `supabase/migrations/20261110130001_onepiece_private_multiplayer.sql` prima di pubblicare. La funzione Vercel riusa `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e le variabili VAPID delle push esistenti; nessuna dipendenza aggiuntiva. Le push degli inviti sono inviate direttamente, evitando duplicati con i webhook del centro notifiche.
+
+Verifica completa: `npm run test:onepiece-multiplayer` (schema/RLS, API, due sessioni Chrome indipendenti, interfaccia per smartphone e router). I test usano dati sintetici e non inviano inviti o notifiche reali. `npm run test:onepiece-simulator` conserva i test del motore e dei componenti riutilizzati.
 
 ## Sincronizzazione gratuita con Supabase
 
