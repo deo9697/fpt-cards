@@ -1220,6 +1220,13 @@ body[data-page="home"][data-game="yugioh"] .duel-dashboard::after {
 .deck-image-details label { display:grid;gap:4px;min-width:0;font-size:.8rem;color:var(--muted); }
 .deck-image-details label:first-child { grid-column:1 / -1; }
 .deck-image-details input,.deck-image-details select { width:100%;min-width:0; }
+.deck-image-background { display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 12px;border:1px dashed color-mix(in srgb,var(--fpt-gold,#e8b84f) 45%,transparent);background:#e8b84f08; }
+.deck-image-background.has-image { border-style:solid;border-color:color-mix(in srgb,var(--fpt-gold,#e8b84f) 70%,transparent); }
+.deck-image-background-copy { display:grid;gap:2px;flex:1 1 180px;min-width:0; }
+.deck-image-background-copy strong { color:var(--fpt-gold,#e8b84f);font-family:var(--fpt-mono,monospace);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase; }
+.deck-image-background-copy small { overflow:hidden;color:var(--muted);font-size:.74rem;text-overflow:ellipsis;white-space:nowrap; }
+.deck-image-background .btn { position:relative;min-height:40px;cursor:pointer; }
+.deck-image-background-pick:focus-within { outline:2px solid var(--fpt-violet-hi,#c8a8ff);outline-offset:2px; }
 .deck-image-actions { display:grid;gap:8px; }
 .deck-image-actions .btn { justify-content:center; }
 .card-detail.deck-missing-panel { display:flex;flex-direction:column;overflow:hidden;padding-bottom:max(24px,env(safe-area-inset-bottom)); }

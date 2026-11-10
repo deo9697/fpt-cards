@@ -143,6 +143,60 @@ try {
   if (afterSwitch.busy) throw Error('Il ridisegno dopo lo switch di stile non si è mai concluso: ' + JSON.stringify(afterSwitch));
   console.log('PASS switch Arena FPT/Lista torneo: bottone attivo aggiornato, ridisegno completato');
 
+  // Sfondo personalizzato: un file immagine scelto dall'utente diventa lo sfondo
+  // in entrambi gli stili, sopravvive al cambio stile, si rimuove, e il canvas
+  // resta esportabile (non "tainted").
+  const backgroundResult = await evaluate(`(async()=>{
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const sample = () => { const c = document.querySelector('[data-deck-image-canvas]'); const d = c.getContext('2d').getImageData(540, 60, 1, 1).data; return [d[0], d[1], d[2]]; };
+    const pick = async () => {
+      const src = document.createElement('canvas'); src.width = 1600; src.height = 1200;
+      const g = src.getContext('2d'); g.fillStyle = 'rgb(0,255,0)'; g.fillRect(0, 0, 1600, 1200);
+      const blob = await new Promise(r => src.toBlob(r, 'image/png'));
+      const input = document.querySelector('[data-deck-image-background]');
+      const transfer = new DataTransfer(); transfer.items.add(new File([blob], 'sfondo-verde.png', { type: 'image/png' }));
+      input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+      for (let i = 0; i < 40 && !window.__controller.imageExportDetails.background; i++) await wait(50);
+      await wait(100);
+    };
+    const greenish = ([r, g, b]) => g > r + 25 && g > b + 25;
+    const before = sample();
+    if (!document.querySelector('[data-deck-image-background]')) return { error: 'campo Sfondo personalizzato assente' };
+    await pick();
+    const listAfter = sample();
+    const row = document.querySelector('.deck-image-background');
+    const label = row?.textContent || '';
+    document.querySelector('[data-deck-image-style="arena"]').click();
+    for (let i = 0; i < 40 && window.__controller.imageExportBusy; i++) await wait(50);
+    await wait(300);
+    const arenaAfter = sample();
+    const kept = !!window.__controller.imageExportDetails.background;
+    let exportable = true; try { document.querySelector('[data-deck-image-canvas]').toDataURL('image/png'); } catch { exportable = false; }
+    const blob = await (async () => { let saved = null; const original = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){ saved = this.href; }; await window.__controller.downloadImageExport(); HTMLAnchorElement.prototype.click = original; return saved; })();
+    document.querySelector('[data-deck-image-background-clear]').click();
+    await wait(200);
+    const cleared = sample();
+    return { before, listAfter, arenaAfter, cleared, kept, exportable, downloaded: !!blob, label, listGreen: greenish(listAfter), arenaGreen: greenish(arenaAfter), clearedGreen: greenish(cleared), removed: !window.__controller.imageExportDetails.background && !document.querySelector('[data-deck-image-background-clear]') };
+  })()`);
+  if (backgroundResult.error) throw Error(backgroundResult.error);
+  if (!backgroundResult.listGreen || !backgroundResult.arenaGreen) throw Error('Lo sfondo caricato non compare nell\'immagine: ' + JSON.stringify(backgroundResult));
+  if (!backgroundResult.kept || !backgroundResult.label.includes('sfondo-verde.png')) throw Error('Lo sfondo non resta dopo il cambio stile o il nome file non è mostrato: ' + JSON.stringify(backgroundResult));
+  if (!backgroundResult.exportable || !backgroundResult.downloaded) throw Error('Con lo sfondo personalizzato l\'immagine non si esporta: ' + JSON.stringify(backgroundResult));
+  if (!backgroundResult.removed || backgroundResult.clearedGreen) throw Error('Rimuovi sfondo non ripristina lo sfondo standard: ' + JSON.stringify(backgroundResult));
+  const rejected = await evaluate(`(async()=>{
+    const toasts = []; const original = window.__controller.onToast; window.__controller.onToast = (m) => toasts.push(m);
+    const input = document.querySelector('[data-deck-image-background]');
+    const transfer = new DataTransfer(); transfer.items.add(new File(['non è un\\'immagine'], 'note.txt', { type: 'text/plain' }));
+    input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200)); window.__controller.onToast = original;
+    return { toasts, background: !!window.__controller.imageExportDetails.background };
+  })()`);
+  if (rejected.background || !rejected.toasts.some(message => /immagine/i.test(message))) throw Error('Un file non immagine non viene rifiutato con un avviso: ' + JSON.stringify(rejected));
+  console.log('PASS sfondo personalizzato: foto dell\'utente come sfondo in Lista torneo e Arena FPT, resta al cambio stile, export PNG ok, Rimuovi ripristina, file non immagine rifiutato');
+  // Il resto del test riparte da Lista torneo, come prima di questo blocco.
+  await evaluate(`document.querySelector('[data-deck-image-style="list"]').click()`);
+  await delay(600);
+
   // Download: click deve tentare un <a download> (spy su HTMLAnchorElement.prototype.click).
   const downloadResult = await evaluate(`(async()=>{
     let clicked = false, downloadName = '';

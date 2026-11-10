@@ -8,7 +8,7 @@ import { getGameAdapter } from './games/index.js';
 import { splitOnePieceColors } from './games/onepiece/rules.js';
 import { deckCardIdentityKey, normalizeDeckCardName, deckUsageIndex, deckNamesForCollectionItem } from './deck-usage.js';
 export { deckUsageIndex, deckNamesForCollectionItem };
-import { renderDeckImagePreview, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
+import { loadDeckImageBackground, renderDeckImagePreview, exportDeckImageBlob, downloadDeckImageBlob, canShareDeckImageBlob, shareDeckImageBlob, createDeckImageCache, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } from './deck-image-export.js';
 
 // Chiavi di DECK_BOX_TEMPLATES che richiedono uno sblocco (js/cosmetics.js,
 // deckbox_<key>) invece di essere sempre disponibili — vedi isDeckBoxUnlocked().
@@ -54,7 +54,7 @@ const BAN_LABELS = { limited: 'Limitata a 1 copia', 'semi-limited': 'Semi-limita
 export class DeckController {
   constructor({ api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics } = {}) {
     Object.assign(this, { api, getState, searchCards, findCard, findCardById, cardTypesByIds, cardLevelsByIds, tcgBanlistStatuses, isOnline, onRender, onToast, onLoansChanged, getCosmetics });
-    this.cardLevels = {}; this.levelsRequest = null;
+    this.cardLevels = {}; this.cardFrames = {}; this.levelsRequest = null;
     this.activeId = ''; this.previewId = ''; this.screen = 'gallery'; this.targetSection = 'main'; this.searchResults = []; this.searchQuery = ''; this.searchOpen = false; this.searchTimer = 0; this.importOpen = false; this.coverPickerOpen = false; this.printingPicker = null; this.busy = false; this.error = ''; this.loadInFlight = null;
     // Import/export OPTCGSim (P1.1) sono un flusso a parte dal generico YDK,
     // non lo riusano: formati e logiche di risoluzione troppo diversi.
@@ -310,6 +310,12 @@ export class DeckController {
         const rank = (TYPE_RANK[typeA] ?? 3) - (TYPE_RANK[typeB] ?? 3);
         if (rank) return rank;
         if (typeA === 'monster') {
+          // Extra Deck: Fusione → Synchro → Xyz → Link (richiesta del team 2026-11-10),
+          // poi dal livello/rango/link più alto dentro ogni gruppo.
+          if (a.section === 'extra' && b.section === 'extra') {
+            const byFrame = extraDeckRank(this.cardFrames[a.catalogCardId]) - extraDeckRank(this.cardFrames[b.catalogCardId]);
+            if (byFrame) return byFrame;
+          }
           const levelA = this.cardLevels[a.catalogCardId], levelB = this.cardLevels[b.catalogCardId];
           const byLevel = (typeof levelB === 'number' ? levelB : -1) - (typeof levelA === 'number' ? levelA : -1);
           if (byLevel) return byLevel;
@@ -439,6 +445,11 @@ export class DeckController {
         <label>Piazzamento<select data-deck-image-detail="place">${places.map(place => `<option value="${esc(place)}" ${details.place === place ? 'selected' : ''}>${place || 'Nessuno'}</option>`).join('')}</select></label>
         <label>Data<input type="date" data-deck-image-detail="date" value="${esc(details.date)}"></label>
       </div>
+      <div class="deck-image-background ${details.background ? 'has-image' : ''}">
+        <div class="deck-image-background-copy"><strong>Sfondo personalizzato</strong><small>${details.background ? esc(details.backgroundName || 'Immagine caricata') : 'Usa una tua foto come sfondo dell\u2019immagine. Resta sul tuo dispositivo.'}</small></div>
+        <label class="btn secondary deck-image-background-pick">${details.background ? 'Cambia' : 'Carica sfondo'}<input type="file" accept="image/*" data-deck-image-background class="sr-only"></label>
+        ${details.background ? '<button type="button" class="btn secondary" data-deck-image-background-clear>Rimuovi</button>' : ''}
+      </div>
       <div class="deck-image-actions">
         <button type="button" class="btn wide" data-deck-image-download ${this.imageExportBusy ? 'disabled' : ''}>Scarica PNG</button>
         <button type="button" class="btn secondary wide" data-deck-image-share ${this.imageExportBusy ? 'disabled' : ''}>${icon('share')} Condividi</button>
@@ -460,6 +471,35 @@ export class DeckController {
   }
   // Solo il canvas si ridisegna: un onRender() ricreerebbe il campo che si
   // sta scrivendo, facendo perdere il focus a ogni lettera.
+  async setImageExportBackground(file) {
+    if (!file) return;
+    try {
+      const background = await loadDeckImageBackground(file);
+      this.imageExportDetails = { ...this.imageExportDetails, background, backgroundName: String(file.name || '').slice(0, 60) };
+    } catch (error) { this.onToast?.(error?.message || 'Immagine non valida', 'err'); return; }
+    this.refreshImageExportBackgroundRow();
+  }
+  clearImageExportBackground() {
+    this.imageExportDetails = { ...this.imageExportDetails, background: null, backgroundName: '' };
+    this.refreshImageExportBackgroundRow();
+  }
+  // Come per i campi di testo: si aggiorna solo la riga dello sfondo e si
+  // ridisegna il canvas, senza un onRender() che lo ricreerebbe vuoto.
+  refreshImageExportBackgroundRow() {
+    this.imageExportRedraw?.(this.imageExportDetails);
+    const row = document.querySelector('.deck-image-background');
+    const deck = this.active();
+    if (row && deck) {
+      const holder = document.createElement('div');
+      holder.innerHTML = this.imageExportView(deck);
+      const next = holder.querySelector('.deck-image-background');
+      if (next) { row.replaceWith(next); this.bindImageExportBackground(document); }
+    }
+  }
+  bindImageExportBackground(root) {
+    root.querySelectorAll('[data-deck-image-background]').forEach(input => input.addEventListener('change', () => { void this.setImageExportBackground(input.files?.[0]); input.value = ''; }));
+    root.querySelectorAll('[data-deck-image-background-clear]').forEach(button => button.addEventListener('click', () => this.clearImageExportBackground()));
+  }
   setImageExportDetail(key, value) {
     this.imageExportDetails = { ...this.imageExportDetails, [key]: value };
     this.imageExportRedraw?.(this.imageExportDetails);
@@ -583,6 +623,7 @@ export class DeckController {
     root.querySelector('[data-deck-image-open]')?.addEventListener('click', () => this.openImageExport());
     root.querySelectorAll('[data-deck-image-close]').forEach(node => node.addEventListener('click', event => { if (event.target !== node && !event.target.closest('.detail-close')) return; this.closeImageExport(); }));
     root.querySelectorAll('[data-deck-image-style]').forEach(button => button.addEventListener('click', () => this.setImageExportStyle(button.dataset.deckImageStyle)));
+    this.bindImageExportBackground(root);
     root.querySelectorAll('[data-deck-image-detail]').forEach(field => field.addEventListener(field.tagName === 'SELECT' ? 'change' : 'input', () => this.setImageExportDetail(field.dataset.deckImageDetail, field.value)));
     root.querySelector('[data-deck-image-download]')?.addEventListener('click', () => void this.downloadImageExport());
     root.querySelector('[data-deck-image-share]')?.addEventListener('click', () => void this.shareImageExport());
@@ -786,12 +827,14 @@ export class DeckController {
   async resolveCardLevels(deck) {
     if (!deck || deck.game !== 'yugioh' || !this.cardLevelsByIds) return;
     if (this.levelsRequest) return this.levelsRequest;
-    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardLevels));
+    const ids = [...new Set(deck.cards.map(card => card.catalogCardId))].filter(id => !(id in this.cardLevels) || !(id in this.cardFrames));
     if (!ids.length) return;
     this.levelsRequest = (async () => {
       try {
-        const resolved = await this.cardLevelsByIds(ids, deck.game);
-        for (const id of ids) if (Object.hasOwn(resolved, id)) this.cardLevels[id] = resolved[id];
+        // Il tipo completo (es. "XYZ Monster") serve a ordinare l'Extra Deck;
+        // arriva dalla stessa cache di cardTypesByIds, senza richieste in più.
+        const [resolved, frames] = await Promise.all([this.cardLevelsByIds(ids, deck.game), this.cardTypesByIds ? this.cardTypesByIds(ids, deck.game).catch(() => ({})) : {}]);
+        for (const id of ids) { if (Object.hasOwn(resolved, id)) this.cardLevels[id] = resolved[id]; this.cardFrames[id] = frames[id] || ''; }
       } catch {} finally { this.levelsRequest = null; this.onRender(); }
     })();
     return this.levelsRequest;
@@ -946,7 +989,7 @@ export class DeckController {
     if (level === null) { this.cardLevels[id] = null; return; }
     queueMicrotask(() => void this.resolveCardLevels(deck));
   }
-  rememberCardType(id, rawType) { if (!rawType) return; const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
+  rememberCardType(id, rawType) { if (!rawType) return; if (!this.cardFrames[id]) this.cardFrames[id] = String(rawType); const bucket = coarseCardType(rawType); if (this.cardTypes[id] === bucket) return; this.cardTypes[id] = bucket; writeTypeCache(this.cardTypes); }
   // Il risultato di ricerca One Piece porta già il costo (catalog.js): non
   // serve aspettare resolveCardCosts (pensato per backfillare le carte di
   // un mazzo già salvato, che non lo portano con sé) per una carta appena
@@ -1173,6 +1216,15 @@ function copyBudget(deck, section, catalogCardId, excludeItem) {
 }
 const ONE_PIECE_COLOR_LABELS = { Red: 'Rosso', Blue: 'Blu', Green: 'Verde', Purple: 'Viola', Black: 'Nero', Yellow: 'Giallo' };
 const ONE_PIECE_COLORS = Object.keys(ONE_PIECE_COLOR_LABELS);
+// Ordine dell'Extra Deck Yu-Gi-Oh!: un tipo sconosciuto va in fondo.
+export function extraDeckRank(type) {
+  const value = String(type || '').toLowerCase();
+  if (value.includes('fusion')) return 0;
+  if (value.includes('synchro')) return 1;
+  if (value.includes('xyz')) return 2;
+  if (value.includes('link')) return 3;
+  return 4;
+}
 // "Green Yellow" (multicolore scritto dalla fonte con lo spazio) -> ["Green","Yellow"].
 const onePieceColorList = value => splitOnePieceColors(value).map(color => color[0].toUpperCase() + color.slice(1));
 function colorLabel(color) { return ONE_PIECE_COLOR_LABELS[color] || color; }

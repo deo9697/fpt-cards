@@ -145,4 +145,28 @@ await check('Yu-Gi-Oh: ogni mazzo riparte da "Tipo" anche se prima era Z–A', a
   assert.equal(ygoController.cardSort, 'type');
 });
 
-console.log(`Deck sort (One Piece tipo+costo + Yu-Gi-Oh livello): ${count}/${count} PASS`);
+// ---------------- Yu-Gi-Oh: Extra Deck Fusione → Synchro → Xyz → Link ----------------
+const FRAMES = { '21': 'Link Monster', '22': 'XYZ Monster', '23': 'Synchro Tuner Monster', '24': 'Fusion Monster', '25': 'XYZ Monster', '26': 'Pendulum Effect Fusion Monster', '27': 'Synchro Monster', '28': 'Link Monster' };
+const EXTRA_LEVELS = { '21': 4, '22': 4, '23': 6, '24': 8, '25': 12, '26': 10, '27': 8, '28': 2 };
+const extraController = new DeckController({ api: {}, getState: () => state, onRender() {}, onToast() {},
+  cardTypesByIds: async ids => Object.fromEntries(ids.filter(id => id in FRAMES).map(id => [id, FRAMES[id]])),
+  cardLevelsByIds: async ids => Object.fromEntries(ids.filter(id => id in EXTRA_LEVELS).map(id => [id, EXTRA_LEVELS[id]])) });
+const extraDeck = { ...deck, id: 'ygo-extra', game: 'yugioh', cards: [
+  card('21', 'I:P Masquerena', 1, 'extra'), card('22', 'Number 41 Bagooska', 1, 'extra'), card('23', 'Crystal Wing Synchro Dragon', 1, 'extra'),
+  card('24', 'Garura, Wings of Resonant Life', 1, 'extra'), card('25', 'Divine Arsenal AA-ZEUS', 1, 'extra'), card('26', 'Odd-Eyes Venom Dragon', 1, 'extra'),
+  card('27', 'Baronne de Fleur', 1, 'extra'), card('28', 'Linkuriboh', 1, 'extra')
+] };
+const extraOrder = () => extraController.sortCards(extraDeck.cards.filter(item => item.section === 'extra')).map(item => item.cardName);
+await check('Yu-Gi-Oh: Extra Deck ordinato Fusione → Synchro → Xyz → Link, poi dal livello più alto', async () => {
+  state.decks = [extraDeck]; state.game = 'yugioh';
+  extraController.open('ygo-extra');
+  await extraController.resolveCardTypes(extraDeck); await extraController.resolveCardLevels(extraDeck);
+  assert.deepEqual(extraOrder(), ['Odd-Eyes Venom Dragon', 'Garura, Wings of Resonant Life', 'Baronne de Fleur', 'Crystal Wing Synchro Dragon', 'Divine Arsenal AA-ZEUS', 'Number 41 Bagooska', 'I:P Masquerena', 'Linkuriboh']);
+});
+await check('immagine Yu-Gi-Oh: l\'Extra Deck esce nello stesso ordine del Deck Builder', async () => {
+  const ordered = { ...extraDeck, cards: extraController.sortCards(extraDeck.cards.filter(c => c.section === 'extra')) };
+  const names = normalizeDeckForImage(ordered, { cardTypes: extraController.cardTypes, keepOrder: true }).sections.find(s => s.key === 'extra').cards.map(c => c.cardName);
+  assert.deepEqual(names, extraOrder());
+});
+
+console.log(`Deck sort (One Piece tipo+costo + Yu-Gi-Oh livello ed Extra Deck): ${count}/${count} PASS`);

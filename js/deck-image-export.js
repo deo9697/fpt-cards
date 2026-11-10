@@ -441,6 +441,31 @@ function roundedRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+function customBackground(details) {
+  const image = details?.background;
+  return image && image.width > 0 && image.height > 0 ? image : null;
+}
+
+// Foto dell'utente -> canvas ridotto (lato lungo max 2160 px, il doppio
+// dell'immagine finale): memoria contenuta anche con foto da 12+ MP, e
+// orientamento EXIF già applicato da createImageBitmap. Nessun upload: il
+// file resta nel browser.
+export const DECK_IMAGE_BACKGROUND_MAX_BYTES = 20 * 1024 * 1024;
+export async function loadDeckImageBackground(file, { maxSide = 2160 } = {}) {
+  if (!file || !/^image\//.test(file.type || '')) throw new Error('Scegli un file immagine (JPG, PNG o WebP).');
+  if (file.size > DECK_IMAGE_BACKGROUND_MAX_BYTES) throw new Error('Immagine troppo grande: massimo 20 MB.');
+  let source;
+  try {
+    source = typeof createImageBitmap === 'function' ? await createImageBitmap(file) : await decodeImageFromBlob(file);
+  } catch { throw new Error('Impossibile leggere questa immagine. Prova con un JPG o PNG.'); }
+  const scale = Math.min(1, maxSide / Math.max(source.width, source.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(source.width * scale)); canvas.height = Math.max(1, Math.round(source.height * scale));
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close?.();
+  return canvas;
+}
+
 function drawCoverImage(ctx, image, x, y, w, h) {
   if (!image) return;
   const scale = Math.max(w / image.width, h / image.height);
@@ -608,7 +633,9 @@ export function drawDeckImage(ctx, model, layout, images, { background = 'clean'
 }
 
 // --- Stili FPT: "Arena FPT" (predefinito) e "Lista torneo" ----------------
-// details: { event, place, date } dal popup — place '' = nessun piazzamento,
+// details: { event, place, date, background } dal popup — place '' = nessun piazzamento,
+// background = immagine scelta dall'utente (canvas/ImageBitmap già decodificati in
+// locale), che prende il posto dello sfondo predefinito.
 // '1° posto'/'2° posto' o 'Top N'. Il giocatore è model.owner.
 const FPT_GOLD = '#e8b84f';
 const FPT_INK = '#0b0812';
@@ -735,7 +762,7 @@ export function drawArenaDeckImage(ctx, model, layout, images, details = {}) {
   ctx.save();
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = FPT_INK; ctx.fillRect(0, 0, width, height);
-  const background = images.get(ARENA_BACKGROUND_URL);
+  const background = customBackground(details) || images.get(ARENA_BACKGROUND_URL);
   if (background) drawCoverImage(ctx, background, 0, 0, width, height);
   const shade = ctx.createLinearGradient(0, 0, 0, height);
   shade.addColorStop(0, 'rgba(11,8,18,0.50)'); shade.addColorStop(0.24, 'rgba(11,8,18,0.80)'); shade.addColorStop(1, 'rgba(11,8,18,0.90)');
@@ -812,7 +839,15 @@ export function drawListDeckImage(ctx, model, layout, images, details = {}) {
   const glow = ctx.createRadialGradient(80, height - 60, 0, 80, height - 60, 700);
   glow.addColorStop(0, 'rgba(155,92,255,0.22)'); glow.addColorStop(1, 'rgba(155,92,255,0)');
   ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
-  const bandH = 372, art = signatureArt(model, images);
+  const custom = customBackground(details);
+  if (custom) {
+    // Sfondo dell'utente su tutta l'immagine, velato perché la lista resti leggibile.
+    drawCoverImage(ctx, custom, 0, 0, width, height);
+    const veil = ctx.createLinearGradient(0, 0, 0, height);
+    veil.addColorStop(0, 'rgba(20,12,34,0.55)'); veil.addColorStop(0.3, 'rgba(20,12,34,0.80)'); veil.addColorStop(1, 'rgba(7,6,11,0.90)');
+    ctx.fillStyle = veil; ctx.fillRect(0, 0, width, height);
+  }
+  const bandH = 372, art = custom ? null : signatureArt(model, images);
   if (art) {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, width, bandH); ctx.clip();
     drawCoverImage(ctx, art, width * 0.3, -40, width * 0.7, bandH + 80); ctx.restore();
