@@ -107,8 +107,10 @@ export function createDuelCardGestures({ canStart = () => false, canInspect = ca
   function onDown(event) {
     if (disposed || !['touch', 'pen'].includes(event.pointerType)) return;
     if (gesture) { if (gesture.pointerId !== event.pointerId) cancel('multitouch'); return; }
-    if (suppression?.untilRelease && suppression.pointerId === event.pointerId) clearSuppression();
     if (event.isPrimary === false || event.button != null && event.button !== 0) return;
+    // A new intentional touch must not be mistaken for the previous hold's
+    // synthetic click when the user immediately selects the same card again.
+    clearSuppression();
     const card = closest(event.target, '[data-ygo-card]');
     if (!card || !root?.contains?.(card) || card.disabled || !allowed(card) && !allowed(card, canInspect)) return;
     const player = Number(card.dataset.player);

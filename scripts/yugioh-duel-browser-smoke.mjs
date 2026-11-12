@@ -14,6 +14,8 @@ const teamId='11111111-1111-4111-8111-111111111111';
 const people=[{slug:'duel-host',name:'Marco · Prova'},{slug:'duel-guest',name:'Luca · Prova'},{slug:'duel-observer',name:'Terzo membro'}];
 const hostDeckId='a0000000-0000-4000-8000-000000000001',guestDeckId='b0000000-0000-4000-8000-000000000002';
 const secondHostDeckId='a0000000-0000-4000-8000-000000000003',invalidHostDeckId='a0000000-0000-4000-8000-000000000004';
+// Measured before the phone card-size change, using the same real UI fixture.
+const previousPhoneCardHeights={844:43.1875,932:49.40625,740:38.53125};
 const cards=[
   ['89631139','Drago Bianco Occhi Blu','Normal Monster',3000,2500],
   ['46986414','Mago Nero','Normal Monster',2500,2100],
@@ -67,6 +69,9 @@ const server=http.createServer(async(request,response)=>{
     response.setHeader('Content-Type',fs.existsSync(image)?'image/jpeg':'image/png');
     response.end(fs.readFileSync(fs.existsSync(image)?image:path.join(root,'assets','game-logos','yugioh.png')));return;
   }
+  if(url.pathname==='/css/yugioh-simulator.css'&&process.argv.includes('--baseline-card-size')){
+    response.setHeader('Content-Type','text/css; charset=utf-8');response.end(fs.readFileSync(path.join(root,'artifacts','yugioh-duel','before-card-size','yugioh-simulator.css')));return;
+  }
   const file=path.resolve(root,`.${decodeURIComponent(url.pathname)}`);if(!file.startsWith(`${root}${path.sep}`)){response.writeHead(403).end();return;}
   try{response.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');response.setHeader('Cache-Control','no-store');response.end(fs.readFileSync(file));}catch{response.writeHead(404).end('Not found');}
 });
@@ -91,6 +96,7 @@ async function run(){
   const version=await readJson(`http://127.0.0.1:${debugPort}/json/version`);
   const controller=await connect(version.webSocketDebuggerUrl);browserSocket=controller.socket;
   const exceptions=[],consoleErrors=[],networkErrors=[],externalRequests=[];
+  const cardSizeVerification=[];
   async function page(member){
     const context=await controller.call('Target.createBrowserContext');
     const target=await controller.call('Target.createTarget',{url:'about:blank',browserContextId:context.browserContextId});
@@ -134,6 +140,8 @@ async function run(){
     const geometry=await seat.evaluate(`(()=>{const mat=document.querySelector('.ygo-playmat').getBoundingClientRect();const controls=['[data-ygo-command="menu"]','.ygo-phase-controls [data-ygo-action="draw"]','[data-ygo-action="nextPhase"]','[data-ygo-action="nextTurn"]',...['draw','standby','main1','battle','main2','end'].map(phase=>'[data-ygo-action="setPhase"][data-phase="'+phase+'"]')].map(selector=>{const button=document.querySelector(selector);if(!button)return{selector,inside:false,hit:false};const box=button.getBoundingClientRect(),hit=document.elementFromPoint((box.left+box.right)/2,(box.top+box.bottom)/2);return{selector,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,hit:Boolean(hit&&(hit===button||button.contains(hit)))};});return{top:mat.top,bottom:mat.bottom,left:mat.left,right:mat.right,width:innerWidth,height:innerHeight,controls};})()`);
     assert(geometry.top>=0&&geometry.bottom<=geometry.height+1&&geometry.left>=0&&geometry.right<=geometry.width+1,`${label}: campo tagliato dal viewport (${JSON.stringify(geometry)})`);
     assert(geometry.controls.every(control=>control.inside&&control.hit),`${label}: comandi fuori schermo o coperti (${JSON.stringify(geometry.controls)})`);
+    const zones=await seat.evaluate(`Array.from(document.querySelectorAll('.ygo-zone'),zone=>{const box=zone.getBoundingClientRect(),hit=document.elementFromPoint((box.left+box.right)/2,(box.top+box.bottom)/2);return{player:zone.dataset.player,zone:zone.dataset.zone,slot:zone.dataset.slot,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,hit:Boolean(hit&&(hit===zone||zone.contains(hit)))};})`);
+    assert(zones.every(zone=>zone.inside&&zone.hit),`${label}: zone di gioco fuori schermo o coperte (${JSON.stringify(zones.filter(zone=>!zone.inside||!zone.hit))})`);
   }
   async function practiceChecks(seat){
     await seat.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Lobby non pronta per Testa mazzo');
@@ -214,6 +222,21 @@ async function run(){
     await seat.screenshot('practice-landscape',false);
     for(const [width,height]of [[932,430],[740,360]]){await seat.cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await delay(100);await assertPhoneFrame(seat,`Testa mazzo ${width}×${height}`);}
     await seat.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await delay(100);
+    while(await seat.evaluate('window.__sim.session.players[0].hand.length<18')){await seat.tap('.ygo-phase-controls [data-ygo-action="draw"]');await seat.wait('!window.__sim.pending','Pesca della mano lunga non conclusa');}
+    const longHand=await seat.evaluate('(()=>{const hand=document.querySelector(".ygo-hand.is-self .ygo-hand-cards");hand.scrollLeft=0;const box=hand.getBoundingClientRect();return{width:hand.clientWidth,scrollWidth:hand.scrollWidth,left:box.left,right:box.right,top:box.top,bottom:box.bottom};})()');
+    assert(longHand.scrollWidth>longHand.width+1,'La mano lunga non offre scorrimento orizzontale');
+    const beforeSwipe=await seat.evaluate('JSON.stringify(window.__sim.session)');
+    for(let attempt=0;attempt<4;attempt++){
+      const position=await seat.evaluate('(()=>{const hand=document.querySelector(".ygo-hand.is-self .ygo-hand-cards");return{left:hand.scrollLeft,max:hand.scrollWidth-hand.clientWidth};})()');if(position.left>=position.max-3)break;
+      const from={x:Math.min(844-35,longHand.right-45),y:(longHand.top+longHand.bottom)/2},to={x:Math.max(35,longHand.left+45),y:from.y};
+      await seat.cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,radiusX:3,radiusY:3,force:1}]});
+      for(let step=1;step<=5;step++){await seat.cdp.call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*step/5,y:from.y,radiusX:3,radiusY:3,force:1}]});await delay(16);}
+      await seat.cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await delay(150);
+    }
+    await seat.wait('(()=>{const hand=document.querySelector(".ygo-hand.is-self .ygo-hand-cards");return hand.scrollLeft>=hand.scrollWidth-hand.clientWidth-3;})()','Lo swipe non raggiunge la fine della mano ingrandita');
+    assert.equal(await seat.evaluate('JSON.stringify(window.__sim.session)'),beforeSwipe,'Lo scorrimento della mano cambia lo stato di gioco');
+    assert(!await seat.evaluate('Boolean(document.querySelector(".ygo-drop-menu,.ygo-card-dialog,.ygo-drag-ghost"))'),'Lo swipe della mano apre una giocata o una descrizione');
+    await assertPhoneFrame(seat,'Mano lunga 844×390');await seat.screenshot('hand-scroll',false);
     await practiceMenu();await seat.click('[data-ygo-command="practice-restart"]');
     await seat.wait('window.__sim.practice&&window.__sim.session.players[0].hand.length===5&&window.__sim.session.players[0].monsters.length===0&&window.__sim.session.turn===1','Ricomincia prova non ripristina mano e campo');
     assert.equal(await seat.evaluate('window.__sim.session.players[0].deckName'),'Secondo mazzo salvato · Test','Ricomincia prova cambia il mazzo selezionato');
@@ -231,6 +254,21 @@ async function run(){
     console.log('PASS Testa mazzo: own saved deck choice, invalid deck guard, local draw/summon/set/LP/turn/restart/exit and no multiplayer writes or notifications');
   }
   const host=await page('duel-host'),guest=await page('duel-guest');
+  if(process.argv.includes('--measure-card-size')||process.argv.includes('--baseline-card-size')){
+    await host.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Lobby non pronta per misurare le carte');
+    await host.click('[data-ygo-tab="practice"]');await host.fill('[data-ygo-practice] [name=deckId]',secondHostDeckId);await host.tap('[data-ygo-practice] button[type="submit"]');
+    await host.wait('window.__sim.practice && window.__sim.session?.phase==="main1"','Campo locale non pronto per le misure');
+    await host.evaluate(`(async()=>{const sim=window.__sim,deck=sim.practiceTable.run({op:'inspect',zone:'deck'}).cards,monsters=deck.filter(card=>/monster/i.test(card.type));await sim.act({type:'move',player:0,cardId:monsters[0].id,to:'monsters',slot:0,position:'attack',faceUp:true});await sim.act({type:'move',player:0,cardId:monsters[1].id,to:'monsters',slot:1,position:'defense',faceUp:true});await sim.act({type:'move',player:0,cardId:sim.session.players[0].extra.find(card=>card.catalogCardId==='23995346').id,to:'extraMonsters',slot:0,position:'attack',faceUp:true});})()`);
+    const measurements=[];
+    for(const[width,height]of[[844,390],[932,430],[740,360]]){
+      await host.cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await delay(100);
+      measurements.push(await host.evaluate(`(()=>{const box=selector=>{const node=document.querySelector(selector),r=node?.getBoundingClientRect();return r?{width:r.width,height:r.height,top:r.top,bottom:r.bottom,left:r.left,right:r.right}:null;};return{width:innerWidth,height:innerHeight,normal:box('.ygo-zone[data-zone="monsters"] .ygo-card:not(.is-defense) img'),extra:box('.ygo-shared-extra .ygo-card img'),hand:box('.ygo-hand.is-self .ygo-card'),handArt:box('.ygo-hand.is-self .ygo-card img'),mat:box('.ygo-playmat')};})()`));
+      await host.screenshot(`cards-larger-${width}`,false);
+    }
+    const directory=path.join(root,'artifacts','yugioh-duel',process.argv.includes('--baseline-card-size')?'before-card-size':'.');fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'card-size-geometry.json'),JSON.stringify(measurements,null,2)+'\n');
+    assert.equal(rows.size,0);assert.equal(notifications.length,0);assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);
+    console.log(JSON.stringify(measurements));console.log('yugioh-duel-browser-smoke: card size measurements OK');return;
+  }
   await practiceChecks(host);
   if(process.argv.includes('--practice-only')){
     assert.deepEqual(exceptions,[],'Eccezioni JavaScript');assert.deepEqual(consoleErrors,[],'Errori console');assert.deepEqual(networkErrors,[],'Risorse mancanti');assert.deepEqual(externalRequests,[],'Richieste esterne inattese');
@@ -473,16 +511,25 @@ async function run(){
       const normals=Array.from(document.querySelectorAll('.ygo-zone[data-zone="monsters"].is-occupied'),describe).filter(Boolean);
       const extras=Array.from(document.querySelectorAll('.ygo-shared-extra .ygo-zone.is-occupied'),describe).filter(Boolean);
       const defense=Array.from(document.querySelectorAll('.ygo-zone .ygo-card.is-defense')).map(card=>{const zone=card.closest('.ygo-zone').getBoundingClientRect(),box=card.getBoundingClientRect();return{within:box.left>=zone.left-1&&box.right<=zone.right+1&&box.top>=zone.top-1&&box.bottom<=zone.bottom+1};});
-      return{normals,extras,defense};
+      const hand=document.querySelector('.ygo-hand.is-self .ygo-card').getBoundingClientRect(),handImage=document.querySelector('.ygo-hand.is-self .ygo-card img');
+      return{width:innerWidth,height:innerHeight,normals,extras,defense,hand:{width:hand.width,height:hand.height,objectFit:getComputedStyle(handImage).objectFit}};
     })()`);
     assert(geometry.normals.length>0&&geometry.extras.length===2,label+': servono Mostri normali ed entrambe le EMZ popolate');
     for(const card of [...geometry.normals,...geometry.extras]){
       assert(card.ratio>=.85&&card.ratio<=1.01,`${label}: carta ${card.zone} non occupa correttamente la casella (${JSON.stringify(card)})`);
       assert.equal(card.objectFit,'contain',label+': artwork deformato o tagliato');
+      assert(Math.abs(card.artWidth/card.artHeight-63/88)<.025,label+': proporzioni della carta alterate');
     }
     const normalHeight=geometry.normals[0].artHeight;
     for(const card of geometry.extras)assert(Math.abs(card.artHeight/normalHeight-1)<=.05,`${label}: artwork EMZ più piccolo dei Mostri normali (${JSON.stringify(geometry)})`);
     assert(geometry.defense.every(card=>card.within),label+': Mostro in Difesa supera la propria casella');
+    const previous=previousPhoneCardHeights[geometry.width];assert(previous,label+': baseline dimensioni mancante');
+    const smallestBoard=Math.min(...geometry.normals.map(card=>card.artHeight),...geometry.extras.map(card=>card.artHeight));
+    assert(smallestBoard>=previous*1.18,`${label}: aumento carte sul campo insufficiente (${smallestBoard}px, prima ${previous}px)`);
+    assert(geometry.hand.height>=previous*1.4,`${label}: aumento carte in mano insufficiente (${geometry.hand.height}px, prima ${previous}px)`);
+    assert.equal(geometry.hand.objectFit,'contain',label+': artwork in mano deformato o tagliato');
+    const report={width:geometry.width,height:geometry.height,previous,board:smallestBoard,extra:geometry.extras.map(card=>card.artHeight),hand:geometry.hand.height,boardIncrease:smallestBoard/previous-1,handIncrease:geometry.hand.height/previous-1};
+    const recorded=cardSizeVerification.findIndex(item=>item.width===geometry.width);if(recorded<0)cardSizeVerification.push(report);else cardSizeVerification[recorded]=report;
     const hiddenPreview=await page.evaluate('(()=>{const preview=document.querySelector(".ygo-idle-preview");return !preview||getComputedStyle(preview).display==="none";})()');
     assert(hiddenPreview,label+': il pannello desktop sottrae spazio al campo sul telefono');
   }
@@ -521,6 +568,7 @@ async function run(){
     await assertArena(host,`Smartphone ${width}×${height}`);await assertPhoneCardFit(host,`Smartphone ${width}×${height}`);await host.screenshot(`landscape-${width}`,false);
   }
   console.log('PASS two-seat privacy/conflicts, phases, remote reload, portrait gate, consistent Main/Extra card sizing and native touch on three landscape phones');
+  fs.writeFileSync(path.join(root,'artifacts','yugioh-duel','card-size-verification.json'),JSON.stringify(cardSizeVerification,null,2)+'\n');console.log('PASS larger phone cards: '+JSON.stringify(cardSizeVerification));
 
   await openMenu(host);await host.fill('[data-ygo-finish] [name=winner]',0);await host.fill('[data-ygo-finish] [name=notes]','Duello di prova manuale completato.');await host.submit('[data-ygo-finish]');
   await both('window.__sim.session.result?.winner===0','Risultato finale condiviso');

@@ -24,7 +24,7 @@ Le verifiche di orientamento includono API mancanti, rifiutate, ritardate e bloc
 
 Esito finale: tutti i 13 script della suite superati. Il browser completo termina con `yugioh-duel-browser-smoke: OK`: tap e pressione lunga effettivi, annullamento e versioni superate, Mostri/Magie/Trappole, attivazioni e risoluzioni sincronizzate, Xyz, due Zone Extra occupate, LP, fasi dirette e sequenziali, controllo fuori turno, ripresa da URL e risultato condiviso. Il secondo collaudo della versione semplificata verifica inoltre liste verticali da 140×104 px, tre azioni Mostro e due Magia/Trappola, lettura con pressione ferma breve/lunga senza mutazioni, avanzati chiusi e chiusura della lista toccando il campo. Eccezioni JavaScript, errori console, risorse mancanti e richieste esterne: zero.
 
-Nei viewport 844×390, 932×430 e 740×360 il campo e tutti i comandi delle fasi sono raggiungibili, senza overflow orizzontale. L'artwork occupa circa il 92% dell'altezza della casella; quello delle Zone Extra ha la stessa altezza delle zone Mostri ordinarie entro il 5%. Le carte in Difesa restano contenute e le immagini usano `object-fit: contain`. Il blocco verticale impedisce sia Pesca sia il trascinamento.
+Nei viewport 844×390, 932×430 e 740×360 il campo e tutti i comandi delle fasi sono raggiungibili, senza overflow orizzontale. L'artwork su telefono occupa ora circa il 98% dell'altezza della casella; quello delle Zone Extra ha la stessa altezza delle zone Mostri ordinarie entro il 5%. Le carte in Difesa restano contenute e le immagini usano `object-fit: contain`. Il blocco verticale impedisce sia Pesca sia il trascinamento.
 
 ## Evidenze visive locali
 
@@ -40,3 +40,19 @@ Le catture sono prodotte dallo smoke browser in `artifacts/yugioh-duel/` e non s
 - `practice-picker.png` e `practice-landscape.png`: scelta dei propri mazzi e campo in solitaria.
 
 Le immagini della prima verifica in verticale nel documento del 10 novembre descrivono la versione precedente e non il comportamento corrente.
+
+## Carte più leggibili sul telefono
+
+Le carte del campo e delle Zone Extra sono ingrandite mantenendo tutte le cinque file visibili e la mano in basso. La mano coperta avversaria usa lo spazio centrale dell'intestazione; le istruzioni di piazzamento compaiono nello spazio libero fra le Zone Extra. Anche valori ATK/DEF e conteggi sono più leggibili.
+
+Misure CSS in pixel, confrontate con la versione precedente nello stesso browser e negli stessi viewport:
+
+| Viewport | Campo / Extra prima → dopo | Mano prima → dopo |
+| --- | --- | --- |
+| 844×390 | 43,2 → 52,9 | 43,2 → 66,3 |
+| 932×430 | 49,4 → 59,4 | 49,4 → 73,1 |
+| 740×360 | 38,5 → 48,0 | 38,5 → 61,2 |
+
+Le catture e le misure precedenti sono in `artifacts/yugioh-duel/before-card-size/`; quelle aggiornate e il confronto numerico sono in `card-size-geometry.json` e `card-size-verification.json` nella cartella degli artifact del simulatore.
+
+Collaudo dell’ingrandimento: smoke browser completo PASS su due client, tutte le zone raggiungibili senza coperture, proporzioni e Difesa verificate, mano lunga scorribile con swipe nativo senza giocate involontarie. Una nuova pressione intenzionale dopo il trascinamento non viene più ignorata dal filtro dei click sintetici; aggiunta la regressione nel test dei gesti. Zero errori JavaScript, console o risorse mancanti. Catture dedicate: `cards-larger-844.png`, `cards-larger-932.png` e `cards-larger-740.png`.

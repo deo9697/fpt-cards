@@ -80,6 +80,18 @@ function fixture() {
 }
 {
   const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);
+  f.doc.hit=f.slot;f.doc.emit('pointermove',event(f.card,{clientX:330,clientY:110}));
+  f.doc.emit('pointerup',event(f.card,{clientX:330,clientY:110}));
+  f.time.advance(50);
+  f.root.emit('pointerdown',event(f.card,{pointerId:8}));
+  f.doc.emit('pointerup',event(f.card,{pointerId:8}));
+  const deliberateClick=event(f.card,{pointerId:8});f.doc.emit('click',deliberateClick);
+  assert.equal(deliberateClick.prevented,false,'A fresh tap on the same card must work immediately after dragging');
+  assert.equal(f.inspections.length,0);assert.equal(f.drops.length,1);f.helper.dispose();
+  console.log('PASS a fresh touch after dragging is not swallowed by synthetic-click suppression');
+}
+{
+  const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);
   f.doc.emit('pointerup',event(f.card));
   assert.deepEqual(f.inspections,[{cardId:'card-1',player:0}]);assert.deepEqual(f.drops,[]);assert.deepEqual(f.starts,[]);assert.equal(f.ghost(),undefined);
   assert.equal(f.card.captured.size,0);const heldClick=event(f.card);f.doc.emit('click',heldClick);assert(heldClick.prevented);
