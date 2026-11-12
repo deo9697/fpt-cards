@@ -11,7 +11,7 @@ const registration={update:async()=>{},getNotifications:async()=>[],pushManager:
 const sw=new EventTarget();sw.ready=Promise.resolve(registration);sw.register=async()=>registration;sw.getRegistration=async()=>registration;Object.defineProperty(navigator,'serviceWorker',{value:sw,configurable:true});
 const client={async rpc(name,args={}){
  if(name==='list_login_members'||name==='list_team_members'||name==='list_member_profiles')return {data:people};
- if(name==='login_member'){currentMember=args.p_slug;return {data:{slug:args.p_slug,role:'admin'}};}
+ if(name==='login_member'){currentMember=args.p_slug;return {data:{slug:args.p_slug,role:people.find(person=>person.slug===args.p_slug)?.role||'guest'}};}
  if(name==='list_my_collection')return {data:currentMember==='push-a'?[{id:'alert-item',printing_id:'alert-printing',owner_slug:'push-a',card_name:'Carta alert One Piece',game:'onepiece',quantity_owned:3,quantity_available:3,set_code:'OP01-001',image_url:'/icon-192.png'}]:[]};
  if(name==='get_market_watch_item_price')return {data:{printingId:args.p_printing_id,referencePrice:12,capturedAt:'2026-11-12T02:00:00Z'}};
  if(name==='get_my_team')return {data:null};
@@ -61,6 +61,10 @@ try {
  await screenshot('phone-owned-price-alert');console.log('PASS warm price alert opens own printing with its price, deriving the correct game from ownership');
  await click('.inventory-detail .detail-close');await evaluate(`location.hash='#/settings'`);await wait('!!document.querySelector("#test-notifications")');await click('[data-logout]');await wait('!!document.querySelector("#login-form")');assert.equal(await evaluate('__pushCalls.removed'),2);assert.equal(await evaluate(`(async()=>{const cache=await caches.open('fpt-push-state-v1');const hit=await cache.match('/__push_owner');return hit.text()})()`),'');console.log('PASS logout unregisters device and clears private notification identity');
  await evaluate(`document.querySelector('#member').value='push-b';document.querySelector('#pin').value='1234';document.querySelector('#login-form').requestSubmit()`);await wait('__pushCalls.saves===4');assert.equal(await evaluate(`(async()=>{const c=await caches.open('fpt-push-state-v1');return (await c.match('/__push_owner')).text()})()`),'push-b');
+ await evaluate(`location.hash='#/settings'`);await wait('!!document.querySelector("#enable-notifications")');
+ assert(await evaluate('!document.querySelector("#test-notifications") && !document.querySelector("#reset-notifications")'));
+ assert.equal(await evaluate('document.querySelector("#enable-notifications").textContent'),'Ripara');
+ await screenshot('phone-settings-member');console.log('PASS guest keeps activation/repair; notification test/reset debug controls are admin-only');
  await evaluate(`window.dispatchEvent(new StorageEvent('storage',{key:'fpt-cards-session-token',oldValue:'old-session',newValue:'new-session'}))`);await wait('!!document.querySelector("#login-form")');console.log('PASS account switch auto repairs without another permission prompt; other-tab session change invalidates old UI');
  await call('Page.navigate',{url:origin+'/#/collection?printingId=alert-printing&game=yugioh'});await wait('!!document.querySelector("#login-form")');
  await evaluate(`document.querySelector('#member').value='push-a';document.querySelector('#pin').value='1234';document.querySelector('#login-form').requestSubmit()`);

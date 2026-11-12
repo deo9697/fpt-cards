@@ -762,11 +762,12 @@ function pushOnboardingView() {
 }
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();
+  const pushDebug = state.role === 'admin';
   const u = member(state.currentUser), game = GAMES[state.game] || GAMES.yugioh;
   const notificationStatus = notificationStatusCopy();
   const row = (iconName, title, detail, action) => `<div class="settings-row"><span class="settings-icon">${icon(iconName)}</span><div class="settings-copy"><strong>${title}</strong><small>${detail}</small></div>${action}</div>`;
   return `<section class="page-stack settings-page"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="settings-list">${
-    row('bell', 'Notifiche push', `<span role="status">${esc(notificationStatus)}</span>`, `<div class="push-settings-actions"><button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications" ${!supported || ['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>${configured || pushStatus() === 'error' ? 'Ripara' : 'Attiva'}</button>${configured ? '<button class="btn small ghost" id="test-notifications">Invia prova</button>' : ''}${supported ? `<button class="btn small ghost" id="reset-notifications" ${['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>Reimposta</button>` : ''}</div>`)
+    row('bell', 'Notifiche push', `<span role="status">${esc(notificationStatus)}</span>`, `<div class="push-settings-actions"><button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications" ${!supported || ['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>${configured || pushStatus() === 'error' ? 'Ripara' : 'Attiva'}</button>${pushDebug && configured ? '<button class="btn small ghost" id="test-notifications" title="Debug notifiche · solo amministratori">Invia prova</button>' : ''}${pushDebug && supported ? `<button class="btn small ghost" id="reset-notifications" title="Debug notifiche · solo amministratori" ${['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>Reimposta</button>` : ''}</div>`)
   }${
     row('info', 'Tutorial', 'Blattaman ti rispiega l\'app', '<button class="btn small settings-action ghost" data-tutorial-open>Rivedi</button>')
   }${
