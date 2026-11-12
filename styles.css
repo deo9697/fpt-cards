@@ -4016,3 +4016,12 @@ body:not([data-page='decks']) #deck-search-layer { display:none; }
 .deck-image-logo-toggle input:not(:checked) ~ .deck-image-logo-thumb { filter:grayscale(1) brightness(.6);border-color:var(--fpt-line,#2a2140);box-shadow:none; }
 /* Con una finestra aperta (Genera immagine, carte mancanti, stampe…) la linguetta Cerca non deve restarci sopra. */
 body:has(.detail-backdrop) #deck-search-layer { display:none; }
+/* Notification onboarding: phone first, ordinary in-page controls. */
+.push-onboarding{display:flex;gap:14px;padding:18px;margin-bottom:16px;align-items:flex-start}
+.push-onboarding img{flex:none;border-radius:14px;width:56px;height:56px}
+.push-onboarding h2{font-size:1.05rem;margin:0 0 8px}
+.push-onboarding p{font-size:.88rem;line-height:1.5;margin:0 0 12px}
+.push-onboarding .actions,.push-settings-actions{display:flex;gap:8px;flex-wrap:wrap}
+.push-onboarding button,.push-settings-actions button{min-height:44px}
+.push-settings-actions{justify-content:flex-end}
+@media(max-width:480px){.push-onboarding{gap:10px;padding:14px}.push-onboarding img{width:40px;height:40px}.settings-row:has(.push-settings-actions){grid-template-columns:40px minmax(0,1fr)}.settings-row:has(.push-settings-actions) .settings-copy{min-width:0}.push-settings-actions{grid-column:2;width:100%;justify-content:flex-start;padding:0}.push-settings-actions .settings-action{width:auto}}

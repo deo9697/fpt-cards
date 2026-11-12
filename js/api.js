@@ -87,7 +87,7 @@ export const api = {
     if (result && result.ok === false) throw Object.assign(new Error(result.message || 'Accesso non riuscito'), { code:result.code, retryAfterSeconds:result.retryAfterSeconds });
     return result;
   },
-  async logout() { if (client) await client.rpc('logout_member', { p_token:token() }); localStorage.removeItem(TOKEN_KEY); },
+  async logout() { const snapshot = token(); try { if (client) unwrap(await client.rpc('logout_member', { p_token:snapshot })); } finally { localStorage.removeItem(TOKEN_KEY); inMemoryToken = ''; } },
   // Beta: team separati e inviti. Prima della migration beta_teams le RPC non
   // esistono (PGRST202): teamMembers ripiega sull'elenco del login, myTeam su null.
   async teamMembers() {
@@ -484,10 +484,20 @@ export const api = {
   async returnQuantity(id, quantity) {
     ensure(); return unwrap(await client.rpc('return_loan_quantity', { p_token:token(), p_id:id, p_quantity:quantity }));
   },
-  async savePushSubscription(subscription) {
+  pushSession() { return token(); },
+  async removePushSubscription(endpoint, snapshot = token()) {
+    ensure(); return unwrap(await client.rpc('remove_push_subscription', { p_token:snapshot, p_endpoint:endpoint }));
+  },
+  async testPush(endpoint) {
+    const response = await fetch('/api/test-push', { method:'POST', cache:'no-store', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ token:token(), endpoint }), signal:AbortSignal.timeout(20000) });
+    const result = await response.json();
+    if (!response.ok || result.accepted !== 1) throw new Error(result.code === 'rate_limited' ? 'Attendi un minuto prima di riprovare.' : 'Invio di prova non accettato: ripara la registrazione e riprova.');
+    return result;
+  },
+  async savePushSubscription(subscription, snapshot = token(), member = null) {
     ensure();
     return unwrap(await client.rpc('save_push_subscription', {
-      p_token:token(), p_endpoint:subscription.endpoint,
+      p_token:snapshot, p_endpoint:subscription.endpoint, p_member_slug:member,
       p_p256dh:subscription.keys?.p256dh, p_auth:subscription.keys?.auth
     }));
   },

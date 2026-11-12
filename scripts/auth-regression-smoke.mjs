@@ -337,7 +337,8 @@ async function run() {
   await waitFor(`[...document.querySelectorAll('[data-deck-card-select-section="main"]')].some(tile=>tile.getAttribute('aria-label').includes('Dark Magician'))`,'Hard refresh ha cancellato la bozza del mazzo (Main)');
   await evaluate(`document.querySelector('[data-deck-section="extra"]').click()`);
   await waitFor(`[...document.querySelectorAll('[data-deck-card-select-section="extra"]')].some(tile=>tile.getAttribute('aria-label').includes('Stardust Dragon'))`,'Hard refresh ha cancellato la bozza del mazzo (Extra)');
-  assert(await evaluate(`document.querySelector('[data-deck-card-select-section="extra"] .deck-ban-badge.limited')?.textContent==='1'`),'Hard refresh ha perso il bollino banlist TCG');
+  // Card metadata is restored asynchronously after the draft tiles render.
+  await waitFor(`document.querySelector('[data-deck-card-select-section="extra"] .deck-ban-badge.limited')?.textContent==='1'`,'Hard refresh ha perso il bollino banlist TCG');
   console.log('PASS Mazzi sezioni simultanee + Extra automatico + recupero hard refresh');
 
   await evaluate(`Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true})`);

@@ -94,7 +94,8 @@
     "test:route-lazy": "node scripts/route-lazy-loading-smoke.mjs",
     "test:market-exact-variant-pricing": "node scripts/market-exact-variant-pricing-smoke.mjs",
     "catalog:add-set": "node scripts/catalog-add-set.mjs",
-    "test:catalog-set-fill": "node scripts/catalog-set-fill-smoke.mjs"
+    "test:catalog-set-fill": "node scripts/catalog-set-fill-smoke.mjs",
+    "test:push": "node scripts/push-webhook-api-smoke.mjs && node scripts/push-notifications-2-smoke.mjs && node scripts/push-notifications-2-sql-smoke.mjs && node scripts/push-notifications-2-browser-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

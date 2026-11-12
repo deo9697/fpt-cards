@@ -16,7 +16,7 @@ import { icon } from './js/icons.js';
 import { showToast, fptConfirm, watchNoticeExits } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { stageGlitchLayers, stageTypeLabel, collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
-import { enablePushNotifications, pushSupported, pushConfigured } from './js/push.js';
+import { enablePushNotifications, pushSupported, pushConfigured, pushStatus, onPushStatus, setPushAccount, reconcilePush, stopPush, testPush, shouldOfferPush, deferPush } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
@@ -403,7 +403,8 @@ function renderRoute() {
   const stage = shell?.querySelector('.page-stage');
   if (!state.currentUser || !shell || !stage) { render(); return; }
   document.body.dataset.page = page;
-  stage.innerHTML = pageContent();
+  applyNotificationRoute();
+  stage.innerHTML = pushOnboardingView() + pageContent();
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
     const target = button.dataset.page;
@@ -460,7 +461,26 @@ function openLoginPinPad() {
     .catch(() => toast('Tastierino non disponibile: controlla la connessione'));
 }
 
+let consumedNotificationRoute = '';
+function applyNotificationRoute() {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const key = `${state.currentUser}:${location.hash}`;
+  if (!state.currentUser || key === consumedNotificationRoute) return;
+  if (page === 'loans' && params.get('loanId')) {
+    const loan = state.loans.find(item => item.id === params.get('loanId') && [item.owner,item.borrower].includes(state.currentUser));
+    if (loan) { state.game = loan.game; selectedLoanId = loan.id; consumedNotificationRoute = key; }
+  }
+  if (page === 'requests' && params.get('requestId')) {
+    const request = collectionShareRequests.find(item => item.id === params.get('requestId'));
+    if (request) {
+      requestsTab = ['confirmed','completed'].includes(request.status) ? request.status : 'pending';
+      consumedNotificationRoute = key;
+      setTimeout(() => document.getElementById(`share-request-${request.id}`)?.scrollIntoView({ block:'center', behavior:'smooth' }), 0);
+    }
+  }
+}
 function appView() {
+  applyNotificationRoute();
   if (page === 'fastscan') return `<main class="fast-scan-route">${fastScanPageView()}</main>`;
   const u = member(state.currentUser) || { id:state.currentUser, name:'Membro F.P.T' };
   const game = GAMES[state.game];
@@ -477,7 +497,7 @@ function appView() {
   return `<main class="app-shell"><aside class="sidebar"><div class="brand sidebar-brand"><img src="icon-384.webp" alt="" width="384" height="384"><div><h1>F.P.T Cards</h1><p>${game.short}</p></div></div><nav>${desktopNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav><div class="sidebar-profile"><button type="button" class="sidebar-profile-trigger" data-open-avatar>${profileAvatarMarkup(u, activeCosmetics())}<div><strong>${esc(u.name)}</strong><small>${state.role === 'admin' ? 'Amministratore' : 'Membro del team'}</small></div></button><button data-logout aria-label="Esci">${icon('logout')}</button></div></aside>
     <section class="app-main"><header class="topbar"><div class="game-switcher ${gameMenuOpen ? 'open' : ''}"><button type="button" class="menu-trigger" aria-label="Scegli gioco" aria-expanded="${gameMenuOpen}">${icon('menu')}<span class="game-trigger-chip"><img src="${game.logo}" alt=""></span></button><aside class="game-menu" aria-label="Seleziona gioco"><div class="game-menu-head"><div><small>F.P.T Cards</small><h2>Cambia gioco</h2></div></div><div class="game-options">${Object.values(GAMES).map(g => `<button data-game="${g.id}" class="${state.game === g.id ? 'active' : ''}"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>${state.game === g.id ? 'Sezione attiva' : 'Passa a questa sezione'}</small></span><b>${state.game === g.id ? '✓' : '›'}</b></button>`).join('')}${FUTURE_GAMES.map(g => `<div class="game-option-locked" aria-disabled="true"><span class="game-logo"><img src="${g.logo}" alt="${esc(g.name)}"></span><span><strong>${g.name}</strong><small>In arrivo</small></span><b>${icon('lock')}</b></div>`).join('')}</div></aside></div>${xpStripView(u)}<button class="top-icon" data-quick="attention" aria-label="Notifiche">${icon('bell')}${notifications ? `<i>${notifications}</i>` : ''}</button><button class="mobile-profile" data-open-avatar aria-label="Profilo">${profileAvatarMarkup(u, activeCosmetics())}</button></header>
       ${!online() ? '<div class="connection-banner offline">Sei offline · mostro gli ultimi dati salvati</div>' : cloudError ? `<div class="connection-banner error">${esc(cloudError)} <button id="retry-cloud">Riprova</button></div>` : ''}
-      <section class="page-stage" aria-live="polite">${pageContent()}</section>
+      <section class="page-stage" aria-live="polite">${pushOnboardingView()}${pageContent()}</section>
     </section>
     <nav class="nav mobile-nav">${mobileNav.map(([id,iconName,label]) => navButton(id, iconName, label, notifications)).join('')}</nav>
     ${selectedCardKey ? cardDetailView(selectedCardKey) : ''}
@@ -721,13 +741,20 @@ function futureView(title, iconName, description) {
   return `<section class="page-stack"><header class="page-header"><div><span class="eyebrow">Prossimamente</span><h1>${title}</h1></div></header><section class="surface empty-state">${icon(iconName)}<h2>Spazio predisposto</h2><p>${description}</p></section></section>`;
 }
 
+function notificationStatusCopy() {
+  return ({ active:'Attive su questo dispositivo. La visualizzazione dipende anche dalle impostazioni del sistema.', requesting:'Autorizzazione richiesta…', unconfigured:'Non configurate su questo dispositivo.', denied:'Permesso negato. Consenti le notifiche nelle impostazioni del browser o del dispositivo, poi premi Attiva.', unsupported:'Dispositivo o browser non supportato. Usa un browser aggiornato e una connessione HTTPS.', install:'Su iPhone e iPad: apri Condividi → Aggiungi alla schermata Home, poi avvia F.P.T. Cards dalla nuova icona.', error:'Errore di registrazione. Controlla la connessione e premi Ripara.' })[pushStatus()];
+}
+function pushOnboardingView() {
+  if (!shouldOfferPush() || !['home','loans'].includes(page)) return '';
+  return `<section class="surface push-onboarding" aria-labelledby="push-onboarding-title"><img src="icon-192.png" alt="F.P.T. Cards" width="64" height="64"><div><h2 id="push-onboarding-title">Attiva le notifiche di F.P.T. Cards</h2><p>Ricevi avvisi quando un membro richiede una carta, accetta un prestito oppure ti invia una comunicazione.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva notifiche</button>' : ''}<button class="btn ghost" id="defer-notifications">Non ora</button></div></div></section>`;
+}
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();
   const u = member(state.currentUser), game = GAMES[state.game] || GAMES.yugioh;
-  const pushStatus = !supported ? '<em class="settings-state off">Non supportate</em> su questo dispositivo' : configured ? '<em class="settings-state on">Attive</em> su questo dispositivo' : '<em class="settings-state off">Non attive</em> su questo dispositivo';
+  const notificationStatus = notificationStatusCopy();
   const row = (iconName, title, detail, action) => `<div class="settings-row"><span class="settings-icon">${icon(iconName)}</span><div class="settings-copy"><strong>${title}</strong><small>${detail}</small></div>${action}</div>`;
   return `<section class="page-stack settings-page"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="settings-list">${
-    row('bell', 'Notifiche push', pushStatus, `<button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications">${configured ? 'Riconfigura' : 'Attiva'}</button>`)
+    row('bell', 'Notifiche push', `<span role="status">${esc(notificationStatus)}</span>`, `<div class="push-settings-actions"><button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications" ${!supported || pushStatus() === 'requesting' ? 'disabled' : ''}>${configured || pushStatus() === 'error' ? 'Ripara' : 'Attiva'}</button>${configured ? '<button class="btn small ghost" id="test-notifications">Invia prova</button>' : ''}</div>`)
   }${
     row('info', 'Tutorial', 'Blattaman ti rispiega l\'app', '<button class="btn small settings-action ghost" data-tutorial-open>Rivedi</button>')
   }${
@@ -1598,6 +1625,14 @@ function bind() {
   document.querySelectorAll('[data-close-loan-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); selectedLoanId = ''; render(); }));
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
+  document.querySelector('#onboard-notifications')?.addEventListener('click', enableNotifications);
+  document.querySelector('#defer-notifications')?.addEventListener('click', () => { deferPush(); render(); });
+  document.querySelector('#test-notifications')?.addEventListener('click', async event => {
+    event.currentTarget.disabled = true;
+    try { await testPush(); toast('Prova accettata dal servizio push. Controlla il dispositivo.'); }
+    catch (error) { toast(error.message); }
+    finally { if (state.currentUser) render(); }
+  });
   document.querySelector('#member-form')?.addEventListener('submit', addMember);
   loadedPageModule('team')?.bindTeamPage(document, teamModel(), manageMember, teamActions);
   loadedPageModule('admin')?.bindAdminPage(document, adminModel(), {
@@ -1867,7 +1902,7 @@ function requestRowHtml(request) {
   // Ricevuta (stile FPT 2026-11-09): chi, messaggio, carte, totale e in fondo
   // le azioni, dove arriva il pollice.
   const statusTag = { pending:['pink','In attesa'], seen:['pink','In attesa'], confirmed:['violet','Riservata'], completed:['ok','Effettuata'] }[request.status];
-  return `<article class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${statusTag ? `<span class="share-request-tag ${statusTag[0]}">${statusTag[1]}</span>` : ''}</header>
+  return `<article id="share-request-${esc(request.id)}" class="share-request-row ${request.status}"><header><div><strong>${esc(request.requesterName)}</strong><small>${formatDate(request.createdAt)} · ${items.length} ${items.length === 1 ? 'carta' : 'carte'}</small></div>${statusTag ? `<span class="share-request-tag ${statusTag[0]}">${statusTag[1]}</span>` : ''}</header>
     ${request.message ? `<p class="share-request-message">${icon('message')} ${esc(request.message)}</p>` : ''}
     ${statusNote}
     <div class="share-receipt">
@@ -2757,6 +2792,7 @@ async function login(e) {
     render();
     await Promise.all([loadMembers().catch(() => {}), loadPrimaryData()]);
     startRealtime();
+    void startNotificationSession();
     saveState();
   } catch (error) {
     const message = /fetch|network|failed to fetch/i.test(error.message || '')
@@ -2774,22 +2810,44 @@ async function login(e) {
 }
 
 async function logout() {
+  try { await stopPush(); } catch { /* Server logout revokes bindings even if browser cleanup fails. */ }
   await fastScan?.leave();
   onePieceSimulator?.close(); onePieceSimulator = null;
   yugiohSimulator?.reset(); yugiohSimulator = null;
   api.unsubscribe();
-  await api.logout();
+  try { await api.logout(); } catch { toast('Uscita locale effettuata. Ricollegati per verificare la chiusura della sessione sul server.'); }
   state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; state.collection = { mine:[], team:[], syncedAt:null }; state.decks=[]; state.team = null; teamInvites = null; catalogRepairBootstrapped = false; saveState(); page = 'home'; history.replaceState(null, '', '#/home'); render();
   // L'elenco in memoria è quello del team appena chiuso: torna a quello del login.
   void loadMembers().then(() => { if (!state.currentUser) render(true); }).catch(() => {});
 }
 
 async function enableNotifications() {
+  const member = state.currentUser;
   try {
     await enablePushNotifications();
-    toast('Notifiche push attivate'); render();
+    if (state.currentUser === member && pushConfigured()) { toast('Notifiche push attivate'); render(); }
   } catch (error) { toast(error.message); }
 }
+
+async function startNotificationSession() {
+  const member = state.currentUser;
+  if (!member || state.standalone) return;
+  try { await setPushAccount(member); } catch { /* Settings show the repair state. */ }
+  if (state.currentUser === member && (shouldOfferPush() || page === 'settings')) render();
+}
+onPushStatus(() => { if (state.currentUser && page === 'settings') render(); });
+// Other tabs share the application token. Stop stale repair work immediately.
+window.addEventListener('storage', event => {
+  if (event.key === 'fpt-cards-session-token' && event.oldValue !== event.newValue) {
+    void setPushAccount(null).catch(() => {});
+    if (state.currentUser) {
+      api.unsubscribe();
+      state.currentUser = null; state.role = null; state.loans = [];
+      // Do not persist: another tab may already have saved its new account.
+      render(); toast('La sessione è cambiata in un’altra scheda. Accedi di nuovo.');
+    }
+  }
+});
 
 function actionableIds() {
   return new Set(state.loans.filter(l =>
@@ -3212,6 +3270,7 @@ function renderGuestShare() {
 }
 
 async function start() {
+  if (!state.currentUser) void setPushAccount(null).catch(() => {});
   // A share link has no session at all — never let it fall into the normal
   // login-gated boot below, which would otherwise show a login screen to
   // someone who was never meant to need an account.
@@ -3270,9 +3329,10 @@ async function start() {
       const syncError = await loadPrimaryData();
       if (syncError && /Sessione scaduta/i.test(syncError.message || '')) throw syncError;
       startRealtime(); saveState();
+      void startNotificationSession();
     }
     catch (error) {
-      if (/Sessione scaduta/i.test(error.message || '')) { state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; catalogRepairBootstrapped = false; saveState(); }
+      if (/Sessione scaduta/i.test(error.message || '')) { void setPushAccount(null).catch(() => {}); state.currentUser = null; state.role = null; state.canVerifyYgoArtwork = false; state.loans = []; catalogRepairBootstrapped = false; saveState(); }
       else cloudError = online() ? (error.message || 'Sincronizzazione non riuscita') : '';
     } finally { appLoading = false; }
   }
@@ -3405,6 +3465,7 @@ window.addEventListener('popstate', event => {
 // da sole quando l'utente le apre (vedi dispatchPageEnterRefresh).
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.currentUser && !SHARE_HASH.test(location.hash)) scheduleRealtimeSync('loans');
+  if (document.visibilityState === 'visible' && state.currentUser) void reconcilePush().catch(() => {});
 });
 
 // Fallback leggero SOLO per i domini senza copertura Realtime (market/decks/
@@ -3433,8 +3494,10 @@ setInterval(() => {
 // invece di navigare da solo, perché è la pagina già aperta a sapere come
 // interpretare la rotta (vedi notificationclick in sw.js).
 navigator.serviceWorker?.addEventListener('message', event => {
+  if (event.data?.type === 'fpt-push-repair') { if (state.currentUser) void reconcilePush().catch(() => {}); return; }
   if (event.data?.type !== 'fpt-notification-click') return;
   const url = new URL(event.data.url, location.href);
+  if (url.origin !== location.origin) return;
   const target = url.hash.replace(/^#\//, '').split('?')[0] || 'home';
   const params = new URLSearchParams(url.hash.split('?')[1] || '');
   if (target === 'simulator' && /^[0-9a-f-]{36}$/i.test(params.get('duel') || '') && !state.standalone) {
@@ -3445,7 +3508,14 @@ navigator.serviceWorker?.addEventListener('message', event => {
     render(); dispatchPageEnterRefresh(previous, page);
     void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); return;
   }
-  if (!state.currentUser) return;
+  if (!state.currentUser) { history.replaceState(null, '', url.hash || '#/home'); page = routeFromHash(); return; }
+  if (['loans','requests'].includes(target)) {
+    consumedNotificationRoute = '';
+    history.pushState(null, '', url.hash); page = target; selectedLoanId = '';
+    render();
+    void (target === 'loans' ? loadCloudLoans() : loadCollectionShareRequests()).then(() => { if (page === target && state.currentUser) render(); }).catch(() => {});
+    return;
+  }
   if (target === 'market' && params.get('printingId')) { navigate('market'); void loadAppControllers().then(() => { marketWatch.selected = params.get('printingId'); render(true); }).catch(() => {}); }
   else navigate(target);
 });

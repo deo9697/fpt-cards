@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-12",
+  "project": "gonycawupahawocqafcf",
+  "migration": {
+    "name": "push_notifications_2_session_binding",
+    "version": "20261112133700"
+  },
+  "dryRunRolledBack": true,
+  "applied": true,
+  "subscriptionCountBefore": 2,
+  "subscriptionCountAfter": 2,
+  "existingRowsUnchanged": true,
+  "rlsEnabled": true,
+  "anonymousDirectRead": false,
+  "invalidSessionRejected": true,
+  "realPushSent": false,
+  "codeDeployed": false,
+  "rollback": "supabase/manual/push-notifications-2-prod-rollback.sql",
+  "securityAdvisors": "Two additional token-authenticated SECURITY DEFINER entry points (save5, remove), intentionally callable by app roles. Server-only delivery/test claims remain inaccessible to anon/authenticated."
+}

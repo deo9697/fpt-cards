@@ -1,52 +1,31 @@
-// ESM: package.json ha "type": "module"; la sintassi CommonJS faceva crashare la funzione su Vercel (FUNCTION_INVOCATION_FAILED).
-import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 import { webhookAuthorized } from './_webhook-auth.js';
+import { deliverPush, loanRecipient, notificationMessage } from './_push-delivery.js';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ message:'Metodo non consentito' });
-  if (!webhookAuthorized(req)) return res.status(401).json({ message:'Non autorizzato' });
-  const required = ['VAPID_PUBLIC_KEY','VAPID_PRIVATE_KEY','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'];
-  if (required.some(name => !process.env[name])) return res.status(503).json({ message:'Configurazione incompleta' });
-
-  const payload = req.body || {};
-  const record = payload.record || {};
-  const old = payload.old_record || {};
-  const recipient = recipientFor(payload.type, record, old);
-  if (!recipient) return res.status(200).json({ message:'Nessuna notifica necessaria' });
-
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth:{ persistSession:false } });
-  const { data, error } = await supabase.from('push_subscriptions').select('endpoint,p256dh,auth').eq('member_slug', recipient.slug);
-  if (error) return res.status(500).json({ message:error.message });
-
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@fptcards.it', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-  const message = JSON.stringify({ title:recipient.title || 'F.P.T Cards', body:recipient.body, tag:`${recipient.tag || 'update'}-${record.id || ''}`, url:recipient.url || '/' });
-  const expired = [];
-  await Promise.all((data || []).map(async item => {
-    try { await webpush.sendNotification({ endpoint:item.endpoint, keys:{ p256dh:item.p256dh, auth:item.auth } }, message); }
-    catch (error) { if ([404,410].includes(error.statusCode)) expired.push(item.endpoint); }
-  }));
-  if (expired.length) await supabase.from('push_subscriptions').delete().in('endpoint', expired);
-  return res.status(200).json({ message:`Notifiche inviate: ${(data || []).length}` });
-};
-
-function recipientFor(type, record, old) {
-  // Two webhook sources feed this same endpoint: public.loans rows (own
-  // shape below) and public.notifications rows (the general notifications
-  // center — category/member_slug/title/body — used for share_request,
-  // market_alert, system). Tell them apart by the columns present rather
-  // than requiring a second endpoint per source table.
-  if (record.category) return recipientForNotification(type, record);
-  const names = { daniele:'Daniele', 'cristian-arlia':'Cristian Arlia', 'cristian-spadafora':'Cristian Spadafora', cristofer:'Cristofer' };
-  if (type === 'INSERT' && record.status === 'requested') return { slug:record.owner_slug, body:record.pre_agreed
-    ? `${names[record.borrower_slug] || record.borrower_slug} conferma con te il prestito già concordato di ${record.requested_quantity || record.quantity}× ${record.card_name}`
-    : `${names[record.borrower_slug] || record.borrower_slug} ti richiede ${record.requested_quantity || record.quantity}× ${record.card_name}`, tag:'loan' };
-  if (type === 'INSERT' && record.status === 'pending') return { slug:record.borrower_slug, body:`${names[record.owner_slug] || record.owner_slug} ti ha prestato ${record.quantity}× ${record.card_name}`, tag:'loan' };
-  if (type === 'UPDATE' && record.status === 'return_pending' && old.status !== 'return_pending') return { slug:record.owner_slug, body:`${names[record.borrower_slug] || record.borrower_slug} ha segnalato la restituzione di ${record.card_name}`, tag:'loan' };
-  return null;
+export function createPushHandler({ notificationsOnly = false, clientFactory = createClient, deliver = deliverPush } = {}) {
+  return async function handler(req, res) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') return res.status(405).json({ code:'method_not_allowed' });
+    if (!webhookAuthorized(req)) return res.status(401).json({ code:'webhook_unauthorized' });
+    if (['VAPID_PUBLIC_KEY','VAPID_PRIVATE_KEY','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'].some(key => !process.env[key])) return res.status(503).json({ code:'configuration_missing' });
+    try {
+      let payload;
+      try { payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}; }
+      catch { return res.status(400).json({ code:'invalid_payload' }); }
+      const record = payload.record || {};
+      if (notificationsOnly && payload.type !== 'INSERT') return res.status(200).json({ message:'Solo INSERT gestito', code:'ignored' });
+      let message = record.category || notificationsOnly ? (payload.type === 'INSERT' && record.member_slug && record.title && record.id ? notificationMessage(record) : null) : loanRecipient(payload.type, record, payload.old_record);
+      if (!message?.member) return res.status(200).json({ code:'ignored', message:'Nessuna notifica necessaria' });
+      if (!record.id) return res.status(400).json({ code:'invalid_payload' });
+      const db = clientFactory(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth:{ persistSession:false } });
+      if (!record.category && !notificationsOnly) {
+        const { data } = await db.from('team_members').select('slug,full_name').in('slug', [record.owner_slug, record.borrower_slug]);
+        const names = new Map((data || []).map(item => [item.slug,item.full_name]));
+        message = loanRecipient(payload.type, { ...record, owner_name:names.get(record.owner_slug), borrower_name:names.get(record.borrower_slug) }, payload.old_record);
+      }
+      const result = await deliver(db, message.member, message);
+      return res.status(result.status).json(result);
+    } catch { return res.status(500).json({ code:'internal_error', accepted:0 }); }
+  };
 }
-
-function recipientForNotification(type, record) {
-  if (type !== 'INSERT') return null;
-  return { slug:record.member_slug, title:record.title, body:record.body, tag:`notif-${record.category}`, url:record.route_page ? `/#/${record.route_page}` : '/' };
-}
+export default createPushHandler();

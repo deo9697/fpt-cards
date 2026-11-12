@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v269';
+const CACHE = 'fpt-cards-v270';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -25,7 +25,7 @@ self.addEventListener('install', event => event.waitUntil(
   ]).then(() => self.skipWaiting())
 ));
 self.addEventListener('activate', event => event.waitUntil(Promise.all([
-  caches.keys().then(keys => Promise.all(keys.filter(k => ![CACHE,PADDLE_CACHE,MEDIA_CACHE].includes(k)).map(k => caches.delete(k)))),
+  caches.keys().then(keys => Promise.all(keys.filter(k => ![CACHE,PADDLE_CACHE,MEDIA_CACHE,'fpt-push-state-v1'].includes(k)).map(k => caches.delete(k)))),
   self.clients.claim()
 ])));
 self.addEventListener('fetch', event => {
@@ -39,6 +39,8 @@ self.addEventListener('fetch', event => {
     return;
   }
   const url = new URL(event.request.url);
+  // API responses (including VAPID public key) must never enter offline caches.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;
   if (url.origin !== self.location.origin) {
     if (['cdn.jsdelivr.net','paddle-model-ecology.bj.bcebos.com'].includes(url.hostname)) {
       event.respondWith(caches.open(PADDLE_CACHE).then(async cache => {
@@ -67,12 +69,21 @@ self.addEventListener('fetch', event => {
   }).catch(() => caches.match(event.request)));
 });
 self.addEventListener('notificationclick', event => {
-  const url = event.notification.data?.url || './';
+  let target;
+  try { target = new URL(event.notification.data?.url || './', self.location.origin); } catch { target = new URL('/', self.location.origin); }
+  if (target.origin !== self.location.origin) target = new URL('/', self.location.origin);
+  const url = target.href;
   event.notification.close();
   event.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
-    const existing = list.find(c => c.url.startsWith(self.location.origin));
+    const existing = list.find(c => new URL(c.url).origin === self.location.origin);
     if (existing) { existing.postMessage({ type:'fpt-notification-click', url }); return existing.focus(); }
     return clients.openWindow(url);
+  }));
+});
+self.addEventListener('pushsubscriptionchange', event => {
+  // Credentials stay in the authenticated app; closed clients repair at launch.
+  event.waitUntil(self.clients.matchAll({ type:'window' }).then(list => {
+    list.forEach(client => client.postMessage({ type:'fpt-push-repair' }));
   }));
 });
 self.addEventListener('push', event => {
@@ -83,8 +94,14 @@ self.addEventListener('push', event => {
   // e nella notifica compatta — l'icona F.P.T piena di dettagli e testo
   // piccolo diventava una macchia illeggibile una volta appiattita così.
   // notification-badge.png è una sagoma semplice pensata apposta per questo.
-  event.waitUntil(self.registration.showNotification(data.title, {
-    body:data.body, icon:'icon-192.png', badge:'assets/notification-badge.png', tag:data.tag || 'fpt-push', renotify:true,
-    vibrate:[200,80,200], data:{ url:data.url || './' }
-  }));
+  event.waitUntil((async () => {
+    const owner = await caches.open('fpt-push-state-v1').then(cache => cache.match('/__push_owner')).then(hit => hit?.text()).catch(() => null);
+    const authorized = owner && data.member === owner;
+    // Queued pushes can outlive logout/account switching. Do not show private text.
+    return self.registration.showNotification(authorized ? data.title : 'F.P.T. Cards', {
+      body:authorized ? data.body : 'Apri F.P.T. Cards per controllare i tuoi aggiornamenti.',
+      icon:'/icon-192.png', badge:'/assets/notification-badge.png', tag:data.tag || 'fpt-push', renotify:false,
+      vibrate:[200,80,200], data:{ url:authorized ? data.url || './' : './', member:data.member }
+    });
+  })());
 });
