@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v270';
+const CACHE = 'fpt-cards-v271';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -11,6 +11,8 @@ const FILES = ['./', './index.html', './styles.css', './app.js', './js/app-launc
 const MEDIA_FILES = ['./assets/game-logos/yugioh-tcg.png', './assets/fpt-card-hero.webp', './icon-384.webp', './assets/tutorial/blattaman-welcome-sm.webp', './assets/tutorial/blattaman-sexy-sm.webp', './assets/tutorial/blattaman-panicking-sm.webp', './assets/tutorial/blattaman-who-laughs-sm.webp', './assets/background/yugioh-01.png', './assets/backgrounds/deck-image-arena.jpg', './assets/fpt-logo.jpeg', './assets/market-watch-dan.jpg', './assets/notification-badge.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/deck-boxes/sacred_beast_orcust_deckbox.png', './assets/deck-boxes/mitsurugi_deckbox.png', './assets/deck-boxes/skystriker_deckbox.png', './assets/avatars/avatar-tonno.jpg', './assets/avatars/nellentone.jpeg', './assets/avatars/cristofer.jpeg', './assets/avatars/capeleira.jpeg', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4', './assets/ester-eggs/Cat%20Laughing%20At%20You.mp4'];
 FILES.push('./css/onepiece-simulator.css', './css/onepiece-battlefield.css', './js/games/onepiece/simulator-arena.js', './js/games/onepiece/simulator-multiplayer.js', './js/games/onepiece/simulator.js', './js/games/onepiece/simulator-engine.js', './js/games/onepiece/simulator-storage.js');
 FILES.push('./css/yugioh-simulator.css', './js/games/yugioh/simulator-arena.js', './js/games/yugioh/simulator-multiplayer.js', './js/games/yugioh/simulator-engine.js');
+FILES.push('./css/app-launch.css');
+MEDIA_FILES.push('./assets/loading/blattaman-arcane.webp','./assets/loading/yugioh-card-back.jpg');
 MEDIA_FILES.push('./assets/backgrounds/yugioh-duel-arena.jpg', './assets/backgrounds/yugioh-duel-card-back.jpg', './assets/game-logos/yugioh.png');
 async function ensureMediaCache() {
   const cache = await caches.open(MEDIA_CACHE);

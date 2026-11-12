@@ -16,7 +16,7 @@ import { icon } from './js/icons.js';
 import { showToast, fptConfirm, watchNoticeExits } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { stageGlitchLayers, stageTypeLabel, collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
-import { enablePushNotifications, pushSupported, pushConfigured, pushStatus, onPushStatus, setPushAccount, reconcilePush, stopPush, testPush, shouldOfferPush, deferPush } from './js/push.js';
+import { enablePushNotifications, pushSupported, pushConfigured, pushStatus, pushResetPaused, resetPushNotifications, onPushStatus, setPushAccount, reconcilePush, stopPush, testPush, shouldOfferPush, deferPush } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
 import { registerAutoUpdates } from './js/pwa-update.js';
 import { watchConnectivity, online } from './js/connectivity.js';
@@ -742,6 +742,8 @@ function futureView(title, iconName, description) {
 }
 
 function notificationStatusCopy() {
+  if (pushStatus() === 'resetting') return 'Reimpostazione di questo dispositivo in corso…';
+  if (pushResetPaused() && pushStatus() !== 'error') return 'Registrazione sospesa su questo dispositivo. Premi Attiva per ripristinarla. Per far ricomparire il consenso nativo, reimposta anche l’autorizzazione del sito in Chrome: l’app non può revocarla al posto tuo.';
   return ({ active:'Attive su questo dispositivo. La visualizzazione dipende anche dalle impostazioni del sistema.', requesting:'Autorizzazione richiesta…', unconfigured:'Non configurate su questo dispositivo.', denied:'Permesso negato. Consenti le notifiche nelle impostazioni del browser o del dispositivo, poi premi Attiva.', unsupported:'Dispositivo o browser non supportato. Usa un browser aggiornato e una connessione HTTPS.', install:'Su iPhone e iPad: apri Condividi → Aggiungi alla schermata Home, poi avvia F.P.T. Cards dalla nuova icona.', error:'Errore di registrazione. Controlla la connessione e premi Ripara.' })[pushStatus()];
 }
 function pushOnboardingView() {
@@ -754,7 +756,7 @@ function settingsView() {
   const notificationStatus = notificationStatusCopy();
   const row = (iconName, title, detail, action) => `<div class="settings-row"><span class="settings-icon">${icon(iconName)}</span><div class="settings-copy"><strong>${title}</strong><small>${detail}</small></div>${action}</div>`;
   return `<section class="page-stack settings-page"><header class="page-header"><div><span class="eyebrow">Preferenze</span><h1>Impostazioni</h1><p>Sessione, notifiche e profilo del dispositivo.</p></div></header><section class="settings-list">${
-    row('bell', 'Notifiche push', `<span role="status">${esc(notificationStatus)}</span>`, `<div class="push-settings-actions"><button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications" ${!supported || pushStatus() === 'requesting' ? 'disabled' : ''}>${configured || pushStatus() === 'error' ? 'Ripara' : 'Attiva'}</button>${configured ? '<button class="btn small ghost" id="test-notifications">Invia prova</button>' : ''}</div>`)
+    row('bell', 'Notifiche push', `<span role="status">${esc(notificationStatus)}</span>`, `<div class="push-settings-actions"><button class="btn small settings-action ${configured ? 'ghost' : 'gold'}" id="enable-notifications" ${!supported || ['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>${configured || pushStatus() === 'error' ? 'Ripara' : 'Attiva'}</button>${configured ? '<button class="btn small ghost" id="test-notifications">Invia prova</button>' : ''}${supported ? `<button class="btn small ghost" id="reset-notifications" ${['requesting','resetting'].includes(pushStatus()) ? 'disabled' : ''}>Reimposta</button>` : ''}</div>`)
   }${
     row('info', 'Tutorial', 'Blattaman ti rispiega l\'app', '<button class="btn small settings-action ghost" data-tutorial-open>Rivedi</button>')
   }${
@@ -1626,6 +1628,11 @@ function bind() {
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#onboard-notifications')?.addEventListener('click', enableNotifications);
+  document.querySelector('#reset-notifications')?.addEventListener('click', async () => {
+    try { await resetPushNotifications(); toast('Registrazione azzerata su questo dispositivo.'); }
+    catch (error) { toast(error.message); }
+    finally { if (state.currentUser) render(); }
+  });
   document.querySelector('#defer-notifications')?.addEventListener('click', () => { deferPush(); render(); });
   document.querySelector('#test-notifications')?.addEventListener('click', async event => {
     event.currentTarget.disabled = true;
@@ -3283,6 +3290,7 @@ async function start() {
     setTimeout(() => toast('Sei già connesso: esci per usare un invito'), 600);
   }
   if (page === 'simulator' && simulatorDuelFromHash() && state.currentUser && !state.standalone) state.game = simulatorGameFromHash();
+  if (state.currentUser) window.FPT_LAUNCH?.hold('Sincronizzazione del tuo profilo…');
   installCardImageRecovery();
   installCollectionControls();
   // fastScan.restore() ora gira dentro loadFastScan(), alla prima apertura della pagina Scan.
@@ -3324,6 +3332,7 @@ async function start() {
   // (Mazzi/Market/Statistiche), in parallelo a membri e dati.
   if (state.currentUser && !state.standalone) void loadAppControllers().catch(() => {});
   try { await loadMembers(); render(); } catch {}
+  window.FPT_LAUNCH?.status('Caricamento di raccolta e prestiti…');
   if (state.currentUser) {
     try {
       const syncError = await loadPrimaryData();
@@ -3337,6 +3346,7 @@ async function start() {
     } finally { appLoading = false; }
   }
   void registerAutoUpdates();
+  window.FPT_LAUNCH?.release();
   render();
 }
 // --- Beta: "crea il tuo profilo" da un link di invito (#/join/CODICE) ------

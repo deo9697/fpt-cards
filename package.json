@@ -6,6 +6,7 @@
   "scripts": {
     "preview": "node scripts/preview-server.mjs",
     "test:auth": "node scripts/auth-regression-smoke.mjs",
+    "test:launch": "node scripts/app-launch-browser-smoke.mjs",
     "test:tutorial": "node scripts/tutorial-blattaman-smoke.mjs",
     "test:login-vault": "node scripts/login-vault-smoke.mjs",
     "test:collection": "node scripts/collection-milestone-smoke.mjs",

@@ -1,6 +1,6 @@
 # F.P.T. Cards — Push Notifications 2.0
 
-Audit e implementazione locale del 12 novembre 2026. **NOT READY FOR DEPLOY** finché non sono completati rollout SQL, verifica privata Vercel e collaudo fisico. Nessun deploy, invio a membri reali, modifica di segreti o scrittura sul database di produzione è stato eseguito.
+Audit e implementazione del 12 novembre 2026. SQL applicato in produzione dopo autorizzazione (migrazione `20261112133700_push_notifications_2_session_binding`), senza alterare le righe push esistenti: riscontro in `docs/audit-snapshots/push-notifications-2-prod-apply.json`. **NOT READY FOR DEPLOY** fino a verifica privata Vercel e collaudo fisico. Nessun deploy del codice, invio a membri reali o modifica di segreti eseguito.
 
 1. **Cause e riscontri verificati**
 
@@ -49,9 +49,9 @@ Audit e implementazione locale del 12 novembre 2026. **NOT READY FOR DEPLOY** fi
 
 5. **Passi Supabase/Vercel necessari prima del rilascio**
 
-   - Revisionare ed eseguire prima su staging `supabase/manual/push-notifications-2.sql`. In produzione non è stato applicato. Richiede la tabella push e il sistema esistente app_sessions; conserva la RPC precedente a quattro argomenti. Aggiunge due colonne, RPC per revoca, selezione dispositivi vivi e prova atomica; aggiorna save e logout. Non ricrea trigger e non modifica segreti.
+   - `supabase/manual/push-notifications-2.sql` già applicato in produzione dopo autorizzazione. Richiede la tabella push e il sistema esistente app_sessions; conserva la RPC precedente a quattro argomenti. Aggiunge due colonne, RPC per revoca, selezione dispositivi vivi e prova atomica; aggiorna save e logout. Non ricrea trigger e non modifica segreti.
    - Verificare su Vercel Production `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PUSH_WEBHOOK_SECRET` e l'eventuale NEXT, senza copiarli in report/log. Il connettore disponibile ha risposto 403 per il proprio scope: configurazione privata e corrispondenza dei secret non verificate. Non è stata avviata alcuna rotazione.
-   - SQL gi? applicato; resta da coordinare il futuro deploy del codice. i vecchi endpoint non vengono cancellati. Quando il nuovo backend entra in servizio, le righe prive di session_token_hash non sono eleggibili finché il membro riapre l'app aggiornata e la riconciliazione le collega alla sessione. Informare i membri di riaprire la PWA.
+   - Resta da coordinare il futuro deploy del codice. I vecchi endpoint non vengono cancellati. Quando il nuovo backend entra in servizio, le righe prive di session_token_hash non sono eleggibili finché il membro riapre l'app aggiornata e la riconciliazione le collega alla sessione. Informare i membri di riaprire la PWA.
    - Eseguire una prova autorizzata dal proprio dispositivo e controllare i codici degli hook nei log di Vercel/pg_net. Collaudare richiesta, approvazione/rifiuto, restituzione e raccolta condivisa con account di test concordati. Non utilizzare membri reali senza autorizzazione.
    - Ripristino: coordinare sempre codice e SQL. Ripristinare le definizioni precedenti di save_push_subscription (dal file storico) e logout_member, revocare/rimuovere le nuove RPC se necessario; le due colonne aggiuntive possono restare, senza eliminare dati. Non ripristinare solo il backend ignorando le modifiche alla sessione.
 

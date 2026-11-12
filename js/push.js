@@ -7,7 +7,8 @@ const stored = (key, value) => { try { if (value === undefined) return localStor
 export const iosNeedsInstall = () => (/iPad|iPhone|iPod/.test(navigator.userAgent) || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) && !(navigator.standalone || window.matchMedia?.('(display-mode: standalone)').matches);
 export function pushSupported() { return !iosNeedsInstall() && window.isSecureContext !== false && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
 export function pushConfigured() { return status === 'active' && pushSupported() && Notification.permission === 'granted'; }
-export const pushStatus = () => iosNeedsInstall() ? 'install' : !pushSupported() ? 'unsupported' : Notification.permission === 'denied' ? 'denied' : status;
+export const pushStatus = () => iosNeedsInstall() ? 'install' : !pushSupported() ? 'unsupported' : status === 'resetting' ? status : Notification.permission === 'denied' ? 'denied' : status;
+export const pushResetPaused = () => Boolean(account && stored(`fpt-push-paused:${account}`) === 'true');
 export const onPushStatus = fn => { listeners.add(fn); return () => listeners.delete(fn); };
 async function bindDevice(member) {
   const cache = await caches.open('fpt-push-state-v1');
@@ -30,6 +31,8 @@ const current = (epoch, snapshot) => epoch === generation && account && api.push
 const timed = promise => { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Service Worker non pronto. Riapri l’app e riprova.')), 15000); })]).finally(() => clearTimeout(timer)); };
 
 export function reconcilePush() {
+  if (status === 'resetting') return Promise.resolve();
+  if (pushResetPaused()) { setStatus('unconfigured'); return Promise.resolve(); }
   if (!account || !pushSupported() || Notification.permission !== 'granted') { setStatus(pushSupported() && Notification.permission === 'denied' ? 'denied' : 'unconfigured'); return Promise.resolve(); }
   if (pending) return pending;
   const epoch = generation, snapshot = api.pushSession();
@@ -69,6 +72,8 @@ export function reconcilePush() {
 export async function enablePushNotifications() {
   if (!pushSupported()) throw new Error(iosNeedsInstall() ? 'Apri Condividi, scegli Aggiungi alla schermata Home, poi apri F.P.T. Cards dalla nuova icona.' : 'Notifiche non supportate su questo dispositivo');
   if (!account) throw new Error('Accedi prima di attivare le notifiche');
+  if (status === 'resetting') throw new Error('Attendi il completamento del reset');
+  stored(`fpt-push-paused:${account}`, 'false');
   // Invoked directly by the click handler, before any network/worker await.
   const epoch = generation;
   const permissionPromise = Notification.permission === 'default' ? Notification.requestPermission() : Promise.resolve(Notification.permission);
@@ -95,6 +100,36 @@ export async function stopPush() {
     notifications?.forEach(item => item.close());
   };
   return navigator.locks ? navigator.locks.request('fpt-push-registration', task) : task();
+}
+export async function resetPushNotifications() {
+  if (!account) throw new Error('Accedi prima di reimpostare le notifiche');
+  if (status === 'resetting') return;
+  const member = account, snapshot = api.pushSession(), epoch = ++generation;
+  // Keep explicit reset stable across foreground/reload until the member enables again.
+  stored(`fpt-push-paused:${member}`, 'true');
+  stored(`fpt-push-later:${member}`, '0');
+  setStatus('resetting');
+  try {
+    if ('caches' in window) await bindDevice(null);
+    await pending?.catch(() => {});
+    const clear = async () => {
+      if (!current(epoch,snapshot)) return;
+      const registration = await navigator.serviceWorker?.getRegistration?.();
+      const subscription = await registration?.pushManager?.getSubscription();
+      if (!current(epoch,snapshot)) return;
+      if (subscription) {
+        try { await timed(subscription.unsubscribe()); }
+        finally { await timed(api.removePushSubscription(subscription.endpoint,snapshot)); }
+      }
+      const notifications = await registration?.getNotifications?.();
+      notifications?.forEach(item => item.close());
+    };
+    await (navigator.locks ? navigator.locks.request('fpt-push-registration',clear) : clear());
+    if (current(epoch,snapshot)) setStatus('unconfigured');
+  } catch {
+    if (current(epoch,snapshot)) setStatus('error');
+    throw new Error('Reset non completato. Controlla la connessione e riprova.');
+  }
 }
 export async function testPush() {
   if (!pushConfigured()) throw new Error('Attiva o ripara prima le notifiche');

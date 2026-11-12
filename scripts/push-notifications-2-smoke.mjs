@@ -12,7 +12,7 @@ const subscription={endpoint,expirationTime:null,options:{},toJSON(){return {end
 async function browser({permission='default',supported=true,existing=null,ios=false,standalone=false,save=null,ready=null}={}) {
   let requests=0,subscribes=0,saves=0,removed=0,token='session-a';
   const store=new Map(), cache=new Map();
-  const registration={pushManager:{async getSubscription(){return existing},async subscribe(){subscribes++;existing={...subscription};return existing}},async getNotifications(){return []}};
+  const registration={pushManager:{async getSubscription(){return existing?.removed?null:existing},async subscribe(){subscribes++;existing={...subscription};return existing}},async getNotifications(){return []}};
   globalThis.Notification={permission,async requestPermission(){requests++;this.permission=permission==='denied'?'denied':'granted';return this.permission}};
   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent:ios?'iPhone':'Chrome',standalone,serviceWorker:{ready:ready||Promise.resolve(registration),async getRegistration(){return registration}}}});
   globalThis.window={isSecureContext:true,Notification:globalThis.Notification,PushManager:{},caches:{},matchMedia:()=>({matches:standalone})};
@@ -53,6 +53,22 @@ await test('account switch while save is pending cannot mark old account active'
   const started=b.module.setPushAccount('a');await enteredPromise;b.changeToken('session-b');const switched=b.module.setPushAccount('b');release();await Promise.all([started,switched]);assert.equal(b.cache.get('/__push_owner'),'b');assert(b.module.pushConfigured());assert.equal(b.counts().saves,2);
 });
 await test('registration failure is visible and recoverable',async()=>{const b=await browser({permission:'granted',save:()=>{throw Error('synthetic')}});await assert.rejects(b.module.setPushAccount('a'));assert.equal(b.module.pushStatus(),'error');assert(!b.module.pushConfigured())});
+await test('device reset removes only its subscription and stays paused until explicit activation',async()=>{
+ const b=await browser({permission:'granted'});await b.module.setPushAccount('a');b.module.deferPush();await b.module.resetPushNotifications();
+ assert.equal(b.counts().removed,1);assert.equal(Notification.permission,'granted');assert.equal(b.counts().requests,0);assert(b.module.pushResetPaused());assert(!b.module.pushConfigured());assert(b.module.shouldOfferPush());
+ await b.module.reconcilePush();assert.equal(b.counts().saves,1);await b.module.enablePushNotifications();assert(!b.module.pushResetPaused());assert(b.module.pushConfigured());assert.equal(b.counts().saves,2);assert.equal(b.counts().requests,0);
+});
+await test('reset cannot manufacture a native prompt or undo a browser denial',async()=>{
+ const b=await browser({permission:'denied'});await b.module.setPushAccount('a');await b.module.resetPushNotifications();assert.equal(Notification.permission,'denied');assert.equal(b.counts().requests,0);await assert.rejects(b.module.enablePushNotifications(),/impostazioni/);assert.equal(b.counts().subscribes,0);
+});
+await test('foreground reconciliation cannot interrupt an in-flight device reset',async()=>{
+ let release,entered;const started=new Promise(resolve=>entered=resolve);
+ const existing={...subscription,async unsubscribe(){entered();await new Promise(resolve=>release=resolve);this.removed=true;return true}};
+ const b=await browser({permission:'granted',existing});await b.module.setPushAccount('a');
+ const reset=b.module.resetPushNotifications();await started;await b.module.reconcilePush();
+ assert.equal(b.module.pushStatus(),'resetting');await assert.rejects(b.module.enablePushNotifications(),/completamento/);
+ release();await reset;assert.equal(b.module.pushStatus(),'unconfigured');assert.equal(b.counts().saves,1);
+});
 await test('loan request, acceptance, rejection and return produce correct recipient and deep link',async()=>{
   const record={id:'loan-1',owner_slug:'owner',borrower_slug:'borrower',card_name:'Carta reale',quantity:2,status:'requested'};
   const request=loanRecipient('INSERT',record);assert.equal(request.member,'owner');assert.match(request.body,/2× Carta reale/);assert.match(request.url,/loanId=loan-1/);

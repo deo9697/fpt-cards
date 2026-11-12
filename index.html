@@ -21,18 +21,18 @@
     Critical launch CSS: deve rendere il primo frame di #app-launch identico
     allo splash nativo Android/PWA (stesso sfondo, stesso logo centrato,
     nessun testo) SENZA dipendere da styles.css, che può arrivare qualche
-    millisecondo dopo. Usa selettori di sola classe (mai #app-launch) per
-    restare alla stessa specificità delle regole equivalenti in styles.css:
-    un selettore per id vincerebbe sempre su '.app-launch.is-branded ...' e
-    la rivelazione del branding (Step 2) resterebbe bloccata per sempre.
+    millisecondo dopo. Le regole di css/app-launch.css usano l'id per
+    completare la scena e rivelarla quando il bootstrap è in corso.
   -->
   <style>
     html,body{background:#050711}
     .app-launch{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;overflow:hidden;background:#050711;opacity:1}
-    .app-launch-halo,.app-launch-brand{grid-area:1/1;position:absolute;opacity:0}
+    .launch-arcane{position:absolute;inset:0;opacity:0}
     .app-launch-mark{grid-area:1/1;position:relative;z-index:1;width:clamp(84px,24vw,128px);height:clamp(84px,24vw,128px);object-fit:contain}
   </style>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/app-launch.css">
+  <link rel="preload" href="assets/loading/blattaman-arcane.webp" as="image">
   <title>F.P.T Cards</title>
 </head>
 <body>
@@ -47,16 +47,23 @@
     if (/^#\/share\/[0-9a-f-]{36}$/i.test(location.hash)) document.body.dataset.page = 'share';
   </script>
   <div id="app-launch" class="app-launch" role="status" aria-label="Avvio F.P.T. Cards">
-    <div class="app-launch-halo" aria-hidden="true"></div>
     <img class="app-launch-mark" src="icon-384.webp" alt="" fetchpriority="high" width="384" height="384">
-    <div class="app-launch-brand" aria-hidden="true">
-      <span class="app-launch-eyebrow">F.P.T CARDS</span>
-      <span class="app-launch-tagline">IL TUO TEAM. LE TUE CARTE.</span>
-      <div class="app-launch-track"><i></i></div>
+    <div class="launch-arcane">
+      <div class="launch-top"><strong>F.P.T. CARDS</strong><span class="launch-live"><i aria-hidden="true"></i>RISVEGLIO IN CORSO</span></div>
+      <div class="launch-rule" aria-hidden="true"></div>
+      <div class="launch-title"><span class="launch-eyebrow">L’ARCHIVIO SI RISVEGLIA</span><h2>La tua collection<br><em>in un’app</em></h2><p class="launch-battlecry">YEAH BABY LES GOH!</p></div>
+      <div class="launch-stage" aria-hidden="true">
+        <div class="launch-aura"></div><div class="launch-orbit"></div><div class="launch-orbit launch-orbit-alt"></div>
+        <div class="launch-storm" data-launch-storm></div>
+        <div class="launch-mascot"><img src="assets/loading/blattaman-arcane.webp" alt="" width="640" height="498" data-launch-mascot></div>
+        <div class="launch-particles" data-launch-particles></div><div class="launch-floor"></div>
+      </div>
+      <div class="launch-progress"><div class="launch-caption"><p data-launch-status>Preparazione del tuo spazio…</p><span class="launch-wait" aria-hidden="true">AVVIO</span></div><div class="launch-track" aria-hidden="true"><i></i></div></div>
+      <div class="launch-footer"><strong>TRADE · TRUST · TRIUMPH</strong><span>IL PATTO È IL TEAM</span></div>
     </div>
   </div>
   <script src="js/app-launch.js"></script>
-  <noscript><style>.app-launch { display:none; }</style></noscript>
+  <noscript><style>#app-launch { display:none; }</style></noscript>
   <div id="app"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

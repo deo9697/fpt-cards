@@ -1,6 +1,7 @@
 # Cosa NON deve finire nel deploy pubblico (Vercel serve come statico tutto ciò che viene caricato).
 # Verifica dopo ogni deploy: node scripts/public-exposure-probe.mjs https://<dominio>
 docs/
+artifacts/
 scripts/
 supabase/
 backups/
