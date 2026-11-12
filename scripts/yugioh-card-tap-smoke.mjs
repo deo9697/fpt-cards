@@ -7,7 +7,7 @@ const spell={type:'Spell Card',faceUp:false,position:'attack'};
 const trap={type:'Trap Card',faceUp:false,position:'attack'};
 const ids=(card,from)=>cardTapActions(card,from).map(action=>action.id);
 const action=(card,from,id)=>cardTapActions(card,from).find(choice=>choice.id===id);
-assert.deepEqual(ids(monster,'hand'),['normal','special','set']);
+assert.deepEqual(ids(monster,'hand'),['normal','special','set','activate']);
 assert.deepEqual(action(monster,'hand','normal').zones,['monsters']);
 assert.deepEqual(action(monster,'hand','special').zones,['monsters']);
 assert.equal(action(monster,'hand','normal').changes.intent,'normal');
@@ -65,7 +65,7 @@ assert(!ids(monster,'deck').includes('activate'),'Deck activations are rejected 
 assert.deepEqual(ids(monster,'side'),[]);
 assert.deepEqual(cardTapActions(null,'hand'),[]);
 assert.deepEqual(cardTapActions(monster,'invalid'),[]);
-assert.deepEqual(ids({},'hand'),['normal','special','set']);
+assert.deepEqual(ids({},'hand'),['normal','special','set','activate']);
 console.log('PASS pile effects/summons, unknown-type manual choices and read-only Side Deck');
 
 assert.deepEqual(cardDropActions(monster,'hand','monsters').map(choice=>choice.id),['normal','special','set']);
@@ -74,7 +74,7 @@ assert.deepEqual(cardDropActions({...monster,faceUp:false},'monsters','monsters'
 assert.deepEqual(cardDropActions(monster,'monsters','monsters').map(choice=>choice.id),['move','set']);
 for(const card of [monster,spell,trap,fieldSpell,{type:'Link Monster',faceUp:true},{type:'Ritual Monster',faceUp:true},{...monster,token:true},{}]){
   for(const from of ['hand','monsters','extraMonsters','spells','field','deck','graveyard','banished','extra','side']){
-    assert(cardTapActions(card,from).length<=3,`Tap options must fit three choices: ${card.type||'unknown'} in ${from}`);
+    assert(cardTapActions(card,from).length<=(from==='hand'?4:3),`Tap options must remain compact: ${card.type||'unknown'} in ${from}`);
     for(const to of ['monsters','extraMonsters','spells','field','deck','graveyard','banished','extra','hand']){
       for(const samePosition of [false,true]){
         const choices=cardDropActions(card,from,to,{samePosition});
@@ -84,5 +84,5 @@ for(const card of [monster,spell,trap,fieldSpell,{type:'Link Monster',faceUp:tru
     }
   }
 }
-console.log('PASS every quick tap/drop menu fits at most three context-appropriate choices');
+console.log('PASS compact context menus include hand effect activation and preserve three choices elsewhere');
 console.log('yugioh-card-tap-smoke: OK');

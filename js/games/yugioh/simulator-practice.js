@@ -1,4 +1,5 @@
 import { createSession, applyAction } from './simulator-engine.js';
+import {deriveChainState} from './simulator-chain.js';
 
 const clone=value=>JSON.parse(JSON.stringify(value));
 const covered=(player,zone,index,card={})=>({id:`hidden-${player}-${zone}-${index}`,hidden:true,cardName:'Carta coperta',catalogCardId:'',imageUrl:'',faceUp:false,position:card.position||'attack',slot:card.slot??null,counters:card.counters||0,materials:clone(card.materials||[])});
@@ -50,6 +51,7 @@ export function createPracticeTable({deck,name='Il tuo test'}) {
         action[key]=state.players[0].deck[Number(found[1])].id;
       }
       let next=applyAction(state,action);
+      const chain=deriveChainState(next);if(chain.stage==='building'&&chain.priority===1)next=applyAction(next,{type:'passChain',player:1});
       if(next.activePlayer===1)next=applyAction(next,{type:'nextTurn',player:1});
       state=next;version++;return{duel:projection()};
     }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createSession,applyAction} from '../js/games/yugioh/simulator-engine.js';
 import {YugiohMultiplayer} from '../js/games/yugioh/simulator-multiplayer.js';
+import {deriveChainState} from '../js/games/yugioh/simulator-chain.js';
 import {redactState} from '../api/_yugioh-duel-service.js';
 
 const deck={id:'a0000000-0000-4000-8000-000000000001',game:'yugioh',name:'Quick menu fixture',cards:[
@@ -22,6 +23,14 @@ function hand(code){
   if(!state.players[0].hand.some(item=>item.id===card.id)){state=applyAction(state,{type:'move',player:0,cardId:card.id,to:'hand'});version++;controller.receive(snapshot());}
   return card.id;
 }
+async function closeChain(){
+  while(deriveChainState(state).stage==='building'){
+    const player=deriveChainState(state).priority;
+    if(player===0)await controller.act({type:'passChain',player});
+    else{state=applyAction(state,{type:'passChain',player});version++;controller.receive(snapshot());}
+  }
+  await controller.act({type:'resolveChain',player:0});
+}
 const tap=cardId=>controller.click(button({ygoCard:cardId,player:'0'}));
 const choose=id=>controller.click(button({ygoDropAction:id}));
 try{
@@ -38,7 +47,7 @@ try{
   assert.equal(state.players[0].monsters[0].slot,2);
   await tap(monster);assert(controller.dropMenu.actions.some(action=>action.id==='activate'));
   await choose('activate');assert.equal(state.chain.at(-1).cardId,monster);
-  await controller.act({type:'resolveChain',player:0});
+  await closeChain();
   await tap(monster);await choose('position');assert.equal(state.players[0].monsters[0].position,'defense');
   console.log('PASS short tap, delayed target selection, Normal Summon and in-place effect/position commands');
 
@@ -53,7 +62,7 @@ try{
     await tap(cardId);await choose('activate');
     assert.equal(state.players[0][zone].find(card=>card.id===cardId).faceUp,true);
     assert.equal(state.chain.at(-1).cardId,cardId);
-    await controller.act({type:'resolveChain',player:0});
+    await closeChain();
   }
   console.log('PASS Spell, Trap and Field Spell Set/Activate with private identity and manual shared chain');
 

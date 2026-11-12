@@ -91,7 +91,7 @@ async function run() {
   };
   const loaded=file=>requested.some(url=>url.split('?')[0]===`${origin}/${file}`);
   const opFiles=['js/games/onepiece/simulator-multiplayer.js','js/games/onepiece/simulator.js','js/games/onepiece/simulator-engine.js','js/games/onepiece/simulator-storage.js','js/games/onepiece/simulator-arena.js','css/onepiece-simulator.css','css/onepiece-battlefield.css'];
-  const ygoFiles=['js/games/yugioh/simulator-multiplayer.js','js/games/yugioh/simulator-engine.js','js/games/yugioh/simulator-arena.js','js/games/yugioh/simulator-orientation.js','js/games/yugioh/simulator-practice.js','js/games/yugioh/simulator-touch.js','js/games/yugioh/simulator-card-actions.js','css/yugioh-simulator.css'];
+  const ygoFiles=['js/games/yugioh/simulator-multiplayer.js','js/games/yugioh/simulator-engine.js','js/games/yugioh/simulator-arena.js','js/games/yugioh/simulator-orientation.js','js/games/yugioh/simulator-practice.js','js/games/yugioh/simulator-touch.js','js/games/yugioh/simulator-card-actions.js','js/games/yugioh/simulator-chain.js','js/games/yugioh/simulator-summoning.js','js/games/yugioh/simulator-rules-ui.js','css/yugioh-simulator.css'];
   const simulatorFiles=[...opFiles,...ygoFiles];
   const login=async()=>{
     await waitFor('document.querySelectorAll("#member option").length===3','Login non disponibile');

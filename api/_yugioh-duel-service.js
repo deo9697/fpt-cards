@@ -93,7 +93,7 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     if (action.player !== undefined && action.player !== viewer) fail(403, 'opponent_action', 'Puoi modificare soltanto il tuo campo.');
     if (['start', 'undo', 'create', 'ready'].includes(action.type)) fail(400, 'invalid_action', 'Azione non disponibile su questo tavolo.');
     if (['setPhase', 'nextPhase', 'nextTurn'].includes(action.type) && state.activePlayer !== viewer) fail(403, 'not_your_turn', 'Il cambio fase e turno spetta al giocatore attivo.');
-    const allowed = new Set(['draw','move','setPosition','flip','lp','stats','counter','activate','resolveChain','shuffle','setPhase','nextPhase','nextTurn','finish','token','attachMaterial','detachMaterial']);
+    const allowed = new Set(['draw','move','summon','setPosition','flip','lp','stats','counter','activate','passChain','resolveChain','shuffle','setPhase','nextPhase','nextTurn','finish','token','attachMaterial','detachMaterial']);
     if (!allowed.has(action.type)) fail(400, 'invalid_action', 'Azione non disponibile.');
     const result = { ...action, player:viewer };
     // Concealed IDs are positional and scoped to the viewer, never card identities.

@@ -1,4 +1,6 @@
 import { validateYugiohDeck } from './rules.js';
+import {deriveChainState,appendChain,passChain,resolveChain} from './simulator-chain.js';
+import {getSummonKind,summonPlan} from './simulator-summoning.js';
 
 // A manual table: effects, costs, summoning conditions and attack resolution
 // belong to the players. This engine preserves cards, zones and public state.
@@ -39,7 +41,9 @@ function snapshotCard(card, id, originSection) {
     id, catalogCardId:String(card.catalogCardId || '').trim(), cardName:String(card.cardName || '').trim(),
     imageUrl:String(card.imageUrl || '').slice(0, 2000), type:String(card.type || card.cardType || '').slice(0, 100),
     race:String(card.race || '').slice(0, 100), text:String(card.text || card.desc || card.effect || '').slice(0, 10000),
-    atk:numeric(card.atk ?? card.attack), def:numeric(card.def ?? card.defense), originSection,
+    atk:numeric(card.atk ?? card.attack), def:numeric(card.def ?? card.defense),
+    level:/xyz|link/i.test(card.type||card.cardType||'')?null:numeric(card.level),rank:/xyz/i.test(card.type||card.cardType||'')?numeric(card.rank??card.level):null,
+    isTuner:card.isTuner===true||card.tuner===true||/\btuner\b/i.test(card.type||card.cardType||'')&&!/non[- ]tuner/i.test(card.type||card.cardType||''),originSection,
     faceUp:false, position:'attack', slot:null, atkModifier:0, defModifier:0, counters:0, materials:[], token:false
   };
 }
@@ -71,7 +75,7 @@ export function createSession({ decks, firstPlayer = 0, names = [], lp = [8000, 
         initialCounts:{ main:main.length + hand.length, extra:piles.extra.length, side:piles.side.length },
         deck:main, hand, extra:piles.extra, side:piles.side, monsters:[], spells:[], field:[], graveyard:[], banished:[], extraMonsters:[]
       };
-    }), chain:[], log:[{ at, turn:1, type:'create', player:null, text:'Tavolo preparato: cinque carte iniziali ciascuno. Confermate quando siete pronti.' }], result:null
+    }), chain:[], chainState:null, log:[{ at, turn:1, type:'create', player:null, text:'Tavolo preparato: cinque carte iniziali ciascuno. Confermate quando siete pronti.' }], result:null
   };
   assertSession(session); return session;
 }
@@ -132,6 +136,7 @@ export function validateSession(session) {
         if (!text(card.type, 100) || !text(card.race, 100) || !text(card.text, 10000) || !text(card.imageUrl, 2000)) errors.push('Metadati non validi.');
         if (typeof card.token !== 'boolean' || typeof card.faceUp !== 'boolean' || !['attack', 'defense'].includes(card.position) || !integer(card.atkModifier, -1000000, 1000000) || !integer(card.defModifier, -1000000, 1000000) || !integer(card.counters, 0, 999)) errors.push('Stato della carta non valido.');
         if (['atk', 'def'].some(stat => card[stat] !== null && (!Number.isFinite(card[stat]) || Math.abs(card[stat]) > 1000000))) errors.push('Statistiche della carta non valide.');
+        if (['level','rank'].some(stat=>card[stat]!=null&&!integer(card[stat],1,1000000))||card.isTuner!==undefined&&typeof card.isTuner!=='boolean') errors.push('Livello, Rango o Tuner non validi.');
         if (!Array.isArray(card.materials) || card.materials.length > 90 || card.materials.some(material => material.materials?.length || material.token)) errors.push('Materiali Xyz non validi.');
         if (card.materials.length && !player.monsters.includes(card) && !player.extraMonsters.includes(card)) errors.push('Materiali assegnati fuori dalla zona Mostri.');
         if (isLink(card) && card.position !== 'attack') errors.push('Un Mostro Link non può andare in Difesa.');
@@ -140,6 +145,7 @@ export function validateSession(session) {
       if (SECTIONS.some(section => counts[section] !== player.initialCounts[section])) errors.push('Il tavolo ha perso o duplicato carte.');
     }
     if (!Array.isArray(session.chain) || session.chain.length > 50 || session.chain.some(link => !link || !integer(link.player, 0, 1) || !text(link.cardId, 100) || !text(link.cardName, 300))) errors.push('Catena non valida.');
+    if(Array.isArray(session.chain)){try{deriveChainState(session);}catch{errors.push('Stato della catena non valido.');}}
     if (!Array.isArray(session.log) || session.log.length > 200 || session.log.some(row => !row || !text(row.text, 1200) || !text(row.type, 40) || !Number.isFinite(Date.parse(row.at)) || !integer(row.turn, 1, 100000) || row.player !== null && !integer(row.player, 0, 1))) errors.push('Registro non valido.');
     if (session.result !== null && (!session.result || ![0, 1, 'draw'].includes(session.result.winner) || !text(session.result.notes, 4000) || !Number.isFinite(Date.parse(session.result.at)))) errors.push('Risultato non valido.');
   } catch { errors.push('Tavolo incompleto o danneggiato.'); }
@@ -156,10 +162,11 @@ function destinationFor(card, from, requested) {
   if (BOARD.includes(from) && requested === 'graveyard' && isPendulum(card)) return 'extra';
   return requested;
 }
-function moveCard(session, playerIndex, action) {
+function moveCard(session, playerIndex, action, {summoning=false}={}) {
   const player = session.players[playerIndex], found = findCard(player, action.cardId), card = found.card;
   if (!ZONES.includes(action.to)) fail('Zona di destinazione non valida.');
   const destination = destinationFor(card, found.zone, action.to);
+  if(!summoning&&found.zone==='extra'&&MONSTERS.includes(destination)&&getSummonKind(card))fail('Usa la procedura Synchro/Xyz e scegli i materiali sul terreno.');
   if (!canMoveCardToZone(card, destination)) fail('Questa carta non può occupare la zona scelta.');
   const enteringBoard = BOARD.includes(destination), leavingBoard = BOARD.includes(found.zone);
   let slot = null;
@@ -208,6 +215,17 @@ export function applyAction(session, action) {
         const count = action.count ?? 1; if (!integer(count, 1, 60) || player.deck.length < count) fail('Non ci sono abbastanza carte nel mazzo.');
         player.hand.push(...player.deck.splice(0, count)); message = `${player.name} pesca ${count} ${count === 1 ? 'carta' : 'carte'}.`; break;
       }
+      case 'summon': {
+        const plan=summonPlan(next,{...action,player:playerIndex});
+        const materialNames=plan.materials.map(found=>found.card.cardName.slice(0,100));
+        if(plan.kind==='xyz'){
+          for(const item of plan.materials){const found=findCard(player,item.card.id,true);player[found.zone].splice(found.index,1);releaseMaterials(player,found.card);clearBoardState(found.card);found.card.faceUp=true;plan.card.materials.push(found.card);}
+        }else{
+          for(const item of plan.materials)moveCard(next,playerIndex,{cardId:item.card.id,to:'graveyard',faceUp:true});
+        }
+        moveCard(next,playerIndex,{cardId:plan.card.id,to:plan.to,slot:plan.slot,position:plan.position,faceUp:true},{summoning:true});
+        message=`${player.name} evoca ${plan.kind==='xyz'?'Xyz':'Synchro'} ${plan.card.cardName} con ${materialNames.join(', ')}.`;break;
+      }
       case 'move': {
         if(action.intent!==undefined&&!['normal','special','set','activate'].includes(action.intent))fail('Tipo di giocata non valido.');
         if(action.intent==='normal'){
@@ -242,21 +260,36 @@ export function applyAction(session, action) {
         card.counters += action.delta; message = `${player.name} aggiorna i segnalini di ${card.faceUp ? card.cardName : 'una carta coperta'}.`; break;
       }
       case 'activate': {
-        const { card, zone } = findCard(player, action.cardId);
-        if (zone === 'deck' || next.chain.length >= 50) fail('Attivazione non disponibile.');
-        if (MONSTERS.includes(zone) && !card.faceUp) fail('Scopri il Mostro prima di attivare il suo effetto.');
-        card.faceUp = true;
-        next.chain.push({ player:playerIndex, cardId:card.id, cardName:card.cardName }); message = `Catena ${next.chain.length}: ${player.name} attiva ${card.cardName}. Risoluzione manuale.`; break;
+        let {card,zone}=findCard(player,action.cardId);
+        if(zone==='deck')fail('Attivazione non disponibile.');
+        if(action.playTo!==undefined){
+          if(!['spells','field'].includes(action.playTo))fail('Zona di attivazione non valida.');
+          moveCard(next,playerIndex,{cardId:card.id,to:action.playTo,slot:action.slot,position:'attack',faceUp:true});zone=action.playTo;
+        }
+        if(MONSTERS.includes(zone)&&!card.faceUp)fail('Scopri il Mostro prima di attivare il suo effetto.');
+        const count=action.detachCount??0;
+        if(!integer(count,0,90))fail('Numero di materiali da staccare non valido.');
+        if(count&&(!MONSTERS.includes(zone)||!/xyz/i.test(card.type)||card.materials.length<count))fail('Materiali Xyz insufficienti per pagare questo costo.');
+        const ids=action.detachMaterialIds??card.materials.slice(0,count).map(material=>material.id);
+        if(!Array.isArray(ids)||ids.length!==count||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!card.materials.some(material=>material.id===id)))fail('Scegli i materiali Xyz da staccare.');
+        for(const id of ids){const index=card.materials.findIndex(material=>material.id===id),material=card.materials.splice(index,1)[0];clearBoardState(material);material.faceUp=true;player.graveyard.push(material);}
+        if(zone!=='hand')card.faceUp=true;
+        const link=appendChain(next,playerIndex,card);
+        message=`Catena ${link.number}: ${player.name} attiva ${card.cardName}${count?` e stacca ${count} materiale/i`:''}.`;break;
+      }
+      case 'passChain': {
+        const chain=passChain(next,playerIndex);
+        message=`${player.name} non risponde.${chain.stage==='resolving'?' La catena si risolve dall’ultimo anello.':''}`;break;
       }
       case 'resolveChain': {
-        if (!next.chain.length) fail('Non ci sono anelli di catena da risolvere.');
-        const link = next.chain.pop(); message = `Risolto manualmente: ${link.cardName}.`; break;
+        const link=resolveChain(next,playerIndex);message=`Risolto manualmente anello ${link.number}: ${link.cardName}.`;break;
       }
       case 'shuffle': {
         if (action.zone !== undefined && action.zone !== 'deck') fail('Puoi mescolare soltanto il Main Deck.');
         player.deck = shuffled(player.deck); message = `${player.name} mescola il mazzo.`; break;
       }
       case 'setPhase': {
+        if(next.chain.length)fail('Completa la catena prima di cambiare fase o turno.');
         if (playerIndex !== next.activePlayer) fail('Il cambio fase spetta al giocatore attivo.');
         if (!PHASES.includes(action.phase)) fail('Fase di gioco non valida.');
         // Phase selection is a manual declaration: it never draws cards,
@@ -265,6 +298,7 @@ export function applyAction(session, action) {
         message = `Turno ${next.turn}: ${player.name} · ${next.phase}.`; break;
       }
       case 'nextPhase': {
+        if(next.chain.length)fail('Completa la catena prima di cambiare fase o turno.');
         if (playerIndex !== next.activePlayer) fail('Il cambio fase spetta al giocatore attivo.');
         const index = PHASES.indexOf(next.phase);
         if (index === PHASES.length - 1) { next.turn++; next.activePlayer = 1 - next.activePlayer; next.phase = 'draw'; }
@@ -272,6 +306,7 @@ export function applyAction(session, action) {
         message = `Turno ${next.turn}: ${next.players[next.activePlayer].name} · ${next.phase}.`; break;
       }
       case 'nextTurn': {
+        if(next.chain.length)fail('Completa la catena prima di cambiare fase o turno.');
         if (playerIndex !== next.activePlayer) fail('Il cambio turno spetta al giocatore attivo.');
         next.turn++; next.activePlayer = 1 - next.activePlayer; next.phase = 'draw'; message = `Turno ${next.turn}: ${next.players[next.activePlayer].name}.`; break;
       }

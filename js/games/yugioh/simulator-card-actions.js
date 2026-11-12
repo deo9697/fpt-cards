@@ -64,6 +64,7 @@ export function cardTapActions(card,from){
   };
   if(from==='hand'){
     if(monster||unknown)summons(true);
+    if(monster||unknown)add('activate','Activate',{activateOnly:true});
     if(!monster&&!unknown){
       const to=canMoveCardToZone(card,'field')?'field':'spells';
       for(const choice of cardDropActions(card,'hand',to)){

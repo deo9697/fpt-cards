@@ -3,9 +3,9 @@ import { createSession, applyAction, validateSimulatorDeck, validateSession, zon
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const fixture = suffix => ({ id:`deck-${suffix}`, name:`Synthetic ${suffix}`, game:'yugioh', cards:[
-  ...Array.from({ length:14 }, (_, i) => ({ catalogCardId:`monster-${i}`, cardName:`Monster ${i}`, section:'main', quantity:i === 13 ? 1 : 3, type:'Effect Monster', atk:1500, def:1000 })),
+  ...Array.from({ length:14 }, (_, i) => ({ catalogCardId:`monster-${i}`, cardName:`Monster ${i}`, section:'main', quantity:i === 13 ? 1 : 3, type:'Effect Monster', level:4, atk:1500, def:1000 })),
   { catalogCardId:'fusion-1', cardName:'Fusion', section:'extra', quantity:1, type:'Fusion Monster', atk:2500, def:2000 },
-  { catalogCardId:'xyz-1', cardName:'Xyz', section:'extra', quantity:1, type:'XYZ Monster', atk:2400, def:1800 },
+  { catalogCardId:'xyz-1', cardName:'Xyz', section:'extra', quantity:1, type:'XYZ Monster', level:4, rank:4, text:'2 Level 4 monsters', atk:2400, def:1800 },
   { catalogCardId:'link-1', cardName:'Link', section:'extra', quantity:1, type:'Link Monster', atk:2300 },
   { catalogCardId:'side-1', cardName:'Side spell', section:'side', quantity:1, type:'Spell Card' }
 ] });
@@ -89,8 +89,10 @@ state = act(state, 'move', { cardId:link.id, to:'monsters', slot:1 });
 assert.throws(() => act(state, 'flip', { cardId:link.id }), /Orientamento/);
 
 const xyz = state.players[0].extra.find(card => /XYZ/.test(card.type));
-state = act(state, 'move', { cardId:xyz.id, to:'monsters', slot:2 });
-state = act(state, 'attachMaterial', { cardId:firstId, targetId:xyz.id });
+state = act(state, 'setPhase', { phase:'main1' });
+state = act(state, 'move', { cardId:secondId, to:'monsters', slot:0, faceUp:true });
+assert.throws(() => act(state, 'move', { cardId:xyz.id, to:'monsters', slot:2 }), /material|evocazione|Evocazione/i, 'Raw moves cannot bypass an Xyz Summon');
+state = act(state, 'summon', { cardId:xyz.id, materialIds:[firstId,secondId], to:'monsters', slot:2, position:'attack', confirmRequirements:true });
 assert.equal(state.players[0].monsters.find(card => card.id === xyz.id).materials[0].id, firstId);
 assert.equal(state.players[0].monsters.find(card => card.id === xyz.id).materials[0].slot, null);
 state = act(state, 'detachMaterial', { cardId:xyz.id, index:0 });
@@ -126,7 +128,10 @@ assert(!spell.log.at(-1).text.includes(spell.players[0].spells[0].cardName), 'Se
 spell = act(spell, 'activate', { cardId:spellId });
 assert.equal(spell.players[0].spells[0].faceUp, true);
 assert.equal(spell.chain.length, 1);
-spell = act(spell, 'activate', { cardId:link.id });
+assert.throws(() => act(spell, 'resolveChain'), /Entrambi/);
+spell = act(spell, 'activate', { player:1, cardId:opponentFusion.id });
+spell = act(spell, 'passChain', { player:0 });
+spell = act(spell, 'passChain', { player:1 });
 spell = act(spell, 'resolveChain');
 assert.equal(spell.chain.length, 1, 'Chain resolution follows last-in-first-out');
 spell = act(spell, 'resolveChain');
@@ -135,6 +140,7 @@ assert.throws(() => act(spell, 'resolveChain'), /anelli/);
 spell = act(spell, 'move', { cardId:spellId, to:'graveyard' });
 assert.equal(spell.players[0].graveyard.find(card => card.id === spellId).faceUp, true);
 
+state = act(state, 'setPhase', { phase:'draw' });
 const order = state.players[0].deck.map(card => card.id).sort();
 state = act(state, 'shuffle');
 assert.deepEqual(state.players[0].deck.map(card => card.id).sort(), order);

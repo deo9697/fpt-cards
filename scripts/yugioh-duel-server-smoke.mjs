@@ -12,10 +12,10 @@ const third = { slug:'ygo-third', name:'Third', teamId:team };
 const outsider = { slug:'ygo-outside', name:'Outside', teamId:otherTeam };
 const actors = [host, guest, third, outsider];
 const fixture = (owner, index) => ({ id:id(index), ownerSlug:owner.slug, game:'yugioh', name:`${owner.name} deck`, cards:[
-  ...Array.from({ length:12 },(_,i)=>({ section:'main',catalogCardId:String(10000000+i),cardName:`Secret ${owner.slug} ${i}`,quantity:3,type:'Effect Monster',atk:1800,def:1000 })),
+  ...Array.from({ length:12 },(_,i)=>({ section:'main',catalogCardId:String(10000000+i),cardName:`Secret ${owner.slug} ${i}`,quantity:3,type:'Effect Monster',level:4,atk:1800,def:1000 })),
   { section:'main',catalogCardId:'11000001',cardName:'Secret Spell',quantity:3,type:'Spell Card' },
   { section:'main',catalogCardId:'11000002',cardName:'Secret Trap',quantity:1,type:'Trap Card' },
-  { section:'extra',catalogCardId:'12000001',cardName:'Secret Xyz',quantity:1,type:'XYZ Monster',atk:2500,def:2000 },
+  { section:'extra',catalogCardId:'12000001',cardName:'Secret Xyz',quantity:1,type:'XYZ Monster',level:4,rank:4,text:'2 Level 4 monsters',atk:2500,def:2000 },
   { section:'extra',catalogCardId:'12000002',cardName:'Secret Link',quantity:1,type:'Link Monster',atk:2000 },
   { section:'side',catalogCardId:'13000001',cardName:'Secret Side',quantity:1,type:'Effect Monster',atk:1000,def:1000 }
 ] });
@@ -119,14 +119,41 @@ assert.equal(view.state.players[0].monsters[0].catalogCardId,card.catalogCardId)
 await action(host,{type:'activate',cardId:card.id});
 view=(await run(guest,{op:'state',duelId})).duel;
 assert.equal(view.state.chain.length,1); assert.equal(view.state.chain[0].cardName,card.cardName);
+assert.equal(view.state.chain[0].number,1);
+const beforePriority=clone(records.get(duelId).state);
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'activate',cardId:card.id}},400,'invalid_action');
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'passChain'}},400,'invalid_action');
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'main1'}},400,'invalid_action');
+assert.deepEqual(records.get(duelId).state,beforePriority);
+const responseCard=records.get(duelId).state.players[1].hand[0],responseHandLength=records.get(duelId).state.players[1].hand.length;
+await action(guest,{type:'activate',cardId:responseCard.id});
+const bothViews=await Promise.all([run(host,{op:'state',duelId}),run(guest,{op:'state',duelId})]);
+assert.deepEqual(bothViews[0].duel.state.chain,bothViews[1].duel.state.chain);
+assert.deepEqual(bothViews[0].duel.state.chain.map(link=>link.number),[1,2]);
+assert.equal(bothViews[0].duel.state.chain[1].cardName,responseCard.cardName);
+assert.equal(records.get(duelId).state.players[1].hand.length,responseHandLength,'Hand-effect declaration does not remove its source card');
+assert(bothViews[0].duel.state.players[1].hand.every(item=>item.hidden&&!item.catalogCardId));
+await action(host,{type:'passChain'});await action(guest,{type:'passChain'});
 await action(guest,{type:'resolveChain'});
+assert.deepEqual(records.get(duelId).state.chain.map(link=>link.number),[1]);
+await action(host,{type:'resolveChain'});
+assert.equal(records.get(duelId).state.chain.length,0);
+console.log('PASS public numbered hand-effect chains, response priority, phase guards and descending resolution');
 await action(host,{type:'lp',delta:-1200});
 assert.equal(records.get(duelId).state.players[0].lp,6800);
 await action(host,{type:'move',cardId:card.id,to:'banished',faceUp:false});
 view=(await run(guest,{op:'state',duelId})).duel;
 assert(view.state.players[0].banished[0].hidden);
 const xyz=records.get(duelId).state.players[0].extra.find(card=>/XYZ/i.test(card.type));
-await action(host,{type:'move',cardId:xyz.id,to:'extraMonsters',slot:0,faceUp:true});
+const sourceMonsters=records.get(duelId).state.players[0].hand.concat(records.get(duelId).state.players[0].deck).filter(item=>/Monster/.test(item.type)).slice(0,2);
+assert.equal(sourceMonsters.length,2);
+await action(host,{type:'setPhase',phase:'main1'});
+for(const[slot,material]of sourceMonsters.entries())await action(host,{type:'move',cardId:material.id,to:'monsters',slot,faceUp:true});
+const foreignMaterial=records.get(duelId).state.players[1].hand[0].id,beforeForeignMaterials=clone(records.get(duelId).state);
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'summon',cardId:xyz.id,materialIds:[sourceMonsters[0].id,foreignMaterial],to:'extraMonsters',slot:0,confirmRequirements:true}},400,'invalid_action');
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'move',cardId:xyz.id,to:'extraMonsters',slot:0,faceUp:true}},400,'invalid_action');
+assert.deepEqual(records.get(duelId).state,beforeForeignMaterials);
+await action(host,{type:'summon',cardId:xyz.id,materialIds:sourceMonsters.map(item=>item.id),to:'extraMonsters',slot:0,position:'attack',confirmRequirements:true});
 view=(await run(guest,{op:'state',duelId})).duel;
 assert.equal(view.state.players[0].extraMonsters[0].cardName,xyz.cardName);
 assert(view.state.players[0].extra.every(card=>card.hidden));
@@ -136,7 +163,7 @@ if(material){
   await action(host,{type:'move',cardId:material.id,to:'monsters',slot:0,faceUp:true});
   await action(host,{type:'attachMaterial',cardId:material.id,targetId:xyz.id});
   view=(await run(guest,{op:'state',duelId})).duel;
-  assert.equal(view.state.players[0].extraMonsters[0].materials[0].cardName,material.cardName);
+  assert.equal(view.state.players[0].extraMonsters[0].materials.at(-1).cardName,material.cardName);
   assert(view.state.players[0].hand.every(card=>card.hidden));
 }
 await action(host,{type:'finish',winner:0,notes:'Partita sintetica YGO'});

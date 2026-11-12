@@ -5,6 +5,34 @@ import { createDuelService, DuelError } from './_yugioh-duel-service.js';
 const unwrap = result => { if (result.error) throw result.error; return result.data; };
 const clientOptions = { auth:{ persistSession:false, autoRefreshToken:false } };
 const cardMetadataCache = new Map();
+const metadataType = info => {
+  const types=[info?.cardType,info?.type].map(value=>String(value||'').trim()).filter(Boolean);
+  return types.find(type=>!/^(?:monster|mostro|spell|magia|trap|trappola)$/i.test(type))||types[0]||'';
+};
+const metadataNumber = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+const metadataLevel = value => { const parsed=metadataNumber(value);return Number.isInteger(parsed)&&parsed>0&&parsed<=1000000?parsed:null; };
+const metadataText = info => info?.effect || info?.desc || info?.text || '';
+function needsYugiohMetadata(info) {
+  const type=metadataType(info);
+  if(!type||/^(?:monster|mostro)$/i.test(type))return true;
+  if(/spell|magia/i.test(type)&&!info?.race)return true;
+  if(!/monster|mostro|token/i.test(type))return false;
+  if(/xyz/i.test(type))return (metadataLevel(info?.rank)??metadataLevel(info?.level))===null||!metadataText(info);
+  if(/link/i.test(type))return false; // Link Monsters have no Level.
+  return metadataLevel(info?.level)===null||/synchro/i.test(type)&&!metadataText(info);
+}
+function resolveYugiohMetadata(stored={},canonical={}) {
+  stored=stored||{};canonical=canonical||{};
+  const savedType=metadataType(stored),publicType=metadataType(canonical);
+  const type=/^(?:monster|mostro|spell|magia|trap|trappola)$/i.test(savedType)?publicType||savedType:savedType||publicType;
+  const xyz=/xyz/i.test(type),link=/link/i.test(type);
+  const level=link?null:metadataLevel(stored.level)??metadataLevel(canonical.level);
+  const rank=xyz?metadataLevel(stored.rank)??metadataLevel(stored.level)??metadataLevel(canonical.rank)??metadataLevel(canonical.level):null;
+  const allTypes=`${savedType} ${publicType}`;
+  return{type,race:stored.race||canonical.race||'',atk:metadataNumber(stored.atk)??metadataNumber(canonical.atk),def:metadataNumber(stored.def)??metadataNumber(canonical.def),
+    text:metadataText(stored)||metadataText(canonical),attribute:stored.attribute||canonical.attribute||'',level,rank,
+    isTuner:stored.isTuner===true||stored.tuner===true||canonical.isTuner===true||/\btuner\b/i.test(allTypes)&&!/non[- ]tuner/i.test(allTypes)};
+}
 
 // Deck rows store identities and images. Resolve game data through the same
 // public catalogue used by FPT, only after the saved deck's owner is verified.
@@ -69,11 +97,11 @@ export function createDatabase(env, authorization) {
         const codes = [...new Set(cards.map(card => card.catalog_card_id))];
         let metadata = [];
         if (codes.length) metadata = unwrap(await admin.from('card_printings').select('id,catalog_card_id,game_metadata').eq('game', 'yugioh').in('catalog_card_id', codes).limit(1000)) || [];
-        const publicMetadata = await lookupYugiohMetadata(codes.filter(code => !metadata.some(item => item.catalog_card_id === code && (item.game_metadata?.cardType || item.game_metadata?.type))));
+        const printingFor = card => metadata.find(item => item.id === card.printing_id && String(item.catalog_card_id) === String(card.catalog_card_id)) || metadata.find(item => String(item.catalog_card_id) === String(card.catalog_card_id));
+        const publicMetadata = await lookupYugiohMetadata(cards.filter(card => needsYugiohMetadata(printingFor(card)?.game_metadata)).map(card => card.catalog_card_id));
         return { id:row.id, ownerSlug:row.owner_slug, game:row.game, name:row.name, cards:cards.map(card => {
-          const found = metadata.find(item => item.id === card.printing_id) || metadata.find(item => item.catalog_card_id === card.catalog_card_id);
-          const info = { ...(publicMetadata.get(card.catalog_card_id) || {}), ...(found?.game_metadata || {}) };
-          return { catalogCardId:card.catalog_card_id, cardName:card.card_name, imageUrl:card.image_url, printingId:card.printing_id || '', section:card.section, quantity:card.quantity, banTcg:card.ban_tcg || '', type:info.cardType || info.type || '', race:info.race || '', atk:info.atk ?? null, def:info.def ?? null, text:info.effect || info.desc || '', attribute:info.attribute || '', level:info.level ?? null };
+          const info = resolveYugiohMetadata(printingFor(card)?.game_metadata,publicMetadata.get(String(card.catalog_card_id)));
+          return { catalogCardId:card.catalog_card_id, cardName:card.card_name, imageUrl:card.image_url, printingId:card.printing_id || '', section:card.section, quantity:card.quantity, banTcg:card.ban_tcg || '', ...info };
         }) };
       },
       async recentCount(hostSlug, since) {
