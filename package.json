@@ -35,7 +35,7 @@
     "test:onepiece-deck-e2e": "node scripts/onepiece-deck-e2e-smoke.mjs",
     "test:onepiece-simulator": "node scripts/onepiece-simulator-engine-smoke.mjs && node scripts/onepiece-simulator-storage-smoke.mjs && node scripts/onepiece-simulator-ui-smoke.mjs && node scripts/onepiece-simulator-routing-smoke.mjs",
     "test:onepiece-multiplayer": "node scripts/onepiece-duel-schema-smoke.mjs && node scripts/onepiece-duel-server-smoke.mjs && node scripts/onepiece-duel-client-smoke.mjs && node scripts/onepiece-duel-browser-smoke.mjs && node scripts/onepiece-simulator-routing-smoke.mjs",
-    "test:yugioh-simulator": "node scripts/yugioh-simulator-engine-smoke.mjs && node scripts/yugioh-duel-schema-smoke.mjs && node scripts/yugioh-duel-server-smoke.mjs && node scripts/yugioh-duel-client-smoke.mjs && node scripts/yugioh-duel-browser-smoke.mjs && node scripts/onepiece-simulator-routing-smoke.mjs",
+    "test:yugioh-simulator": "node scripts/yugioh-simulator-engine-smoke.mjs && node scripts/yugioh-phase-smoke.mjs && node scripts/yugioh-duel-schema-smoke.mjs && node scripts/yugioh-duel-server-smoke.mjs && node scripts/yugioh-duel-client-smoke.mjs && node scripts/yugioh-orientation-smoke.mjs && node scripts/yugioh-touch-smoke.mjs && node scripts/yugioh-practice-smoke.mjs && node scripts/yugioh-card-drop-smoke.mjs && node scripts/yugioh-card-tap-smoke.mjs && node scripts/yugioh-quick-menu-smoke.mjs && node scripts/yugioh-duel-browser-smoke.mjs && node scripts/onepiece-simulator-routing-smoke.mjs",
     "test:card-type-background": "node scripts/card-type-background-smoke.mjs",
     "test:card-detail-background-flicker": "node scripts/card-detail-background-flicker-smoke.mjs",
     "test:market-variant-resolver": "node scripts/market-variant-resolver-smoke.mjs",

@@ -206,4 +206,153 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
   .ygo-duelist.is-self .ygo-duelist-info>strong { max-width:58px; }
 }
 .ygo-arena .ygo-counter-badge { right:auto; }
+.ygo-simulator.is-touch-dragging :is(.ygo-zone-dialog,.ygo-overlay) { visibility:hidden;pointer-events:none; }
 @media(prefers-reduced-motion:reduce) { .ygo-simulator * { animation:none!important;transition:none!important; } }
+
+/* Every board position uses the same card geometry, including shared EMZ. */
+.ygo-arena .ygo-zone {
+  width:min(100%,calc(var(--slot-h)*1.12));
+  height:var(--slot-h);
+  justify-self:center;
+  padding:0;
+}
+.ygo-zone>.ygo-card {
+  width:calc(var(--slot-h)*.92*63/88);
+  height:calc(var(--slot-h)*.92);
+  max-width:100%;
+  max-height:100%;
+  border:0!important;
+}
+.ygo-card>img,.ygo-card-back>img { object-fit:contain; }
+.ygo-zone>.ygo-card::after { content:'';position:absolute;inset:-3px -6px; }
+.ygo-card.is-defense { transform:rotate(90deg); }
+.ygo-card.is-defense>.ygo-card-stat { left:100%; }
+.ygo-shared-extra {
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:var(--field-gap);
+  align-items:center;
+  height:calc(var(--slot-h) + 4px);
+  padding:2px 0;
+}
+.ygo-shared-extra>.ygo-zone { width:min(100%,calc(var(--slot-h)*1.12));height:var(--slot-h); }
+.ygo-shared-extra>.ygo-zone:nth-child(2) { grid-column:3; }
+.ygo-shared-extra>.ygo-zone:nth-child(3) { grid-column:5; }
+.ygo-shared-extra>.ygo-field-divider:first-child { grid-column:1/span 2;grid-row:1; }
+.ygo-shared-extra>.ygo-field-divider:last-child { grid-column:6/span 2;grid-row:1; }
+.ygo-shared-extra>.ygo-zone { grid-row:1; }
+.ygo-shared-extra .ygo-card { width:calc(var(--slot-h)*.92*63/88);height:calc(var(--slot-h)*.92); }
+
+/* The game canvas is designed around a phone held horizontally. */
+@media(max-width:1100px) and (orientation:landscape) and (max-height:600px) {
+  body[data-page='simulator']:has(.ygo-arena) { overflow:hidden; }
+  .ygo-simulator.is-playing { height:100dvh;min-height:0;overflow:hidden; }
+  .ygo-arena {
+    --slot-h:clamp(36px,calc((100dvh - 112px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))/5.92),64px);
+    --field-gap:2px;
+    grid-template-columns:minmax(0,1fr) 74px;
+    grid-template-rows:29px minmax(0,1fr);
+    gap:4px 7px;
+    height:100dvh;
+    min-height:0;
+    max-width:none;
+    padding:max(4px,env(safe-area-inset-top,0px)) max(6px,env(safe-area-inset-right,0px)) max(4px,env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));
+  }
+  .ygo-idle-preview { display:none; }
+  .ygo-arena-header { grid-column:1/-1;grid-row:1;gap:5px; }
+  .ygo-arena-header>button { min-height:28px;padding:5px 8px;font-size:.55rem; }
+  .ygo-arena-header>button:first-child { margin-right:auto; }
+  .ygo-arena-header>button:last-child { margin-left:auto; }
+  .ygo-arena-brand,.ygo-online { display:none; }
+  .ygo-battle-stage { grid-column:1;grid-row:2;align-self:center;width:100%; }
+  .ygo-playmat { padding:5px 5px 0;border-radius:5px; }
+  .ygo-half { gap:2px; }
+  .ygo-field { justify-items:center; }
+  .ygo-arena .ygo-pile,.ygo-grave-piles { width:min(100%,calc(var(--slot-h)*1.12));justify-self:center; }
+  .ygo-pile-art { width:calc(var(--slot-h)*.92*63/88);height:calc(var(--slot-h)*.92); }
+  .ygo-grave-piles .ygo-pile { width:100%; }
+  .ygo-grave-piles .ygo-pile-art { width:calc(var(--slot-h)*.5*63/88);height:calc(var(--slot-h)*.5); }
+  .ygo-zone>small { bottom:1px;font-size:.22rem; }
+  .ygo-pile>small { font-size:.22rem; }
+  .ygo-pile>b { font-size:.35rem;min-width:13px;padding:1px 2px; }
+  .ygo-card-stat { bottom:-1px;padding:1px 2px;font-size:.32rem; }
+  .ygo-card-set-label { font-size:.27rem;padding:1px 2px; }
+  .ygo-material-badge,.ygo-counter-badge { min-width:11px;min-height:11px;font-size:.35rem; }
+  .ygo-hand.is-opponent { height:18px;min-height:18px; }
+  .ygo-hand.is-opponent .ygo-hand-cards { height:18px;padding:0 30px;gap:2px; }
+  .ygo-hand.is-opponent .ygo-card { width:12px;height:17px; }
+  .ygo-hand.is-opponent>small { display:none; }
+  .ygo-hand.is-self { padding-top:0;margin-inline:0; }
+  .ygo-hand.is-self .ygo-hand-cards { padding:3px 35px 4px;gap:3px; }
+  .ygo-hand.is-self .ygo-hand-cards>.ygo-card { width:calc(var(--slot-h)*.92*63/88);height:calc(var(--slot-h)*.92); }
+  .ygo-hand.is-self .ygo-hand-cards>.ygo-card:nth-child(odd) { transform:none; }
+  .ygo-hand>small { left:1px;font-size:.25rem; }
+  .ygo-hand>small>b { font-size:.5rem; }
+  .ygo-hand>button { right:0;bottom:5px;min-height:24px;padding:4px 5px;font-size:.34rem; }
+  .ygo-chain-bar { min-height:0;height:0;padding:0;overflow:hidden; }
+  .ygo-chain-bar.has-chain { position:absolute;z-index:7;left:18%;right:18%;top:46%;height:auto;min-height:25px;padding:3px 7px;border:1px solid #85d0e961;background:#071721f0; }
+  .ygo-arena-status { min-height:17px;margin:2px 0 0;font-size:.4rem;line-height:1.25; }
+  .ygo-arena-status>button { min-height:20px;padding:3px 5px;font-size:.38rem; }
+  .ygo-battle-profiles { position:fixed;z-index:5;top:max(4px,env(safe-area-inset-top,0px));left:max(72px,calc(env(safe-area-inset-left,0px) + 66px));right:max(86px,calc(env(safe-area-inset-right,0px) + 80px));height:29px;margin:0;display:flex;justify-content:space-between;gap:10px;pointer-events:none; }
+  .ygo-battle-profiles .ygo-duelist { position:relative;left:auto;right:auto;top:auto;bottom:auto;flex:0 1 130px;width:130px;max-width:130px;padding:3px 9px;height:29px;gap:5px; }
+  .ygo-battle-profiles .ygo-duelist-avatar,.ygo-duelist-seat { display:none; }
+  .ygo-battle-profiles .ygo-duelist-info { gap:1px; }
+  .ygo-battle-profiles .ygo-duelist-info>strong { max-width:100%;font-size:.4rem; }
+  .ygo-battle-profiles .ygo-duelist-info>span { gap:4px; }
+  .ygo-battle-profiles .ygo-duelist-info b { font-size:.85rem; }
+  .ygo-battle-profiles .ygo-duelist-info small { font-size:.32rem; }
+  .ygo-battle-profiles .ygo-duelist-info>i { height:1px; }
+  .ygo-phase-panel { grid-column:2;grid-row:2;align-self:center;gap:6px; }
+  .ygo-phase-panel>span { font-size:.4rem; }
+  .ygo-phase-panel>strong { font-size:.42rem; }
+  .ygo-phase-panel>ol { gap:2px; }
+  .ygo-phase-panel li { min-height:20px;padding:4px 1px;font-size:.4rem; }
+  .ygo-phase-controls { gap:5px; }
+  .ygo-phase-controls>button { min-height:34px;padding:6px 2px;font-size:.45rem; }
+  .ygo-arena .ygo-banish-count { min-height:12px;height:12px;font-size:.3rem;padding:1px 2px; }
+  .ygo-banish-count>span { display:none; }
+  .ygo-arena :is(.ygo-card-dialog,.ygo-zone-dialog,.ygo-tools-dialog) { max-height:calc(100dvh - 12px); }
+}
+
+.ygo-orientation-gate { display:none;position:fixed;z-index:2000;inset:0;min-height:100dvh;padding:max(28px,env(safe-area-inset-top,0px)) 25px max(28px,env(safe-area-inset-bottom,0px));background:#08141ff7;color:#eef6fa;align-items:center;justify-content:center;flex-direction:column;gap:17px;text-align:center;backdrop-filter:blur(12px); }
+.ygo-orientation-gate.is-required { display:flex; }
+.ygo-orientation-gate>div { display:grid;gap:17px;justify-items:center;max-width:350px;width:100%; }
+.ygo-orientation-gate h2 { margin:0;color:#f2d58e;font-size:clamp(1.35rem,5vw,2rem); }
+.ygo-orientation-gate p { max-width:330px;margin:0;color:#b8cfdb;font-size:.9rem;line-height:1.7; }
+.ygo-orientation-gate .icon { width:44px;height:44px;color:#a7ddf6; }
+.ygo-orientation-gate button { min-height:46px;max-width:320px;width:100%;padding:12px;font-size:.85rem; }
+@media(max-width:1100px) and (orientation:portrait) and (pointer:coarse) {
+  .ygo-arena .ygo-orientation-gate { display:flex; }
+}
+@media(max-width:1100px) {
+  .ygo-simulator:not(.is-playing) { padding-bottom:calc(84px + env(safe-area-inset-bottom,0px)); }
+  .ygo-lobby button[type=submit] { scroll-margin-block:90px; }
+}
+
+/* A drop asks for one small action choice while keeping the field in view. */
+.ygo-arena .ygo-drop-backdrop { position:fixed;z-index:699;inset:0;display:block;width:100%;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:#0000001f;touch-action:manipulation; }
+.ygo-arena button.ygo-drop-backdrop:is(:hover,:active,:focus) { border:0;background:#0000001f; }
+.ygo-arena .ygo-drop-menu { position:fixed;z-index:700;display:block;width:min(260px,calc(100vw - 16px));min-width:min(180px,calc(100vw - 16px));max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain;padding:10px;border:1px solid #a9c8d4;border-top:2px solid var(--duel-gold);border-radius:5px;background:#102330fa;color:#eff7f9;box-shadow:0 8px 30px #000a;touch-action:pan-y; }
+.ygo-drop-menu :is(h2,h3,.ygo-drop-title) { margin:0 0 7px;font-size:.7rem;line-height:1.45;color:#f2dc9f;overflow-wrap:anywhere; }
+.ygo-drop-menu p { margin:0 0 8px;color:#b7cbd5;font-size:.61rem;line-height:1.5; }
+.ygo-arena .ygo-drop-menu button { display:block;width:100%;min-height:40px;margin:5px 0 0;padding:8px;font-size:.68rem;line-height:1.35;white-space:normal;text-align:center;touch-action:manipulation; }
+.ygo-drop-actions { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px; }
+.ygo-arena .ygo-drop-actions>button { margin:0; }
+.ygo-drag-ghost { position:fixed;z-index:800;display:block;width:50px;height:70px;min-width:0;min-height:0;max-width:none;max-height:none;margin:0;padding:0;overflow:hidden;border:1px solid #e2cd8b;border-radius:2px;background:#172633;object-fit:contain;box-shadow:0 8px 18px #000a,0 0 0 1px #fff4;opacity:.94;pointer-events:none!important;touch-action:none;will-change:left,top; }
+.ygo-drag-ghost * { pointer-events:none!important; }
+.ygo-drag-ghost img { display:block;width:100%;height:100%;object-fit:contain; }
+.ygo-card.is-drag-source { opacity:.45; }
+.ygo-drag-ghost.is-drag-source { opacity:.94; }
+.ygo-arena .ygo-zone.is-drag-target { outline:2px solid #ffe49b;outline-offset:1px;border-color:#f4cf69!important;box-shadow:inset 0 0 14px #e8c26b66,0 0 10px #e8c26b77;background:#8b6c2f55!important; }
+.ygo-zone.is-drag-target>small { color:#fff1bb; }
+
+/* Phase declarations and card menus stay directly on the phone battlefield. */
+.ygo-phase-panel li { padding:0; }
+.ygo-arena .ygo-phase-panel li>button { display:grid;place-items:center;width:100%;min-height:31px;padding:6px 2px;border:0;border-radius:inherit;background:transparent;color:inherit;font:inherit;line-height:1.3;touch-action:manipulation; }
+.ygo-arena .ygo-phase-panel li>button:not(:disabled):hover { background:#d9c47a22; }
+.ygo-drop-footer { display:grid;grid-template-columns:1fr 1fr;gap:5px; }
+.ygo-arena .ygo-card { -webkit-touch-callout:none;user-select:none;-webkit-user-select:none; }
+.ygo-arena .ygo-card img { -webkit-user-drag:none; }
+@media(max-width:1100px) and (orientation:landscape) {
+  .ygo-arena .ygo-phase-panel li>button { min-height:24px;padding:5px 1px; }
+}

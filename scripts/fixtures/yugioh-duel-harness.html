@@ -22,8 +22,10 @@
     if (!response.ok) throw new Error('Fixture account not found');
     window.__fixtures = await response.json();
     window.__context = { member, team:window.__fixtures.teamId, allowed:true };
-    window.__duelResponses = []; window.__toasts = [];
-    window.__render = () => { const root = document.getElementById('fixture-stage'); root.innerHTML = window.__sim.view(); window.__sim.bind(root); };
+    window.__duelResponses = []; window.__toasts = []; window.__duelQaTrace = [];
+    const trace = (type,detail={}) => { window.__duelQaTrace.push({type,time:Math.round(performance.now()),...detail}); if(window.__duelQaTrace.length>100)window.__duelQaTrace.shift(); };
+    for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,event=>trace(type,{card:event.target.closest?.('[data-ygo-card]')?.dataset.ygoCard,pointer:event.pointerId,x:event.clientX,y:event.clientY}),true);
+    window.__render = () => { trace('render',{version:window.__sim.duel?.version,pending:window.__sim.pending,drop:window.__sim.dropMenu?.mode||Boolean(window.__sim.dropMenu),selected:window.__sim.selected?.cardId}); const root = document.getElementById('fixture-stage'); root.innerHTML = window.__sim.view(); window.__sim.bind(root); };
     window.__sim = new YugiohMultiplayer({
       getContext:()=>({...window.__context}), getDecks:()=>window.__fixtures.decks,
       getMembers:()=>window.__fixtures.members.map(person=>({...person,id:person.slug})),

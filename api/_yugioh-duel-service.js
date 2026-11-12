@@ -92,8 +92,8 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     if (!action || typeof action !== 'object' || Array.isArray(action) || typeof action.type !== 'string') fail(400, 'invalid_action', 'Azione non valida.');
     if (action.player !== undefined && action.player !== viewer) fail(403, 'opponent_action', 'Puoi modificare soltanto il tuo campo.');
     if (['start', 'undo', 'create', 'ready'].includes(action.type)) fail(400, 'invalid_action', 'Azione non disponibile su questo tavolo.');
-    if (['nextPhase', 'nextTurn'].includes(action.type) && state.activePlayer !== viewer) fail(403, 'not_your_turn', 'Il cambio fase e turno spetta al giocatore attivo.');
-    const allowed = new Set(['draw','move','setPosition','flip','lp','stats','counter','activate','resolveChain','shuffle','nextPhase','nextTurn','finish','token','attachMaterial','detachMaterial']);
+    if (['setPhase', 'nextPhase', 'nextTurn'].includes(action.type) && state.activePlayer !== viewer) fail(403, 'not_your_turn', 'Il cambio fase e turno spetta al giocatore attivo.');
+    const allowed = new Set(['draw','move','setPosition','flip','lp','stats','counter','activate','resolveChain','shuffle','setPhase','nextPhase','nextTurn','finish','token','attachMaterial','detachMaterial']);
     if (!allowed.has(action.type)) fail(400, 'invalid_action', 'Azione non disponibile.');
     const result = { ...action, player:viewer };
     // Concealed IDs are positional and scoped to the viewer, never card identities.
@@ -112,6 +112,11 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
       if (!actor?.slug || !actor?.teamId || !UUID.test(actor.teamId)) fail(401, 'unauthorized', 'Accedi con il tuo profilo del team.');
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail(400, 'invalid_request', 'Richiesta non valida.');
       const op = payload.op;
+      if (op === 'practice') {
+        const members = await store.members(actor.teamId);
+        if (!members.some(member => member.slug === actor.slug)) fail(403, 'not_member', 'Il tuo profilo non appartiene al team.');
+        return { deck:await deck(payload.deckId, actor) };
+      }
       if (op === 'lobby') {
         const members = await store.members(actor.teamId);
         if (!members.some(member => member.slug === actor.slug)) fail(403, 'not_member', 'Il tuo profilo non appartiene al team.');

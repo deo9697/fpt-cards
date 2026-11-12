@@ -73,7 +73,7 @@ export function createDatabase(env, authorization) {
         return { id:row.id, ownerSlug:row.owner_slug, game:row.game, name:row.name, cards:cards.map(card => {
           const found = metadata.find(item => item.id === card.printing_id) || metadata.find(item => item.catalog_card_id === card.catalog_card_id);
           const info = { ...(publicMetadata.get(card.catalog_card_id) || {}), ...(found?.game_metadata || {}) };
-          return { catalogCardId:card.catalog_card_id, cardName:card.card_name, imageUrl:card.image_url, printingId:card.printing_id || '', section:card.section, quantity:card.quantity, banTcg:card.ban_tcg || '', type:info.cardType || info.type || '', atk:info.atk ?? null, def:info.def ?? null, text:info.effect || info.desc || '', attribute:info.attribute || '', level:info.level ?? null };
+          return { catalogCardId:card.catalog_card_id, cardName:card.card_name, imageUrl:card.image_url, printingId:card.printing_id || '', section:card.section, quantity:card.quantity, banTcg:card.ban_tcg || '', type:info.cardType || info.type || '', race:info.race || '', atk:info.atk ?? null, def:info.def ?? null, text:info.effect || info.desc || '', attribute:info.attribute || '', level:info.level ?? null };
         }) };
       },
       async recentCount(hostSlug, since) {

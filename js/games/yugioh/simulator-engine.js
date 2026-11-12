@@ -85,7 +85,7 @@ export function canMoveCardToZone(card, destination) {
   if (!card || !ZONES.includes(destination)) return false;
   if (destination === 'extraMonsters') return !knownType(card) || isExtraDeckMonster(card) || isPendulum(card);
   if (destination === 'monsters') return !knownType(card) || isMonster(card);
-  if (destination === 'field') return !knownType(card) || /field|terreno/.test(`${card.race || ''} ${typeOf(card)}`);
+  if (destination === 'field') return !knownType(card) || /field|terreno/i.test(`${card.race || ''} ${typeOf(card)}`);
   if (destination === 'extra') return !knownType(card) || isExtraDeckMonster(card) || isPendulum(card) || card.originSection === 'extra';
   return true; // Monster cards may become equip cards in the Spell/Trap area.
 }
@@ -208,7 +208,16 @@ export function applyAction(session, action) {
         const count = action.count ?? 1; if (!integer(count, 1, 60) || player.deck.length < count) fail('Non ci sono abbastanza carte nel mazzo.');
         player.hand.push(...player.deck.splice(0, count)); message = `${player.name} pesca ${count} ${count === 1 ? 'carta' : 'carte'}.`; break;
       }
-      case 'move': { const moved = moveCard(next, playerIndex, action); message = `${player.name} sposta ${moved.name} → ${moved.destination}.`; break; }
+      case 'move': {
+        if(action.intent!==undefined&&!['normal','special','set','activate'].includes(action.intent))fail('Tipo di giocata non valido.');
+        if(action.intent==='normal'){
+          const found=findCard(player,action.cardId);
+          if(found.zone!=='hand'||action.to!=='monsters'||isExtraDeckMonster(found.card)||/ritual/.test(typeOf(found.card))||action.faceUp===false||action.position==='defense')fail('L’evocazione normale richiede un Mostro dalla mano in Attacco, diverso da un Mostro Rituale o dell’Extra Deck.');
+        }
+        const moved = moveCard(next, playerIndex, action);
+        const verb={normal:'evoca normalmente',special:'evoca specialmente',set:'posiziona coperta',activate:'gioca'}[action.intent]||'sposta';
+        message = `${player.name} ${verb} ${moved.name} → ${moved.destination}.`; break;
+      }
       case 'setPosition': case 'flip': {
         const { card, zone } = findCard(player, action.cardId, true);
         const position = action.type === 'flip' ? card.position : action.position;
@@ -246,6 +255,14 @@ export function applyAction(session, action) {
       case 'shuffle': {
         if (action.zone !== undefined && action.zone !== 'deck') fail('Puoi mescolare soltanto il Main Deck.');
         player.deck = shuffled(player.deck); message = `${player.name} mescola il mazzo.`; break;
+      }
+      case 'setPhase': {
+        if (playerIndex !== next.activePlayer) fail('Il cambio fase spetta al giocatore attivo.');
+        if (!PHASES.includes(action.phase)) fail('Fase di gioco non valida.');
+        // Phase selection is a manual declaration: it never draws cards,
+        // resolves effects or advances the turn implicitly.
+        next.phase = action.phase;
+        message = `Turno ${next.turn}: ${player.name} · ${next.phase}.`; break;
       }
       case 'nextPhase': {
         if (playerIndex !== next.activePlayer) fail('Il cambio fase spetta al giocatore attivo.');

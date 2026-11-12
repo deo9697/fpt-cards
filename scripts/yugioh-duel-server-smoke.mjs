@@ -39,6 +39,12 @@ const rejects = (actor,payload,status,code)=>assert.rejects(()=>run(actor,payloa
 const duelId=id(20);
 const invitation={ op:'invite',requestId:duelId,opponentSlug:guest.slug,deckId:decks[0].id,firstPlayer:0 };
 await rejects({}, {op:'lobby'},401);
+const practiceDeck=await run(host,{op:'practice',deckId:decks[0].id});
+assert.equal(practiceDeck.deck.id,decks[0].id);
+await rejects(host,{op:'practice',deckId:decks[1].id},404,'deck_not_found');
+await rejects(outsider,{op:'practice',deckId:decks[0].id},404,'deck_not_found');
+assert.equal(records.size,0,'Preparing solo practice must not create a multiplayer table');
+assert.equal(pushes.length,0,'Preparing solo practice must not send invitations');
 assert.equal((await run(host,{op:'lobby'})).members.length,3);
 await rejects(host,{...invitation,opponentSlug:outsider.slug},400,'invalid_opponent');
 await rejects(host,{...invitation,deckId:decks[1].id},404,'deck_not_found');
@@ -83,6 +89,17 @@ const draw={op:'action',duelId,expectedVersion:version,requestId:id(28),action:{
 await run(host,draw); assert.equal((await run(host,draw)).replayed,true);
 assert.equal(records.get(duelId).state.players[0].hand.length,6);
 await assert.rejects(()=>run(guest,{...draw,requestId:id(29)}),error=>error.status===409 && error.duel.state.players[0].hand.every(card=>card.hidden));
+const beforePhase=clone(records.get(duelId).state);
+await rejects(guest,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'battle'}},403,'not_your_turn');
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'invalid'}},400,'invalid_action');
+assert.deepEqual(records.get(duelId).state,beforePhase);
+await action(host,{type:'setPhase',phase:'main1'});
+assert.equal(records.get(duelId).state.phase,'main1');
+assert.deepEqual(records.get(duelId).state.players,beforePhase.players);
+assert.equal(records.get(duelId).state.turn,beforePhase.turn);
+assert.equal((await run(guest,{op:'state',duelId})).duel.state.phase,'main1');
+await action(host,{type:'setPhase',phase:'draw'});
+console.log('PASS direct phase declarations synchronize, preserve cards and reject inactive/invalid changes');
 let full=records.get(duelId).state;
 let card=full.players[0].hand.find(card=>/Monster/.test(card.type));
 if(!card){ const found=full.players[0].deck.find(card=>/Monster/.test(card.type)); await action(host,{type:'move',cardId:found.id,to:'hand'}); card=found; }

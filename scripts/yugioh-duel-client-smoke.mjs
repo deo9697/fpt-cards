@@ -64,6 +64,18 @@ try{
 
   const{instance:quiet}=controller(async payload=>{assert.equal(payload.knownVersion,1);return{unchanged:true,version:1};});
   const original=quiet.session;quiet.menu=true;await quiet.poll();assert.equal(quiet.session,original);assert.equal(quiet.menu,true);
+  let backgroundRenders=0;
+  const{instance:background}=controller(async payload=>payload.op==='state'?{unchanged:true,version:1}:{members:[],duels:[{id,version:1}],serverTime:Date.now()});
+  background.options.onRender=()=>backgroundRenders++;background.lastLobby=0;
+  const activeCard=background.session.players[0].hand[0];
+  background.selected={player:0,cardId:activeCard.id};
+  await background.poll();
+  assert.equal(backgroundRenders,0,'Background lobby summaries must not rebuild the arena during a hold/drag');
+  assert.equal(background.selected.cardId,activeCard.id);assert.equal(background.lobby.duels.length,1);
+  background.clearTable();background.lastLobby=0;
+  background.options.call=async()=>({members:[{slug:'new-member'}],duels:[]});
+  await background.poll();assert.equal(backgroundRenders,1,'Visible lobby changes still need a render');
+  console.log('PASS background lobby refreshes preserve the arena DOM and visible lobby changes still render');
   const{instance:revoked}=controller(async()=>{throw Object.assign(new Error('Accesso scaduto'),{status:403});});
   await revoked.poll();assert.equal(revoked.session,null);assert.equal(revoked.ready,false);
   const{instance:scoped,context}=controller(async()=>({}));context.member='another-member';assert.equal(scoped.allowed(),false);

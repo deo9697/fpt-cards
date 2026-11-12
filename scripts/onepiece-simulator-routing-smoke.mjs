@@ -91,7 +91,7 @@ async function run() {
   };
   const loaded=file=>requested.some(url=>url.split('?')[0]===`${origin}/${file}`);
   const opFiles=['js/games/onepiece/simulator-multiplayer.js','js/games/onepiece/simulator.js','js/games/onepiece/simulator-engine.js','js/games/onepiece/simulator-storage.js','js/games/onepiece/simulator-arena.js','css/onepiece-simulator.css','css/onepiece-battlefield.css'];
-  const ygoFiles=['js/games/yugioh/simulator-multiplayer.js','js/games/yugioh/simulator-engine.js','js/games/yugioh/simulator-arena.js','css/yugioh-simulator.css'];
+  const ygoFiles=['js/games/yugioh/simulator-multiplayer.js','js/games/yugioh/simulator-engine.js','js/games/yugioh/simulator-arena.js','js/games/yugioh/simulator-orientation.js','js/games/yugioh/simulator-practice.js','js/games/yugioh/simulator-touch.js','js/games/yugioh/simulator-card-actions.js','css/yugioh-simulator.css'];
   const simulatorFiles=[...opFiles,...ygoFiles];
   const login=async()=>{
     await waitFor('document.querySelectorAll("#member option").length===3','Login non disponibile');
@@ -121,6 +121,7 @@ async function run() {
   assert.deepEqual(simulatorFiles.filter(loaded),[],'La Home scarica un simulatore');
   await click('.mobile-nav [data-page="more"]');
   await waitFor('Boolean(document.querySelector(".more-grid [data-page=simulator]"))','Altro Yu-Gi-Oh! senza simulatore');
+  assert(await evaluate('Boolean(document.querySelector(".more-grid [data-ygo-practice-launch]"))'),'Altro non propone Testa mazzo');
   assert.equal(await evaluate('document.querySelectorAll("[data-page=simulator]").length'),1,'Yu-Gi-Oh!: accessi al simulatore fuori da Altro');
   assert.match(await evaluate('document.querySelector(".more-grid [data-page=simulator]").textContent'),/Yu-Gi-Oh!/,'Altro Yu-Gi-Oh! propone il simulatore sbagliato');
   assert.deepEqual(simulatorFiles.filter(loaded),[],'La pagina Altro scarica un simulatore prima del clic');
@@ -160,6 +161,15 @@ async function run() {
   await evaluate("location.hash='#/home'");await waitFor('Boolean(document.querySelector(".mm-dashboard"))','Home Yu-Gi-Oh! non raggiunta');
   await evaluate("location.hash='#/simulator'");await waitFor('Boolean(document.querySelector(".ygo-simulator [data-ygo-invite]"))','Route diretta Yu-Gi-Oh! non apre il proprio simulatore');
   console.log('PASS Yu-Gi-Oh! opens its own lazy module, style and team-verified lobby through Altro and a direct route');
+  await evaluate("location.hash='#/more'");await waitFor('Boolean(document.querySelector("[data-ygo-practice-launch]"))','Accesso Testa mazzo assente');
+  await click('[data-ygo-practice-launch]');await waitFor('Boolean(document.querySelector("[data-ygo-practice]"))','Testa mazzo da Altro non apre la scelta dei mazzi');
+  assert(await evaluate('location.hash.includes("mode=practice")'),'Testa mazzo perde la modalità nella rotta');
+  await click('[data-ygo-tab="table"]');await waitFor('Boolean(document.querySelector("[data-ygo-invite]"))','Ritorno al multiplayer dopo Testa mazzo non riuscito');
+  await switchGame('onepiece');
+  await evaluate("location.hash='#/simulator?game=yugioh&mode=practice'");
+  await waitFor('document.body.dataset.game==="yugioh" && Boolean(document.querySelector("[data-ygo-practice]"))','Link Testa mazzo da One Piece non apre Yu-Gi-Oh!');
+  await click('[data-ygo-tab="table"]');await waitFor('Boolean(document.querySelector("[data-ygo-invite]"))','Tab tavolo dopo link Testa mazzo non disponibile');
+  console.log('PASS solo practice opens from Altro and cross-game direct links without replacing multiplayer');
 
   const opInvite='c0000000-0000-4000-8000-000000000001';
   const ygoInvite='c0000000-0000-4000-8000-000000000002';

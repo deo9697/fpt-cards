@@ -2,6 +2,8 @@
 
 Data: 10 novembre 2026.
 
+Aggiornamento del 12 novembre: [campo mobile, menu rapido e Testa mazzo](yugioh-mobile-practice-qa.md). L'arena su telefono ora richiede il formato orizzontale; le catture verticali riportate sotto sono storiche.
+
 ## Perimetro
 
 Simulatore manuale multiplayer privato del team, integrato in FPT nella pagina Altro del gioco Yu-Gi-Oh!. Le sessioni, il motore e la tabella sono separati da One Piece. Effetti, costi, requisiti di evocazione, battaglie e timing restano decisioni dei giocatori; la catena registra attivazioni e risoluzioni manuali.

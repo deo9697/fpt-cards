@@ -181,13 +181,16 @@ function yugiohSimulatorView() {
     yugiohSimulator?.reset();
     yugiohSimulator = new module.YugiohMultiplayer({
       getContext:yugiohSimulatorContext, getDecks:()=>state.decks, getMembers:()=>MEMBERS,
-      call:payload=>api.yugiohDuel(payload), requestedDuel:yugiohDuelFromHash, isVisible:()=>page === 'simulator',
+      call:payload=>api.yugiohDuel(payload), requestedDuel:yugiohDuelFromHash, requestedPractice:simulatorPracticeFromHash, isVisible:()=>page === 'simulator',
       loadDecks:async()=>{ await loadAppControllers(); await decks.load(); },
       verifyAccess:async()=>{ const slug=state.currentUser; const members=await api.teamMembers(); return slug===state.currentUser && canUseYugiohSimulator() && Array.isArray(members) && members.some(item=>(item.slug||item.id)===slug); },
       lookupCard:async id=>findCardById(id), onRender:()=>{if(page==='simulator')renderRoute();}, onToast:toast,
+      onPracticeMode:enabled=>{if(page==='simulator')history.replaceState(null,'',enabled?'#/simulator?game=yugioh&mode=practice':'#/simulator');},
       confirm:message=>fptConfirm(message,{title:'Simulatore Yu-Gi-Oh!',confirmLabel:'Conferma'})
     });
   }
+  if(simulatorPracticeFromHash()&&!yugiohSimulator.practice&&yugiohSimulator.tab!=='practice')yugiohSimulator.showPractice({render:false});
+  if(!simulatorPracticeFromHash()&&!yugiohSimulator.practice&&yugiohSimulator.tab==='practice')yugiohSimulator.tab='table';
   return yugiohSimulator.view();
 }
 function canUseOnePieceSimulator() {
@@ -328,6 +331,8 @@ function simulatorDuelFromHash() { const id = new URLSearchParams(location.hash.
 function simulatorGameFromHash() { return new URLSearchParams(location.hash.split('?')[1] || '').get('game') === 'yugioh' ? 'yugioh' : 'onepiece'; }
 function onePieceDuelFromHash() { return simulatorGameFromHash() === 'onepiece' ? simulatorDuelFromHash() : ''; }
 function yugiohDuelFromHash() { return simulatorGameFromHash() === 'yugioh' ? simulatorDuelFromHash() : ''; }
+function simulatorPracticeFromHash() { const params=new URLSearchParams(location.hash.split('?')[1]||'');return params.get('game')==='yugioh'&&params.get('mode')==='practice'; }
+function openYugiohPractice(){if(!canUseYugiohSimulator())return;page='simulator';history.pushState(null,'','#/simulator?game=yugioh&mode=practice');yugiohSimulator?.showPractice();renderRoute();}
 function fastScanModeFromHash(){return location.hash.replace(/^#\/?/,'').split('/')[1]==='review'?'review':'scan';}
 function setFastScanRoute(mode){
   if(mode==='collection'){navigate('collection');return;}
@@ -335,7 +340,7 @@ function setFastScanRoute(mode){
   if(location.hash!==hash)history.pushState({fastScan:mode},'',hash);
   render(true);
 }
-function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(page==='decks')decks?.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan?.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
+function navigate(next) { const previous=page; page = ROUTES.has(next) ? next : 'home'; if(previous==='simulator'&&page!=='simulator')yugiohSimulator?.suspend(); if(page==='decks')decks?.showGallery(false); if(previous==='fastscan'&&page!=='fastscan')void fastScan?.leave(); selectedCollectionItem = ''; collectionEditor = null; selectedLoanId = ''; const hash = `#/${page}`; if (location.hash !== hash) history.pushState(null, '', hash); if(previous==='fastscan'||page==='fastscan')render();else renderRoute(); dispatchPageEnterRefresh(previous, page); }
 
 // Niente più poll globale ogni 2 minuti: ogni pagina che non ha copertura
 // Realtime si aggiorna da sola quando l'utente la apre, invece di dipendere
@@ -786,7 +791,7 @@ function moreView() {
   if (state.role === 'admin') tools.push(['market-variants','chart','Market Variant Resolver','Rarità Cardmarket ambigue']);
   const u = member(state.currentUser), progress = progressForXp(stats?.progression?.totalXp || 0);
   const duelist = u ? `<button type="button" class="more-duelist" data-open-progression>${profileAvatarMarkup(u, activeCosmetics(), 'large')}<span><strong>${esc(u.name)}</strong><small>LV ${progress.level} · ${state.role === 'admin' ? 'Admin' : 'Membro'} · ${stats?.progression?.totalXp || 0} XP</small></span>${icon('arrow')}</button>` : '';
-  return `<section class="page-stack more-page"><header class="page-header"><div><span class="eyebrow">// Navigazione</span><h1>Altro</h1></div></header>${duelist}<section class="more-grid">${links.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests} ${pendingRequests === 1 ? 'nuova' : 'nuove'}</i>` : ''}</button>`).join('')}</section>${tools.length ? `<h2 class="more-tools-label">Strumenti admin</h2><section class="more-tools">${tools.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${icon('arrow')}</button>`).join('')}</section>` : ''}</section>`;
+  return `<section class="page-stack more-page"><header class="page-header"><div><span class="eyebrow">// Navigazione</span><h1>Altro</h1></div></header>${duelist}<section class="more-grid">${canUseYugiohSimulator()?`<button type="button" data-ygo-practice-launch><span class="more-icon">${icon('deck')}</span><span><strong>Testa mazzo</strong><small>Allenamento in solitaria con i tuoi mazzi salvati</small></span></button>`:''}${links.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${id === 'requests' && pendingRequests ? `<i class="more-badge">${pendingRequests} ${pendingRequests === 1 ? 'nuova' : 'nuove'}</i>` : ''}</button>`).join('')}</section>${tools.length ? `<h2 class="more-tools-label">Strumenti admin</h2><section class="more-tools">${tools.map(([id,iconName,label,detail]) => `<button data-page="${id}"><span class="more-icon">${icon(iconName)}</span><span><strong>${label}</strong><small>${detail}</small></span>${icon('arrow')}</button>`).join('')}</section>` : ''}</section>`;
 }
 
 function newLoanView() {
@@ -1529,6 +1534,7 @@ function bind() {
     button.addEventListener('click', () => selectGame(button.dataset.game));
   });
   document.querySelectorAll('button[data-page]').forEach(b => b.addEventListener('click', () => { selectedCardKey = ''; navigate(b.dataset.page); }));
+  document.querySelectorAll('[data-ygo-practice-launch]').forEach(button=>button.addEventListener('click',openYugiohPractice));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null, draft:{ quantityOwned:1, language:'Italiano', condition:'Near Mint', edition:'' } }; collectionSearchResults = []; render(); }));
   document.querySelectorAll('[data-fast-scan]').forEach(button => button.addEventListener('click', () => navigate('fastscan')));
@@ -2803,7 +2809,7 @@ async function login(e) {
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
     consumedNotificationRoute = '';
-    if (page === 'simulator' && simulatorDuelFromHash()) state.game = simulatorGameFromHash();
+    if (page === 'simulator' && (simulatorDuelFromHash()||simulatorPracticeFromHash())) state.game = simulatorGameFromHash();
     state.role = profile.role;
     state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
     loginDraft = { member:'', pin:'', mode:loginDraft.mode };
@@ -3301,7 +3307,7 @@ async function start() {
     history.replaceState(null, '', '#/home');
     setTimeout(() => toast('Sei già connesso: esci per usare un invito'), 600);
   }
-  if (page === 'simulator' && simulatorDuelFromHash() && state.currentUser && !state.standalone) state.game = simulatorGameFromHash();
+  if (page === 'simulator' && (simulatorDuelFromHash()||simulatorPracticeFromHash()) && state.currentUser && !state.standalone) state.game = simulatorGameFromHash();
   if (state.currentUser) window.FPT_LAUNCH?.hold('Sincronizzazione del tuo profilo…');
   installCardImageRecovery();
   installCollectionControls();
@@ -3445,7 +3451,7 @@ window.addEventListener('hashchange', () => {
   const joinMatch = location.hash.match(JOIN_HASH);
   if (joinMatch && !state.currentUser) { void startJoin(joinMatch[1]); return; }
   const next = routeFromHash();
-  const switchSimulatorGame = next === 'simulator' && simulatorDuelFromHash() && state.currentUser && !state.standalone && state.game !== simulatorGameFromHash();
+  const switchSimulatorGame = next === 'simulator' && (simulatorDuelFromHash()||simulatorPracticeFromHash()) && state.currentUser && !state.standalone && state.game !== simulatorGameFromHash();
   if (switchSimulatorGame) { onePieceSimulator?.reset(); onePieceSimulator=null; yugiohSimulator?.reset(); yugiohSimulator=null; state.game = simulatorGameFromHash(); saveState(); }
   if(page==='fastscan'&&next==='fastscan'){
     const mode=fastScanModeFromHash();
@@ -3454,12 +3460,13 @@ window.addEventListener('hashchange', () => {
     else if(mode==='scan'&&fastScan.phase==='review')void fastScan.start();
     return;
   }
-  if (next === page) { if (switchSimulatorGame) render(); if (page === 'simulator') { void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); } return; }
+  if (next === page) { if (switchSimulatorGame) render(); if (page === 'simulator') { void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); yugiohSimulator?.openRequestedPractice(); } return; }
   if (page === 'fastscan' && next !== 'fastscan') {
     if(['scanning','paused'].includes(fastScan?.phase)&&fastScan.hasScans){history.pushState({fastScan:'scan'},'','#/fastscan');void fastScan.requestExit();return;}
     void fastScan?.leave();
   }
   const previous = page;
+  if(previous==='simulator'&&next!=='simulator')yugiohSimulator?.suspend();
   page = next; selectedCardKey = ''; selectedCollectionItem = ''; collectionEditor = null;
   if(switchSimulatorGame||previous==='fastscan'||page==='fastscan')render();else renderRoute();
   dispatchPageEnterRefresh(previous, page);
