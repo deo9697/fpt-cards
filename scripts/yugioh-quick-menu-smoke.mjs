@@ -57,8 +57,13 @@ try{
   }
   console.log('PASS Spell, Trap and Field Spell Set/Activate with private identity and manual shared chain');
 
-  await tap(monster);await controller.click(button({ygoCommand:'card-details'}));
+  await tap(monster);
+  assert.equal(controller.dropMenu.actions.length,3);
+  assert(!controller.view().includes('ygo-drop-footer'));
+  assert(!controller.view().includes('ygo-drop-title'));
+  controller.showCardDescription({player:0,cardId:monster});
   assert.equal(controller.dropMenu,null);assert(controller.view().includes('class="ygo-card-dialog"'));
+  assert(controller.view().includes('<details data-ygo-advanced>'),'Advanced controls stay collapsed in the reading view');
   await tap(monster);state=applyAction(state,{type:'draw',player:1});version++;controller.receive(snapshot());
   assert.equal(controller.dropMenu,null);assert.equal(controller.selected,null);
   const unchanged=calls.length;await choose('activate');assert.equal(calls.length,unchanged);

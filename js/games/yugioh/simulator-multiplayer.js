@@ -23,6 +23,8 @@ export class YugiohMultiplayer {
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.selected=null;this.inspectedCard=null;}this.render();}});
     this.cardGestures=createDuelCardGestures({
       canStart:element=>this.allowed()&&!this.pending&&!this.dropMenu&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
+      canInspect:element=>this.allowed()&&!this.pending&&!this.dropMenu&&Boolean(this.session)&&!this.orientation.isPortraitBlocked()&&Boolean(element.dataset.ygoCard),
+      onInspect:source=>this.showCardDescription(source),
       getRevision:()=>this.gestureRevision(),onStart:source=>this.beginCardDrag(source.player,source.cardId),
       onDrop:target=>this.showDropMenu(target),onCancel:()=>this.cancelCardDrag()
     });
@@ -145,7 +147,13 @@ export class YugiohMultiplayer {
     for(const zone of [...ZONES,'side']){const card=player[zone]?.find(card=>card.id===this.selected.cardId);if(card&&!card.hidden&&!(zone==='deck')&&!(zone==='hand'&&this.selected.player===this.viewer&&!this.revealHand))return{card,zone,player:this.selected.player};}
     return null;
   }
-  selectCard(player,cardId,{quick=false,x=20,y=20}={}){
+  showCardDescription({player,cardId}){
+    if(!this.allowed()||this.pending||!this.session||this.orientation.isPortraitBlocked())return;
+    this.dragBackup=null;this.selectCard(player,cardId);
+    const selected=this.selectedCard();
+    if(selected&&!selected.card.text&&!this.metadata.has(selected.card.catalogCardId)&&typeof this.options.lookupCard==='function')void this.fetchMetadata();
+  }
+  selectCard(player,cardId,{quick=false,x=20,y=20,anchor=null}={}){
     this.dropMenu=null;
     const card=this.pile&&(this.pile.cards||this.session.players[this.pile.player]?.[this.pile.zone])?.find(card=>card.id===cardId);
     this.inspectedCard=card&&!card.hidden?{card,zone:this.pile.zone,player:this.pile.player,version:this.duel.version}:null;
@@ -155,8 +163,9 @@ export class YugiohMultiplayer {
     else if(quick&&!this.pending&&this.canControl(player)&&this.session.phase!=='setup'){
       const card={...selected.card,...(this.metadata.get(selected.card.catalogCardId)||{})};
       const actions=cardTapActions(card,selected.zone);
-      if(actions.length)this.dropMenu={mode:'tap',cardId,player,to:selected.zone,slot:selected.card.slot,actions,version:this.duel.version,duelId:this.duel.id,x,y,cardName:selected.card.cardName};
-    }
+      if(actions.length)this.dropMenu={mode:'tap',cardId,player,to:selected.zone,slot:selected.card.slot,actions,version:this.duel.version,duelId:this.duel.id,x,y,anchor,cardName:selected.card.cardName};
+      else{this.selected=null;this.inspectedCard=null;}
+    }else if(quick){this.selected=null;this.inspectedCard=null;}
     this.render();
     globalThis.document?.querySelector('.ygo-card-dialog')?.focus({preventScroll:true});
   }
@@ -183,14 +192,14 @@ export class YugiohMultiplayer {
   invitationView(row){const name=row.viewer===0?row.guestName:row.hostName;return`<article class="surface ygo-invitation"><div><small>${esc(status[row.status]||row.status)}</small><h3>${esc(name)}</h3><p>${esc([row.hostDeckName,row.guestDeckName].filter(Boolean).join(' vs '))}</p></div><button type="button" class="ygo-primary" data-ygo-open="${esc(row.id)}" ${this.pending?'disabled':''}>${row.status==='waiting'?'Apri invito':'Rientra al tavolo'}</button></article>`;}
   waitingView(){const d=this.duel;if(d.status==='waiting'&&d.viewer===1)return`<section class="surface ygo-lobby"><span class="eyebrow">// Sfida del team</span><h2>${esc(d.hostName)} ti invita a duellare</h2><p>Il suo mazzo: ${esc(d.hostDeckName||'Yu-Gi-Oh!')}</p><form data-ygo-accept><label>Il tuo mazzo<select name="deckId" required>${this.deckOptions(this.acceptDraft.deckId)}</select></label>${this.deckSummary(this.decks.find(deck=>deck.id===this.acceptDraft.deckId))}<label>I tuoi LP iniziali<input type="number" name="lp" min="1" max="999999" step="1" required value="${esc(this.acceptDraft.lp)}"></label><div class="ygo-form-actions"><button type="submit" class="ygo-primary" ${this.pending||!this.decks.length?'disabled':''}>Accetta il duello</button><button type="button" data-ygo-response="decline" ${this.pending?'disabled':''}>Rifiuta</button></div></form>${commandButton('lobby','Torna agli inviti')}</section>`;return`<section class="surface ygo-lobby"><h2>${esc(d.hostName)} <span class="ygo-muted">vs</span> ${esc(d.guestName)}</h2><p>${d.status==='waiting'?`Invito inviato. Aspettiamo che ${esc(d.guestName)} scelga il mazzo.`:esc(status[d.status]||'Tavolo non disponibile.')}</p>${d.status==='waiting'&&d.viewer===0?'<button type="button" data-ygo-response="cancel">Annulla invito</button>':''}${commandButton('lobby','Torna agli inviti')}</section>`;}
   historyView(){const rows=this.lobby.duels.filter(row=>row.status==='finished'&&row.result),wins=rows.filter(row=>row.result.winner===row.viewer).length,draws=rows.filter(row=>row.result.winner==='draw').length;return`<section class="surface ygo-lobby"><h2>I test del tuo team</h2><p>${rows.length} duelli · ${wins} vittorie · ${draws} pareggi · ${rows.length?Math.round(wins/rows.length*100):0}% vittorie</p>${rows.map(row=>`<article class="ygo-history-row"><div><h3>${esc(row.hostName)} vs ${esc(row.guestName)}</h3><p>${row.result.winner==='draw'?'Pareggio':`Vince ${esc(row.result.winner===0?row.hostName:row.guestName)}`}</p><small>${esc(row.result.notes||'')}</small></div><button type="button" data-ygo-open="${esc(row.id)}">Apri tavolo</button></article>`).join('')||'<p>Concludi un duello per registrare il primo test.</p>'}</section>`;}
-  rulesView(){return`<section class="surface ygo-lobby ygo-rules"><h2>Il tuo tavolo, le tue decisioni</h2><p>Il simulatore gestisce carte, posizioni, LP e registro. Risolvi manualmente evocazioni, tributi, costi, effetti, attacchi, catene e timing.</p><details open><summary>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. I pulsanti fase cambiano l’indicatore, senza pescare o eseguire effetti.</p></details><details><summary>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata; i dettagli restano opzionali. Puoi evocare, posizionare coperto, cambiare posizione, mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Rispetta manualmente requisiti di evocazione e frecce Link. Dal pannello di una tua carta puoi aggiungerla come materiale di un tuo mostro Xyz; dal mostro puoi staccare i materiali.</p></details><details><summary>Attivazioni e catene</summary><p>Attiva una carta per mostrarla e registrare l’anello. Risolvi gli anelli dall’ultimo e applica manualmente gli effetti. Ricordati di spostare Magie e Trappole al Cimitero quando previsto.</p></details><p><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh!</a></p></section>`;}
+  rulesView(){return`<section class="surface ygo-lobby ygo-rules"><h2>Il tuo tavolo, le tue decisioni</h2><p>Il simulatore gestisce carte, posizioni, LP e registro. Risolvi manualmente evocazioni, tributi, costi, effetti, attacchi, catene e timing.</p><details open><summary>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. I pulsanti fase cambiano l’indicatore, senza pescare o eseguire effetti.</p></details><details><summary>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Puoi evocare, posizionare coperto, cambiare posizione, mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Rispetta manualmente requisiti di evocazione e frecce Link. Dal pannello di una tua carta puoi aggiungerla come materiale di un tuo mostro Xyz; dal mostro puoi staccare i materiali.</p></details><details><summary>Attivazioni e catene</summary><p>Attiva una carta per mostrarla e registrare l’anello. Risolvi gli anelli dall’ultimo e applica manualmente gli effetti. Ricordati di spostare Magie e Trappole al Cimitero quando previsto.</p></details><p><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh!</a></p></section>`;}
   bind(root){
     this.syncOrientation();
     const arena=root.querySelector('.ygo-arena');
     if(arena){const blocked=this.orientation.isPortraitBlocked();for(const child of arena.children)if(!child.classList.contains('ygo-orientation-gate'))child.inert=blocked;arena.querySelector('.ygo-orientation-gate')?.classList.toggle('is-required',blocked);}
     if(!this.allowed())return;const element=root.querySelector('.ygo-simulator');if(!element||element.dataset.bound)return;element.dataset.bound='true';if(!this.ready&&!this.error)void this.initialize();
     this.cardGestures.bind(element);
-    const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect();drop.style.left=Math.max(8,Math.min(this.dropMenu.x,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(this.dropMenu.y,innerHeight-box.height-8))+'px';}
+    const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect(),anchor=this.dropMenu.anchor;const left=anchor?(anchor.right+6+box.width<=innerWidth-8?anchor.right+6:anchor.left-box.width-6):this.dropMenu.x,top=anchor?anchor.top:this.dropMenu.y;drop.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(top,innerHeight-box.height-8))+'px';drop.querySelector('button')?.focus({preventScroll:true});}
     element.addEventListener('input',event=>this.updateDraft(event.target));
     element.addEventListener('change',event=>{this.updateDraft(event.target);if(['deckId','opponentSlug'].includes(event.target.name))this.render();});
     element.addEventListener('submit',event=>{event.preventDefault();if(this.allowed())void this.submit(event.target);});
@@ -223,7 +232,6 @@ export class YugiohMultiplayer {
   async click(button,event){
     const data=button.dataset,command=data.ygoCommand,selected=this.selectedCard();
     if(data.ygoDropAction){await this.applyDropAction(data.ygoDropAction);return;}
-    if(command==='card-details'){this.dropMenu=null;this.render();globalThis.document?.querySelector('.ygo-card-dialog')?.focus({preventScroll:true});return;}
     if(command==='close-drop-menu'){this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(this.session&&this.orientation.isPortraitBlocked()&&!['orientation','lobby','practice-exit'].includes(command))return;
     if(command==='orientation'){await this.orientation.enter({userGesture:true});this.render();return;}
@@ -231,7 +239,7 @@ export class YugiohMultiplayer {
     if(command==='practice-exit'){this.showPractice();return;}
     if(data.ygoOpen){await this.open(data.ygoOpen);return;}
     if(data.ygoResponse){await this.perform({op:data.ygoResponse,duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID()});return;}
-    if(data.ygoCard){const box=button.getBoundingClientRect?.();this.selectCard(Number(data.player),data.ygoCard,{quick:true,x:event?.detail?event.clientX:box?.right??20,y:event?.detail?event.clientY:box?.top??20});return;}
+    if(data.ygoCard){const box=button.getBoundingClientRect?.();this.selectCard(Number(data.player),data.ygoCard,{quick:true,x:event?.detail?event.clientX:box?.right??20,y:event?.detail?event.clientY:box?.top??20,anchor:box?{left:box.left,right:box.right,top:box.top,bottom:box.bottom}:null});return;}
     if(button.hasAttribute('data-ygo-slot')){await this.place(Number(data.player),data.zone,Number(data.ygoSlot));return;}
     if(data.ygoTab==='practice'){this.showPractice();return;}
     if(data.ygoTab){if(data.ygoTab==='history'&&this.practice)this.clearTable();if(!this.practice)this.options.onPracticeMode?.(false);this.tab=data.ygoTab;this.menu=false;this.selected=null;this.pile=null;this.inspectionGeneration++;if(this.tab==='history'){const response=await this.perform({op:'lobby'});if(response)this.lobby=response;}this.render();return;}

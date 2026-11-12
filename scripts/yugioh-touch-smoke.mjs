@@ -39,12 +39,12 @@ function fixture() {
   doc.body.appendChild(root);root.appendChild(hand);hand.appendChild(card);card.setAttribute('aria-label','Private card');
   const image=element(doc,'img',{privateMarker:'do not clone'});image.src='/card.jpg';image.id='private-art-id';card.appendChild(image);doc.hit=card;
   const slot=element(doc,'button',{ygoSlot:'4',zone:'monsters',player:'0'});root.appendChild(slot);
-  const starts=[],drops=[],cancels=[];let version='duel:1',controllable=true;
+  const starts=[],drops=[],inspections=[],cancels=[];let version='duel:1',controllable=true,inspectable=true;
   const helper=createDuelCardGestures({environment:{document:doc,setTimeout:time.setTimeout,clearTimeout:time.clearTimeout,performance:{now:()=>time.now}},
-    canStart:node=>controllable&&Number(node.dataset.player)===0,getRevision:()=>version,onStart:value=>starts.push(value),onDrop:value=>drops.push(value),onCancel:value=>cancels.push(value)});
+    canStart:node=>controllable&&Number(node.dataset.player)===0,canInspect:()=>inspectable,getRevision:()=>version,onStart:value=>starts.push(value),onDrop:value=>drops.push(value),onInspect:value=>inspections.push(value),onCancel:value=>cancels.push(value)});
   helper.bind(root);
   const ghost=()=>doc.body.children.find(node=>node.className==='ygo-drag-ghost');
-  return {time,doc,root,hand,card,image,slot,starts,drops,cancels,helper,ghost,setRevision:value=>{version=value;},setControllable:value=>{controllable=value;},node:(tag,data)=>element(doc,tag,data)};
+  return {time,doc,root,hand,card,image,slot,starts,drops,inspections,cancels,helper,ghost,setRevision:value=>{version=value;},setControllable:value=>{controllable=value;},setInspectable:value=>{inspectable=value;},node:(tag,data)=>element(doc,tag,data)};
 }
 
 {
@@ -64,9 +64,11 @@ function fixture() {
 }
 {
   const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);
-  assert.deepEqual(f.starts,[{cardId:'card-1',player:0}]);assert(f.card.captured.has(7));assert(f.card.classList.contains('is-drag-source'));
-  const ghost=f.ghost();assert(ghost);assert.equal(ghost.children[0].src,'/card.jpg');assert.equal(ghost.children[0].id,undefined);assert.deepEqual(ghost.children[0].dataset,{});assert.equal(ghost.style.pointerEvents,'none');
-  f.doc.hit=f.slot;const move=event(f.card,{clientX:330,clientY:110});f.doc.emit('pointermove',move);assert(move.prevented);assert(f.slot.classList.contains('is-drag-target'));assert.equal(ghost.style.transform,'translate3d(309px,80.5px,0)');
+  assert.deepEqual(f.starts,[]);assert(f.card.captured.has(7));assert.equal(f.ghost(),undefined,'Holding still must not flash a dragged card');
+  f.doc.hit=f.slot;const move=event(f.card,{clientX:330,clientY:110});f.doc.emit('pointermove',move);assert(move.prevented);assert(f.slot.classList.contains('is-drag-target'));
+  assert.deepEqual(f.starts,[{cardId:'card-1',player:0}]);assert(f.card.classList.contains('is-drag-source'));
+  const ghost=f.ghost();assert(ghost);assert.equal(ghost.children[0].src,'/card.jpg');assert.equal(ghost.children[0].id,undefined);assert.deepEqual(ghost.children[0].dataset,{});assert.equal(ghost.style.pointerEvents,'none');assert.equal(ghost.style.transform,'translate3d(309px,80.5px,0)');
+  f.time.advance(500);assert.equal(f.inspections.length,0,'Moving after the hold must cancel automatic description');
   const native=event(f.card,{touches:[{}]});f.doc.emit('touchmove',native);assert(native.prevented,'An active hold stops native panning');
   const drag=event(f.card);f.doc.emit('dragstart',drag);assert(drag.prevented,'The touch gesture takes priority over browser-native HTML drag');
   const up=event(f.card,{clientX:330,clientY:110});f.doc.emit('pointerup',up);
@@ -79,30 +81,50 @@ function fixture() {
 {
   const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);
   f.doc.emit('pointerup',event(f.card));
-  assert.deepEqual(f.drops,[{cardId:'card-1',player:0,zone:'hand',slot:undefined,x:40,y:275}],'Holding in place can open the same-zone context menu');
+  assert.deepEqual(f.inspections,[{cardId:'card-1',player:0}]);assert.deepEqual(f.drops,[]);assert.deepEqual(f.starts,[]);assert.equal(f.ghost(),undefined);
+  assert.equal(f.card.captured.size,0);const heldClick=event(f.card);f.doc.emit('click',heldClick);assert(heldClick.prevented);
   f.time.advance(401);const click=event(f.card);f.doc.emit('click',click);assert.equal(click.prevented,false);
   f.helper.dispose();
+  const automatic=fixture();automatic.root.emit('pointerdown',event(automatic.card));automatic.time.advance(699);
+  assert.equal(automatic.inspections.length,0);assert.equal(automatic.ghost(),undefined);automatic.time.advance(1);
+  assert.deepEqual(automatic.inspections,[{cardId:'card-1',player:0}]);assert.equal(automatic.card.captured.size,0);assert.equal(automatic.time.count(),0);
+  automatic.time.advance(2000);automatic.doc.emit('pointerup',event(automatic.card));const releasedClick=event(automatic.card);automatic.doc.emit('click',releasedClick);assert(releasedClick.prevented,'Releasing a prolonged hold must not reopen the quick menu');
+  automatic.helper.dispose();assert.equal(automatic.time.count(),0);
+  console.log('PASS stationary hold opens description on release or automatically without a ghost or drop');
+}
+{
+  const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);f.doc.emit('pointermove',event(f.card,{clientX:60}));f.doc.emit('pointerup',event(f.card));
+  assert.deepEqual(f.drops,[{cardId:'card-1',player:0,zone:'hand',slot:undefined,x:40,y:275}]);assert.equal(f.inspections.length,0);f.helper.dispose();
   const occupied=fixture(),zone=occupied.node('div',{ygoDropZone:'monsters',ygoDropSlot:'2',player:'0'});occupied.root.appendChild(zone);zone.appendChild(occupied.card);occupied.doc.hit=occupied.card;
-  occupied.root.emit('pointerdown',event(occupied.card));occupied.time.advance(320);occupied.doc.emit('pointerup',event(occupied.card));
+  occupied.root.emit('pointerdown',event(occupied.card));occupied.time.advance(320);occupied.doc.emit('pointermove',event(occupied.card,{clientX:70}));occupied.doc.emit('pointerup',event(occupied.card));
   assert.equal(occupied.drops[0].zone,'monsters');assert.equal(occupied.drops[0].slot,2);occupied.helper.dispose();
-  console.log('PASS in-place contexts, occupied wrappers and destinations without a slot');
+  console.log('PASS deliberate drags back to the same zone, occupied wrappers and destinations without a slot');
 }
 {
   const f=fixture();f.root.emit('pointerdown',event(f.card));f.setRevision('duel:2');f.time.advance(320);
   assert.equal(f.starts.length,0);assert.equal(f.drops.length,0);assert.equal(f.ghost(),undefined);f.helper.dispose();
   const after=fixture();after.root.emit('pointerdown',event(after.card));after.time.advance(320);after.setRevision('duel:2');after.doc.hit=after.slot;after.doc.emit('pointerup',event(after.card));
   assert.equal(after.drops.length,0);assert.equal(after.cancels[0].reason,'revision');assert.equal(after.ghost(),undefined);after.helper.dispose();
-  console.log('PASS revision changes before hold or drop cancel stale gestures');
+  const reading=fixture();reading.root.emit('pointerdown',event(reading.card));reading.time.advance(320);reading.setRevision('duel:2');reading.time.advance(380);assert.equal(reading.inspections.length,0);assert.equal(reading.cancels[0].reason,'revision');reading.helper.dispose();
+  console.log('PASS revision changes before hold, inspection or drop cancel stale gestures');
 }
 {
   for(const kind of ['opponent','disabled','outside']){
     const f=fixture();f.root.emit('pointerdown',event(f.card));f.time.advance(320);
     if(kind==='opponent')f.slot.dataset.player='1';if(kind==='disabled')f.slot.disabled=true;
     if(kind==='outside')f.doc.hit=f.node('button',{ygoDropZone:'graveyard',player:'0'});else f.doc.hit=f.slot;
-    f.doc.emit('pointerup',event(f.card));assert.equal(f.drops.length,0,kind);assert.equal(f.cancels[0].reason,'destination');f.helper.dispose();
+    f.doc.emit('pointermove',event(f.card,{clientX:330,clientY:110}));f.doc.emit('pointerup',event(f.card));assert.equal(f.drops.length,0,kind);assert.equal(f.cancels[0].reason,'destination');f.helper.dispose();
   }
-  const f=fixture();f.setControllable(false);f.root.emit('pointerdown',event(f.card));f.time.advance(400);assert.equal(f.starts.length,0);f.helper.dispose();
+  const f=fixture();f.setControllable(false);f.setInspectable(false);f.root.emit('pointerdown',event(f.card));f.time.advance(900);assert.equal(f.starts.length,0);assert.equal(f.inspections.length,0);f.helper.dispose();
   console.log('PASS denied sources and opponent, disabled or external destinations never drop');
+}
+{
+  const f=fixture();f.card.dataset.player='1';f.setControllable(false);f.root.emit('pointerdown',event(f.card));f.time.advance(700);
+  assert.deepEqual(f.inspections,[{cardId:'card-1',player:1}]);assert.equal(f.starts.length,0);assert.equal(f.drops.length,0);f.helper.dispose();
+  const scrolling=fixture();scrolling.setControllable(false);scrolling.root.emit('pointerdown',event(scrolling.card));scrolling.time.advance(320);const move=event(scrolling.card,{clientX:80});scrolling.doc.emit('pointermove',move);scrolling.time.advance(700);
+  assert.equal(move.prevented,false);assert.equal(scrolling.starts.length,0);assert.equal(scrolling.inspections.length,0);assert.equal(scrolling.cancels[0].reason,'scroll');scrolling.helper.dispose();
+  const revoked=fixture();revoked.root.emit('pointerdown',event(revoked.card));revoked.time.advance(320);revoked.setInspectable(false);revoked.time.advance(380);assert.equal(revoked.inspections.length,0);assert.equal(revoked.cancels[0].reason,'inspection');revoked.helper.dispose();
+  console.log('PASS visible read-only cards can be inspected but never dragged, and revoked inspection stays blocked');
 }
 {
   for(const type of ['pointercancel','lostpointercapture']){

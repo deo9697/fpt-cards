@@ -11,15 +11,24 @@ export function cardDropActions(card,from,to,{samePosition=false}={}){
   if(to==='monsters'||to==='extraMonsters'){
     if(board.includes(from)||card.token){
       if(samePosition){
-        if(card.faceUp)add('activate','Activate',{activateOnly:true});
-        if(!card.faceUp&&!link){add('flip-attack','Scopri in Attacco',{positionOnly:true,position:'attack',faceUp:true});add('flip-defense','Scopri in Difesa',{positionOnly:true,position:'defense',faceUp:true});}
+        if(card.faceUp){
+          add('activate','Activate',{activateOnly:true});
+          if(!link){
+            const position=card.position==='defense'?'attack':'defense';
+            add('position',position==='attack'?'Posizione Attacco':'Posizione Difesa',{positionOnly:true,position,faceUp:true});
+            if(!card.token)add('set','Set',{positionOnly:true,position:'defense',faceUp:false});
+          }
+        }else if(!link){
+          add('flip-attack','Scopri in Attacco',{positionOnly:true,position:'attack',faceUp:true});
+          add('flip-defense','Scopri in Difesa',{positionOnly:true,position:'defense',faceUp:true});
+        }
+      }else{
+        add('move','Sposta qui',{position:card.position||'attack',faceUp:card.faceUp});
+        if(!link&&!card.token)add('set','Set',{position:'defense',faceUp:false,intent:'set'});
       }
-      add('move','Sposta qui',{position:card.position||'attack',faceUp:card.faceUp});
-      if(!link&&!card.token)add('set','Set',{position:'defense',faceUp:false,intent:'set'});
     }else{
       if(from==='hand'&&to==='monsters'&&!isExtraDeckMonster(card)&&!/ritual/.test(type))add('normal','Norm. Summon',{position:'attack',faceUp:true,intent:'normal'});
       add('special','Sp. Summon',{position:'attack',faceUp:true,intent:'special'});
-      if(!link)add('special-defense','Sp. Summon · Difesa',{position:'defense',faceUp:true,intent:'special'});
       if(from==='hand'&&to==='monsters'&&!link&&!isExtraDeckMonster(card)&&!/ritual/.test(type))add('set','Set',{position:'defense',faceUp:false,intent:'set'});
     }
   }else if(to==='spells'||to==='field'){
@@ -47,7 +56,7 @@ export function cardTapActions(card,from){
   const summons=(hand=false)=>{
     const zones=destinations();if(!zones.length)return;
     for(const choice of cardDropActions(card,hand?'hand':from,'monsters')){
-      if(!['normal','special','special-defense','set'].includes(choice.id))continue;
+      if(!['normal','special','set'].includes(choice.id))continue;
       if((choice.id==='normal'||choice.id==='set')&&(!hand||isExtraDeckMonster(card)||/ritual/.test(type)))continue;
       const targets=['normal','set'].includes(choice.id)?['monsters']:zones;
       add(choice.id,choice.label,choice.changes,{to:'monsters',zones:targets});
@@ -55,12 +64,11 @@ export function cardTapActions(card,from){
   };
   if(from==='hand'){
     if(monster||unknown)summons(true);
-    if(!monster||unknown){
-      const to=canMoveCardToZone(card,'field')&&!unknown?'field':'spells';
-      const zoneChoices=unknown?['spells','field']:[to];
+    if(!monster&&!unknown){
+      const to=canMoveCardToZone(card,'field')?'field':'spells';
       for(const choice of cardDropActions(card,'hand',to)){
         if(!['activate','set'].includes(choice.id))continue;
-        add(unknown&&choice.id==='set'?'set-spell':choice.id,unknown?`${choice.label} · Magia/Trappola`:choice.label,choice.changes,{to,zones:zoneChoices});
+        add(choice.id,choice.label,choice.changes,{to,zones:[to]});
       }
     }
   }else if(board.includes(from)){
@@ -70,7 +78,6 @@ export function cardTapActions(card,from){
       if(card.faceUp){
         const position=card.position==='defense'?'attack':'defense';
         add('position',position==='attack'?'Posizione Attacco':'Posizione Difesa',{positionOnly:true,position,faceUp:true});
-        if(!card.token)add('set','Set',{positionOnly:true,position:'defense',faceUp:false});
       }else{
         add('flip-attack','Scopri in Attacco',{positionOnly:true,position:'attack',faceUp:true});
         add('flip-defense','Scopri in Difesa',{positionOnly:true,position:'defense',faceUp:true});

@@ -5,7 +5,7 @@ import {YugiohMultiplayer} from '../js/games/yugioh/simulator-multiplayer.js';
 import {redactState} from '../api/_yugioh-duel-service.js';
 
 const monster={type:'Effect Monster',faceUp:true,position:'attack'},spell={type:'Spell Card',faceUp:false,position:'attack'},link={type:'Link Monster',faceUp:false,position:'attack'};
-assert.deepEqual(cardDropActions(monster,'hand','monsters').map(action=>action.id),['normal','special','special-defense','set']);
+assert.deepEqual(cardDropActions(monster,'hand','monsters').map(action=>action.id),['normal','special','set']);
 assert.deepEqual(cardDropActions(link,'extra','extraMonsters').map(action=>action.id),['special']);
 assert.deepEqual(cardDropActions(spell,'hand','monsters'),[]);
 assert(cardDropActions(spell,'spells','spells',{samePosition:true}).find(action=>action.id==='activate').changes.activateOnly);

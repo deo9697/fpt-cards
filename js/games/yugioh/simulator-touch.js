@@ -1,6 +1,6 @@
-// Long-press dragging for the manual duel. State mutations and destination
-// legality belong to the controller; this helper owns only the pointer gesture.
-export function createDuelCardGestures({ canStart = () => false, getRevision = () => null, onStart = () => {}, onDrop = () => {}, onCancel = () => {}, environment = globalThis, longPressMs = 320 } = {}) {
+// Hold still to read a card; move after the hold to drag it. State mutations
+// and destination legality belong to the controller.
+export function createDuelCardGestures({ canStart = () => false, canInspect = canStart, getRevision = () => null, onStart = () => {}, onDrop = () => {}, onInspect = () => {}, onCancel = () => {}, environment = globalThis, longPressMs = 320, inspectMs = 700 } = {}) {
   const env = environment;
   const setTimer = (env.setTimeout || globalThis.setTimeout).bind(env);
   const clearTimer = (env.clearTimeout || globalThis.clearTimeout).bind(env);
@@ -9,22 +9,22 @@ export function createDuelCardGestures({ canStart = () => false, getRevision = (
   let suppression = null, suppressionTimer = null;
   const targetSelector = '[data-ygo-slot],[data-ygo-drop-zone]';
   const closest = (element, selector) => element?.closest?.(selector) || element?.parentElement?.closest?.(selector) || null;
-  const allowed = card => { try { return Boolean(canStart(card)); } catch { return false; } };
+  const allowed = (card, predicate = canStart) => { try { return Boolean(predicate(card)); } catch { return false; } };
   const revision = () => { try { return getRevision(); } catch { return Symbol('invalid revision'); } };
-  const same = value => gesture === value && !disposed && root?.contains?.(value.card) && value.card.isConnected !== false && value.revision === revision() && allowed(value.card);
+  const same = value => gesture === value && !disposed && root?.contains?.(value.card) && value.card.isConnected !== false && value.revision === revision() && (value.dragging ? allowed(value.card) : allowed(value.card, canInspect) || allowed(value.card));
   const coordinates = (event, value) => ({ x:Number.isFinite(event.clientX) ? event.clientX : value.x, y:Number.isFinite(event.clientY) ? event.clientY : value.y });
 
   function clearSuppression() {
     if (suppressionTimer !== null) clearTimer(suppressionTimer);
     suppressionTimer = null; suppression = null;
   }
-  function suppressClick(value) {
+  function suppressClick(value, untilRelease = false) {
     clearSuppression();
-    suppression = { cardId:value.cardId, player:value.player, pointerId:value.pointerId, until:now() + 400 };
-    suppressionTimer = setTimer(clearSuppression, 400);
+    suppression = { cardId:value.cardId, player:value.player, pointerId:value.pointerId, until:now() + 400, untilRelease };
+    if (!untilRelease) suppressionTimer = setTimer(clearSuppression, 400);
   }
   function onClick(event) {
-    if (!suppression || now() > suppression.until) return;
+    if (!suppression || !suppression.untilRelease && now() > suppression.until) return;
     const card = closest(event.target, '[data-ygo-card]');
     const matchingCard = card?.dataset.ygoCard === suppression.cardId && Number(card.dataset.player) === suppression.player;
     const matchingPointer = Number.isFinite(event.pointerId) && event.pointerId === suppression.pointerId;
@@ -54,7 +54,8 @@ export function createDuelCardGestures({ canStart = () => false, getRevision = (
   }
   function clean(value) {
     if (value.timer !== null) clearTimer(value.timer);
-    value.timer = null;
+    if (value.inspectTimer !== null) clearTimer(value.inspectTimer);
+    value.timer = null; value.inspectTimer = null;
     clearTarget(value);
     value.ghost?.remove(); value.ghost = null;
     value.card.classList?.remove('is-drag-source', 'is-touch-dragging');
@@ -69,10 +70,23 @@ export function createDuelCardGestures({ canStart = () => false, getRevision = (
     clean(value);
     if (value.held) onCancel({ cardId:value.cardId, player:value.player, reason });
   }
-  function begin(value) {
+  function inspect(value, untilRelease = false) {
+    if (!same(value)) { cancel('revision'); return; }
+    if (!allowed(value.card, canInspect)) { cancel('inspection'); return; }
+    gesture = null; suppressClick(value, untilRelease); clean(value);
+    onInspect({ cardId:value.cardId, player:value.player });
+  }
+  function arm(value) {
     if (!same(value)) { cancel('revision'); return; }
     value.timer = null; value.held = true;
     doc.addEventListener('touchmove', onTouchMove, { capture:true, passive:false });
+    try { value.card.setPointerCapture?.(value.pointerId); } catch { /* Document listeners still finish the gesture. */ }
+    if (allowed(value.card, canInspect)) value.inspectTimer = setTimer(() => inspect(value, true), Math.max(0, inspectMs - longPressMs));
+  }
+  function beginDrag(value) {
+    if (!same(value) || !allowed(value.card)) { cancel('revision'); return; }
+    if (value.inspectTimer !== null) clearTimer(value.inspectTimer);
+    value.inspectTimer = null; value.dragging = true;
     const box = value.card.getBoundingClientRect();
     value.width = Math.max(20, box.width); value.height = Math.max(28, box.height);
     const ghost = doc.createElement('div');
@@ -87,42 +101,59 @@ export function createDuelCardGestures({ canStart = () => false, getRevision = (
     } else ghost.textContent = value.card.getAttribute('aria-label') || value.card.textContent || 'Carta';
     (doc.body || root).appendChild(ghost); value.ghost = ghost;
     value.card.classList?.add('is-drag-source', 'is-touch-dragging'); root.classList?.add('is-touch-dragging');
-    try { value.card.setPointerCapture?.(value.pointerId); } catch { /* Document listeners still finish the gesture. */ }
     moveGhost(value);
     onStart({ cardId:value.cardId, player:value.player });
   }
   function onDown(event) {
     if (disposed || !['touch', 'pen'].includes(event.pointerType)) return;
     if (gesture) { if (gesture.pointerId !== event.pointerId) cancel('multitouch'); return; }
+    if (suppression?.untilRelease && suppression.pointerId === event.pointerId) clearSuppression();
     if (event.isPrimary === false || event.button != null && event.button !== 0) return;
     const card = closest(event.target, '[data-ygo-card]');
-    if (!card || !root?.contains?.(card) || card.disabled || !allowed(card)) return;
+    if (!card || !root?.contains?.(card) || card.disabled || !allowed(card) && !allowed(card, canInspect)) return;
     const player = Number(card.dataset.player);
     if (![0, 1].includes(player) || !card.dataset.ygoCard) return;
-    const value = { card, document:doc, player, cardId:card.dataset.ygoCard, pointerId:event.pointerId, revision:revision(), x:event.clientX, y:event.clientY, startX:event.clientX, startY:event.clientY, held:false, timer:null, ghost:null, target:null };
+    const value = { card, document:doc, player, cardId:card.dataset.ygoCard, pointerId:event.pointerId, revision:revision(), x:event.clientX, y:event.clientY, startX:event.clientX, startY:event.clientY, held:false, dragging:false, timer:null, inspectTimer:null, ghost:null, target:null };
     gesture = value;
-    value.timer = setTimer(() => begin(value), Math.max(0, longPressMs));
+    value.timer = setTimer(() => arm(value), Math.max(0, longPressMs));
   }
   function onMove(event) {
     const value = gesture; if (!value || event.pointerId !== value.pointerId) return;
     if (!same(value)) { cancel('revision'); return; }
     const point = coordinates(event, value); value.x = point.x; value.y = point.y;
+    const moved = Math.hypot(value.x - value.startX, value.y - value.startY) > 10;
     if (!value.held) {
-      if (Math.hypot(value.x - value.startX, value.y - value.startY) > 10) cancel('scroll');
+      if (moved) cancel('scroll');
       return;
     }
-    event.preventDefault(); moveGhost(value);
+    if (!value.dragging && moved) {
+      if (!allowed(value.card)) { cancel('scroll'); return; }
+      beginDrag(value);
+    }
+    event.preventDefault(); if (value.dragging) moveGhost(value);
   }
   function onUp(event) {
-    const value = gesture; if (!value || event.pointerId !== value.pointerId) return;
+    const value = gesture;
+    if (!value) {
+      if (suppression?.untilRelease && event.pointerId === suppression.pointerId) {
+        suppression.untilRelease = false; suppression.until = now() + 400;
+        suppressionTimer = setTimer(clearSuppression, 400); event.preventDefault();
+      }
+      return;
+    }
+    if (event.pointerId !== value.pointerId) return;
     if (!value.held) { gesture = null; clean(value); return; }
     event.preventDefault();
+    if (!value.dragging) { inspect(value); return; }
     const point = coordinates(event, value), valid = same(value), destination = valid ? dropTarget(point.x, point.y, value) : null;
     gesture = null; suppressClick(value); clean(value);
     if (!destination) { onCancel({ cardId:value.cardId, player:value.player, reason:valid ? 'destination' : 'revision' }); return; }
     onDrop({ cardId:value.cardId, player:value.player, zone:destination.zone, slot:destination.slot, x:point.x, y:point.y });
   }
-  function onLost(event) { if (gesture && event.pointerId === gesture.pointerId) cancel(event.type || 'pointercancel'); }
+  function onLost(event) {
+    if (gesture && event.pointerId === gesture.pointerId) cancel(event.type || 'pointercancel');
+    else if (event.type === 'pointercancel' && suppression?.untilRelease && event.pointerId === suppression.pointerId) clearSuppression();
+  }
   function onContextMenu(event) {
     if (gesture && closest(event.target, '[data-ygo-card]') === gesture.card && same(gesture)) { event.preventDefault(); event.stopPropagation(); }
   }

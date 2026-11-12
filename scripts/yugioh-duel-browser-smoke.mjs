@@ -111,6 +111,12 @@ async function run(){
       await cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,radiusX:3,radiusY:3,force:1}]});
       await cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     };
+    const hold=async(selector,{duration=400,screenshotName}={})=>{
+      const point=await evaluate(`(()=>{const target=document.querySelector(${JSON.stringify(selector)});if(!target||target.disabled)throw Error('Carta per lettura assente o disabilitata');target.scrollIntoView({block:'center',inline:'center'});const box=target.getBoundingClientRect();return{x:(Math.max(0,box.left)+Math.min(innerWidth,box.right))/2,y:(Math.max(0,box.top)+Math.min(innerHeight,box.bottom))/2};})()`);
+      await cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,radiusX:3,radiusY:3,force:1}]});await delay(duration);
+      if(screenshotName)await screenshot(screenshotName,false);
+      await cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
     const pressDrag=async(sourceSelector,targetSelector,screenshotName)=>{
       const points=await evaluate(`(()=>{const source=document.querySelector(${JSON.stringify(sourceSelector)}),target=document.querySelector(${JSON.stringify(targetSelector)});if(!source||!target)throw Error('Sorgente o destinazione trascinamento assente');source.scrollIntoView({block:'center',inline:'center'});const from=source.getBoundingClientRect(),to=target.getBoundingClientRect();return{from:{x:(Math.max(0,from.left)+Math.min(innerWidth,from.right))/2,y:(Math.max(0,from.top)+Math.min(innerHeight,from.bottom))/2},to:{x:(to.left+to.right)/2,y:(to.top+to.bottom)/2}};})()`);
       await cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...points.from,radiusX:3,radiusY:3,force:1}]});await delay(400);
@@ -122,7 +128,7 @@ async function run(){
     const submit=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).requestSubmit()`);
     const screenshot=async(name,full=true)=>{if(!process.argv.includes('--screenshots'))return;await evaluate('document.fonts.ready');await evaluate('Promise.all(Array.from(document.images,image=>image.complete?Promise.resolve():new Promise(resolve=>{image.onload=resolve;image.onerror=resolve})))');const params={format:'png',captureBeyondViewport:full};if(full){const layout=await cdp.call('Page.getLayoutMetrics'),size=layout.cssContentSize||layout.contentSize;params.clip={x:0,y:0,width:size.width,height:Math.min(size.height,8000),scale:1};}const shot=await cdp.call('Page.captureScreenshot',params);const directory=path.join(root,'artifacts','yugioh-duel');fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,`${name}.png`),Buffer.from(shot.data,'base64'));};
     await cdp.call('Page.navigate',{url:`${origin}/scripts/fixtures/yugioh-duel-harness.html?member=${member}`});
-    return {member,cdp,evaluate,wait,click,tap,pressDrag,fill,submit,screenshot};
+    return {member,cdp,evaluate,wait,click,tap,hold,pressDrag,fill,submit,screenshot};
   }
   async function assertPhoneFrame(seat,label){
     const geometry=await seat.evaluate(`(()=>{const mat=document.querySelector('.ygo-playmat').getBoundingClientRect();const controls=['[data-ygo-command="menu"]','.ygo-phase-controls [data-ygo-action="draw"]','[data-ygo-action="nextPhase"]','[data-ygo-action="nextTurn"]',...['draw','standby','main1','battle','main2','end'].map(phase=>'[data-ygo-action="setPhase"][data-phase="'+phase+'"]')].map(selector=>{const button=document.querySelector(selector);if(!button)return{selector,inside:false,hit:false};const box=button.getBoundingClientRect(),hit=document.elementFromPoint((box.left+box.right)/2,(box.top+box.bottom)/2);return{selector,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,hit:Boolean(hit&&(hit===button||button.contains(hit)))};});return{top:mat.top,bottom:mat.bottom,left:mat.left,right:mat.right,width:innerWidth,height:innerHeight,controls};})()`);
@@ -165,20 +171,31 @@ async function run(){
         await practiceMenu();await seat.click('[data-ygo-command="inspect-deck"]');
         await seat.wait('Boolean(window.__sim.pile?.cards?.length)','La ricerca locale non apre il mazzo');
         id=await seat.evaluate(`window.__sim.pile.cards.find(card=>card.catalogCardId===${JSON.stringify(code)})?.id`);assert(id,'Carta di prova assente dal mazzo locale');
-        await seat.click(`.ygo-zone-cards [data-ygo-card="${id}"]`);await openDetails(seat,'Ricerca locale');await seat.fill('[data-ygo-move] [name=to]','hand');await seat.submit('[data-ygo-move]');
+        await openDetails(seat,`.ygo-zone-cards [data-ygo-card="${id}"]`,'Ricerca locale');await seat.fill('[data-ygo-move] [name=to]','hand');await seat.submit('[data-ygo-move]');
         await seat.wait(`window.__sim.session.players[0].hand.some(card=>card.id===${JSON.stringify(id)})`,'Ricerca → mano locale non applicata');
       }
       return id;
     }
     const monster=await findOwnCard('89631139');
+    const beforeDescription=await seat.evaluate('JSON.stringify(window.__sim.session)');
+    await seat.hold(`[data-ygo-card="${monster}"][data-player="0"]`,{duration:800,screenshotName:'card-description'});
+    await seat.wait('Boolean(document.querySelector(".ygo-card-dialog"))','La pressione ferma non mostra la descrizione della carta');
+    assert(!await seat.evaluate('Boolean(document.querySelector(".ygo-drop-menu,.ygo-drag-ghost"))'),'La lettura della carta apre una giocata o un trascinamento');
+    assert(await seat.evaluate('Boolean(document.querySelector(".ygo-card-dialog details[data-ygo-advanced]:not([open])"))'),'La descrizione espone subito i comandi avanzati');
+    assert.equal(await seat.evaluate('JSON.stringify(window.__sim.session)'),beforeDescription,'Leggere la descrizione modifica il test');
+    await closeDialog();
     const beforePracticeDrag=await seat.evaluate('JSON.stringify(window.__sim.session)');
     await seat.pressDrag(`[data-ygo-card="${monster}"][data-player="0"]`,'[data-ygo-slot="0"][data-zone="monsters"][data-player="0"]','drag-active');
     await waitDropMenu(seat,'Drag in Testa mazzo');await seat.screenshot('practice-context-actions',false);await cancelDrop(seat);
     assert.equal(await seat.evaluate('JSON.stringify(window.__sim.session)'),beforePracticeDrag,'Annullare il menu locale modifica il test');
     await delay(250);
     await seat.tap(`[data-ygo-card="${monster}"][data-player="0"]`);await waitDropMenu(seat,'Tocco Mostro locale');
-    assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-drop-menu [data-ygo-drop-action]"),button=>button.dataset.ygoDropAction).filter(id=>["normal","special","special-defense","set"].includes(id)).sort()'),['normal','set','special','special-defense'],'Il tocco sulla mano non propone tutte le giocate del Mostro');
-    await seat.screenshot('tap-actions',false);await seat.tap('.ygo-drop-menu [data-ygo-drop-action="normal"]');
+    assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-drop-menu [data-ygo-drop-action]"),button=>button.dataset.ygoDropAction).sort()'),['normal','set','special'],'Il tocco sulla mano non propone soltanto le tre giocate del Mostro');
+    await seat.screenshot('tap-actions',false);await cancelDrop(seat);
+    await seat.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await delay(100);
+    await seat.tap(`[data-ygo-card="${monster}"][data-player="0"]`);await waitDropMenu(seat,'Menu Mostro 740×360');await seat.screenshot('tap-actions-740',false);await cancelDrop(seat);
+    await seat.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await delay(100);
+    await seat.tap(`[data-ygo-card="${monster}"][data-player="0"]`);await waitDropMenu(seat,'Scelta Normal Summon locale');await seat.tap('.ygo-drop-menu [data-ygo-drop-action="normal"]');
     assert(await seat.evaluate(`window.__sim.placing&&window.__sim.session.players[0].hand.some(card=>card.id===${JSON.stringify(monster)})`),'La scelta Normal Summon non attende la destinazione');
     await seat.tap('[data-ygo-slot="0"][data-zone="monsters"][data-player="0"]');
     await seat.wait(`window.__sim.session.players[0].monsters.some(card=>card.id===${JSON.stringify(monster)})`,'Evocazione locale non applicata');
@@ -251,12 +268,14 @@ async function run(){
   async function closeMenu(page){if(await page.evaluate('Boolean(document.querySelector("[data-ygo-command=close-menu]"))'))await page.click('[data-ygo-command="close-menu"]');}
   async function closePile(page){if(await page.evaluate('Boolean(document.querySelector("[data-ygo-command=close-pile]"))'))await page.click('[data-ygo-command="close-pile"]');}
   async function openMenu(page){await closeCard(page);await closePile(page);if(!await page.evaluate('window.__sim.menu'))await page.click('[data-ygo-command="menu"]');}
-  async function openDetails(page,label='Carta'){
-    await page.wait('Boolean(document.querySelector(".ygo-drop-menu,.ygo-card-dialog"))',label+': menu o dettagli assenti');
-    if(await page.evaluate('Boolean(document.querySelector(".ygo-drop-menu"))'))await page.tap('.ygo-drop-menu [data-ygo-command="card-details"]');
+  async function openDetails(page,selector,label='Carta'){
+    await page.hold(selector);
     await page.wait('Boolean(document.querySelector(".ygo-card-dialog"))',label+': dettagli opzionali assenti');
+    assert(!await page.evaluate('Boolean(document.querySelector(".ygo-drop-menu,.ygo-drag-ghost"))'),label+': la pressione ferma apre una giocata');
+    if(await page.evaluate('Boolean(document.querySelector(".ygo-card-dialog details[data-ygo-advanced]:not([open])"))'))await page.tap('.ygo-card-dialog details[data-ygo-advanced] > summary');
+    await page.wait('Boolean(document.querySelector(".ygo-card-dialog details[data-ygo-advanced][open]"))',label+': comandi avanzati opzionali non aperti');
   }
-  async function select(page,viewer,id){await idle(page);await page.click(`[data-ygo-card="${id}"][data-player="${viewer}"]`);await openDetails(page);}
+  async function select(page,viewer,id){await idle(page);await openDetails(page,`[data-ygo-card="${id}"][data-player="${viewer}"]`);}
   async function putInHand(page,viewer,code){
     const player=rows.get(duelId).state.players[viewer],zone=['hand','deck'].find(zone=>player[zone].some(card=>card.catalogCardId===code));
     assert(zone,'Carta di prova assente dalla mano/mazzo: '+code);
@@ -264,7 +283,7 @@ async function run(){
     if(zone==='deck'){
       await openMenu(page);await page.click('[data-ygo-command="inspect-deck"]');
       await page.wait(`window.__sim.pile?.cards?.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca nel mazzo non mostra la carta');
-      await page.click(`.ygo-zone-cards [data-ygo-card="${card.id}"]`);await openDetails(page,'Ricerca nel mazzo');
+      await openDetails(page,`.ygo-zone-cards [data-ygo-card="${card.id}"]`,'Ricerca nel mazzo');
       await page.fill('[data-ygo-move] [name=to]','hand');await page.submit('[data-ygo-move]');
       await page.wait(`window.__sim.session.players[${viewer}].hand.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca → mano non applicata');await idle(page);
     }
@@ -273,13 +292,18 @@ async function run(){
   async function playHand(page,viewer,code,command,slot){
     const id=await putInHand(page,viewer,code),before=await page.evaluate('JSON.stringify(window.__sim.session)');await page.tap(`[data-ygo-card="${id}"][data-player="${viewer}"]`);await waitDropMenu(page,'Tocco mano '+command);
     assert.equal(await page.evaluate('JSON.stringify(window.__sim.session)'),before,'Il tocco gioca la carta senza scegliere un comando');
-    const quickAction={summon:'normal',defend:'special-defense','set-monster':'set','set-spell':'set','play-spell':'activate'}[command];assert(quickAction,'Comando di prova non supportato: '+command);
+    const spell=['set-spell','play-spell'].includes(command);
+    assert.deepEqual(await page.evaluate('Array.from(document.querySelectorAll(".ygo-drop-menu [data-ygo-drop-action]"),button=>button.dataset.ygoDropAction).sort()'),spell?['activate','set']:['normal','set','special'],'Il menu della mano contiene giocate secondarie o manca una scelta primaria');
+    if(spell)await page.screenshot(code==='97077563'?'trap-actions':'spell-actions',false);
+    const quickAction={summon:'normal',defend:'special','set-monster':'set','set-spell':'set','play-spell':'activate'}[command];assert(quickAction,'Comando di prova non supportato: '+command);
     await page.tap(`.ygo-drop-menu [data-ygo-drop-action="${quickAction}"]`);
     await page.wait('Boolean(window.__sim.placing)','La scelta della giocata non chiede una casella');
     assert.equal(await page.evaluate('JSON.stringify(window.__sim.session)'),before,'La scelta della giocata muove la carta senza destinazione');
     const zone=command==='set-spell'||command==='play-spell'?'spells':'monsters';
     await page.tap(`[data-ygo-slot="${slot}"][data-zone="${zone}"][data-player="${viewer}"]`);
-    await page.wait(`window.__sim.session.players[${viewer}].${zone}.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot})`,'Giocata nella zona corretta non applicata');await idle(page);return id;
+    await page.wait(`window.__sim.session.players[${viewer}].${zone}.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot})`,'Giocata nella zona corretta non applicata');await idle(page);
+    if(command==='defend'){await select(page,viewer,id);await page.click('.ygo-card-dialog [data-ygo-action="setPosition"]');await both(`window.__sim.session.players[${viewer}].monsters.some(card=>card.id===${JSON.stringify(id)}&&card.position==='defense')`,'Difesa tramite comandi avanzati opzionali');}
+    return id;
   }
   async function playExtra(page,viewer,code,zone,slot){
     await closeCard(page);await closeMenu(page);await closePile(page);
@@ -295,7 +319,9 @@ async function run(){
     catch(error){throw new Error(error.message+'\nGesture/render trace: '+JSON.stringify(await page.evaluate('window.__duelQaTrace')));}
     assert(!await page.evaluate('Boolean(document.querySelector(".ygo-card-dialog"))'),label+': il trascinamento apre il pannello grande della carta');
     const menu=await page.evaluate('(()=>{const box=document.querySelector(".ygo-drop-menu").getBoundingClientRect();return{width:box.width,height:box.height,left:box.left,right:box.right,top:box.top,bottom:box.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight};})()');
-    assert(menu.width<=280&&menu.left>=0&&menu.right<=menu.viewportWidth+1&&menu.top>=0&&menu.bottom<=menu.viewportHeight+1,label+': menu fuori schermo o troppo largo '+JSON.stringify(menu));
+    assert(menu.width<=160&&menu.height<=130&&menu.left>=0&&menu.right<=menu.viewportWidth+1&&menu.top>=0&&menu.bottom<=menu.viewportHeight+1,label+': menu fuori schermo o troppo grande '+JSON.stringify(menu));
+    const content=await page.evaluate('(()=>{const menu=document.querySelector(".ygo-drop-menu");return{actions:menu.querySelectorAll("[data-ygo-drop-action]").length,buttons:menu.querySelectorAll("button").length,extras:Boolean(menu.querySelector("header,h1,h2,h3,footer,.ygo-drop-footer,[data-ygo-command]"))};})()');
+    assert(content.actions>=1&&content.actions<=3&&content.buttons===content.actions&&!content.extras,label+': il menu contiene titolo, comandi secondari o più di tre scelte '+JSON.stringify(content));
   }
   async function dragExtra(page,viewer,code,slot){
     await closeCard(page);await closeMenu(page);await closePile(page);await page.click(`[data-ygo-pile="extra"][data-player="${viewer}"]`);
@@ -308,8 +334,7 @@ async function run(){
     await both(`window.__sim.session.players[${viewer}].extraMonsters.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot}&&card.faceUp)`,'Evocazione Speciale trascinata dall’Extra');return id;
   }
   async function cancelDrop(page){
-    if(await page.evaluate('Boolean(document.querySelector(".ygo-drop-menu [data-ygo-command=close-drop-menu]"))'))await page.tap('.ygo-drop-menu [data-ygo-command="close-drop-menu"]');
-    else{await page.cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:2,y:2,radiusX:3,radiusY:3,force:1}]});await page.cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
+    await page.cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:2,y:2,radiusX:3,radiusY:3,force:1}]});await page.cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await page.wait('!document.querySelector(".ygo-drop-menu")','Il menu contestuale non si chiude');
   }
   // Long press + physical touch drag selects a destination; only a menu choice

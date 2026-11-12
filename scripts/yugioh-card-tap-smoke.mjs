@@ -7,7 +7,7 @@ const spell={type:'Spell Card',faceUp:false,position:'attack'};
 const trap={type:'Trap Card',faceUp:false,position:'attack'};
 const ids=(card,from)=>cardTapActions(card,from).map(action=>action.id);
 const action=(card,from,id)=>cardTapActions(card,from).find(choice=>choice.id===id);
-assert.deepEqual(ids(monster,'hand'),['normal','special','special-defense','set']);
+assert.deepEqual(ids(monster,'hand'),['normal','special','set']);
 assert.deepEqual(action(monster,'hand','normal').zones,['monsters']);
 assert.deepEqual(action(monster,'hand','special').zones,['monsters']);
 assert.equal(action(monster,'hand','normal').changes.intent,'normal');
@@ -26,7 +26,7 @@ assert.equal(ritualTable.players[0].monsters.length,0,'A rejected Ritual Normal 
 assert.equal(applyAction(ritualTable,{type:'move',player:0,cardId:ritualCard.id,to:'monsters',intent:'special',faceUp:true,position:'attack'}).players[0].monsters[0].id,ritualCard.id);
 assert.deepEqual(ids({type:'Link Monster'},'extra'),['special','activate']);
 assert.deepEqual(action({type:'Link Monster'},'extra','special').zones,['monsters','extraMonsters']);
-assert.deepEqual(ids({type:'Fusion Monster'},'extra'),['special','special-defense','activate']);
+assert.deepEqual(ids({type:'Fusion Monster'},'extra'),['special','activate']);
 console.log('PASS monster taps offer type-appropriate summons and explicit destination zones');
 
 for(const card of [spell,trap]){
@@ -44,7 +44,7 @@ assert.equal(action({...spell,faceUp:true},'spells','set').changes.positionOnly,
 assert.equal(action({cardType:'Trap Card'},'hand','activate').to,'spells');
 console.log('PASS spells and traps offer Set/Activate, field spells use the Field Zone');
 
-assert.deepEqual(ids(monster,'monsters'),['activate','position','set','graveyard']);
+assert.deepEqual(ids(monster,'monsters'),['activate','position','graveyard']);
 assert.equal(action(monster,'monsters','activate').changes.activateOnly,true);
 assert.equal(action(monster,'monsters','position').changes.position,'defense');
 assert.equal(action({...monster,position:'defense'},'monsters','position').changes.position,'attack');
@@ -65,8 +65,24 @@ assert(!ids(monster,'deck').includes('activate'),'Deck activations are rejected 
 assert.deepEqual(ids(monster,'side'),[]);
 assert.deepEqual(cardTapActions(null,'hand'),[]);
 assert.deepEqual(cardTapActions(monster,'invalid'),[]);
-assert(ids({},'hand').includes('normal'));
-assert(ids({},'hand').includes('activate'));
-assert(ids({},'hand').includes('set-spell'));
+assert.deepEqual(ids({},'hand'),['normal','special','set']);
 console.log('PASS pile effects/summons, unknown-type manual choices and read-only Side Deck');
+
+assert.deepEqual(cardDropActions(monster,'hand','monsters').map(choice=>choice.id),['normal','special','set']);
+assert.deepEqual(cardDropActions(monster,'monsters','monsters',{samePosition:true}).map(choice=>choice.id),['activate','position','set']);
+assert.deepEqual(cardDropActions({...monster,faceUp:false},'monsters','monsters',{samePosition:true}).map(choice=>choice.id),['flip-attack','flip-defense']);
+assert.deepEqual(cardDropActions(monster,'monsters','monsters').map(choice=>choice.id),['move','set']);
+for(const card of [monster,spell,trap,fieldSpell,{type:'Link Monster',faceUp:true},{type:'Ritual Monster',faceUp:true},{...monster,token:true},{}]){
+  for(const from of ['hand','monsters','extraMonsters','spells','field','deck','graveyard','banished','extra','side']){
+    assert(cardTapActions(card,from).length<=3,`Tap options must fit three choices: ${card.type||'unknown'} in ${from}`);
+    for(const to of ['monsters','extraMonsters','spells','field','deck','graveyard','banished','extra','hand']){
+      for(const samePosition of [false,true]){
+        const choices=cardDropActions(card,from,to,{samePosition});
+        assert(choices.length<=3,`Drop options must fit three choices: ${card.type||'unknown'} from ${from} to ${to}`);
+        assert(!choices.some(choice=>choice.id==='special-defense'),'Special Summon uses one compact choice');
+      }
+    }
+  }
+}
+console.log('PASS every quick tap/drop menu fits at most three context-appropriate choices');
 console.log('yugioh-card-tap-smoke: OK');
