@@ -4,14 +4,16 @@ import fs from 'node:fs';import http from 'node:http';import net from 'node:net'
 const root=process.cwd(), out=path.join(root,'artifacts/push-notifications-2');fs.mkdirSync(out,{recursive:true});
 const fixture=`(()=>{
 const people=[{slug:'push-a',full_name:'Membro A',role:'admin'},{slug:'push-b',full_name:'Membro B',role:'guest'}];
-window.__pushCalls={requests:0,saves:0,removed:0,tests:0};let permission='default',subscription=null;
+window.__pushCalls={requests:0,saves:0,removed:0,tests:0};let permission='default',subscription=null,currentMember='push-a';
 Object.defineProperty(window,'Notification',{configurable:true,value:{get permission(){return permission},async requestPermission(){window.__pushCalls.requests++;permission='granted';return permission}}});
 window.PushManager=class {};
 const registration={update:async()=>{},getNotifications:async()=>[],pushManager:{async getSubscription(){return subscription},async subscribe(){subscription={endpoint:'https://fcm.googleapis.com/fcm/send/synthetic',options:{},expirationTime:null,toJSON(){return {endpoint:this.endpoint,keys:{p256dh:'synthetic-key',auth:'synthetic-auth'}}},async unsubscribe(){subscription=null;return true}};return subscription}}};
 const sw=new EventTarget();sw.ready=Promise.resolve(registration);sw.register=async()=>registration;sw.getRegistration=async()=>registration;Object.defineProperty(navigator,'serviceWorker',{value:sw,configurable:true});
 const client={async rpc(name,args={}){
  if(name==='list_login_members'||name==='list_team_members'||name==='list_member_profiles')return {data:people};
- if(name==='login_member')return {data:{slug:args.p_slug,role:'admin'}};
+ if(name==='login_member'){currentMember=args.p_slug;return {data:{slug:args.p_slug,role:'admin'}};}
+ if(name==='list_my_collection')return {data:currentMember==='push-a'?[{id:'alert-item',printing_id:'alert-printing',owner_slug:'push-a',card_name:'Carta alert One Piece',game:'onepiece',quantity_owned:3,quantity_available:3,set_code:'OP01-001',image_url:'/icon-192.png'}]:[]};
+ if(name==='get_market_watch_item_price')return {data:{printingId:args.p_printing_id,referencePrice:12,capturedAt:'2026-11-12T02:00:00Z'}};
  if(name==='get_my_team')return {data:null};
  if(name==='save_push_subscription'){window.__pushCalls.saves++;return {data:null}};
  if(name==='remove_push_subscription'){window.__pushCalls.removed++;return {data:null}};
@@ -52,8 +54,23 @@ try {
  await click('#test-notifications');await wait('__pushCalls.tests===1');await click('#enable-notifications');await wait('__pushCalls.saves===2 && document.querySelector("#reset-notifications")?.disabled===false');console.log('PASS activation, actual status, own-device test and repair');
  await click('#reset-notifications');await wait('__pushCalls.removed===1 && !document.querySelector("#test-notifications") && document.querySelector("#enable-notifications")?.disabled===false');assert.equal(await evaluate('Notification.permission'),'granted');await evaluate(`document.dispatchEvent(new Event('visibilitychange'))`);assert.equal(await evaluate('__pushCalls.saves'),2);await click('#enable-notifications');await wait('__pushCalls.saves===3');assert.equal(await evaluate('__pushCalls.requests'),1);console.log('PASS device reset, foreground stays paused, explicit reactivation and native permission unchanged');
  await evaluate(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'fpt-notification-click',url:location.origin+'/#/loans?loanId=push-loan'}}))`);await wait('!!document.querySelector(".loan-detail-sheet")');console.log('PASS warm notification click opens correct loan');
- await click('.loan-detail-sheet .detail-close');await evaluate(`location.hash='#/settings'`);await wait('!!document.querySelector("#test-notifications")');await click('[data-logout]');await wait('!!document.querySelector("#login-form")');assert.equal(await evaluate('__pushCalls.removed'),2);assert.equal(await evaluate(`(async()=>{const cache=await caches.open('fpt-push-state-v1');const hit=await cache.match('/__push_owner');return hit.text()})()`),'');console.log('PASS logout unregisters device and clears private notification identity');
+ await click('.loan-detail-sheet .detail-close');
+ await evaluate(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'fpt-notification-click',url:location.origin+'/#/collection?printingId=alert-printing&game=yugioh'}}))`);
+ await wait('document.querySelector("#collection-detail-title")?.textContent==="Carta alert One Piece" && document.body.dataset.game==="onepiece"');
+ assert(await evaluate('document.querySelector(".inventory-detail").textContent.includes("12,00")'));
+ await screenshot('phone-owned-price-alert');console.log('PASS warm price alert opens own printing with its price, deriving the correct game from ownership');
+ await click('.inventory-detail .detail-close');await evaluate(`location.hash='#/settings'`);await wait('!!document.querySelector("#test-notifications")');await click('[data-logout]');await wait('!!document.querySelector("#login-form")');assert.equal(await evaluate('__pushCalls.removed'),2);assert.equal(await evaluate(`(async()=>{const cache=await caches.open('fpt-push-state-v1');const hit=await cache.match('/__push_owner');return hit.text()})()`),'');console.log('PASS logout unregisters device and clears private notification identity');
  await evaluate(`document.querySelector('#member').value='push-b';document.querySelector('#pin').value='1234';document.querySelector('#login-form').requestSubmit()`);await wait('__pushCalls.saves===4');assert.equal(await evaluate(`(async()=>{const c=await caches.open('fpt-push-state-v1');return (await c.match('/__push_owner')).text()})()`),'push-b');
  await evaluate(`window.dispatchEvent(new StorageEvent('storage',{key:'fpt-cards-session-token',oldValue:'old-session',newValue:'new-session'}))`);await wait('!!document.querySelector("#login-form")');console.log('PASS account switch auto repairs without another permission prompt; other-tab session change invalidates old UI');
+ await call('Page.navigate',{url:origin+'/#/collection?printingId=alert-printing&game=yugioh'});await wait('!!document.querySelector("#login-form")');
+ await evaluate(`document.querySelector('#member').value='push-a';document.querySelector('#pin').value='1234';document.querySelector('#login-form').requestSubmit()`);
+ await wait('document.querySelector("#collection-detail-title")?.textContent==="Carta alert One Piece"');
+ assert.equal(await evaluate('location.hash'),'#/collection?printingId=alert-printing&game=yugioh');
+ await evaluate(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'fpt-notification-click',url:location.origin+'/#/collection?printingId=foreign-printing'}}))`);
+ await wait('!document.querySelector(".inventory-detail")');console.log('PASS price alert survives relogin; foreign or removed printing never opens another member card');
+ await evaluate('localStorage.clear()');await call('Page.navigate',{url:origin+'/#/collection?printingId=alert-printing&game=yugioh'});await call('Page.reload',{ignoreCache:true});
+ await wait('!!document.querySelector("#login-form")');await evaluate(`document.querySelector('#member').value='push-a';document.querySelector('#pin').value='1234';document.querySelector('#login-form').requestSubmit()`);
+ await wait('document.querySelector("#collection-detail-title")?.textContent==="Carta alert One Piece"');await delay(350);
+ assert(await evaluate('!!document.querySelector(".inventory-detail")'));console.log('PASS full cold-start price alert opens exact owned card after login and stays open');
  assert.deepEqual(errors,[]);console.log('PASS no uncaught browser exceptions');
 } finally {socket?.close();chrome.kill();await new Promise(r=>server.close(r));}

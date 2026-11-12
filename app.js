@@ -404,6 +404,8 @@ function renderRoute() {
   if (!state.currentUser || !shell || !stage) { render(); return; }
   document.body.dataset.page = page;
   applyNotificationRoute();
+  // The collection dialog lives outside page-stage; route refreshes must rebuild it too.
+  if (page === 'collection' && selectedCollectionItem) { render(); return; }
   stage.innerHTML = pushOnboardingView() + pageContent();
   shell.querySelectorAll(':scope > .detail-backdrop').forEach(element => element.remove());
   shell.querySelectorAll('.sidebar nav button[data-page],.mobile-nav button[data-page]').forEach(button => {
@@ -466,6 +468,14 @@ function applyNotificationRoute() {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const key = `${state.currentUser}:${location.hash}`;
   if (!state.currentUser || key === consumedNotificationRoute) return;
+  if (page === 'collection' && params.get('printingId')) {
+    const item = (state.collection.mine || []).find(entry => entry.printingId === params.get('printingId') && entry.quantityOwned > 0);
+    if (item) {
+      state.game = item.game; collectionFilters.scope = 'mine'; selectedCollectionItem = item.id;
+      consumedNotificationRoute = key;
+      ensureCardTypeForDetail(item.id); ensurePriceForDetail(item.id);
+    }
+  }
   if (page === 'loans' && params.get('loanId')) {
     const loan = state.loans.find(item => item.id === params.get('loanId') && [item.owner,item.borrower].includes(state.currentUser));
     if (loan) { state.game = loan.game; selectedLoanId = loan.id; consumedNotificationRoute = key; }
@@ -2791,6 +2801,7 @@ async function login(e) {
     if (submit) { submit.disabled = true; submit.textContent = 'Accesso...'; }
     const profile = await api.login(id, pin);
     state.currentUser = profile.slug;
+    consumedNotificationRoute = '';
     if (page === 'simulator' && simulatorDuelFromHash()) state.game = simulatorGameFromHash();
     state.role = profile.role;
     state.canVerifyYgoArtwork = Boolean(profile.canVerifyYgoArtwork);
@@ -3519,11 +3530,11 @@ navigator.serviceWorker?.addEventListener('message', event => {
     void onePieceSimulator?.openRequested(); void yugiohSimulator?.openRequested(); return;
   }
   if (!state.currentUser) { history.replaceState(null, '', url.hash || '#/home'); page = routeFromHash(); return; }
-  if (['loans','requests'].includes(target)) {
+  if (['loans','requests','collection'].includes(target)) {
     consumedNotificationRoute = '';
-    history.pushState(null, '', url.hash); page = target; selectedLoanId = '';
+    history.pushState(null, '', url.hash); page = target; selectedLoanId = ''; selectedCollectionItem = '';
     render();
-    void (target === 'loans' ? loadCloudLoans() : loadCollectionShareRequests()).then(() => { if (page === target && state.currentUser) render(); }).catch(() => {});
+    void (target === 'loans' ? loadCloudLoans() : target === 'collection' ? loadCollection({scope:'mine'}) : loadCollectionShareRequests()).then(() => { if (page === target && state.currentUser) render(); }).catch(() => {});
     return;
   }
   if (target === 'market' && params.get('printingId')) { navigate('market'); void loadAppControllers().then(() => { marketWatch.selected = params.get('printingId'); render(true); }).catch(() => {}); }
