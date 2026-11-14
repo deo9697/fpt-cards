@@ -3,6 +3,9 @@ import {canMoveCardToZone,isMonster,isExtraDeckMonster} from './simulator-engine
 const board=['monsters','spells','field','extraMonsters'];
 const typeOf=card=>String(card?.type||card?.cardType||'').toLowerCase();
 const unknownType=card=>!/monster|mostro|token|spell|magia|trap|trappola/.test(typeOf(card));
+export function specialSummonPositions(card,action){
+  return (typeOf(card).includes('link')?['attack']:['attack','defense']).map(position=>({...action,id:`special-${position}`,label:position==='attack'?'Attacco':'Difesa',changes:{...action.changes,position,faceUp:true,intent:'special'}}));
+}
 export function cardDropActions(card,from,to,{samePosition=false}={}){
   if(!canMoveCardToZone(card,to))return[];
   const type=typeOf(card),link=type.includes('link'),monster=isMonster(card),unknown=unknownType(card);

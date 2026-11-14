@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {cardTapActions,cardDropActions} from '../js/games/yugioh/simulator-card-actions.js';
+import {cardTapActions,cardDropActions,specialSummonPositions} from '../js/games/yugioh/simulator-card-actions.js';
 import {createSession,applyAction} from '../js/games/yugioh/simulator-engine.js';
 
 const monster={type:'Effect Monster',faceUp:true,position:'attack'};
@@ -28,6 +28,18 @@ assert.deepEqual(ids({type:'Link Monster'},'extra'),['special','activate']);
 assert.deepEqual(action({type:'Link Monster'},'extra','special').zones,['monsters','extraMonsters']);
 assert.deepEqual(ids({type:'Fusion Monster'},'extra'),['special','activate']);
 console.log('PASS monster taps offer type-appropriate summons and explicit destination zones');
+
+for(const [card,from] of [[monster,'hand'],[{type:'Fusion Monster'},'extra'],[{type:'Synchro Monster'},'extra'],[{type:'XYZ Monster'},'extra'],[monster,'graveyard']]){
+  const original=action(card,from,'special'),positions=specialSummonPositions(card,original);
+  assert.deepEqual(positions.map(choice=>choice.id),['special-attack','special-defense']);
+  assert.deepEqual(positions.map(choice=>choice.changes.position),['attack','defense']);
+  assert(positions.every(choice=>choice.changes.faceUp&&choice.changes.intent==='special'));
+  assert(positions.every(choice=>JSON.stringify(choice.zones)===JSON.stringify(original.zones)),'Position selection must preserve the legal summon destinations');
+  assert.equal(original.changes.position,'attack','Opening position choices must not mutate the primary action');
+}
+const linkChoice=action({type:'Link Monster'},'extra','special');
+assert.deepEqual(specialSummonPositions({type:'Link Monster'},linkChoice).map(choice=>choice.id),['special-attack']);
+console.log('PASS Special Summon offers face-up Attack/Defense while Link Monsters keep Attack only');
 
 for(const card of [spell,trap]){
   assert.deepEqual(ids(card,'hand'),['activate','set']);

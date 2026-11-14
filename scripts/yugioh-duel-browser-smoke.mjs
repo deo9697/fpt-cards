@@ -266,7 +266,7 @@ async function run(){
     await host.wait('window.__sim.practice && window.__sim.session?.phase==="main1"','Campo locale non pronto per la verifica materiali');
     const bodyIds=await host.evaluate(`(async()=>{const sim=window.__sim,ids=[];for(const[slot,code]of[[0,'91152256'],[2,'15025844']]){const all=sim.session.players[0].hand.concat(sim.practiceTable.run({op:'inspect',zone:'deck'}).cards),card=all.find(card=>card.catalogCardId===code);ids.push(card.id);await sim.act({type:'move',player:0,cardId:card.id,to:'monsters',slot,faceUp:true});}return ids;})()`);
     const xyz=await host.evaluate('window.__sim.session.players[0].extra.find(card=>card.catalogCardId==="84013237").id');
-    await host.tap('[data-ygo-pile="extra"][data-player="0"]');await host.tap(`.ygo-zone-cards [data-ygo-card="${xyz}"]`);await waitDropMenu(host,'Materiali Xyz locali');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+    await host.tap('[data-ygo-pile="extra"][data-player="0"]');await host.tap(`.ygo-zone-cards [data-ygo-card="${xyz}"]`);await waitDropMenu(host,'Materiali Xyz locali');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(host);
     await chooseMaterials(host,bodyIds);
     assert.match(await host.evaluate('document.querySelector("[data-ygo-material-summary]").textContent'),/Rango\s*4/,'Il riepilogo Xyz deve indicare il Rango e non la somma dei Livelli');
     await host.evaluate('document.querySelector("[data-ygo-summon] button[type=submit]").scrollIntoView({block:"center"})');await host.screenshot('xyz-confirm-native',false);
@@ -277,7 +277,7 @@ async function run(){
     await host.submit('[data-ygo-xyz-cost]');await host.wait('window.__sim.session.chain.length===1&&window.__sim.session.players[0].monsters.find(card=>card.catalogCardId==="84013237").materials.length===1','Conferma costo Xyz tramite tocco non funzionante');
     await host.tap('.ygo-phase-controls [data-ygo-action="passChain"]');await host.wait('window.__sim.session.chainState.stage==="resolving"','La catena Xyz locale non si chiude');await host.tap('.ygo-phase-controls [data-ygo-action="resolveChain"]');await host.wait('window.__sim.session.chain.length===0','La catena Xyz locale non si risolve');
     const synchroIds=await host.evaluate(`(async()=>{const sim=window.__sim,ids=[];for(const[slot,code]of[[0,'90000001'],[2,'90000002']]){const all=sim.session.players[0].hand.concat(sim.practiceTable.run({op:'inspect',zone:'deck'}).cards),card=all.find(card=>card.catalogCardId===code);ids.push(card.id);await sim.act({type:'move',player:0,cardId:card.id,to:'monsters',slot,faceUp:true});}return ids;})()`);
-    const synchro=await host.evaluate('window.__sim.session.players[0].extra.find(card=>card.catalogCardId==="90000003").id');await host.tap('[data-ygo-pile="extra"][data-player="0"]');await host.tap(`.ygo-zone-cards [data-ygo-card="${synchro}"]`);await waitDropMenu(host,'Materiali Synchro locali');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseMaterials(host,synchroIds);
+    const synchro=await host.evaluate('window.__sim.session.players[0].extra.find(card=>card.catalogCardId==="90000003").id');await host.tap('[data-ygo-pile="extra"][data-player="0"]');await host.tap(`.ygo-zone-cards [data-ygo-card="${synchro}"]`);await waitDropMenu(host,'Materiali Synchro locali');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(host);await chooseMaterials(host,synchroIds);
     assert.match(await host.evaluate('document.querySelector("[data-ygo-material-summary]").textContent'),/somma Livelli\s*8/i,'Il riepilogo Synchro deve indicare la somma dei Livelli');
     await host.submit('[data-ygo-summon]');await host.wait('Boolean(window.__sim.placing)','Conferma materiali Synchro tramite tocco non funzionante');await host.tap(`[data-ygo-card="${synchroIds[0]}"][data-player="0"]`);
     await host.wait('window.__sim.session.players[0].monsters.some(card=>card.catalogCardId==="90000003"&&card.slot===0)','Synchro locale non evocato nella casella liberata dal materiale');
@@ -299,7 +299,7 @@ async function run(){
     assert.equal(rows.size,0);assert.equal(notifications.length,0);assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);
     console.log(JSON.stringify(measurements));console.log('yugioh-duel-browser-smoke: card size measurements OK');return;
   }
-  await practiceChecks(host);
+  if(!process.argv.includes('--position-only'))await practiceChecks(host);
   if(process.argv.includes('--practice-only')){
     assert.deepEqual(exceptions,[],'Eccezioni JavaScript');assert.deepEqual(consoleErrors,[],'Errori console');assert.deepEqual(networkErrors,[],'Risorse mancanti');assert.deepEqual(externalRequests,[],'Richieste esterne inattese');
     console.log('yugioh-practice-browser-smoke: OK');return;
@@ -405,12 +405,13 @@ async function run(){
     if(spell)await page.screenshot(code==='97077563'?'trap-actions':'spell-actions',false);
     const quickAction={summon:'normal',defend:'special','set-monster':'set','set-spell':'set','play-spell':'activate'}[command];assert(quickAction,'Comando di prova non supportato: '+command);
     await page.tap(`.ygo-drop-menu [data-ygo-drop-action="${quickAction}"]`);
+    if(quickAction==='special')await chooseSpecialPosition(page,command==='defend'?'defense':'attack');
     await page.wait('Boolean(window.__sim.placing)','La scelta della giocata non chiede una casella');
     assert.equal(await page.evaluate('JSON.stringify(window.__sim.session)'),before,'La scelta della giocata muove la carta senza destinazione');
     const zone=command==='set-spell'||command==='play-spell'?'spells':'monsters';
     await page.tap(`[data-ygo-slot="${slot}"][data-zone="${zone}"][data-player="${viewer}"]`);
     await page.wait(`window.__sim.session.players[${viewer}].${zone}.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot})`,'Giocata nella zona corretta non applicata');await idle(page);
-    if(command==='defend'){await select(page,viewer,id);await page.click('.ygo-card-dialog [data-ygo-action="setPosition"]');await both(`window.__sim.session.players[${viewer}].monsters.some(card=>card.id===${JSON.stringify(id)}&&card.position==='defense')`,'Difesa tramite comandi avanzati opzionali');}
+    if(command==='defend')await both(`window.__sim.session.players[${viewer}].monsters.some(card=>card.id===${JSON.stringify(id)}&&card.faceUp&&card.position==='defense')`,'Special Summon direttamente in Difesa');
     return id;
   }
   async function playExtra(page,viewer,code,zone,slot){
@@ -424,13 +425,22 @@ async function run(){
     await page.click(`[data-ygo-pile="extra"][data-player="${viewer}"]`);
     const id=rows.get(duelId).state.players[viewer].extra.find(card=>card.catalogCardId===code)?.id;
     assert(id,'Carta Extra non disponibile');
-    await page.tap(`.ygo-zone-cards [data-ygo-card="${id}"]`);await waitDropMenu(page,'Tocco Extra');await page.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+    await page.tap(`.ygo-zone-cards [data-ygo-card="${id}"]`);await waitDropMenu(page,'Tocco Extra');await page.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(page,code==='84013237'?'defense':'attack',{link:code==='98978921'});
+    if(code==='84013237')assert.equal(await page.evaluate('window.__sim.rulesDialog.position'),'defense','Il draft Xyz perde la scelta Difesa');
     if(code==='84013237'){
       await chooseMaterials(page,xyzMaterials);
       await page.screenshot('xyz-materials',false);await page.submit('[data-ygo-summon]');await page.wait('Boolean(window.__sim.placing)','I materiali Xyz non aprono la scelta della zona');
     }
     await page.tap(`[data-ygo-slot="${slot}"][data-zone="${zone}"][data-player="${viewer}"]`);
-    await both(`window.__sim.session.players[${viewer}].${zone}.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot})`,'Evocazione Extra');await idle(page);return id;
+    await both(`window.__sim.session.players[${viewer}].${zone}.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot}&&card.position===${JSON.stringify(code==='84013237'?'defense':'attack')})`,'Evocazione Extra con posizione scelta');await idle(page);return id;
+  }
+  async function chooseSpecialPosition(page,position='attack',{link=false}={}){
+    await page.wait('window.__sim.dropMenu?.stage==="position"&&document.querySelector(".ygo-drop-menu")?.getAttribute("aria-label")==="Posizione di evocazione"','Special Summon non chiede Attacco o Difesa');
+    assert.deepEqual(await page.evaluate('Array.from(document.querySelectorAll(".ygo-drop-menu [data-ygo-drop-action]"),button=>button.dataset.ygoDropAction).sort()'),link?['special-attack']:['special-attack','special-defense'],'Posizioni di evocazione errate');
+    const geometry=await page.evaluate('(()=>{const menu=document.querySelector(".ygo-drop-menu"),box=menu.getBoundingClientRect();return{width:box.width,height:box.height,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,buttons:Array.from(menu.querySelectorAll("[data-ygo-drop-action]"),button=>{const r=button.getBoundingClientRect(),hit=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);return{height:r.height,hit:hit===button||button.contains(hit)};})};})()');
+    assert(geometry.width<=220&&geometry.height<=220&&geometry.inside,'Selettore posizione troppo grande o fuori telefono: '+JSON.stringify(geometry));
+    assert(geometry.buttons.every(button=>button.height>=44&&button.hit),'Posizioni difficili da toccare: '+JSON.stringify(geometry));
+    await page.tap('.ygo-drop-menu [data-ygo-drop-action="special-'+position+'"]');
   }
   async function waitDropMenu(page,label){
     try{await page.wait('Boolean(document.querySelector(".ygo-drop-menu"))',label+': menu contestuale assente');}
@@ -448,13 +458,48 @@ async function run(){
     await page.pressDrag(`.ygo-zone-cards [data-ygo-card="${id}"]`,`[data-ygo-slot="${slot}"][data-zone="extraMonsters"][data-player="${viewer}"]`);await waitDropMenu(page,'Drag dall’Extra Deck');
     assert.equal(await page.evaluate('JSON.stringify(window.__sim.session)'),before,'Il trascinamento dall’Extra evoca prima della scelta');
     assert(!await page.evaluate('Boolean(document.querySelector(".ygo-drop-menu [data-ygo-drop-action=normal]"))'),'Il menu dell’Extra offre una Normal Summon');
-    await page.screenshot('context-extra',false);await page.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+    await page.screenshot('context-extra',false);await page.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(page);
     await both(`window.__sim.session.players[${viewer}].extraMonsters.some(card=>card.id===${JSON.stringify(id)}&&card.slot===${slot}&&card.faceUp)`,'Evocazione Speciale trascinata dall’Extra');return id;
   }
   async function cancelDrop(page){
     await page.cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:2,y:2,radiusX:3,radiusY:3,force:1}]});await page.cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await page.wait('!document.querySelector(".ygo-drop-menu")','Il menu contestuale non si chiude');
   }
+  async function positionChecks(){
+    await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+    const atk=await putInHand(host,0,'88819587'),before=JSON.stringify(rows.get(duelId).state),movesBefore=requests.filter(request=>request.op==='action').length;
+    await host.tap('[data-ygo-card="'+atk+'"][data-player="0"]');await waitDropMenu(host,'Posizione dalla mano');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+    await host.wait('window.__sim.dropMenu?.stage==="position"','Special Summon non apre il selettore posizione');
+    assert.equal(JSON.stringify(rows.get(duelId).state),before,'Aprire il selettore posizione evoca il Mostro');
+    assert.equal(requests.filter(request=>request.op==='action').length,movesBefore,'La scelta di posizione invia una mossa prima della conferma');
+    await host.screenshot('special-position-choice',false);
+    await host.tap('.ygo-drop-menu [data-ygo-command="back-summon-position"]');await waitDropMenu(host,'Indietro dalla posizione');
+    assert.equal(JSON.stringify(rows.get(duelId).state),before,'Indietro dalla posizione modifica il campo');
+    await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await cancelDrop(host);
+    assert.equal(JSON.stringify(rows.get(duelId).state),before,'Annullare la posizione evoca il Mostro');
+    await host.tap('[data-ygo-card="'+atk+'"][data-player="0"]');await waitDropMenu(host,'Special Summon Attacco');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(host,'attack');
+    await host.wait('Boolean(window.__sim.placing)','La posizione dalla mano non attende la zona');
+    assert.equal(JSON.stringify(rows.get(duelId).state),before,'Scegliere Attacco senza zona evoca il Mostro');
+    await host.tap('[data-ygo-slot="2"][data-zone="monsters"][data-player="0"]');
+    await both('window.__sim.session.players[0].monsters.some(card=>card.id==='+JSON.stringify(atk)+'&&card.slot===2&&card.faceUp&&card.position==="attack")','Special Summon Attacco condivisa');
+    await host.tap('[data-ygo-card="'+atk+'"][data-player="0"]');await waitDropMenu(host,'Rimozione prova Attacco');await host.tap('.ygo-drop-menu [data-ygo-drop-action="graveyard"]');await both('window.__sim.session.players[0].graveyard.some(card=>card.id==='+JSON.stringify(atk)+')','Rimozione prova Attacco');
+    const def=await putInHand(host,0,'88819587'),beforeDrag=JSON.stringify(rows.get(duelId).state);
+    await host.pressDrag('[data-ygo-card="'+def+'"][data-player="0"]','[data-ygo-slot="2"][data-zone="monsters"][data-player="0"]');await waitDropMenu(host,'Posizione dal trascinamento');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+    assert.equal(JSON.stringify(rows.get(duelId).state),beforeDrag,'Il trascinamento evoca prima di scegliere posizione');await chooseSpecialPosition(host,'defense');
+    await both('window.__sim.session.players[0].monsters.some(card=>card.id==='+JSON.stringify(def)+'&&card.slot===2&&card.faceUp&&card.position==="defense")','Special Summon Difesa condivisa');
+    for(const seat of[host,guest]){
+      const fit=await seat.evaluate('(()=>{const card=document.querySelector('+JSON.stringify('[data-ygo-card="'+def+'"][data-player="0"]')+'),box=card.getBoundingClientRect(),zone=card.closest(".ygo-zone").getBoundingClientRect();return{defense:card.classList.contains("is-defense"),fit:getComputedStyle(card.querySelector("img")).objectFit,inside:box.left>=zone.left-1&&box.right<=zone.right+1&&box.top>=zone.top-1&&box.bottom<=zone.bottom+1};})()');
+      assert(fit.defense&&fit.fit==='contain'&&fit.inside,'Difesa scoperta deformata o fuori zona: '+JSON.stringify(fit));
+    }
+    await host.screenshot('special-defense-phone',false);await guest.screenshot('special-defense-opponent',false);
+    await host.tap('[data-ygo-card="'+def+'"][data-player="0"]');await waitDropMenu(host,'Rimozione prova Difesa');await host.tap('.ygo-drop-menu [data-ygo-drop-action="graveyard"]');await both('window.__sim.session.players[0].graveyard.some(card=>card.id==='+JSON.stringify(def)+')','Rimozione prova Difesa');
+    const link=await playExtra(host,0,'98978921','extraMonsters',0);
+    await host.tap('[data-ygo-card="'+link+'"][data-player="0"]');await waitDropMenu(host,'Rimozione Link di prova');await host.tap('.ygo-drop-menu [data-ygo-drop-action="graveyard"]');await both('window.__sim.session.players[0].graveyard.some(card=>card.id==='+JSON.stringify(link)+')','Rimozione Link di prova');
+    await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+    console.log('PASS native Special Summon position selector: back/cancel without writes, tap Attack, drag face-up Defense, shared artwork fit and Link Attack only');
+  }
+  await positionChecks();
+  if(process.argv.includes('--position-only')){assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);console.log('yugioh-special-position-browser-smoke: OK');return;}
   // Long press + physical touch drag selects a destination; only a menu choice
   // applies a move. A remote update invalidates choices from an older board.
   const hostHandEffect=await putInHand(host,0,'38033121'),guestHandEffect=await putInHand(guest,1,'5318639');
@@ -518,7 +563,7 @@ async function run(){
   await select(host,0,draggedMonster);await host.click('[data-ygo-command="to-graveyard"]');await both(`window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(draggedMonster)})`,'Rimozione Mostro trascinato');
   const specialMonster=await putInHand(host,0,'88819587');
   await host.pressDrag(`[data-ygo-card="${specialMonster}"][data-player="0"]`,monsterTarget);await waitDropMenu(host,'Drag Evoca Specialmente');
-  await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+  await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(host);
   await both(`window.__sim.session.players[0].monsters.some(card=>card.id===${JSON.stringify(specialMonster)}&&card.slot===2&&card.faceUp)`,'Evocazione Speciale manuale scelta dal menu');
   await select(host,0,specialMonster);await host.click('[data-ygo-command="to-graveyard"]');await both(`window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(specialMonster)})`,'Rimozione Mostro evocato Specialmente');
   const draggedSpell=await putInHand(host,0,'5318639'),spellTarget='[data-ygo-slot="1"][data-zone="spells"][data-player="0"]';
@@ -598,13 +643,14 @@ async function run(){
   await settleChain('Effetto Xyz a costo pagato');
   const tuner=await playHand(host,0,'90000001','summon',0),nonTuner=await playHand(host,0,'90000002','summon',2);
   await host.click('[data-ygo-pile="extra"][data-player="0"]');const synchro=rows.get(duelId).state.players[0].extra.find(card=>card.catalogCardId==='90000003').id;
-  await host.tap(`.ygo-zone-cards [data-ygo-card="${synchro}"]`);await waitDropMenu(host,'Evocazione Synchro');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');
+  await host.tap(`.ygo-zone-cards [data-ygo-card="${synchro}"]`);await waitDropMenu(host,'Evocazione Synchro');await host.tap('.ygo-drop-menu [data-ygo-drop-action="special"]');await chooseSpecialPosition(host,'defense');
+  assert.equal(await host.evaluate('window.__sim.rulesDialog.position'),'defense','Il draft Synchro perde la scelta Difesa');
   await chooseMaterials(host,[hostMonster,nonTuner]);const beforeInvalidSynchro=JSON.stringify(rows.get(duelId).state);await host.submit('[data-ygo-summon]');
   await host.wait('Boolean(document.querySelector(".ygo-rules-dialog [role=alert]"))','Il tentativo Synchro senza Tuner non mostra l’errore');
   assert.equal(JSON.stringify(rows.get(duelId).state),beforeInvalidSynchro,'Il tentativo Synchro invalido consuma materiali');
   await chooseMaterials(host,[tuner,nonTuner]);await host.screenshot('synchro-materials',false);await host.submit('[data-ygo-summon]');await host.wait('Boolean(window.__sim.placing)','La scelta dei materiali Synchro non apre le zone');
   await host.tap(`[data-ygo-card="${tuner}"][data-player="0"]`);
-  await both(`window.__sim.session.players[0].monsters.some(card=>card.id===${JSON.stringify(synchro)}&&card.slot===0)&&window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(tuner)})&&window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(nonTuner)})`,'Synchro8conTuner3eMostro5');
+  await both(`window.__sim.session.players[0].monsters.some(card=>card.id===${JSON.stringify(synchro)}&&card.slot===0&&card.faceUp&&card.position==='defense')&&window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(tuner)})&&window.__sim.session.players[0].graveyard.some(card=>card.id===${JSON.stringify(nonTuner)})`,'Synchro8conTuner3eMostro5');
   console.log('PASS Synchro wizard rejects missing Tuner, consumes valid materials and reuses a material’s occupied slot; Xyz cost detaches before activation');
   await openMenu(host);await host.click('[data-ygo-action="token"]');await host.wait('window.__sim.session.players[0].monsters.some(card=>card.token)','Segna-Mostro non creato');await closeMenu(host);
   const token=await host.evaluate('window.__sim.session.players[0].monsters.find(card=>card.token).id');

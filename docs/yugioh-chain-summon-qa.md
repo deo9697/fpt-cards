@@ -38,3 +38,13 @@ Ogni nuova attivazione ha un identificativo pubblico distinto: la stessa carta p
 Il contenitore, l’immagine e il badge non intercettano tocchi. Alla scadenza viene rimossa solo l’anteprima, senza ricreare il campo: pressione lunga, trascinamento e scorrimento della mano possono continuare. La preferenza di sistema per ridurre le animazioni è rispettata.
 
 Il test `yugioh-reveal-smoke.mjs` copre durata, passaggi/polling, risposte ravvicinate, risoluzione inversa, stati tardivi, ripetizione della stessa carta, navigazione e privacy. Le prove browser confrontano due artwork diversi sui due client e verificano anche che il campo mantenga lo stesso elemento DOM quando scade la rivelazione. Su telefoni 844×390 e 740×360 controllano proporzioni, ingresso completamente visibile, badge sulla carta e pulsante di risposta raggiungibile sotto l’overlay. Catture dedicate: `activation-one-host.png`, `activation-one-guest.png`, `activation-two-host.png`, `activation-two-guest.png`.
+
+## Posizione di Evocazione Speciale
+
+Sp. Summon apre un piccolo selettore con la carta verticale per Attacco e orizzontale per Difesa, entrambe scoperte. Il tocco sceglie prima la posizione e poi una casella evidenziata; trascinando la carta su una casella, il selettore conserva quella destinazione. Per i Link è disponibile solo Attacco, come previsto dal [regolamento ufficiale Konami](https://img.yugioh-card.com/en/downloads/rulebook/SD_RuleBook_EN_10.pdf).
+
+La selezione non invia richieste né modifica il campo prima della conferma della giocata. Indietro torna alle azioni della carta; chiudere annulla l’evocazione. Un aggiornamento remoto invalida anche il selettore di posizione. Synchro e Xyz mantengono la posizione scelta nel passaggio successivo dei materiali; Fusion e Link conservano la scelta delle zone consentite. Il flusso si applica anche a Testa mazzo e alle evocazioni manuali da altre pile.
+
+È un’interazione guidata per il simulatore manuale. Le limitazioni e le eccezioni previste da singoli effetti continuano a essere applicate dai giocatori; questa modifica non introduce un motore automatico degli effetti.
+
+I test di azioni, menu e controller coprono Attacco/Difesa da tocco e trascinamento, nessun invio prematuro, destinazione conservata, Link, materiali Synchro/Xyz, ritorno, annullamento e versioni remote. Le prove browser usano tocchi nativi e due client per controllare il risultato condiviso, la rotazione della carta, la leggibilità e la raggiungibilità dei pulsanti sul telefono. Catture: `special-position-choice.png`, `special-defense-phone.png`.

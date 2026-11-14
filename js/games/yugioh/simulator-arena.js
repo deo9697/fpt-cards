@@ -81,6 +81,10 @@ function orientationGate(controller){
 
 function dropMenuView(controller){
   const menu=controller.dropMenu;if(!menu)return'';
+  if(menu.stage==='position'){
+    const src=safeImage(controller.selectedCard()?.card.imageUrl);
+    return `<button type="button" class="ygo-drop-backdrop" data-ygo-command="close-drop-menu" aria-label="Annulla evocazione"></button><section class="ygo-drop-menu is-position-menu" role="dialog" aria-modal="true" aria-label="Posizione di evocazione" style="left:${menu.x}px;top:${menu.y}px"><p class="ygo-position-heading">Sp. Summon · Posizione</p><div class="ygo-position-options">${menu.actions.map(action=>`<button type="button" data-ygo-drop-action="${action.id}" aria-label="Evoca in ${esc(action.label)} scoperta" ${controller.pending?'disabled':''}><span class="ygo-position-art ${action.changes.position==='defense'?'is-defense':''}" aria-hidden="true">${src?`<img src="${src}" alt="" draggable="false">`:'<i></i>'}</span><b>${action.changes.position==='defense'?'DEF':'ATK'}</b><small>${esc(action.label)}</small></button>`).join('')}</div>${commandButton('back-summon-position','‹ Indietro',controller.pending)}</section>`;
+  }
   return `<button type="button" class="ygo-drop-backdrop" data-ygo-command="close-drop-menu" aria-label="Chiudi azioni"></button><section class="ygo-drop-menu" role="dialog" aria-modal="true" aria-label="Azioni carta" style="left:${menu.x}px;top:${menu.y}px"><div class="ygo-drop-actions">${menu.actions.map(action=>`<button type="button" data-ygo-drop-action="${action.id}" ${controller.pending?'disabled':''}>${esc(action.label)}</button>`).join('')}</div></section>`;
 }
 

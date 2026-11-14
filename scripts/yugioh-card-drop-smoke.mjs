@@ -42,5 +42,35 @@ try{
   assert.equal(full.players[0].monsters.find(item=>item.id===hidden.id).faceUp,false);
   assert(!full.log.at(-1).text.includes(hidden.cardName),'The Set declaration must not reveal a private card identity');
   console.log('PASS deferred play, cancellation, stale-menu rejection, declared Normal Summon and private Set');
+
+  const special=controller.session.players[0].hand[0],beforeSpecial=calls.length;
+  controller.showDropMenu({cardId:special.id,player:0,zone:'monsters',slot:4,x:100,y:100});
+  await controller.applyDropAction('special');
+  assert.equal(controller.dropMenu?.stage,'position');
+  assert.deepEqual(controller.dropMenu.actions.map(action=>action.id),['special-attack','special-defense']);
+  assert.equal(calls.length,beforeSpecial,'Choosing Special Summon must wait for the battle position');
+  assert(!controller.session.players[0].monsters.some(card=>card.id===special.id));
+  const positionMenu=controller.dropMenu;
+  await controller.place(0,'monsters',4);
+  assert.equal(calls.length,beforeSpecial,'A target tap must not bypass the pending position choice after a drag');
+  assert.equal(controller.dropMenu,positionMenu);assert.equal(controller.selected.cardId,special.id);
+  assert(!controller.session.players[0].monsters.some(card=>card.id===special.id));
+  await controller.applyDropAction('special-defense');
+  assert.equal(calls.length,beforeSpecial+1);
+  assert.deepEqual(Object.fromEntries(['type','intent','to','slot','position','faceUp'].map(key=>[key,calls.at(-1).action[key]])),{type:'move',intent:'special',to:'monsters',slot:4,position:'defense',faceUp:true});
+  const summoned=controller.session.players[0].monsters.find(card=>card.id===special.id);
+  assert.equal(summoned.slot,4);assert.equal(summoned.position,'defense');assert.equal(summoned.faceUp,true);
+  console.log('PASS dragged Special Summon waits for Attack/Defense and preserves its destination');
+
+  const cancelled=controller.session.players[0].hand[0],beforeCancelled=calls.length;
+  controller.showDropMenu({cardId:cancelled.id,player:0,zone:'monsters',slot:3,x:100,y:100});await controller.applyDropAction('special');
+  await controller.click({dataset:{ygoCommand:'close-drop-menu'},hasAttribute:()=>false});
+  assert.equal(controller.dropMenu,null);assert.equal(calls.length,beforeCancelled);
+  controller.showDropMenu({cardId:cancelled.id,player:0,zone:'monsters',slot:3,x:100,y:100});await controller.applyDropAction('special');
+  full=applyAction(full,{type:'draw',player:1});version++;controller.receive(snapshot());
+  assert.equal(controller.dropMenu,null);assert.equal(controller.selected,null);
+  await controller.applyDropAction('special-defense');assert.equal(calls.length,beforeCancelled);
+  assert(!controller.session.players[0].monsters.some(card=>card.id===cancelled.id));
+  console.log('PASS cancelling or invalidating a position choice never plays the monster');
 }finally{controller.reset();}
 console.log('yugioh-card-drop-smoke: OK');

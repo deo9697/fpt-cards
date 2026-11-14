@@ -8,7 +8,8 @@ const deck={id:'a0000000-0000-4000-8000-000000000001',game:'yugioh',name:'Quick 
   ...Array.from({length:12},(_,i)=>({catalogCardId:`monster-${i}`,cardName:`Monster ${i}`,section:'main',type:'Effect Monster',quantity:3,atk:1800,def:1000})),
   {catalogCardId:'spell',cardName:'Test Spell',section:'main',type:'Spell Card',quantity:2},
   {catalogCardId:'trap',cardName:'Test Trap',section:'main',type:'Trap Card',quantity:1},
-  {catalogCardId:'field',cardName:'Test Field',section:'main',type:'Spell Card',race:'Field',quantity:1}
+  {catalogCardId:'field',cardName:'Test Field',section:'main',type:'Spell Card',race:'Field',quantity:1},
+  ...['Fusion','Link','Synchro','XYZ'].map(kind=>({catalogCardId:kind.toLowerCase(),cardName:`Test ${kind}`,section:'extra',type:`${kind} Monster`,quantity:1,level:kind==='Synchro'?8:kind==='XYZ'?4:null,atk:2000,def:1500,text:kind==='Synchro'?'1 Tuner + 1+ non-Tuner monsters':kind==='XYZ'?'2 Level 4 monsters':''}))
 ]};
 let state=applyAction(createSession({decks:[deck,deck]}),{type:'start'}),version=1;
 const calls=[],id='b0000000-0000-4000-8000-000000000001';
@@ -50,6 +51,64 @@ try{
   await closeChain();
   await tap(monster);await choose('position');assert.equal(state.players[0].monsters[0].position,'defense');
   console.log('PASS short tap, delayed target selection, Normal Summon and in-place effect/position commands');
+
+  const special=hand('monster-1'),beforeSpecial=calls.length;
+  await tap(special);
+  const primaryMenu=controller.dropMenu;
+  await controller.place(0,'monsters',0);
+  assert.equal(calls.length,beforeSpecial,'A target tap must not play a card before a primary action is chosen');
+  assert.equal(controller.dropMenu,primaryMenu);assert.equal(controller.selected.cardId,special);
+  await choose('special');
+  assert.equal(controller.dropMenu?.stage,'position');
+  assert.deepEqual(controller.dropMenu.actions.map(action=>action.id),['special-attack','special-defense']);
+  assert(controller.view().includes('aria-label="Posizione di evocazione"'));
+  assert(!controller.view().includes('class="ygo-card-dialog"'),'Position choice must stay in the small contextual menu');
+  assert.equal(calls.length,beforeSpecial);assert.equal(controller.placing,null);
+  const positionMenu=controller.dropMenu;
+  await controller.place(0,'monsters',0);
+  assert.equal(calls.length,beforeSpecial,'A target tap must not bypass Attack/Defense selection');
+  assert.equal(controller.dropMenu,positionMenu);assert.equal(controller.selected.cardId,special);
+  assert(!state.players[0].monsters.some(card=>card.id===special));
+  await controller.click(button({ygoCommand:'back-summon-position'}));
+  assert.notEqual(controller.dropMenu?.stage,'position');
+  assert.deepEqual(controller.dropMenu.actions.map(action=>action.id),['normal','special','set','activate']);
+  await choose('special');await choose('special-defense');
+  assert.equal(calls.length,beforeSpecial);assert.equal(controller.placing.position,'defense');
+  await controller.place(0,'monsters',0);
+  assert.equal(calls.length,beforeSpecial+1);assert.equal(calls.at(-1).action.intent,'special');
+  assert.equal(state.players[0].monsters.find(card=>card.id===special).position,'defense');
+  assert.equal(state.players[0].monsters.find(card=>card.id===special).faceUp,true);
+  const attack=hand('monster-2');await tap(attack);await choose('special');await choose('special-attack');
+  assert.equal(controller.placing.position,'attack');await controller.place(0,'monsters',1);
+  assert.equal(state.players[0].monsters.find(card=>card.id===attack).position,'attack');
+  console.log('PASS compact Attack/Defense choice, back navigation and face-up Special Summon after a target tap');
+
+  const link=state.players[0].extra.find(card=>card.catalogCardId==='link');
+  await tap(link.id);await choose('special');
+  assert.equal(controller.dropMenu?.stage,'position');
+  assert.deepEqual(controller.dropMenu.actions.map(action=>action.id),['special-attack']);
+  const beforeLink=calls.length;await choose('special-defense');
+  assert.equal(calls.length,beforeLink);assert.equal(controller.dropMenu?.stage,'position','An unavailable Link Defense action must not bypass the choice');
+  await choose('special-attack');await controller.place(0,'extraMonsters',0);
+  assert.equal(state.players[0].extraMonsters.find(card=>card.id===link.id).position,'attack');
+  for(const code of ['synchro','xyz']){
+    const extra=state.players[0].extra.find(card=>card.catalogCardId===code),beforeDraft=calls.length;
+    await tap(extra.id);await choose('special');await choose('special-defense');
+    assert.equal(controller.rulesDialog?.kind,'summon');assert.equal(controller.rulesDialog.cardId,extra.id);
+    assert.equal(controller.rulesDialog.position,'defense');assert.equal(controller.rulesDialog.to,null);
+    assert.equal(calls.length,beforeDraft,'Opening the material picker must not summon or consume materials');
+    const materialDialog=controller.rulesDialog;
+    await controller.place(0,'monsters',4);
+    assert.equal(calls.length,beforeDraft,'A target tap must not bypass the material picker');
+    assert.equal(controller.rulesDialog,materialDialog);assert.equal(controller.selected.cardId,extra.id);
+    assert(state.players[0].extra.some(card=>card.id===extra.id));
+    await controller.click(button({ygoCommand:'close-rules'}));
+    controller.showDropMenu({cardId:extra.id,player:0,zone:'monsters',slot:4,x:100,y:100});
+    await choose('special');await choose('special-attack');
+    assert.equal(controller.rulesDialog.position,'attack');assert.equal(controller.rulesDialog.to,'monsters');assert.equal(controller.rulesDialog.slot,4);
+    await controller.click(button({ygoCommand:'close-rules'}));
+  }
+  console.log('PASS Link Attack-only choice and position propagation to Synchro/Xyz material selection for taps and drags');
 
   for(const [code,zone,slot] of [['spell','spells',0],['trap','spells',1],['field','field',0]]){
     const cardId=hand(code);await tap(cardId);

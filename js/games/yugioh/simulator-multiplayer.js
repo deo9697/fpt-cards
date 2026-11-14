@@ -6,7 +6,7 @@ import { createDuelCardGestures } from './simulator-touch.js';
 import {createActivationReveals} from './simulator-reveal.js';
 import {deriveChainState} from './simulator-chain.js';
 import {getSummonKind,validateSummonMaterials,materialLevel} from './simulator-summoning.js';
-import { cardDropActions, cardTapActions } from './simulator-card-actions.js';
+import { cardDropActions, cardTapActions, specialSummonPositions } from './simulator-card-actions.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const scope = context => `${context?.team || ''}:${context?.member || ''}`;
@@ -93,7 +93,12 @@ export class YugiohMultiplayer {
     if(!choice||!this.allowed()||!this.canControl(menu.player)||this.pending||menu.duelId!==this.duel?.id||menu.version!==this.duel?.version||menu.player!==this.viewer||this.orientation.isPortraitBlocked())return;
     const{activateOnly,activateAfter,positionOnly,...changes}=choice.changes;
     const selected=this.selectedCard();
-    if(id==='special'&&selected?.zone==='extra'&&getSummonKind(selected.card)){this.openSummonDraft(menu.cardId,{to:menu.mode==='tap'?null:menu.to,slot:menu.mode==='tap'?undefined:menu.slot});return;}
+    if(id==='special'){
+      if(!selected)return;
+      this.dropMenu={...menu,stage:'position',parentMenu:menu,actions:specialSummonPositions({...selected.card,...(this.metadata.get(selected.card.catalogCardId)||{})},choice)};
+      this.error='';this.render();return;
+    }
+    if(changes.intent==='special'&&selected?.zone==='extra'&&getSummonKind(selected.card)){this.openSummonDraft(menu.cardId,{to:menu.mode==='tap'?null:menu.to,slot:menu.mode==='tap'?undefined:menu.slot,position:changes.position});return;}
     if(menu.mode==='tap'&&(choice.zones||['monsters','spells','field','extraMonsters'].includes(choice.to))){
       this.dropMenu=null;this.placing={zones:choice.zones,to:choice.zones?undefined:choice.to,...changes,activate:activateAfter===true};
       this.error='';this.render();return;
@@ -271,6 +276,7 @@ export class YugiohMultiplayer {
     if(form.matches('[data-ygo-finish]')&&await this.options.confirm('Concludere il duello e condividere questo risultato con l’avversario?'))await this.act({type:'finish',winner:data.get('winner')==='draw'?'draw':Number(data.get('winner')),notes:data.get('notes')});
   }
   async place(player,to,slot){
+    if(this.dropMenu||this.rulesDialog)return;
     const selected=this.selectedCard();if(this.pending||!selected||player!==this.viewer||selected.player!==player||!this.canControl(player)||this.session.phase==='setup'||!canMoveCardToZone(selected.card,to)){this.error='Scegli una tua carta adatta a questa zona.';this.render();return;}
     const placing=this.placing||{position:'attack',faceUp:true},cardId=selected.card.id;
     if(placing.zones&&!placing.zones.includes(to)||placing.to&&placing.to!==to){this.error='Scegli una posizione nella zona evidenziata.';this.render();return;}
@@ -283,6 +289,11 @@ export class YugiohMultiplayer {
     if(command==='close-rules'){this.rulesDialog=null;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(command==='close-drop-menu'){this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(this.session&&this.orientation.isPortraitBlocked()&&!['orientation','lobby','practice-exit'].includes(command))return;
+    if(command==='back-summon-position'){
+      const menu=this.dropMenu;
+      if(menu?.stage==='position'&&this.allowed()&&!this.pending&&this.canControl(menu.player)&&menu.player===this.viewer&&menu.duelId===this.duel?.id&&menu.version===this.duel?.version){this.dropMenu=menu.parentMenu;this.render();}
+      return;
+    }
     if(command==='orientation'){await this.orientation.enter({userGesture:true});this.render();return;}
     if(command==='practice-restart'&&this.practiceTable){this.menu=false;this.receive(this.practiceTable.restart().duel);this.render();return;}
     if(command==='practice-exit'){this.showPractice();return;}
