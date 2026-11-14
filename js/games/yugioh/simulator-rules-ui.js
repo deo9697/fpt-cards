@@ -1,3 +1,4 @@
+import {publicChainCard} from './simulator-reveal.js';
 import {deriveChainState} from './simulator-chain.js';
 import {getSummonRecipe,eligibleSummonMaterials,materialLevel} from './simulator-summoning.js';
 
@@ -5,10 +6,16 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const image=value=>{try{const url=new URL(value||'',globalThis.location?.href||'http://localhost');return value&&['http:','https:'].includes(url.protocol)?esc(url.href):'';}catch{return'';}};
 const art=card=>{const src=image(card.imageUrl);return src?`<img src="${src}" alt="">`:'';};
 const chainIcon='<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="3"><rect x="4" y="6" width="13" height="19" rx="6" transform="rotate(35 11 16)"/><rect x="15" y="6" width="13" height="19" rx="6" transform="rotate(35 21 16)"/></g></svg>';
+const badge=(number,next=false)=>`<span class="ygo-chain-ring ${next?'is-next':''}" data-ygo-chain-number="${number}" aria-hidden="true">${chainIcon}<b>${number}</b></span>`;
 export function chainView(controller){
   const state=controller.session;if(!state.chain.length)return'';
   const chain=deriveChainState(state);
-  return `<div class="ygo-chain-links" role="list" aria-label="Catena ${chain.stage==='resolving'?'in risoluzione':'in costruzione'}">${state.chain.map((link,index)=>`<span role="listitem" class="ygo-chain-ring ${chain.stage==='resolving'&&index===state.chain.length-1?'is-next':''}" data-ygo-chain-number="${link.number??index+1}" title="${esc(link.cardName)}" aria-label="Chain ${link.number??index+1}: ${esc(link.cardName)}">${chainIcon}<b>${link.number??index+1}</b></span>`).join('')}</div>`;
+  return `<div class="ygo-chain-links" role="list" aria-label="Catena ${chain.stage==='resolving'?'in risoluzione':'in costruzione'}">${state.chain.map((link,index)=>{const card=publicChainCard(state,link,controller.viewer,index),src=image(card.imageUrl),next=chain.stage==='resolving'&&index===state.chain.length-1;return`<span role="listitem" class="ygo-chain-card ${next?'is-next':''}" data-chain-card-id="${esc(card.cardId)}" title="${esc(card.cardName)}" aria-label="Chain ${card.number}: ${esc(card.cardName)}">${src?`<img src="${src}" alt="${esc(card.cardName)}">`:`<span class="ygo-chain-fallback">${esc(card.cardName)}</span>`}${badge(card.number,next)}</span>`;}).join('')}</div>`;
+}
+export function activationRevealView(controller){
+  const card=controller.activationReveals?.get();if(!card||card.duelId!==controller.duel?.id)return'';
+  const src=image(card.imageUrl);
+  return`<div class="ygo-activation-reveal" data-reveal-key="${esc(card.key)}" data-card-id="${esc(card.cardId)}" data-ygo-chain-number="${card.number}" role="status" aria-live="polite" aria-label="Chain ${card.number}: ${esc(card.cardName)} attivata"><figure class="ygo-reveal-card">${src?`<img src="${src}" alt="${esc(card.cardName)}">`:`<div class="ygo-reveal-fallback">${esc(card.cardName)}</div>`}${badge(card.number)}<figcaption class="ygo-reveal-caption">${esc(card.cardName)}</figcaption></figure></div>`;
 }
 export function rulesDialog(controller){
   const draft=controller.rulesDialog;if(!draft)return'';

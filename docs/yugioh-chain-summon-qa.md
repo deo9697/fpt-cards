@@ -3,7 +3,7 @@
 ## Comportamento
 
 - In mano, anche i Mostri hanno Activate accanto a Normal Summon, Special Summon e Set. L'attivazione dichiara l'effetto e rende pubblico il relativo anello; la carta rimane in mano, mentre scarti, tributi e altri costi restano manuali. Le altre carte della mano avversaria rimangono private.
-- Ogni anello mostra un cerchio con il simbolo della catena e il numero su entrambi i client. La risposta spetta prima all'altro giocatore; una nuova attivazione incrementa il numero e azzera i passaggi. Due Non rispondo consecutivi chiudono la costruzione della catena.
+- Ogni nuova attivazione mostra la carta al centro per circa due secondi, con il cerchio e il numero sovrapposti all’immagine su entrambi i client. Dopo la rivelazione resta una miniatura della carta con il proprio numero fino alla risoluzione. La risposta spetta prima all'altro giocatore; una nuova attivazione incrementa il numero e azzera i passaggi. Due Non rispondo consecutivi chiudono la costruzione della catena.
 - Risolvi #N rimuove un anello alla volta, dal maggiore al minore. Gli effetti vengono applicati manualmente; durante la risoluzione non si aggiungono anelli. Il cambio fase/turno attende che la catena sia completata. In Testa mazzo il campo passivo passa automaticamente la risposta.
 - Magie/Trappole attivate scegliendo una casella vengono giocate e aggiunte alla catena in un'unica operazione: una priorità errata, una casella occupata o un altro errore non lasciano la carta già scoperta sul campo.
 - Dall'Extra Deck, Special Summon di un Synchro o Xyz apre la scelta dei propri materiali scoperti. Dopo la conferma si sceglie la casella, anche una di quelle liberate dai materiali. Il trascinamento su una casella permette lo stesso flusso.
@@ -23,8 +23,18 @@ Nessuna modifica SQL: lo stato JSON continua a essere scritto soltanto dal servi
 
 La suite `npm run test:yugioh-simulator` include test puri delle catene e delle ricette, integrazione del motore, servizio, metadati, Postgres e browser mobile con due giocatori sintetici. I nuovi test coprono annullamenti atomici, priorità, materiali avversari/coperte/duplicati, livelli mancanti, Tuner, somma, Rango, materiali sovrapposti e costi di distacco. Nessun tavolo o invito di produzione viene creato dai test.
 
-Esito finale: tutti i 17 script della suite superati. Il browser completo verifica due client e tre viewport (844×390, 932×430, 740×360), cerchi 1/2 condivisi e risoluzione 2→1, Synchro 3+5 con controllo Tuner, Xyz con due Livello 4, distacco prima dell'anello e caselle liberate dai materiali. I pulsanti di conferma e costo sono raggiunti tramite scorrimento e tocchi nativi. Un ulteriore controllo locale verifica i riepiloghi Rango 4 e somma Livelli 8. Zero eccezioni JavaScript, errori console, risorse mancanti o richieste esterne inattese.
+Esito finale: tutti i 18 script della suite superati. Il browser completo verifica due client e tre viewport (844×390, 932×430, 740×360), cerchi 1/2 condivisi e risoluzione 2→1, Synchro 3+5 con controllo Tuner, Xyz con due Livello 4, distacco prima dell'anello e caselle liberate dai materiali. I pulsanti di conferma e costo sono raggiunti tramite scorrimento e tocchi nativi. Un ulteriore controllo locale verifica i riepiloghi Rango 4 e somma Livelli 8. Zero eccezioni JavaScript, errori console, risorse mancanti o richieste esterne inattese.
 
 Catture in `artifacts/yugioh-duel/`: `chain-two-host.png`, `chain-two-guest.png`, `xyz-materials.png`, `xyz-effect-cost.png`, `synchro-materials.png`, `xyz-confirm-native.png`, `xyz-cost-confirm-native.png`. Gli artifact non sono inclusi nel codice pubblicato.
 
 Riferimenti ufficiali: [Synchro e Xyz — Konami](https://eu-support.konami.com/hc/en-gb/articles/9698595851415-Yu-Gi-Oh-TCG-Xyz-Monsters-Synchro-Monsters-Ritual-Monsters-and-Fusion-Monsters), [Fast Effect Timing](https://www.yugioh-card.com/en/play/fast-effect-timing/), [regolamento](https://www.yugioh-card.com/en/rulebook/).
+
+## Rivelazione della carta attivata
+
+L’immagine della rivelazione proviene dall’anello pubblico di attivazione. Per gli anelli precedenti senza immagine, si cerca solo la stessa carta già visibile; una carta privata dell’avversario non viene letta per ricostruire l’immagine. Se l’artwork manca, vengono mostrati nome e segnaposto.
+
+Ogni nuova attivazione ha un identificativo pubblico distinto: la stessa carta può attivarsi di nuovo in una nuova catena senza perdere la rivelazione. Polling invariato, Non rispondo, risoluzione e riapertura di una catena esistente non riavviano l’effetto. Un nuovo anello sostituisce l’anteprima precedente e il suo timer; uscita, cambio tavolo e reset li eliminano.
+
+Il contenitore, l’immagine e il badge non intercettano tocchi. Alla scadenza viene rimossa solo l’anteprima, senza ricreare il campo: pressione lunga, trascinamento e scorrimento della mano possono continuare. La preferenza di sistema per ridurre le animazioni è rispettata.
+
+Il test `yugioh-reveal-smoke.mjs` copre durata, passaggi/polling, risposte ravvicinate, risoluzione inversa, stati tardivi, ripetizione della stessa carta, navigazione e privacy. Le prove browser confrontano due artwork diversi sui due client e verificano anche che il campo mantenga lo stesso elemento DOM quando scade la rivelazione. Su telefoni 844×390 e 740×360 controllano proporzioni, ingresso completamente visibile, badge sulla carta e pulsante di risposta raggiungibile sotto l’overlay. Catture dedicate: `activation-one-host.png`, `activation-one-guest.png`, `activation-two-host.png`, `activation-two-guest.png`.

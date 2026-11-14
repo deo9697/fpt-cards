@@ -3,6 +3,7 @@ import { arenaView, esc, cardView, actionButton, commandButton } from './simulat
 import { createPracticeTable } from './simulator-practice.js';
 import { createDuelOrientation } from './simulator-orientation.js';
 import { createDuelCardGestures } from './simulator-touch.js';
+import {createActivationReveals} from './simulator-reveal.js';
 import {deriveChainState} from './simulator-chain.js';
 import {getSummonKind,validateSummonMaterials,materialLevel} from './simulator-summoning.js';
 import { cardDropActions, cardTapActions } from './simulator-card-actions.js';
@@ -22,6 +23,7 @@ export class YugiohMultiplayer {
     this.inviteDraft={opponentSlug:'',deckId:'',lp:8000,firstPlayer:'0'};this.acceptDraft={deckId:'',lp:8000};this.finishDraft={winner:'0',notes:''};
     this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:''};
     this.dropMenu=null;this.dragBackup=null;this.rulesDialog=null;
+    this.activationReveals=createActivationReveals({onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.selected=null;this.inspectedCard=null;}this.render();}});
     this.cardGestures=createDuelCardGestures({
       canStart:element=>this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
@@ -36,9 +38,9 @@ export class YugiohMultiplayer {
   get decks(){return(this.options.getDecks()||[]).filter(deck=>deck.game==='yugioh'&&(!deck.ownerSlug||deck.ownerSlug===this.context.member)&&deck.persisted!==false&&UUID.test(deck.id));}
   canControl(player){return player===this.viewer&&['setup','playing'].includes(this.duel?.status);}
   render(){if(this.allowed())this.options.onRender();}
-  reset(){this.rulesDialog=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
+  reset(){this.activationReveals.dispose();this.rulesDialog=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
   close(){this.reset();}
-  suspend(){this.rulesDialog=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
+  suspend(){this.activationReveals.clear();this.rulesDialog=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
   async initialize(){
     if(this.loading||this.ready||!this.allowed())return;
     const generation=this.navigationGeneration;this.loading=true;this.error='';
@@ -66,7 +68,7 @@ export class YugiohMultiplayer {
     }catch(error){if(this.allowed()&&generation===this.navigationGeneration){if([401,403,404,410].includes(error.status)){this.clearTable();if([401,403].includes(error.status))this.ready=false;}this.error=error.message||'Connessione interrotta. Riprovo automaticamente.';this.connected=false;changed=true;}}
     finally{this.polling=false;if(changed)this.render();this.schedule();}
   }
-  clearTable(){this.rulesDialog=null;this.navigationGeneration++;this.inspectionGeneration++;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();this.duel=null;this.session=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.practice=false;this.practiceTable=null;}
+  clearTable(){this.activationReveals.clear();this.rulesDialog=null;this.navigationGeneration++;this.inspectionGeneration++;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();this.duel=null;this.session=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.practice=false;this.practiceTable=null;}
   gestureRevision(){return`${this.navigationGeneration}:${this.duel?.id}:${this.duel?.version}:${globalThis.innerWidth||0}x${globalThis.innerHeight||0}`;}
   beginCardDrag(player,cardId){this.dragBackup={selected:this.selected,inspectedCard:this.inspectedCard,revision:this.gestureRevision()};this.selected={player,cardId};const inspected=this.pile&&(this.pile.cards||this.session.players[this.pile.player][this.pile.zone]).find(card=>card.id===cardId);this.inspectedCard=inspected&&!inspected.hidden?{card:inspected,zone:this.pile.zone,player:this.pile.player,version:this.duel.version}:null;}
   cancelCardDrag(){const previous=this.dragBackup;this.dragBackup=null;if(previous?.revision===this.gestureRevision()){this.selected=previous.selected;this.inspectedCard=previous.inspectedCard;}}
@@ -154,6 +156,7 @@ export class YugiohMultiplayer {
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
+    this.activationReveals.observe(duel);
     this.duel=duel;this.viewer=duel.viewer;this.session=['setup','playing','finished'].includes(duel.status)?duel.state||null:null;
     if(changed){this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;}
     if(newTable){this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
@@ -166,7 +169,7 @@ export class YugiohMultiplayer {
     catch(error){if(this.allowed()&&generation===this.navigationGeneration){if(error.data?.duel)this.receive(error.data.duel);this.error=error.message||'Operazione non riuscita. Riprova.';if([401,403].includes(error.status))this.connected=false;}return null;}
     finally{this.pending=false;this.render();this.schedule();}
   }
-  async open(id){if(this.pending||!UUID.test(id))return;this.navigationGeneration++;this.inspectionGeneration++;this.practice=false;this.practiceTable=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.tab='table';await this.perform({op:'state',duelId:id});}
+  async open(id){if(this.pending||!UUID.test(id))return;this.activationReveals.clear();this.navigationGeneration++;this.inspectionGeneration++;this.practice=false;this.practiceTable=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.tab='table';await this.perform({op:'state',duelId:id});}
   async act(action){if(!this.duel||!this.session||!this.allowed()||this.pending)return null;if(this.orientation.isPortraitBlocked()){this.error='Ruota il telefono per giocare in orizzontale.';this.render();return null;}if(action.player!==undefined&&action.player!==this.viewer){this.error='Puoi modificare soltanto le tue carte.';this.render();return null;}return this.perform({op:'action',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),action});}
   selectedCard(){
     if(!this.selected||!this.session)return null;
@@ -227,6 +230,7 @@ export class YugiohMultiplayer {
     if(arena){const blocked=this.orientation.isPortraitBlocked();for(const child of arena.children)if(!child.classList.contains('ygo-orientation-gate'))child.inert=blocked;arena.querySelector('.ygo-orientation-gate')?.classList.toggle('is-required',blocked);}
     if(!this.allowed())return;const element=root.querySelector('.ygo-simulator');if(!element||element.dataset.bound)return;element.dataset.bound='true';if(!this.ready&&!this.error)void this.initialize();
     this.cardGestures.bind(element);
+    const reveal=element.querySelector('.ygo-activation-reveal');if(reveal&&reveal.dataset.revealKey!==this.lastAnimatedRevealKey){this.lastAnimatedRevealKey=reveal.dataset.revealKey;reveal.classList.add('is-entering');}
     const chainLinks=element.querySelector('.ygo-chain-links');if(chainLinks)chainLinks.scrollLeft=chainLinks.scrollWidth;
     const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect(),anchor=this.dropMenu.anchor;const left=anchor?(anchor.right+6+box.width<=innerWidth-8?anchor.right+6:anchor.left-box.width-6):this.dropMenu.x,top=anchor?anchor.top:this.dropMenu.y;drop.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(top,innerHeight-box.height-8))+'px';drop.querySelector('button')?.focus({preventScroll:true});}
     element.addEventListener('input',event=>this.updateDraft(event.target));
@@ -288,7 +292,7 @@ export class YugiohMultiplayer {
     if(data.ygoCard){const box=button.getBoundingClientRect?.();this.selectCard(Number(data.player),data.ygoCard,{quick:true,x:event?.detail?event.clientX:box?.right??20,y:event?.detail?event.clientY:box?.top??20,anchor:box?{left:box.left,right:box.right,top:box.top,bottom:box.bottom}:null});return;}
     if(button.hasAttribute('data-ygo-slot')){await this.place(Number(data.player),data.zone,Number(data.ygoSlot));return;}
     if(data.ygoTab==='practice'){this.showPractice();return;}
-    if(data.ygoTab){if(data.ygoTab==='history'&&this.practice)this.clearTable();if(!this.practice)this.options.onPracticeMode?.(false);this.tab=data.ygoTab;this.menu=false;this.selected=null;this.pile=null;this.inspectionGeneration++;if(this.tab==='history'){const response=await this.perform({op:'lobby'});if(response)this.lobby=response;}this.render();return;}
+    if(data.ygoTab){if(data.ygoTab!=='table')this.activationReveals.clear();if(data.ygoTab==='history'&&this.practice)this.clearTable();if(!this.practice)this.options.onPracticeMode?.(false);this.tab=data.ygoTab;this.menu=false;this.selected=null;this.pile=null;this.inspectionGeneration++;if(this.tab==='history'){const response=await this.perform({op:'lobby'});if(response)this.lobby=response;}this.render();return;}
     if(command==='reload'){this.ready=false;await this.initialize();return;}
     if(command==='lobby'){this.clearTable();this.tab='table';this.options.onPracticeMode?.(false);const response=await this.perform({op:'lobby'});if(response&&this.allowed())this.lobby=response;this.render();return;}
     if(command==='menu'||command==='close-menu'){this.menu=command==='menu';this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.inspectionGeneration++;this.render();return;}

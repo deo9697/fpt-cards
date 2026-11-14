@@ -24,7 +24,7 @@ export function appendChain(session,player,card){
   if(state.stage==='building'&&state.priority!==player)fail('Attendi la risposta dell’altro giocatore.');
   if(session.chain.length>=50)fail('La catena ha raggiunto il numero massimo di anelli.');
   if(typeof card?.id!=='string'||!card.id||card.id.length>100||typeof card.cardName!=='string'||!card.cardName||card.cardName.length>300)fail('Carta della catena non valida.');
-  const link={number:session.chain.length+1,player,cardId:card.id,cardName:card.cardName,imageUrl:typeof card.imageUrl==='string'?card.imageUrl.slice(0,2000):''};
+  const link={activationId:globalThis.crypto.randomUUID(),number:session.chain.length+1,player,cardId:card.id,cardName:card.cardName,imageUrl:typeof card.imageUrl==='string'?card.imageUrl.slice(0,2000):''};
   session.chain.push(link);
   session.chainState={stage:'building',priority:1-player,passes:0};
   return link;

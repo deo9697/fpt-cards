@@ -345,6 +345,26 @@ async function run(){
     }
     await idle(host);await idle(guest);
   }
+  async function assertActivationReveal(seat,cardId,number,label){
+    const link=rows.get(duelId).state.chain.find(link=>link.cardId===cardId&&link.number===number);assert(link,label+': anello pubblico assente');
+    await seat.wait(`(()=>{const reveal=document.querySelector('.ygo-activation-reveal'),image=reveal?.querySelector('.ygo-reveal-card > img');return reveal?.dataset.cardId===${JSON.stringify(cardId)}&&Number(reveal.dataset.ygoChainNumber)===${number}&&image?.complete&&image.naturalWidth>0;})()`,label+': carta attivata non mostrata al centro');
+    await delay(300);
+    const reveal=await seat.evaluate(`(()=>{const node=document.querySelector('.ygo-activation-reveal'),image=node.querySelector('.ygo-reveal-card > img'),box=image.getBoundingClientRect(),badge=node.querySelector('.ygo-chain-ring'),response=document.querySelector('.ygo-phase-controls [data-ygo-action="passChain"]'),responseBox=response.getBoundingClientRect(),hit=document.elementFromPoint((responseBox.left+responseBox.right)/2,(responseBox.top+responseBox.bottom)/2);return{key:node.dataset.revealKey,cardId:node.dataset.cardId,src:image.currentSrc||image.src,badge:Number(badge?.dataset.ygoChainNumber),caption:[node.getAttribute('aria-label'),image.alt,node.textContent].filter(Boolean).join(' '),pointerEvents:getComputedStyle(node).pointerEvents,imageFit:getComputedStyle(image).objectFit,opacity:Number(getComputedStyle(node.querySelector('.ygo-reveal-card')).opacity),width:box.width,height:box.height,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,responseReachable:hit===response||response.contains(hit)};})()`);
+    assert.equal(reveal.key,link.activationId,label+': identità dell’animazione non corrispondente all’attivazione');
+    assert.equal(new URL(reveal.src).pathname,new URL(link.imageUrl,'http://fixture').pathname,label+': artwork diverso dalla carta attivata');
+    assert.equal(reveal.badge,number);assert(reveal.caption.includes(link.cardName),label+': descrizione accessibile della carta assente');
+    assert(reveal.opacity>=.99,label+': la carta resta trasparente dopo l’ingresso');
+    assert.equal(reveal.pointerEvents,'none',label+': l’animazione intercetta i tocchi');assert(reveal.responseReachable,label+': la carta nasconde i comandi di risposta');
+    assert.equal(reveal.imageFit,'contain');assert(reveal.inside&&reveal.height>=140&&reveal.width>=90,label+': carta centrale troppo piccola o fuori schermo '+JSON.stringify(reveal));
+    await seat.evaluate('window.__activationArenaRef=document.querySelector(".ygo-arena")');await seat.screenshot(label,false);return reveal.key;
+  }
+  async function assertChainThumbnails(seat,expected,label){
+    const links=rows.get(duelId).state.chain;
+    await seat.wait(`document.querySelectorAll('.ygo-chain-links .ygo-chain-card[data-chain-card-id]').length===${expected.length}`,label+': miniature della catena assenti');
+    const thumbnails=await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-links .ygo-chain-card[data-chain-card-id]"),card=>({id:card.dataset.chainCardId,src:card.querySelector("img")?.src,number:Number(card.querySelector(".ygo-chain-ring")?.dataset.ygoChainNumber)}))');
+    assert.deepEqual(thumbnails.map(card=>card.number),expected,label+': numeri delle miniature errati');
+    for(const [index,thumbnail]of thumbnails.entries()){assert.equal(thumbnail.id,links[index].cardId);assert.equal(new URL(thumbnail.src).pathname,new URL(links[index].imageUrl,'http://fixture').pathname,label+': artwork della miniatura errato');}
+  }
   async function chooseMaterials(page,ids){
     await page.wait('Boolean(document.querySelector("[data-ygo-summon]"))','Selettore materiali assente');
     const selected=await page.evaluate('Array.from(document.querySelectorAll("[data-ygo-summon] [name=materialIds]:checked"),input=>input.value)');
@@ -437,23 +457,51 @@ async function run(){
   }
   // Long press + physical touch drag selects a destination; only a menu choice
   // applies a move. A remote update invalidates choices from an older board.
-  const hostHandEffect=await putInHand(host,0,'38033121'),guestHandEffect=await putInHand(guest,1,'38033121');
+  const hostHandEffect=await putInHand(host,0,'38033121'),guestHandEffect=await putInHand(guest,1,'5318639');
+  await guest.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
   await host.tap(`[data-ygo-card="${hostHandEffect}"][data-player="0"]`);await waitDropMenu(host,'Effetto dalla mano host');await host.tap('.ygo-drop-menu [data-ygo-drop-action="activate"]');
+  await host.wait('window.__sim.session.chain.length===1','Primo anello sul client che attiva');
+  const firstRevealKey=await assertActivationReveal(host,hostHandEffect,1,'activation-one-host');
+  await guest.wait('window.__sim.session.chain.length===1','Primo anello sul client avversario');
+  assert.equal(await assertActivationReveal(guest,hostHandEffect,1,'activation-one-guest'),firstRevealKey);
   await both('window.__sim.session.chain.length===1','Primo anello dalla mano');
-  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1],'Il primo anello non è visibile a entrambi');
+  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-links .ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1],'Il primo anello non è visibile a entrambi');
+  for(const seat of[host,guest])await assertChainThumbnails(seat,[1],'Prima miniatura condivisa');
   assert(await guest.evaluate('window.__sim.session.players[0].hand.every(card=>card.hidden&&!card.catalogCardId)'),'Attivare dalla mano espone tutta la mano host');
   assert(await host.evaluate(`window.__sim.session.players[0].hand.some(card=>card.id===${JSON.stringify(hostHandEffect)})`),'Dichiarare l’effetto sposta la carta in mano');
   await guest.tap(`[data-ygo-card="${guestHandEffect}"][data-player="1"]`);await waitDropMenu(guest,'Risposta dalla mano ospite');await guest.tap('.ygo-drop-menu [data-ygo-drop-action="activate"]');
+  await guest.wait('Boolean(window.__sim.placing)','La risposta Magia non chiede la casella');await guest.tap('[data-ygo-slot="4"][data-zone="spells"][data-player="1"]');
+  await guest.wait('window.__sim.session.chain.length===2','Risposta sul client che attiva');
+  const secondRevealKey=await assertActivationReveal(guest,guestHandEffect,2,'activation-two-guest');assert.notEqual(secondRevealKey,firstRevealKey);
+  await host.wait('window.__sim.session.chain.length===2','Risposta sul client avversario');
+  assert.equal(await assertActivationReveal(host,guestHandEffect,2,'activation-two-host'),secondRevealKey);
   await both('window.__sim.session.chain.length===2','Secondo anello della risposta');
-  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1,2],'La risposta non mostra cerchi1e2 condivisi');
+  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-links .ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1,2],'La risposta non mostra cerchi1e2 condivisi');
+  for(const seat of[host,guest])await assertChainThumbnails(seat,[1,2],'Miniature delle due risposte');
   await host.screenshot('chain-two-host',false);await guest.screenshot('chain-two-guest',false);
+  await both('!document.querySelector(".ygo-activation-reveal")','La carta centrale non scompare dopo l’animazione');
+  for(const seat of[host,guest])assert(await seat.evaluate('window.__activationArenaRef===document.querySelector(".ygo-arena")'),'La scadenza dell’animazione ricrea il campo e interrompe i gesti');
+  await host.evaluate('window.__sim.poll()');assert(!await host.evaluate('Boolean(document.querySelector(".ygo-activation-reveal"))'),'Il polling invariato ripete l’animazione');
+  await host.cdp.call('Page.navigate',{url:`${origin}/scripts/fixtures/yugioh-duel-harness.html?member=duel-host&duel=${duelId}`});
+  await host.wait('window.__sim?.session?.chain.length===2&&!window.__sim.pending','Ripresa con catena aperta non disponibile');await delay(100);
+  assert(!await host.evaluate('Boolean(document.querySelector(".ygo-activation-reveal"))'),'Il ricaricamento ripete un’attivazione già esistente');
+  await assertChainThumbnails(host,[1,2],'Miniature ripristinate dopo la ricarica');
   assert(await host.evaluate('document.querySelector("[data-ygo-action=setPhase]").disabled'),'La catena lascia cambiare fase');
   await host.tap('.ygo-phase-controls [data-ygo-action="passChain"]');await both('window.__sim.session.chainState.passes===1','Primo Non rispondo');
+  for(const seat of[host,guest])assert(!await seat.evaluate('Boolean(document.querySelector(".ygo-activation-reveal"))'),'Non rispondo ripete l’animazione');
   await guest.tap('.ygo-phase-controls [data-ygo-action="passChain"]');await both('window.__sim.session.chainState.stage==="resolving"','Secondo Non rispondo');
   await host.tap('.ygo-phase-controls [data-ygo-action="resolveChain"]');await both('window.__sim.session.chain.length===1&&window.__sim.session.chain[0].number===1','Risoluzione dell’anello2prima di1');
-  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1]);
+  for(const seat of[host,guest])assert.deepEqual(await seat.evaluate('Array.from(document.querySelectorAll(".ygo-chain-links .ygo-chain-ring[data-ygo-chain-number]"),ring=>Number(ring.dataset.ygoChainNumber))'),[1]);
+  for(const seat of[host,guest]){await assertChainThumbnails(seat,[1],'Resta soltanto la carta della chain1');assert(!await seat.evaluate('Boolean(document.querySelector(".ygo-activation-reveal"))'),'La risoluzione ripete l’animazione');}
   await settleChain('Ultimo anello della risposta');
-  console.log('PASS two public numbered chain circles, private hand sources, response passes and reverse resolution');
+  await guest.tap(`[data-ygo-card="${guestHandEffect}"][data-player="1"]`);await waitDropMenu(guest,'Magia risposta risolta');await guest.tap('.ygo-drop-menu [data-ygo-drop-action="graveyard"]');await both(`window.__sim.session.players[1].graveyard.some(card=>card.id===${JSON.stringify(guestHandEffect)})`,'Magia risposta al Cimitero');
+  await host.tap(`[data-ygo-card="${hostHandEffect}"][data-player="0"]`);await waitDropMenu(host,'Nuova attivazione della stessa carta');await host.tap('.ygo-drop-menu [data-ygo-drop-action="activate"]');
+  await host.wait('window.__sim.session.chain.length===1','Nuova catena sul client che attiva');const repeatKey=await assertActivationReveal(host,hostHandEffect,1,'activation-repeat-host');assert.notEqual(repeatKey,firstRevealKey,'Una nuova attivazione della stessa carta riusa l’identità precedente');
+  await guest.wait('window.__sim.session.chain.length===1','Nuova catena sul client avversario');assert.equal(await assertActivationReveal(guest,hostHandEffect,1,'activation-repeat-guest'),repeatKey);
+  await settleChain('Nuova attivazione con numero1');await both('!document.querySelector(".ygo-activation-reveal")','La risoluzione non rimuove la carta centrale attiva');
+  await guest.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+  if(process.argv.includes('--reveal-only')){assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);console.log('yugioh-activation-reveal-smoke: OK');return;}
+  console.log('PASS public activation-card reveals on both phones, persistent thumbnails, no replay on pass/poll/reload/resolve and distinct repeated activations');
   const draggedMonster=await putInHand(host,0,'91152256'),draggedSelector=`[data-ygo-card="${draggedMonster}"][data-player="0"]`,monsterTarget='[data-ygo-slot="2"][data-zone="monsters"][data-player="0"]';
   const beforeCancelledDrop=await host.evaluate('JSON.stringify(window.__sim.session)');
   await host.pressDrag(draggedSelector,monsterTarget);await waitDropMenu(host,'Drag Mostro');

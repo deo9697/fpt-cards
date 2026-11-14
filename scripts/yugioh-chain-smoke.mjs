@@ -9,7 +9,8 @@ function unchanged(table,action,message){const before=structuredClone(table);ass
   const table=session();
   assert.deepEqual(deriveChainState(table),{stage:'idle',priority:null,passes:0});
   const one=appendChain(table,0,card(0));
-  assert.deepEqual(one,{number:1,player:0,cardId:'p0-main-0',cardName:'Public activated card 0',imageUrl:'/card-0.jpg'});
+  assert.match(one.activationId,/^[0-9a-f-]{36}$/);
+  assert.deepEqual(one,{activationId:one.activationId,number:1,player:0,cardId:'p0-main-0',cardName:'Public activated card 0',imageUrl:'/card-0.jpg'});
   assert.deepEqual(table.chainState,{stage:'building',priority:1,passes:0});
   unchanged(table,()=>appendChain(table,0,card(2)),/risposta/);
   unchanged(table,()=>passChain(table,0),/risposta/);
@@ -33,7 +34,8 @@ function unchanged(table,action,message){const before=structuredClone(table);ass
   assert.equal(table.chainState,null);assert.deepEqual(deriveChainState(table),{stage:'idle',priority:null,passes:0});
   unchanged(table,()=>resolveChain(table,0),/Non ci sono/);
   unchanged(table,()=>passChain(table,0),/Non ci sono/);
-  assert.equal(appendChain(table,1,card(1)).number,1,'A new chain starts from one again');
+  const again=appendChain(table,1,card(1));assert.equal(again.number,1,'A new chain starts from one again');
+  assert.notEqual(again.activationId,one.activationId,'Each activation has its own public presentation identity');
   console.log('PASS two consecutive passes close the chain, responses reset passes and resolution runs highest to lowest');
 }
 {

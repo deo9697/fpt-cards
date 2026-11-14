@@ -361,6 +361,23 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-chain-ring svg { position:absolute;inset:3px;width:32px;height:32px;opacity:.5; }
 .ygo-chain-ring b { position:relative;z-index:1;font:900 20px/1 monospace;text-shadow:0 1px 3px #000,1px 0 3px #000; }
 .ygo-chain-ring.is-next { border-color:#86e8ff;box-shadow:0 0 10px #53bde8a0; }
+.ygo-chain-card { position:relative;display:block;flex:none;height:52px;width:calc(52px*63/88);border:1px solid #e5cc88;border-radius:2px;background:#102635;box-shadow:0 2px 5px #0009; }
+.ygo-chain-card>img { display:block;width:100%;height:100%;object-fit:contain; }
+.ygo-chain-card>.ygo-chain-ring { position:absolute;right:-2px;bottom:-1px;width:20px;height:20px;border-width:1px; }
+.ygo-chain-card>.ygo-chain-ring svg { inset:1px;width:16px;height:16px; }
+.ygo-chain-card>.ygo-chain-ring b { font-size:12px; }
+.ygo-chain-card.is-next { border-color:#86e8ff;box-shadow:0 0 8px #53bde890; }
+.ygo-chain-fallback { display:grid;place-items:center;width:100%;height:100%;padding:2px;overflow:hidden;font-size:6px;line-height:1.2;text-align:center;overflow-wrap:anywhere; }
+.ygo-activation-reveal { position:fixed;z-index:400;inset:0;display:grid;place-items:center;pointer-events:none!important; }
+.ygo-activation-reveal * { pointer-events:none!important; }
+.ygo-reveal-card { position:relative;isolation:isolate;margin:0;height:clamp(140px,50dvh,290px);width:calc(clamp(140px,50dvh,290px)*63/88);border:2px solid #ffe2a0;border-radius:3px;background:#112c3d;box-shadow:0 0 28px #7ed8ff70,0 12px 38px #000b; }
+.ygo-reveal-card::before { content:'';position:absolute;z-index:-1;inset:-24px;background:radial-gradient(ellipse,#c9f0ff30,transparent 70%); }
+.ygo-reveal-card>img { display:block;width:100%;height:100%;object-fit:contain; }
+.ygo-reveal-card>.ygo-chain-ring { position:absolute;right:6px;bottom:6px; }
+.ygo-reveal-caption { position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);width:max-content;max-width:min(240px,80vw);padding:4px 9px;border:1px solid #9bbac966;border-radius:3px;background:#081a28ee;color:#fff0bb;font-size:.7rem;font-weight:800;line-height:1.4;text-align:center; }
+.ygo-reveal-fallback { display:grid;place-items:center;width:100%;height:100%;padding:12px;color:#f6dfac;font-size:.85rem;text-align:center; }
+.ygo-activation-reveal.is-entering>.ygo-reveal-card { animation:ygo-reveal-enter .24s ease-out both; }
+@keyframes ygo-reveal-enter { from { opacity:0;transform:translateY(12px) scale(.78); } to { opacity:1;transform:translateY(0) scale(1); } }
 .ygo-arena .ygo-rules-dialog { position:fixed;z-index:710;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 20px));max-height:calc(100dvh - 16px);overflow:auto;padding:14px;border:1px solid #8aa4b2;background:#0c1c2afc;box-shadow:0 8px 35px #000b; }
 .ygo-rules-dialog header { display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #8aa4b24d;padding-bottom:8px; }
 .ygo-rules-dialog h2 { margin:4px 0;font-size:.9rem; }
@@ -376,6 +393,7 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 @media(max-width:1100px) and (orientation:landscape) and (max-height:600px) {
   .ygo-chain-bar.has-chain { top:calc(var(--slot-h)*2.5 + 5px);left:50%;right:auto;transform:translate(-50%,-50%);width:calc((100% - 18px)/7);height:var(--slot-h);min-height:0;padding:0;border:0;background:transparent;overflow:visible; }
   .ygo-chain-links { height:100%; }
+  .ygo-chain-card { height:calc(var(--slot-h)*.88);width:calc(var(--slot-h)*.88*63/88); }
   .ygo-battle-stage:has(.ygo-chain-bar.has-chain) .ygo-arena-status { left:14%;width:24%; }
 }
 @media(max-width:1100px) and (orientation:landscape) {
