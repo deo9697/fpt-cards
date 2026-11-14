@@ -123,6 +123,8 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-duelist-seat { position:absolute;top:5px;right:15px;font-size:.35rem;letter-spacing:.08em;color:#8facbb; }
 .ygo-phase-panel { grid-column:3;grid-row:2;display:grid;gap:12px;align-self:center;min-width:0;text-align:center; }
 .ygo-phase-panel>span { color:#8aa6b5;font-size:.56rem;letter-spacing:.12em; }.ygo-phase-panel>span>b { color:#f0e1aa; }.ygo-phase-panel>strong { color:#d7bf7b;font-size:.6rem;line-height:1.5;overflow-wrap:anywhere; }
+.ygo-normal-status { display:block;margin-top:2px;color:#adc6cf;font-size:.5rem;font-weight:700;line-height:1.2;letter-spacing:0; }
+.ygo-turn-rule-dialog [data-ygo-selection-summary] { display:block;padding:7px 0;color:#ffe2a0;font-size:.75rem; }
 .ygo-phase-panel>ol { display:grid;gap:3px;list-style:none;margin:0;padding:0; }
 .ygo-phase-panel li { position:relative;min-height:31px;display:grid;place-items:center;padding:7px 3px;color:#7f9ca9;background:#12212bba;border:1px solid #53697970;border-radius:2px;font-size:.63rem;font-weight:700;text-transform:uppercase; }
 .ygo-phase-panel li.is-current { color:#fff2b1;border-color:#e2c77b;background:radial-gradient(ellipse,#5c4d27,#1f2b2b);box-shadow:0 0 12px #d3bf6a38,inset 0 0 8px #c5ae5d40; }
@@ -401,6 +403,12 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-material-choice img { width:32px;height:44px;object-fit:contain; }
 .ygo-material-choice span { display:grid;gap:3px; }
 .ygo-material-choice strong { font-size:.73rem; }
+.ygo-turn-rule-dialog>p { margin:7px 0; }
+.ygo-turn-rule-dialog form { display:flex;flex-direction:column;gap:6px;min-height:0; }
+.ygo-turn-rule-dialog .ygo-material-picker { max-height:max(56px,calc(100dvh - 238px));overflow:auto;overscroll-behavior:contain;touch-action:pan-y; }
+.ygo-turn-rule-dialog .ygo-material-choice { margin:0;min-height:52px; }
+.ygo-turn-rule-dialog [data-ygo-selection-summary] { padding:3px 0; }
+.ygo-turn-rule-dialog button[type=submit] { flex:none;min-height:44px; }
 @media(max-width:1100px) and (orientation:landscape) and (max-height:600px) {
   .ygo-chain-bar.has-chain { top:calc(var(--slot-h)*2.5 + 5px);left:50%;right:auto;transform:translate(-50%,-50%);width:calc((100% - 18px)/7);height:var(--slot-h);min-height:0;padding:0;border:0;background:transparent;overflow:visible; }
   .ygo-chain-links { height:100%; }

@@ -11,7 +11,7 @@ const deck={id:'a0000000-0000-4000-8000-000000000001',game:'yugioh',name:'Quick 
   {catalogCardId:'field',cardName:'Test Field',section:'main',type:'Spell Card',race:'Field',quantity:1},
   ...['Fusion','Link','Synchro','XYZ'].map(kind=>({catalogCardId:kind.toLowerCase(),cardName:`Test ${kind}`,section:'extra',type:`${kind} Monster`,quantity:1,level:kind==='Synchro'?8:kind==='XYZ'?4:null,atk:2000,def:1500,text:kind==='Synchro'?'1 Tuner + 1+ non-Tuner monsters':kind==='XYZ'?'2 Level 4 monsters':''}))
 ]};
-let state=applyAction(createSession({decks:[deck,deck]}),{type:'start'}),version=1;
+let state=applyAction(createSession({decks:[deck,deck],turnRules:false}),{type:'start'}),version=1;
 const calls=[],id='b0000000-0000-4000-8000-000000000001';
 const snapshot=()=>({id,status:'playing',viewer:0,version,ready:[true,true],state:redactState(state,0)});
 const button=dataset=>({dataset,hasAttribute:name=>Object.hasOwn(dataset,name.replace(/^data-/,'').replace(/-([a-z])/g,(_,c)=>c.toUpperCase()))});

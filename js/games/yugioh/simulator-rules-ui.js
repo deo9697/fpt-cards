@@ -1,6 +1,7 @@
 import {publicChainCard} from './simulator-reveal.js';
 import {deriveChainState} from './simulator-chain.js';
 import {getSummonRecipe,eligibleSummonMaterials,materialLevel} from './simulator-summoning.js';
+import {requiredTributes} from './simulator-turn-rules.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const image=value=>{try{const url=new URL(value||'',globalThis.location?.href||'http://localhost');return value&&['http:','https:'].includes(url.protocol)?esc(url.href):'';}catch{return'';}};
@@ -20,6 +21,11 @@ export function activationRevealView(controller){
 export function rulesDialog(controller){
   const draft=controller.rulesDialog;if(!draft)return'';
   const p=controller.session.players[controller.viewer];
+  if(draft.kind==='tribute'||draft.kind==='discard'){
+    const tribute=draft.kind==='tribute',card=tribute?p.hand.find(card=>card.id===draft.cardId):null;if(tribute&&!card)return'';
+    const cards=tribute?[...p.monsters,...p.extraMonsters]:p.hand,key=tribute?'tributeIds':'cardIds',count=tribute?requiredTributes(card):p.hand.length-6,selected=new Set(draft[key]||[]);
+    return `<button type="button" class="ygo-overlay" data-ygo-command="close-rules" aria-label="Annulla"></button><section class="ygo-rules-dialog ygo-turn-rule-dialog" role="dialog" aria-modal="true" aria-label="${tribute?'Tributi di evocazione':'Scarta a fine turno'}"><header><div><small>${tribute?'NORMAL SUMMON / SET':'FINE TURNO'}</small><h2>${tribute?esc(card.cardName):'Porta la mano a 6 carte'}</h2></div><button type="button" data-ygo-command="close-rules">Annulla</button></header><p>${tribute?`Scegli ${count} ${count===1?'Mostro da offrire':'Mostri da offrire'} come tributo. Puoi usare anche i tuoi Mostri coperti.`:`Scegli ${count} ${count===1?'carta da scartare':'carte da scartare'} prima di passare il turno.`}</p><form ${tribute?'data-ygo-tribute':'data-ygo-discard'}><div class="ygo-material-picker">${cards.map(item=>`<label class="ygo-material-choice"><input type="checkbox" name="${key}" value="${esc(item.id)}" ${selected.has(item.id)?'checked':''}>${art(item)}<span><strong>${esc(item.cardName)}</strong>${tribute?`<small>${item.faceUp?'Scoperto':'Coperto'}${item.token?' · Segna-Mostro':''}</small>`:''}</span></label>`).join('')||'<p>Nessun Mostro disponibile.</p>'}</div><output data-ygo-selection-summary>${selected.size} selezionate / ${count} richieste</output>${draft.error?`<p class="ygo-error" role="alert">${esc(draft.error)}</p>`:''}<button type="submit" class="ygo-primary" ${controller.pending?'disabled':''}>${tribute?'Conferma tributi':'Scarta e passa il turno'}</button></form></section>`;
+  }
   const card=[...p.extra,...p.monsters,...p.extraMonsters].find(card=>card.id===draft.cardId);if(!card)return'';
   const summon=draft.kind==='summon',recipe=summon?getSummonRecipe(card):null;
   const candidates=summon?eligibleSummonMaterials(controller.session,controller.viewer,card):card.materials;

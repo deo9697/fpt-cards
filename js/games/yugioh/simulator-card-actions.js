@@ -19,15 +19,15 @@ export function cardDropActions(card,from,to,{samePosition=false}={}){
           if(!link){
             const position=card.position==='defense'?'attack':'defense';
             add('position',position==='attack'?'Posizione Attacco':'Posizione Difesa',{positionOnly:true,position,faceUp:true});
-            if(!card.token)add('set','Set',{positionOnly:true,position:'defense',faceUp:false});
+            if(!card.token)add('set','Copri per effetto',{positionOnly:true,position:'defense',faceUp:false});
           }
         }else if(!link){
           add('flip-attack','Scopri in Attacco',{positionOnly:true,position:'attack',faceUp:true});
-          add('flip-defense','Scopri in Difesa',{positionOnly:true,position:'defense',faceUp:true});
+          add('flip-defense','Scopri in Difesa per effetto',{positionOnly:true,position:'defense',faceUp:true});
         }
       }else{
         add('move','Sposta qui',{position:card.position||'attack',faceUp:card.faceUp});
-        if(!link&&!card.token)add('set','Set',{position:'defense',faceUp:false,intent:'set'});
+        if(!link&&!card.token)add('set','Copri qui per effetto',{position:'defense',faceUp:false,intent:'set'});
       }
     }else{
       if(from==='hand'&&to==='monsters'&&!isExtraDeckMonster(card)&&!/ritual/.test(type))add('normal','Norm. Summon',{position:'attack',faceUp:true,intent:'normal'});
@@ -84,7 +84,7 @@ export function cardTapActions(card,from){
         add('position',position==='attack'?'Posizione Attacco':'Posizione Difesa',{positionOnly:true,position,faceUp:true});
       }else{
         add('flip-attack','Scopri in Attacco',{positionOnly:true,position:'attack',faceUp:true});
-        add('flip-defense','Scopri in Difesa',{positionOnly:true,position:'defense',faceUp:true});
+        add('flip-defense','Scopri in Difesa per effetto',{positionOnly:true,position:'defense',faceUp:true});
       }
     }else if(!monsterZone&&card.faceUp)add('set','Set',{positionOnly:true,position:'attack',faceUp:false});
     add('graveyard',card.token?'Rimuovi Segna-Mostro':'Manda al Cimitero',{faceUp:true},{to:'graveyard'});

@@ -20,7 +20,7 @@ for(const type of ['Ritual Effect Monster','Fusion Monster','Synchro Monster','X
   assert(!dropped.includes('set'),`${type} must not gain a Normal Set via drag`);
 }
 const ritualDeck={id:'ritual-fixture',game:'yugioh',name:'Synthetic Ritual deck',cards:Array.from({length:14},(_,index)=>({catalogCardId:`ritual-${index}`,cardName:`Ritual ${index}`,section:'main',quantity:index===13?1:3,type:'Ritual Effect Monster'}))};
-const ritualTable=applyAction(createSession({decks:[ritualDeck,ritualDeck]}),{type:'start'}),ritualCard=ritualTable.players[0].hand[0];
+const ritualTable=applyAction(createSession({decks:[ritualDeck,ritualDeck],turnRules:false}),{type:'start'}),ritualCard=ritualTable.players[0].hand[0];
 assert.throws(()=>applyAction(ritualTable,{type:'move',player:0,cardId:ritualCard.id,to:'monsters',intent:'normal',faceUp:true,position:'attack'}),/Mostro Rituale/);
 assert.equal(ritualTable.players[0].monsters.length,0,'A rejected Ritual Normal Summon must leave the field unchanged');
 assert.equal(applyAction(ritualTable,{type:'move',player:0,cardId:ritualCard.id,to:'monsters',intent:'special',faceUp:true,position:'attack'}).players[0].monsters[0].id,ritualCard.id);

@@ -23,7 +23,7 @@ Nessuna modifica SQL: lo stato JSON continua a essere scritto soltanto dal servi
 
 La suite `npm run test:yugioh-simulator` include test puri delle catene e delle ricette, integrazione del motore, servizio, metadati, Postgres e browser mobile con due giocatori sintetici. I nuovi test coprono annullamenti atomici, priorità, materiali avversari/coperte/duplicati, livelli mancanti, Tuner, somma, Rango, materiali sovrapposti e costi di distacco. Nessun tavolo o invito di produzione viene creato dai test.
 
-Esito finale: tutti i 18 script della suite superati. Il browser completo verifica due client e tre viewport (844×390, 932×430, 740×360), cerchi 1/2 condivisi e risoluzione 2→1, Synchro 3+5 con controllo Tuner, Xyz con due Livello 4, distacco prima dell'anello e caselle liberate dai materiali. I pulsanti di conferma e costo sono raggiunti tramite scorrimento e tocchi nativi. Un ulteriore controllo locale verifica i riepiloghi Rango 4 e somma Livelli 8. Zero eccezioni JavaScript, errori console, risorse mancanti o richieste esterne inattese.
+Esito finale: tutti i 19 script della suite superati. Il browser completo verifica due client e tre viewport (844×390, 932×430, 740×360), cerchi 1/2 condivisi e risoluzione 2→1, Synchro 3+5 con controllo Tuner, Xyz con due Livello 4, distacco prima dell'anello e caselle liberate dai materiali. I pulsanti di conferma e costo sono raggiunti tramite scorrimento e tocchi nativi. Un ulteriore controllo locale verifica i riepiloghi Rango 4 e somma Livelli 8. Zero eccezioni JavaScript, errori console, risorse mancanti o richieste esterne inattese.
 
 Catture in `artifacts/yugioh-duel/`: `chain-two-host.png`, `chain-two-guest.png`, `xyz-materials.png`, `xyz-effect-cost.png`, `synchro-materials.png`, `xyz-confirm-native.png`, `xyz-cost-confirm-native.png`. Gli artifact non sono inclusi nel codice pubblicato.
 
@@ -48,3 +48,22 @@ La selezione non invia richieste né modifica il campo prima della conferma dell
 È un’interazione guidata per il simulatore manuale. Le limitazioni e le eccezioni previste da singoli effetti continuano a essere applicate dai giocatori; questa modifica non introduce un motore automatico degli effetti.
 
 I test di azioni, menu e controller coprono Attacco/Difesa da tocco e trascinamento, nessun invio prematuro, destinazione conservata, Link, materiali Synchro/Xyz, ritorno, annullamento e versioni remote. Le prove browser usano tocchi nativi e due client per controllare il risultato condiviso, la rotazione della carta, la leggibilità e la raggiungibilità dei pulsanti sul telefono. Catture: `special-position-choice.png`, `special-defense-phone.png`.
+
+## Regole base del turno e tributi
+
+Le nuove partite includono `turnState`, scritto dal motore e conservato nello stato JSON del servizio. I tavoli precedenti senza questo campo mantengono i comandi manuali: non viene ricostruita una quota già consumata a metà turno. Nessuna modifica SQL o alle autorizzazioni di partecipazione.
+
+- Draw normale: una carta nella propria Draw Phase, una sola volta; il primo turno salta la pescata. Per proseguire bisogna effettuare la pescata dovuta. Pesca per effetto è un comando manuale distinto e non consuma la pescata normale.
+- Le fasi avanzano da Draw a Standby e Main 1. Da Main 1 si può entrare in Battle oppure passare a End; Main 2 segue Battle. Nel primo turno Battle e Main 2 non sono disponibili. Cambi fase e turno attendono che la catena sia vuota.
+- Normal Summon e Normal Set condividono una quota di una giocata, solo nella propria Main Phase. La quota si azzera al nuovo turno. Un comando esplicito negli strumenti dichiara un effetto che concede una Normale aggiuntiva.
+- La procedura standard richiede zero tributi fino al Livello 4, uno ai Livelli 5–6 e due dal Livello 7. La scelta include i propri Mostri scoperti, coperti e Segna-Mostro. Conferma, consumo dei tributi e giocata sono atomici; la destinazione può essere una casella liberata. Pendulum, Token e materiali Xyz seguono le rispettive destinazioni. Un errore non consuma né carte né quota; il Set mantiene privata l’identità del nuovo Mostro.
+- Il cambio posizione normale è consentito nella propria Main Phase, una volta per turno e non nel turno di ingresso del Mostro. Flip Summon scopre in Attacco. Coprire o scoprire in Difesa è dichiarato come effetto. Gli effetti di posizione restano comandi distinti e non aggirano i vincoli strutturali dei Link o dei Token.
+- Fine turno con più di sei carte apre la selezione degli scarti. La conferma scarta esattamente l’eccedenza e passa il turno in un’unica operazione; annullamento e aggiornamenti remoti non effettuano scarti. Su telefono l’elenco scorre all’interno, con riepilogo e conferma visibili.
+
+Le eccezioni scritte sulle singole carte, i tributi alternativi, la modifica del limite di mano, gli effetti di Standby/End e le finestre di risposta restano manuali. Il vincolo di cambio posizione dopo un attacco richiede il futuro gestore degli attacchi. Gli spostamenti avanzati rimangono disponibili per applicare gli effetti dichiarati; non sono conteggiati come Evocazioni Normali.
+
+`yugioh-turn-rules-smoke.mjs` verifica controlli standard, annullamenti atomici, privacy, versione e flusso controller. Il servizio verifica anche gli stessi limiti senza fidarsi del browser. La prova locale comprende 38 round, fino al turno 77, e continua quando il mazzo del campo passivo è esaurito. Le prove browser dedicate coprono due client e tocchi nativi; catture: `tribute-phone.png`, `normal-limit-phone.png`, `end-turn-discard-phone.png`.
+
+Riferimento: [regolamento ufficiale Konami, evocazioni e struttura del turno](https://img.yugioh-card.com/en/downloads/rulebook/SD_RuleBook_EN_10.pdf).
+
+Verifica finale del blocco turni: 18 script non browser superati, prova browser dedicata dei turni superata, prova locale superata e regressione completa multiplayer superata su 844×390, 932×430 e 740×360. Zero eccezioni JavaScript, errori console, risorse mancanti o richieste esterne inattese. Header, riepilogo e conferma dei dialoghi tributi/scarti sono raggiungibili insieme; gli elenchi scorrono al loro interno. Cattura aggiuntiva: `tribute-two-phone.png`.

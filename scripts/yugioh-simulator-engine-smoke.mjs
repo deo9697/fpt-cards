@@ -10,7 +10,7 @@ const fixture = suffix => ({ id:`deck-${suffix}`, name:`Synthetic ${suffix}`, ga
   { catalogCardId:'side-1', cardName:'Side spell', section:'side', quantity:1, type:'Spell Card' }
 ] });
 const decks = [fixture('A'), fixture('B')];
-const fresh = () => createSession({ decks, firstPlayer:0, names:['Alice', 'Bob'] });
+const fresh = () => createSession({ decks, turnRules:false, firstPlayer:0, names:['Alice', 'Bob'] });
 const started = () => applyAction(fresh(), { type:'start' });
 const act = (state, type, options = {}) => applyAction(state, { type, player:0, ...options });
 const integrity = state => assert.deepEqual(validateSession(state), { valid:true, errors:[] });

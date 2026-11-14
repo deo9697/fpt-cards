@@ -85,7 +85,8 @@ await rejects(guest,{op:'action',duelId,expectedVersion:version,requestId:id(25)
 await rejects(guest,{op:'action',duelId,expectedVersion:version,requestId:id(26),action:{type:'draw',player:0}},403,'opponent_action');
 await rejects(host,{op:'action',duelId,expectedVersion:version,requestId:id(27),action:{type:'move',cardId:'hidden-1-deck-0',to:'hand'}},403,'hidden_card');
 // Real own hand IDs are available; concealed draws never upload card identity.
-const draw={op:'action',duelId,expectedVersion:version,requestId:id(28),action:{type:'draw',count:1}};
+await rejects(host,{op:'action',duelId,expectedVersion:version,requestId:id(++request),action:{type:'draw',count:1}},400,'invalid_action');
+const draw={op:'action',duelId,expectedVersion:version,requestId:id(28),action:{type:'drawEffect',count:1}};
 await run(host,draw); assert.equal((await run(host,draw)).replayed,true);
 assert.equal(records.get(duelId).state.players[0].hand.length,6);
 await assert.rejects(()=>run(guest,{...draw,requestId:id(29)}),error=>error.status===409 && error.duel.state.players[0].hand.every(card=>card.hidden));
@@ -93,17 +94,25 @@ const beforePhase=clone(records.get(duelId).state);
 await rejects(guest,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'battle'}},403,'not_your_turn');
 await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'invalid'}},400,'invalid_action');
 assert.deepEqual(records.get(duelId).state,beforePhase);
+await action(host,{type:'setPhase',phase:'standby'});
 await action(host,{type:'setPhase',phase:'main1'});
 assert.equal(records.get(duelId).state.phase,'main1');
 assert.deepEqual(records.get(duelId).state.players,beforePhase.players);
 assert.equal(records.get(duelId).state.turn,beforePhase.turn);
 assert.equal((await run(guest,{op:'state',duelId})).duel.state.phase,'main1');
-await action(host,{type:'setPhase',phase:'draw'});
+await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'draw'}},400,'invalid_action');
 console.log('PASS direct phase declarations synchronize, preserve cards and reject inactive/invalid changes');
 let full=records.get(duelId).state;
 let card=full.players[0].hand.find(card=>/Monster/.test(card.type));
 if(!card){ const found=full.players[0].deck.find(card=>/Monster/.test(card.type)); await action(host,{type:'move',cardId:found.id,to:'hand'}); card=found; }
-await action(host,{type:'move',cardId:card.id,to:'monsters',slot:3,faceUp:false,position:'defense'});
+await action(host,{type:'move',cardId:card.id,to:'monsters',slot:3,faceUp:false,position:'defense',intent:'set'});
+assert.equal(records.get(duelId).state.turnState.normalUsed,1,'The service commits the shared Normal Summon/Set allowance');
+const secondNormal=records.get(duelId).state.players[0].hand.find(item=>/Monster/.test(item.type));
+if(secondNormal){
+  const beforeDuplicateNormal=clone(records.get(duelId));
+  await rejects(host,{op:'action',duelId,expectedVersion:beforeDuplicateNormal.version,requestId:id(++request),action:{type:'move',cardId:secondNormal.id,to:'monsters',slot:2,faceUp:true,position:'attack',intent:'normal'}},400,'invalid_action');
+  assert.deepEqual(records.get(duelId),beforeDuplicateNormal,'The API must reject a second Normal Summon without changing state or version');
+}
 let view=(await run(guest,{op:'state',duelId})).duel;
 let covered=view.state.players[0].monsters[0];
 assert(covered.hidden && !covered.catalogCardId && !covered.type && covered.atk===undefined);
@@ -113,7 +122,7 @@ const privateCard=records.get(duelId).state.players[0].hand[0];
 await action(host,{type:'move',cardId:privateCard.id,to:'deck',placement:'bottom'});
 view=(await run(guest,{op:'state',duelId})).duel;
 assert(!view.state.log.at(-1).text.includes(privateCard.cardName),'Returning a private hand card to the deck must not reveal its identity');
-await action(host,{type:'flip',cardId:card.id});
+await action(host,{type:'positionEffect',cardId:card.id,position:'defense',faceUp:true});
 view=(await run(guest,{op:'state',duelId})).duel;
 assert.equal(view.state.players[0].monsters[0].catalogCardId,card.catalogCardId);
 await action(host,{type:'activate',cardId:card.id});

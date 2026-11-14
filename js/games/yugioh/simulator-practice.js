@@ -52,7 +52,16 @@ export function createPracticeTable({deck,name='Il tuo test'}) {
       }
       let next=applyAction(state,action);
       const chain=deriveChainState(next);if(chain.stage==='building'&&chain.priority===1)next=applyAction(next,{type:'passChain',player:1});
-      if(next.activePlayer===1)next=applyAction(next,{type:'nextTurn',player:1});
+      if(next.activePlayer===1){
+        if(next.turnState){
+          // This field is passive: exhausting its mirrored deck must not stop
+          // the real player's practice. Their own draws keep the normal rules.
+          if(!next.turnState.drawn){if(next.players[1].deck.length)next=applyAction(next,{type:'draw',player:1});else next.turnState.drawn=true;}
+          next=applyAction(next,{type:'nextPhase',player:1});next=applyAction(next,{type:'nextPhase',player:1});
+        }
+        const excess=next.players[1].hand.length-6;
+        next=applyAction(next,excess>0&&next.turnState?{type:'discardEnd',player:1,cardIds:next.players[1].hand.slice(0,excess).map(card=>card.id)}:{type:'nextTurn',player:1});
+      }
       state=next;version++;return{duel:projection()};
     }
   };

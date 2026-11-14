@@ -7,6 +7,7 @@ import {createActivationReveals} from './simulator-reveal.js';
 import {deriveChainState} from './simulator-chain.js';
 import {getSummonKind,validateSummonMaterials,materialLevel} from './simulator-summoning.js';
 import { cardDropActions, cardTapActions, specialSummonPositions } from './simulator-card-actions.js';
+import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const scope = context => `${context?.team || ''}:${context?.member || ''}`;
@@ -72,6 +73,15 @@ export class YugiohMultiplayer {
   gestureRevision(){return`${this.navigationGeneration}:${this.duel?.id}:${this.duel?.version}:${globalThis.innerWidth||0}x${globalThis.innerHeight||0}`;}
   beginCardDrag(player,cardId){this.dragBackup={selected:this.selected,inspectedCard:this.inspectedCard,revision:this.gestureRevision()};this.selected={player,cardId};const inspected=this.pile&&(this.pile.cards||this.session.players[this.pile.player][this.pile.zone]).find(card=>card.id===cardId);this.inspectedCard=inspected&&!inspected.hidden?{card:inspected,zone:this.pile.zone,player:this.pile.player,version:this.duel.version}:null;}
   cancelCardDrag(){const previous=this.dragBackup;this.dragBackup=null;if(previous?.revision===this.gestureRevision()){this.selected=previous.selected;this.inspectedCard=previous.inspectedCard;}}
+  cardForActions(card){const metadata=this.metadata.get(card.catalogCardId)||{},type=card.type||card.cardType||'';return{...metadata,...card,type:/monster|mostro|token|spell|magia|trap|trappola/i.test(type)?type:metadata.type||metadata.cardType||type,level:card.level??metadata.level};}
+  constrainPlayActions(actions,card,from,to){
+    return actions.map(action=>{
+      const normal=from==='hand'&&isMonster(card)&&['normal','set'].includes(action.changes?.intent)&&(action.zones?.includes('monsters')||to==='monsters');
+      const effectPosition=action.changes?.positionOnly&&(action.changes.faceUp===false||!card.faceUp&&action.changes.position==='defense');
+      const reason=normal?normalPlayError(this.session,this.viewer,card):action.changes?.positionOnly&&!effectPosition?positionChangeError(this.session,this.viewer,card,from,action.changes):null;
+      return reason?{...action,disabled:true,reason}:action;
+    });
+  }
   showDropMenu({cardId,player,zone,slot,x,y}){
     this.dragBackup=null;
     if(!this.allowed()||this.pending||this.orientation.isPortraitBlocked()||player!==this.viewer||!this.canControl(player)||this.session?.phase==='setup')return;
@@ -79,23 +89,28 @@ export class YugiohMultiplayer {
     const board=['monsters','spells','field','extraMonsters'];
     if(board.includes(zone)){
       const occupied=this.session.players.flatMap((p,index)=>(zone==='extraMonsters'||index===player)?p[zone]:[]).find(card=>card.slot===slot&&card.id!==cardId);
-      if(occupied&&!(zone!=='extraMonsters'||this.session.players[player].extraMonsters.some(card=>card.id===occupied.id))||occupied&&!getSummonKind(selected.card)){this.selected=null;return;}
+      const canVacate=getSummonKind(selected.card)||selected.zone==='hand'&&isMonster(selected.card)&&requiredTributes(selected.card)>0;
+      if(occupied&&!(zone!=='extraMonsters'||this.session.players[player].extraMonsters.some(card=>card.id===occupied.id))||occupied&&!canVacate){this.selected=null;return;}
     }
     const samePosition=selected.zone===zone&&selected.card.slot===slot;
-    const card={...selected.card,...(this.metadata.get(selected.card.catalogCardId)||{})};
-    const actions=cardDropActions(card,selected.zone,zone,{samePosition});
+    const card=this.cardForActions(selected.card);
+    const actions=this.constrainPlayActions(cardDropActions(card,selected.zone,zone,{samePosition}),card,selected.zone,zone);
     if(!actions.length){this.selected=null;this.inspectedCard=null;return;}
     this.dropMenu={cardId,player,to:zone,slot,actions,version:this.duel.version,duelId:this.duel.id,x:Number.isFinite(x)?x:20,y:Number.isFinite(y)?y:20,cardName:selected.card.cardName};
     this.placing=null;this.pile=null;this.menu=false;this.render();
   }
   async applyDropAction(id){
     const menu=this.dropMenu,choice=menu?.actions.find(action=>action.id===id);
-    if(!choice||!this.allowed()||!this.canControl(menu.player)||this.pending||menu.duelId!==this.duel?.id||menu.version!==this.duel?.version||menu.player!==this.viewer||this.orientation.isPortraitBlocked())return;
+    if(!choice||choice.disabled||!this.allowed()||!this.canControl(menu.player)||this.pending||menu.duelId!==this.duel?.id||menu.version!==this.duel?.version||menu.player!==this.viewer||this.orientation.isPortraitBlocked())return;
     const{activateOnly,activateAfter,positionOnly,...changes}=choice.changes;
     const selected=this.selectedCard();
+    if(getTurnState(this.session)&&selected?.zone==='hand'&&isMonster(selected.card)&&['normal','set'].includes(changes.intent)&&(choice.zones?.includes('monsters')||menu.to==='monsters')&&requiredTributes(selected.card)>0){
+      this.dropMenu=null;this.pile=null;this.menu=false;
+      this.rulesDialog={kind:'tribute',cardId:menu.cardId,to:menu.mode==='tap'?null:menu.to,slot:menu.mode==='tap'?undefined:menu.slot,position:changes.position,faceUp:changes.faceUp,intent:changes.intent,tributeIds:[],version:this.duel.version,duelId:this.duel.id};this.render();return;
+    }
     if(id==='special'){
       if(!selected)return;
-      this.dropMenu={...menu,stage:'position',parentMenu:menu,actions:specialSummonPositions({...selected.card,...(this.metadata.get(selected.card.catalogCardId)||{})},choice)};
+      this.dropMenu={...menu,stage:'position',parentMenu:menu,actions:specialSummonPositions(this.cardForActions(selected.card),choice)};
       this.error='';this.render();return;
     }
     if(changes.intent==='special'&&selected?.zone==='extra'&&getSummonKind(selected.card)){this.openSummonDraft(menu.cardId,{to:menu.mode==='tap'?null:menu.to,slot:menu.mode==='tap'?undefined:menu.slot,position:changes.position});return;}
@@ -105,7 +120,7 @@ export class YugiohMultiplayer {
     }
     this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.placing=null;
     if(activateOnly){await this.activateCard(menu.player,menu.cardId);return;}
-    if(positionOnly){await this.act({type:'setPosition',player:menu.player,cardId:menu.cardId,...changes});return;}
+    if(positionOnly){const effect=getTurnState(this.session)&&isMonster(selected?.card)&&(changes.faceUp===false||!selected?.card.faceUp&&changes.position==='defense');await this.act({type:effect?'positionEffect':'setPosition',player:menu.player,cardId:menu.cardId,...changes});return;}
     if(activateAfter){await this.act({type:'activate',player:menu.player,cardId:menu.cardId,playTo:choice.to||menu.to,...(menu.slot===undefined?{}:{slot:menu.slot})});return;}
     await this.act({type:'move',player:menu.player,cardId:menu.cardId,to:choice.to||menu.to,...(choice.to&&choice.to!==menu.to||menu.slot===undefined?{}:{slot:menu.slot}),...changes});
   }
@@ -124,6 +139,11 @@ export class YugiohMultiplayer {
   }
   updateRulesDraft(form){
     const draft=this.rulesDialog;if(!draft)return;const data=new FormData(form);
+    if(draft.kind==='tribute'||draft.kind==='discard'){
+      const key=draft.kind==='tribute'?'tributeIds':'cardIds';draft[key]=data.getAll(key);
+      const output=form.querySelector('[data-ygo-selection-summary]');if(output)output.textContent=`${draft[key].length} selezionate / ${draft.kind==='tribute'?requiredTributes(this.selectedCard()?.card):Math.max(0,this.session.players[this.viewer].hand.length-6)} richieste`;
+      return;
+    }
     draft.materialIds=data.getAll('materialIds');draft.position=data.get('position')||'attack';draft.confirmRequirements=data.has('confirmRequirements');
     if(draft.kind==='xyz-cost'){
       draft.costMode=data.get('costMode');
@@ -197,8 +217,8 @@ export class YugiohMultiplayer {
     const selected=this.selectedCard();
     if(!selected)this.selected=null;
     else if(quick&&!this.pending&&this.canControl(player)&&this.session.phase!=='setup'){
-      const card={...selected.card,...(this.metadata.get(selected.card.catalogCardId)||{})};
-      const actions=cardTapActions(card,selected.zone);
+      const card=this.cardForActions(selected.card);
+      const actions=this.constrainPlayActions(cardTapActions(card,selected.zone),card,selected.zone);
       if(actions.length)this.dropMenu={mode:'tap',cardId,player,to:selected.zone,slot:selected.card.slot,actions,version:this.duel.version,duelId:this.duel.id,x,y,anchor,cardName:selected.card.cardName};
       else{this.selected=null;this.inspectedCard=null;}
     }else if(quick){this.selected=null;this.inspectedCard=null;}
@@ -228,7 +248,7 @@ export class YugiohMultiplayer {
   invitationView(row){const name=row.viewer===0?row.guestName:row.hostName;return`<article class="surface ygo-invitation"><div><small>${esc(status[row.status]||row.status)}</small><h3>${esc(name)}</h3><p>${esc([row.hostDeckName,row.guestDeckName].filter(Boolean).join(' vs '))}</p></div><button type="button" class="ygo-primary" data-ygo-open="${esc(row.id)}" ${this.pending?'disabled':''}>${row.status==='waiting'?'Apri invito':'Rientra al tavolo'}</button></article>`;}
   waitingView(){const d=this.duel;if(d.status==='waiting'&&d.viewer===1)return`<section class="surface ygo-lobby"><span class="eyebrow">// Sfida del team</span><h2>${esc(d.hostName)} ti invita a duellare</h2><p>Il suo mazzo: ${esc(d.hostDeckName||'Yu-Gi-Oh!')}</p><form data-ygo-accept><label>Il tuo mazzo<select name="deckId" required>${this.deckOptions(this.acceptDraft.deckId)}</select></label>${this.deckSummary(this.decks.find(deck=>deck.id===this.acceptDraft.deckId))}<label>I tuoi LP iniziali<input type="number" name="lp" min="1" max="999999" step="1" required value="${esc(this.acceptDraft.lp)}"></label><div class="ygo-form-actions"><button type="submit" class="ygo-primary" ${this.pending||!this.decks.length?'disabled':''}>Accetta il duello</button><button type="button" data-ygo-response="decline" ${this.pending?'disabled':''}>Rifiuta</button></div></form>${commandButton('lobby','Torna agli inviti')}</section>`;return`<section class="surface ygo-lobby"><h2>${esc(d.hostName)} <span class="ygo-muted">vs</span> ${esc(d.guestName)}</h2><p>${d.status==='waiting'?`Invito inviato. Aspettiamo che ${esc(d.guestName)} scelga il mazzo.`:esc(status[d.status]||'Tavolo non disponibile.')}</p>${d.status==='waiting'&&d.viewer===0?'<button type="button" data-ygo-response="cancel">Annulla invito</button>':''}${commandButton('lobby','Torna agli inviti')}</section>`;}
   historyView(){const rows=this.lobby.duels.filter(row=>row.status==='finished'&&row.result),wins=rows.filter(row=>row.result.winner===row.viewer).length,draws=rows.filter(row=>row.result.winner==='draw').length;return`<section class="surface ygo-lobby"><h2>I test del tuo team</h2><p>${rows.length} duelli · ${wins} vittorie · ${draws} pareggi · ${rows.length?Math.round(wins/rows.length*100):0}% vittorie</p>${rows.map(row=>`<article class="ygo-history-row"><div><h3>${esc(row.hostName)} vs ${esc(row.guestName)}</h3><p>${row.result.winner==='draw'?'Pareggio':`Vince ${esc(row.result.winner===0?row.hostName:row.guestName)}`}</p><small>${esc(row.result.notes||'')}</small></div><button type="button" data-ygo-open="${esc(row.id)}">Apri tavolo</button></article>`).join('')||'<p>Concludi un duello per registrare il primo test.</p>'}</section>`;}
-  rulesView(){return`<section class="surface ygo-lobby ygo-rules"><h2>Il tuo tavolo, le tue decisioni</h2><p>Il simulatore gestisce carte, posizioni, LP e registro. Applica manualmente effetti, tributi, attacchi, timing e costi non guidati. Catene e materiali Synchro/Xyz hanno controlli dedicati.</p><details open><summary>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. I pulsanti fase cambiano l’indicatore, senza pescare o eseguire effetti.</p></details><details><summary>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Puoi evocare, posizionare coperto, cambiare posizione, mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Per Synchro e Xyz scegli i tuoi materiali scoperti e una casella: vengono controllati Tuner, Livelli e Rango della procedura standard. I materiali Xyz restano attaccati al mostro. Rispetta anche i requisiti specifici della carta e le frecce Link.</p></details><details><summary>Attivazioni e catene</summary><p>Activate registra un anello numerato, anche per effetti dalla mano. Entrambi scelgono Non rispondo per iniziare la risoluzione, dall’anello maggiore al minore. Gli effetti restano manuali. Per uno Xyz scegli i materiali richiesti dal costo; sposta Magie e Trappole al Cimitero quando previsto.</p></details><p><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh!</a></p></section>`;}
+  rulesView(){return`<section class="surface ygo-lobby ygo-rules"><h2>Il tuo tavolo, le tue decisioni</h2><p>Le nuove partite controllano turni, pescate, Evocazioni Normali/Set, tributi e cambi posizione. Effetti, attacchi, timing e costi non guidati restano manuali. Catene e materiali Synchro/Xyz hanno controlli dedicati.</p><details open><summary>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. Le fasi avanzano in ordine. Esegui la pescata dovuta prima di continuare; a fine turno scegli le carte da scartare se ne hai più di sei. Gli effetti restano da dichiarare. I tavoli già iniziati prima di questi controlli mantengono i comandi manuali: avvia una nuova partita per usare le regole guidate.</p></details><details><summary>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Normal Summon e Set condividono la quota del turno. I Mostri di Livello 5–6 richiedono un tributo, dal Livello 7 ne richiedono due. Puoi offrire anche i tuoi Mostri coperti. Il cambio posizione normale è disponibile dalla propria Main Phase, una volta per turno, dopo il turno di ingresso. I comandi per effetto sono fra quelli avanzati. Puoi anche mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Per Synchro e Xyz scegli i tuoi materiali scoperti e una casella: vengono controllati Tuner, Livelli e Rango della procedura standard. I materiali Xyz restano attaccati al mostro. Rispetta anche i requisiti specifici della carta e le frecce Link.</p></details><details><summary>Attivazioni e catene</summary><p>Activate registra un anello numerato, anche per effetti dalla mano. Entrambi scelgono Non rispondo per iniziare la risoluzione, dall’anello maggiore al minore. Gli effetti restano manuali. Per uno Xyz scegli i materiali richiesti dal costo; sposta Magie e Trappole al Cimitero quando previsto.</p></details><p><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh!</a></p></section>`;}
   bind(root){
     this.syncOrientation();
     const arena=root.querySelector('.ygo-arena');
@@ -239,7 +259,7 @@ export class YugiohMultiplayer {
     const chainLinks=element.querySelector('.ygo-chain-links');if(chainLinks)chainLinks.scrollLeft=chainLinks.scrollWidth;
     const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect(),anchor=this.dropMenu.anchor;const left=anchor?(anchor.right+6+box.width<=innerWidth-8?anchor.right+6:anchor.left-box.width-6):this.dropMenu.x,top=anchor?anchor.top:this.dropMenu.y;drop.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(top,innerHeight-box.height-8))+'px';drop.querySelector('button')?.focus({preventScroll:true});}
     element.addEventListener('input',event=>this.updateDraft(event.target));
-    element.addEventListener('change',event=>{this.updateDraft(event.target);const form=event.target.closest('[data-ygo-summon],[data-ygo-xyz-cost]');if(form)this.updateRulesDraft(form);if(['deckId','opponentSlug'].includes(event.target.name))this.render();});
+    element.addEventListener('change',event=>{this.updateDraft(event.target);const form=event.target.closest('[data-ygo-summon],[data-ygo-xyz-cost],[data-ygo-tribute],[data-ygo-discard]');if(form)this.updateRulesDraft(form);if(['deckId','opponentSlug'].includes(event.target.name))this.render();});
     element.addEventListener('submit',event=>{event.preventDefault();if(this.allowed())void this.submit(event.target);});
     element.addEventListener('click',event=>{const button=event.target.closest('button');if(button&&!button.disabled&&this.allowed())void this.click(button,event);});
     element.addEventListener('keydown',event=>{if(event.key==='Escape'){this.rulesDialog=null;this.dropMenu=null;this.cardGestures.cancel();this.inspectionGeneration++;this.selected=null;this.inspectedCard=null;this.pile=null;this.menu=false;this.placing=null;this.render();}});
@@ -250,6 +270,20 @@ export class YugiohMultiplayer {
   updateDraft(field){if(!this.allowed()||!field.name)return;const draft=field.closest('[data-ygo-practice]')?this.practiceDraft:field.closest('[data-ygo-invite]')?this.inviteDraft:field.closest('[data-ygo-accept]')?this.acceptDraft:field.closest('[data-ygo-finish]')?this.finishDraft:null;if(draft&&Object.hasOwn(draft,field.name)){draft[field.name]=field.value;if(draft===this.practiceDraft)this.error='';}}
   async submit(form){
     if(this.pending||!this.ready||!this.allowed())return;const data=new FormData(form),selected=this.selectedCard();
+    if(form.matches('[data-ygo-tribute],[data-ygo-discard]')){
+      const draft=this.rulesDialog;if(!draft||draft.version!==this.duel?.version||draft.duelId!==this.duel?.id)return;
+      this.updateRulesDraft(form);
+      if(draft.kind==='discard'){
+        if(draft.cardIds.length!==this.session.players[this.viewer].hand.length-6){draft.error='Seleziona esattamente le carte in eccesso.';this.render();return;}
+        this.rulesDialog=null;this.selected=null;this.inspectedCard=null;await this.act({type:'discardEnd',player:this.viewer,cardIds:draft.cardIds});return;
+      }
+      try{validateNormalTributes(this.session,this.viewer,selected?.card,draft.tributeIds);}
+      catch(error){draft.error=error.message;this.render();return;}
+      this.rulesDialog=null;
+      const changes={position:draft.position,faceUp:draft.faceUp,intent:draft.intent,tributeIds:draft.tributeIds};
+      if(draft.to){this.selected=null;this.inspectedCard=null;await this.act({type:'move',player:this.viewer,cardId:draft.cardId,to:draft.to,slot:draft.slot,...changes});}
+      else{this.placing={zones:['monsters'],...changes};this.render();}return;
+    }
     if(form.matches('[data-ygo-summon],[data-ygo-xyz-cost]')){
       const draft=this.rulesDialog;if(!draft||draft.version!==this.duel?.version||draft.duelId!==this.duel?.id)return;
       this.updateRulesDraft(form);
@@ -281,7 +315,7 @@ export class YugiohMultiplayer {
     const placing=this.placing||{position:'attack',faceUp:true},cardId=selected.card.id;
     if(placing.zones&&!placing.zones.includes(to)||placing.to&&placing.to!==to){this.error='Scegli una posizione nella zona evidenziata.';this.render();return;}
     this.selected=null;this.inspectedCard=null;this.placing=null;
-    await this.act(placing.summon?{type:'summon',player,...placing.summon,to,slot}:placing.activate?{type:'activate',player,cardId,playTo:to,slot}:{type:'move',player,cardId,to,slot,...(placing.position?{position:placing.position}:{}),faceUp:placing.faceUp!==false,...(placing.intent?{intent:placing.intent}:{})});
+    await this.act(placing.summon?{type:'summon',player,...placing.summon,to,slot}:placing.activate?{type:'activate',player,cardId,playTo:to,slot}:{type:'move',player,cardId,to,slot,...(placing.position?{position:placing.position}:{}),faceUp:placing.faceUp!==false,...(placing.intent?{intent:placing.intent}:{}),...(placing.tributeIds?{tributeIds:placing.tributeIds}:{})});
   }
   async click(button,event){
     const data=button.dataset,command=data.ygoCommand,selected=this.selectedCard();
@@ -299,7 +333,7 @@ export class YugiohMultiplayer {
     if(command==='practice-exit'){this.showPractice();return;}
     if(data.ygoOpen){await this.open(data.ygoOpen);return;}
     if(data.ygoResponse){await this.perform({op:data.ygoResponse,duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID()});return;}
-    if(data.ygoCard&&this.placing?.summon?.materialIds.includes(data.ygoCard)){const p=this.session.players[this.viewer];for(const zone of ['monsters','extraMonsters']){const card=p[zone].find(card=>card.id===data.ygoCard);if(card){await this.place(this.viewer,zone,card.slot);return;}}}
+    if(data.ygoCard&&(this.placing?.summon?.materialIds.includes(data.ygoCard)||this.placing?.tributeIds?.includes(data.ygoCard))){const p=this.session.players[this.viewer];for(const zone of ['monsters','extraMonsters']){const card=p[zone].find(card=>card.id===data.ygoCard);if(card){await this.place(this.viewer,zone,card.slot);return;}}}
     if(data.ygoCard){const box=button.getBoundingClientRect?.();this.selectCard(Number(data.player),data.ygoCard,{quick:true,x:event?.detail?event.clientX:box?.right??20,y:event?.detail?event.clientY:box?.top??20,anchor:box?{left:box.left,right:box.right,top:box.top,bottom:box.bottom}:null});return;}
     if(button.hasAttribute('data-ygo-slot')){await this.place(Number(data.player),data.zone,Number(data.ygoSlot));return;}
     if(data.ygoTab==='practice'){this.showPractice();return;}
@@ -312,18 +346,26 @@ export class YugiohMultiplayer {
     if(command==='metadata'){await this.fetchMetadata();return;}
     if(command==='inspect-deck'){await this.inspectDeck();return;}
     if(data.ygoPile){const player=Number(data.player),zone=data.ygoPile;if(!this.session?.players[player]||!['deck','extra','side','graveyard','banished'].includes(zone)||(zone==='deck'||zone==='side')&&player!==this.viewer)return;this.selected=null;this.inspectedCard=null;this.menu=false;this.placing=null;this.inspectionGeneration++;this.pile={player,zone};this.render();return;}
+    if(['summon','set-monster','special-summon'].includes(command)&&selected?.player===this.viewer){
+      const id=selected.card.id,normal=selected.zone==='hand'&&!/ritual/i.test(selected.card.type)&&!getSummonKind(selected.card)&&!/(fusion|link)/i.test(selected.card.type);
+      this.selectCard(this.viewer,id,{quick:true});await this.applyDropAction(command==='set-monster'?'set':command==='summon'&&normal?'normal':'special');return;
+    }
     if(['summon','defend'].includes(command)&&selected?.zone==='extra'&&getSummonKind(selected.card)){this.openSummonDraft(selected.card.id,{position:command==='defend'?'defense':'attack'});return;}
     if(['summon','defend','set-monster','play-spell','set-spell','place-field','move-position'].includes(command)&&selected?.player===this.viewer){const monster=isMonster(selected.card)||['summon','defend','set-monster'].includes(command);this.placing={zones:['summon','defend','set-monster'].includes(command)?['monsters','extraMonsters']:undefined,to:command==='place-field'?'field':['play-spell','set-spell'].includes(command)?'spells':command==='move-position'?undefined:monster?undefined:'spells',position:['defend','set-monster'].includes(command)?'defense':'attack',faceUp:!['set-monster','set-spell'].includes(command),activate:command==='play-spell'};this.menu=false;this.render();return;}
     if(command==='to-graveyard'||command==='banish'||command==='return-hand'){if(selected?.player===this.viewer)await this.act({type:'move',player:this.viewer,cardId:selected.card.id,to:command==='to-graveyard'?'graveyard':command==='banish'?'banished':'hand',faceUp:true});return;}
     const action=data.ygoAction;if(!action||!this.session||this.pending)return;
+    if((action==='nextTurn'||action==='nextPhase'&&this.session.phase==='end')&&getTurnState(this.session)&&this.session.activePlayer===this.viewer&&['main1','battle','main2','end'].includes(this.session.phase)&&!this.session.chain.length&&this.session.players[this.viewer].hand.length>6){
+      this.rulesDialog={kind:'discard',cardIds:[],version:this.duel.version,duelId:this.duel.id};this.menu=false;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;
+    }
     const payload={type:action,...(button.hasAttribute('data-player')?{player:Number(data.player)}:{})};
-    if(['activate','flip','setPosition','stats','counter','detachMaterial'].includes(action)){if(selected?.player!==this.viewer)return;payload.player=this.viewer;payload.cardId=selected.card.id;}
+    if(['activate','flip','setPosition','positionEffect','stats','counter','detachMaterial'].includes(action)){if(selected?.player!==this.viewer)return;payload.player=this.viewer;payload.cardId=selected.card.id;}
     if(action==='activate'){await this.activateCard(this.viewer,selected.card.id);return;}
-    if(action==='flip'&&selected?.card.faceUp&&isMonster(selected.card)&&selected.card.position==='attack'){payload.type='setPosition';payload.position='defense';payload.faceUp=false;}
+    if(action==='flip'&&selected?.card.faceUp&&isMonster(selected.card)){payload.type=getTurnState(this.session)?'positionEffect':'setPosition';payload.position='defense';payload.faceUp=false;}
     if(action==='setPhase')payload.phase=data.phase;
-    if(action==='draw')payload.count=1;
+    if(action==='draw'||action==='drawEffect')payload.count=1;
+    if(action==='normalAllowance')payload.delta=1;
     if(action==='shuffle')payload.zone='deck';
-    if(action==='setPosition'){payload.position=data.position;payload.faceUp=data.faceUp!=='false';}
+    if(action==='setPosition'||action==='positionEffect'){payload.position=data.position;payload.faceUp=data.faceUp!=='false';}
     if(action==='lp'||action==='counter')payload.delta=Number(data.delta);
     if(action==='stats'){payload.stat=data.stat;payload.delta=Number(data.delta);}
     if(action==='detachMaterial')payload.index=Number(data.index);

@@ -5,7 +5,7 @@ import { redactState } from '../api/_yugioh-duel-service.js';
 import { cardView } from '../js/games/yugioh/simulator-arena.js';
 
 const deck={id:'a0000000-0000-4000-8000-000000000001',name:'Synthetic YGO deck',game:'yugioh',cards:Array.from({length:14},(_,i)=>({catalogCardId:String(10000000+i),cardName:`Private monster ${i}`,type:'Normal Monster',section:'main',quantity:i===13?1:3,atk:1800,def:1000}))};
-const full=applyAction(createSession({decks:[deck,deck]}),{type:'start'});
+const full=applyAction(createSession({decks:[deck,deck],turnRules:false}),{type:'start'});
 const id='b0000000-0000-4000-8000-000000000001';
 const snapshot=version=>({id,status:'playing',version,viewer:0,ready:[true,true],state:redactState(full,0)});
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};

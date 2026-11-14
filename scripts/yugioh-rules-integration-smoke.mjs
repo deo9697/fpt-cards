@@ -11,7 +11,7 @@ const deck={id:'rules-fixture',name:'Synthetic summon and chain deck',game:'yugi
   {catalogCardId:'fusion',cardName:'Fusion fixture',section:'extra',quantity:1,type:'Fusion Monster',level:8,atk:2800,def:2000},
   {catalogCardId:'link',cardName:'Link fixture',section:'extra',quantity:1,type:'Link Monster',atk:1000}
 ]};
-const fresh=()=>applyAction(applyAction(createSession({decks:[deck,deck],names:['Alice','Bob']}),{type:'start'}),{type:'setPhase',player:0,phase:'main1'});
+const fresh=()=>applyAction(applyAction(createSession({decks:[deck,deck],turnRules:false,names:['Alice','Bob']}),{type:'start'}),{type:'setPhase',player:0,phase:'main1'});
 const act=(state,type,fields={})=>applyAction(state,{type,player:0,...fields});
 const integrity=state=>assert.deepEqual(validateSession(state),{valid:true,errors:[]});
 function unchanged(state,action,pattern){const before=copy(state);assert.throws(()=>applyAction(state,action),pattern);assert.deepEqual(state,before);integrity(state);}
@@ -110,7 +110,7 @@ function closeChain(state){const first=state.chainState.priority;state=act(state
 {
   const spellDeck=copy(deck),spellRow=spellDeck.cards.find(card=>card.catalogCardId==='main-13');
   Object.assign(spellRow,{type:'Spell Card',level:null,race:'Normal',cardName:'Atomic Spell'});
-  const freshSpell=()=>applyAction(applyAction(createSession({decks:[spellDeck,spellDeck],names:['Alice','Bob']}),{type:'start'}),{type:'setPhase',player:0,phase:'main1'});
+  const freshSpell=()=>applyAction(applyAction(createSession({decks:[spellDeck,spellDeck],turnRules:false,names:['Alice','Bob']}),{type:'start'}),{type:'setPhase',player:0,phase:'main1'});
   let state=freshSpell();const spell=locate(state,0,'main-13');state=act(state,'move',{cardId:spell.id,to:'hand'});
   const before=copy(state),originalLog=state.log.length;
   const played=act(state,'activate',{cardId:spell.id,playTo:'spells',slot:2});

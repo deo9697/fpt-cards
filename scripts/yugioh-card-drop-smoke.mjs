@@ -13,7 +13,7 @@ assert(cardDropActions(monster,'hand','deck').some(action=>action.id==='bottom')
 console.log('PASS contextual choices respect card kinds, locations, Link positions and in-place activations');
 
 const deck={id:'a0000000-0000-4000-8000-000000000001',game:'yugioh',name:'Synthetic deck',cards:Array.from({length:14},(_,i)=>({catalogCardId:String(10000000+i),cardName:`Hidden monster ${i}`,section:'main',type:'Normal Monster',quantity:i===13?1:3,atk:1800,def:1000}))};
-let full=applyAction(createSession({decks:[deck,deck]}),{type:'start'}),version=1;
+let full=applyAction(createSession({decks:[deck,deck],turnRules:false}),{type:'start'}),version=1;
 const id='b0000000-0000-4000-8000-000000000001',calls=[];
 const snapshot=()=>({id,status:'playing',viewer:0,version,ready:[true,true],state:redactState(full,0)});
 const controller=new YugiohMultiplayer({getContext:()=>({member:'host',team:'team',allowed:true}),getDecks:()=>[],onRender:()=>{},getMembers:()=>[],onToast:()=>{},confirm:async()=>true,call:async payload=>{calls.push(payload);full=applyAction(full,payload.action);version++;return{duel:snapshot()};}});
