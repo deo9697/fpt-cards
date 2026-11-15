@@ -254,7 +254,12 @@ async function run(){
     assert(!await seat.evaluate('Boolean(document.querySelector("[data-ygo-finish]"))'),'La prova personale offre un risultato multiplayer');
     await seat.click('[data-ygo-command="close-menu"]');
     await assertPhoneFrame(seat,'Testa mazzo 844×390');
-    for(const phase of ['battle','main2','end']){await seat.tap(`[data-ygo-action="setPhase"][data-phase="${phase}"]`);await seat.wait(`window.__sim.session.phase===${JSON.stringify(phase)}`,'Chip fase locale non applicato: '+phase);}
+    await seat.tap('[data-ygo-action="setPhase"][data-phase="battle"]');await seat.wait('window.__sim.session.phase==="battle"','Battle Phase locale assente');
+    await seat.tap('[data-ygo-card="'+monster+'"][data-player="0"]');await waitDropMenu(seat,'Attacco in Testa mazzo');await seat.tap('.ygo-drop-menu [data-ygo-drop-action="attack"]');await seat.tap('[data-ygo-command="attack-direct"]');
+    await seat.wait('window.__sim.session.battle?.stage==="response"&&window.__sim.session.battle.priority===0','Il campo passivo non passa la risposta all’attacco');
+    await seat.tap('.ygo-battle-controls [data-ygo-action="battlePass"]');await seat.wait('window.__sim.session.battle?.stage==="damage"&&window.__sim.session.battle.priority===0','Il combattimento locale non entra nel Damage Step');
+    await seat.tap('.ygo-battle-controls [data-ygo-action="battlePass"]');await seat.wait('!window.__sim.session.battle&&window.__sim.session.players[1].lp===6600','Il campo passivo non passa il Damage Step o il danno diretto non viene applicato');await seat.screenshot('practice-battle-phone',false);
+    for(const phase of ['main2','end']){await seat.tap(`[data-ygo-action="setPhase"][data-phase="${phase}"]`);await seat.wait(`window.__sim.session.phase===${JSON.stringify(phase)}`,'Chip fase locale non applicato: '+phase);}
     assert(await seat.evaluate('document.querySelector("[data-ygo-action=setPhase][data-phase=main1]").disabled'),'La prova consente di tornare a una fase passata');
     const turn=await seat.evaluate('window.__sim.session.turn');await finishTurn(seat);
     await seat.wait(`window.__sim.session.activePlayer===0&&window.__sim.session.turn===${turn+2}`,'Il test in solitaria non torna al proprio turno');await drawAndMain(seat);
@@ -332,7 +337,7 @@ async function run(){
     assert.equal(rows.size,0);assert.equal(notifications.length,0);assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);
     console.log(JSON.stringify(measurements));console.log('yugioh-duel-browser-smoke: card size measurements OK');return;
   }
-  if(!process.argv.includes('--position-only')&&!process.argv.includes('--turn-rules-only')&&!process.argv.includes('--skip-practice'))await practiceChecks(host);
+  if(!process.argv.includes('--position-only')&&!process.argv.includes('--turn-rules-only')&&!process.argv.includes('--battle-only')&&!process.argv.includes('--battle-manual-only')&&!process.argv.includes('--skip-practice'))await practiceChecks(host);
   if(process.argv.includes('--practice-only')){
     assert.deepEqual(exceptions,[],'Eccezioni JavaScript');assert.deepEqual(consoleErrors,[],'Errori console');assert.deepEqual(networkErrors,[],'Risorse mancanti');assert.deepEqual(externalRequests,[],'Richieste esterne inattese');
     console.log('yugioh-practice-browser-smoke: OK');return;
@@ -481,7 +486,7 @@ async function run(){
     assert(!await page.evaluate('Boolean(document.querySelector(".ygo-card-dialog"))'),label+': il trascinamento apre il pannello grande della carta');
     const menu=await page.evaluate('(()=>{const box=document.querySelector(".ygo-drop-menu").getBoundingClientRect();return{width:box.width,height:box.height,left:box.left,right:box.right,top:box.top,bottom:box.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight};})()');
     assert(menu.width<=160&&menu.height<=160&&menu.left>=0&&menu.right<=menu.viewportWidth+1&&menu.top>=0&&menu.bottom<=menu.viewportHeight+1,label+': menu fuori schermo o troppo grande '+JSON.stringify(menu));
-    const content=await page.evaluate('(()=>{const menu=document.querySelector(".ygo-drop-menu");return{actions:menu.querySelectorAll("[data-ygo-drop-action]").length,buttons:menu.querySelectorAll("button").length,extras:Boolean(menu.querySelector("header,h1,h2,h3,footer,.ygo-drop-footer,[data-ygo-command]")),maxActions:window.__sim.dropMenu?.mode==="tap"&&window.__sim.selectedCard()?.zone==="hand"?4:3};})()');
+    const content=await page.evaluate('(()=>{const menu=document.querySelector(".ygo-drop-menu");return{actions:menu.querySelectorAll("[data-ygo-drop-action]").length,buttons:menu.querySelectorAll("button").length,extras:Boolean(menu.querySelector("header,h1,h2,h3,footer,.ygo-drop-footer,[data-ygo-command]")),maxActions:window.__sim.dropMenu?.mode==="tap"&&(window.__sim.selectedCard()?.zone==="hand"||window.__sim.session?.phase==="battle"&&["monsters","extraMonsters"].includes(window.__sim.selectedCard()?.zone))?4:3};})()');
     assert(content.actions>=1&&content.actions<=content.maxActions&&content.buttons===content.actions&&!content.extras,label+': il menu contiene titolo, comandi secondari o più scelte del contesto '+JSON.stringify(content));
   }
   async function dragExtra(page,viewer,code,slot){
@@ -563,9 +568,126 @@ async function run(){
     await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
     console.log('PASS guided turn rules: first Draw/Battle limits, forward phases, shared Normal/Set quota, one/two Tributes, position limits, mandatory Draw and six-card End Phase with private two-client state');
   }
-  if(process.argv.includes('--turn-rules-only')||!['--position-only','--reveal-only','--drag-only'].some(flag=>process.argv.includes(flag)))await turnRuleChecks();
+  if(process.argv.includes('--turn-rules-only')||!['--position-only','--reveal-only','--drag-only','--battle-only','--battle-manual-only'].some(flag=>process.argv.includes(flag)))await turnRuleChecks();
   else{await drawAndMain(host);await both('window.__sim.session.phase==="main1"','Main Phase per la prova mirata');}
   if(process.argv.includes('--turn-rules-only')){assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);console.log('yugioh-turn-rules-browser-smoke: OK');return;}
+  async function fixtureMonster(seat,viewer,code,slot,{position='attack',faceUp=true}={}){
+    const id=await putInHand(seat,viewer,code);
+    await seat.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:viewer,cardId:id,to:'monsters',slot,position,faceUp})+')');
+    const version=rows.get(duelId).version;await both('window.__sim.duel.version>='+version,'Preparazione Mostro per il combattimento');return id;
+  }
+  async function assertBattleControls(seat,label){
+    await seat.wait('Boolean(document.querySelector(".ygo-battle-controls"))',label+': controlli combattimento assenti');
+    const geometry=await seat.evaluate('Array.from(document.querySelectorAll(".ygo-battle-controls button:not(:disabled)"),button=>{const box=button.getBoundingClientRect(),hit=document.elementFromPoint((box.left+box.right)/2,(box.top+box.bottom)/2);return{action:button.dataset.ygoAction||button.dataset.ygoCommand,height:box.height,inside:box.left>=0&&box.top>=0&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1,hit:hit===button||button.contains(hit)};})');
+    assert(geometry.length&&geometry.every(button=>button.height>=44&&button.inside&&button.hit),label+': controlli fuori telefono o difficili da toccare '+JSON.stringify(geometry));
+  }
+  async function startAttack(cardId,target,{screenshotName}={}){
+    await host.tap('[data-ygo-card="'+cardId+'"][data-player="0"]');await waitDropMenu(host,'Scelta attaccante');
+    const before=JSON.stringify(rows.get(duelId).state);await host.tap('.ygo-drop-menu [data-ygo-drop-action="attack"]');
+    await host.wait('Boolean(window.__sim.attackSelection)','Attacca non chiede un bersaglio');
+    assert.equal(JSON.stringify(rows.get(duelId).state),before,'Scegliere Attacca consuma la dichiarazione prima del bersaglio');
+    if(screenshotName)await host.screenshot(screenshotName,false);
+    if(target===null)await host.tap('[data-ygo-command="attack-direct"]');
+    else await host.tap('[data-ygo-battle-target][data-zone="'+target.zone+'"][data-slot="'+target.slot+'"][data-player="1"]');
+    await both('window.__sim.session.battle?.stage==="response"','Dichiarazione di attacco condivisa');
+    await idle(host);await idle(guest);
+  }
+  async function passBattleStage(label){
+    const stage=rows.get(duelId).state.battle?.stage;assert(['response','damage'].includes(stage),label+': stadio non valido');
+    for(let pass=0;pass<2;pass++){
+      const current=rows.get(duelId).state.battle;assert.equal(current.stage,stage,label+': stadio cambiato prima del secondo passaggio');
+      const seat=current.priority===0?host:guest,version=rows.get(duelId).version;
+      await idle(seat);await seat.tap('.ygo-battle-controls [data-ygo-action="battlePass"]');await both('window.__sim.duel.version>'+version,label+' · passaggio '+(pass+1));
+    }
+  }
+  async function clearBattleField(){
+    for(const[seat,viewer]of[[host,0],[guest,1]]){
+      const ids=rows.get(duelId).state.players[viewer].monsters.concat(rows.get(duelId).state.players[viewer].extraMonsters).map(card=>card.id);
+      for(const cardId of ids)await seat.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:viewer,cardId,to:'graveyard',faceUp:true})+')');
+    }
+    const version=rows.get(duelId).version;await both('window.__sim.duel.version>='+version,'Pulizia campo di combattimento');
+  }
+  async function manualBattleAgreement(attacker,target){
+    await startAttack(attacker,target);await passBattleStage('Risposta prima di un esito manuale');
+    await both('window.__sim.session.battle?.stage==="damage"','Damage Step prima dell’esito manuale');
+    const before=rows.get(duelId).state.players.map(player=>({lp:player.lp,monsters:player.monsters.map(card=>card.id).sort(),extra:player.extraMonsters.map(card=>card.id).sort()}));
+    await host.tap('.ygo-battle-controls [data-ygo-action="battleManual"]');await both('window.__sim.session.battle?.stage==="manual"','Richiesta esito manuale condivisa');
+    assert(await host.evaluate('(()=>{const button=document.querySelector(".ygo-battle-controls [data-ygo-action=battleManualConfirm]");return !button||button.disabled;})()'),'Chi chiede l’esito manuale può confermarlo da solo');
+    await assertBattleControls(guest,'Accordo esito manuale 740×360');await guest.screenshot('battle-manual-phone',false);
+    await guest.tap('.ygo-battle-controls [data-ygo-action="battleManualReject"]');await both('window.__sim.session.battle?.stage==="damage"','Rifiutare l’esito manuale torna al Damage Step');
+    await host.tap('.ygo-battle-controls [data-ygo-action="battleManual"]');await both('window.__sim.session.battle?.stage==="manual"','Seconda richiesta esito manuale');
+    await guest.tap('.ygo-battle-controls [data-ygo-action="battleManualConfirm"]');await both('!window.__sim.session.battle','Accordo sull’esito manuale termina l’attacco');
+    assert.deepEqual(rows.get(duelId).state.players.map(player=>({lp:player.lp,monsters:player.monsters.map(card=>card.id).sort(),extra:player.extraMonsters.map(card=>card.id).sort()})),before,'L’esito manuale applica anche danni o distruzioni standard');
+    assert.equal(rows.get(duelId).state.players[0].monsters.find(card=>card.id===attacker).attackedTurn,rows.get(duelId).state.turn,'L’esito manuale restituisce un attacco consumato');
+    console.log('PASS manual battle agreement: opponent rejects or confirms, no automatic damage/destruction, attack stays consumed');
+  }
+  async function battleChecks(){
+    if(rows.get(duelId).state.turn===1){
+      await finishTurn(host);await both('window.__sim.session.activePlayer===1','Secondo turno per preparare Battle');await drawAndMain(guest);await finishTurn(guest);await both('window.__sim.session.activePlayer===0','Terzo turno per preparare Battle');await drawAndMain(host);
+    }
+    await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+    await guest.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+    if(process.argv.includes('--battle-manual-only')){
+      const attacker=await fixtureMonster(host,0,'89631139',0);await fixtureMonster(guest,1,'15025844',0,{position:'defense',faceUp:true});
+      await host.tap('[data-ygo-action="setPhase"][data-phase="battle"]');await both('window.__sim.session.phase==="battle"','Battle Phase per la prova manuale');
+      const before=JSON.stringify(rows.get(duelId).state);await host.tap('[data-ygo-card="'+attacker+'"][data-player="0"]');await waitDropMenu(host,'Attaccante prima della rotazione');await host.tap('.ygo-drop-menu [data-ygo-drop-action="attack"]');await host.wait('Boolean(window.__sim.attackSelection)','Scelta bersaglio prima della rotazione assente');
+      await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'portraitPrimary',angle:0}});await host.wait('window.__sim.orientation.isPortraitBlocked()&&!window.__sim.attackSelection','La rotazione non annulla in sicurezza la scelta del bersaglio');
+      await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await host.wait('!window.__sim.orientation.isPortraitBlocked()&&!window.__sim.attackSelection','Il campo non riprende dopo la rotazione');assert.equal(JSON.stringify(rows.get(duelId).state),before,'Ruotare durante la scelta consuma un attacco');
+      await manualBattleAgreement(attacker,{zone:'monsters',slot:0});return;
+    }
+    const attacker=await fixtureMonster(host,0,'89631139',0),covered=await fixtureMonster(guest,1,'15025844',0,{position:'defense',faceUp:false});
+    await host.tap('[data-ygo-action="setPhase"][data-phase="battle"]');await both('window.__sim.session.phase==="battle"','Battle Phase per gli attacchi');
+    await rejectedTurnAction(0,{type:'declareAttack',cardId:attacker,target:null},'Attacco diretto vietato con un Mostro avversario');
+    const beforeSelection=JSON.stringify(rows.get(duelId).state);
+    await host.tap('[data-ygo-card="'+attacker+'"][data-player="0"]');await waitDropMenu(host,'Attaccante da annullare');await host.tap('.ygo-drop-menu [data-ygo-drop-action="attack"]');
+    await host.wait('Boolean(window.__sim.attackSelection)','Selezione bersaglio assente');
+    assert(!await host.evaluate('Boolean(document.querySelector("[data-ygo-command=attack-direct]"))'),'Attacco diretto disponibile nonostante un difensore');
+    await host.screenshot('battle-target-phone',false);await host.tap('[data-ygo-command="cancel-attack-selection"]');
+    assert.equal(JSON.stringify(rows.get(duelId).state),beforeSelection,'Annullare la scelta del bersaglio consuma un attacco');
+    await startAttack(attacker,{zone:'monsters',slot:0});
+    assert(await host.evaluate('(()=>{const card=window.__sim.session.players[1].monsters.find(card=>card.slot===0);return card.hidden&&!card.catalogCardId&&!card.imageUrl;})()'),'Dichiarare un attacco rivela in anticipo il Mostro coperto');
+    assert(!JSON.stringify(await host.evaluate('window.__sim.session.battle')).includes(covered),'Il combattimento pubblico contiene l’identità reale del difensore coperto');
+    await assertBattleControls(host,'Risposta host 844×390');await assertBattleControls(guest,'Risposta guest 740×360');await host.screenshot('battle-response-phone',false);
+    await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:932,height:430,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});await assertBattleControls(host,'Risposta host 932×430');
+    await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:844,height:390,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
+    await passBattleStage('Finestra di risposta all’attacco');
+    await both('window.__sim.session.battle?.stage==="damage"&&window.__sim.session.players[1].monsters.some(card=>card.id==='+JSON.stringify(covered)+'&&card.faceUp)','Rivelazione del difensore solo nel Damage Step');
+    await host.screenshot('battle-damage-phone',false);await guest.screenshot('battle-damage-opponent',false);
+    await passBattleStage('Calcolo danno contro Difesa');
+    await both('!window.__sim.session.battle&&window.__sim.session.players[1].graveyard.some(card=>card.id==='+JSON.stringify(covered)+')','ATK3000 contro DEF2000 distrugge il difensore');
+    assert.deepEqual(rows.get(duelId).state.players.map(player=>player.lp),[8000,8000],'Un attacco contro Difesa applica danno non previsto');
+    await host.tap('[data-ygo-card="'+attacker+'"][data-player="0"]');await waitDropMenu(host,'Attacco già usato');assert(await host.evaluate('(()=>{const button=document.querySelector("[data-ygo-drop-action=attack]");return !button||button.disabled;})()'),'Lo stesso Mostro può attaccare due volte');await cancelDrop(host);
+    const attacker2=await fixtureMonster(host,0,'91152256',1),defender2=await fixtureMonster(guest,1,'88819587',1),response=await putInHand(guest,1,'38033121');
+    await startAttack(attacker2,{zone:'monsters',slot:1});
+    await guest.tap('[data-ygo-card="'+response+'"][data-player="1"]');await waitDropMenu(guest,'Effetto in risposta all’attacco');await guest.tap('.ygo-drop-menu [data-ygo-drop-action="activate"]');await both('window.__sim.session.chain.length===1','Risposta all’attacco crea la catena');
+    assert(await host.evaluate('!Array.from(document.querySelectorAll("[data-ygo-action=nextPhase],[data-ygo-action=nextTurn],[data-ygo-action=setPhase]"),button=>!button.disabled).some(Boolean)'),'Il combattimento consente di cambiare fase durante una risposta');
+    assert(await host.evaluate('(()=>{const button=document.querySelector(".ygo-battle-controls [data-ygo-action=battlePass]");return !button||button.disabled;})()'),'BattlePass supera una catena non risolta');
+    await guest.evaluate('window.__sim.act('+JSON.stringify({type:'stats',player:1,cardId:defender2,stat:'atk',delta:500})+')');await both('window.__sim.session.players[1].monsters.find(card=>card.id==='+JSON.stringify(defender2)+').atkModifier===500','Modifica ATK per effetto durante la risposta');
+    await settleChain('Catena in risposta all’attacco');await both('window.__sim.session.battle?.priority===0&&window.__sim.session.battle.passes===0','La catena ripristina la priorità al giocatore di turno');
+    await passBattleStage('Risposte dopo la catena');await passBattleStage('Danno con ATK aggiornato');
+    await both('!window.__sim.session.battle&&window.__sim.session.players[0].lp===7700&&window.__sim.session.players[0].graveyard.some(card=>card.id==='+JSON.stringify(attacker2)+')','ATK1400 contro ATK1700: danno300 e distruzione attaccante');
+    const attacker3=await fixtureMonster(host,0,'13039848',2),defender3=await fixtureMonster(guest,1,'15025844',2),added=await putInHand(guest,1,'13039848');
+    await startAttack(attacker3,{zone:'monsters',slot:2});
+    await guest.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:1,cardId:added,to:'monsters',slot:3,faceUp:true,position:'attack'})+')');await both('window.__sim.session.battle?.stage==="replay"','Cambio del campo avversario richiede replay');
+    await host.tap('[data-ygo-command="battle-replay-select"]');await host.wait('Boolean(window.__sim.attackSelection?.replay)','Replay non riapre i bersagli');
+    await host.tap('[data-ygo-battle-target][data-zone="monsters"][data-slot="2"][data-player="1"]');await both('window.__sim.session.battle?.stage==="response"','Replay conserva il combattimento');await passBattleStage('Risposta al replay');await passBattleStage('Danno dopo replay');
+    await both('!window.__sim.session.battle&&window.__sim.session.players[1].lp===7500&&window.__sim.session.players[1].graveyard.some(card=>card.id==='+JSON.stringify(defender3)+')','Replay: ATK1300 contro ATK800 applica danno500');
+    const cancelAttacker=await fixtureMonster(host,0,'88819587',3),beforeCancel=rows.get(duelId).state.players.map(player=>player.lp);
+    await startAttack(cancelAttacker,{zone:'monsters',slot:3});await host.tap('.ygo-battle-controls [data-ygo-action="battleCancel"]');await both('!window.__sim.session.battle','Annulla combattimento condiviso');assert.deepEqual(rows.get(duelId).state.players.map(player=>player.lp),beforeCancel);
+    assert.equal(rows.get(duelId).state.players[0].monsters.find(card=>card.id===cancelAttacker).attackedTurn,rows.get(duelId).state.turn,'Annullare dopo la dichiarazione permette un altro attacco');
+    const manualAttacker=await fixtureMonster(host,0,'90000001',1);await manualBattleAgreement(manualAttacker,{zone:'monsters',slot:3});await host.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:0,cardId:manualAttacker,to:'graveyard',faceUp:true})+')');
+    for(const cardId of rows.get(duelId).state.players[1].monsters.concat(rows.get(duelId).state.players[1].extraMonsters).map(card=>card.id))await guest.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:1,cardId,to:'graveyard',faceUp:true})+')');
+    const direct=await fixtureMonster(host,0,'15025844',4);await startAttack(direct,null);await passBattleStage('Risposta ad attacco diretto');await passBattleStage('Danno diretto');await both('!window.__sim.session.battle&&window.__sim.session.players[1].lp===6700','Attacco diretto sottrae ATK800');await host.screenshot('battle-direct-phone',false);
+    if(process.argv.includes('--battle-only')){
+      const winning=await fixtureMonster(host,0,'38033121',1);await guest.evaluate('window.__sim.act({type:"lp",player:1,delta:-6200})');await both('window.__sim.session.players[1].lp===500','Preparazione vittoria da combattimento');await startAttack(winning,null);await passBattleStage('Risposta all’ultimo attacco');await passBattleStage('Danno conclusivo');await both('window.__sim.session.result?.winner===0&&window.__sim.duel.status==="finished"','LP0 conclude automaticamente il duello');await host.screenshot('battle-victory-phone',false);
+    }else{
+      await clearBattleField();for(const[seat,viewer]of[[host,0],[guest,1]]){const delta=8000-rows.get(duelId).state.players[viewer].lp;if(delta)await seat.evaluate('window.__sim.act('+JSON.stringify({type:'lp',player:viewer,delta})+')');}
+      await host.tap('[data-ygo-action="setPhase"][data-phase="main2"]');await both('window.__sim.session.phase==="main2"','Main2 dopo i combattimenti');await finishTurn(host);await both('window.__sim.session.activePlayer===1','Turno ospite dopo i combattimenti');await drawAndMain(guest);await finishTurn(guest);await both('window.__sim.session.activePlayer===0','Ritorno host dopo i combattimenti');await drawAndMain(host);await both('window.__sim.session.phase==="main1"&&window.__sim.session.turnState.normalUsed===0','Ripresa della regressione con campo libero e quota ripristinata');
+    }
+    console.log('PASS mobile battles: target coordinates/privacy, response and Damage Step, chain/stat changes, ATK/DEF, direct damage, replay, cancellation, one attack and shared results');
+  }
+  if(process.argv.includes('--battle-only')||process.argv.includes('--battle-manual-only')||!['--position-only','--reveal-only','--drag-only','--turn-rules-only'].some(flag=>process.argv.includes(flag)))await battleChecks();
+  if(process.argv.includes('--battle-only')||process.argv.includes('--battle-manual-only')){assert.deepEqual(exceptions,[]);assert.deepEqual(consoleErrors,[]);assert.deepEqual(networkErrors,[]);assert.deepEqual(externalRequests,[]);console.log('yugioh-battle-browser-smoke: OK');return;}
   async function positionChecks(){
     await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
     const atk=await putInHand(host,0,'88819587'),before=JSON.stringify(rows.get(duelId).state),movesBefore=requests.filter(request=>request.op==='action').length;

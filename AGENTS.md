@@ -7,3 +7,4 @@
 - Activation feedback shows the public activated card in the center, with its chain number over the artwork; retain card thumbnails for unresolved links and keep response controls usable.
 - Special Summon asks for face-up Attack or Defense in a compact position chooser before committing the play; preserve the choice through tap, drag and Extra Deck materials. Link Monsters offer Attack only.
 - New Yu-Gi-Oh! tables guide turn order, normal draws, shared Normal Summon/Set allowance, standard tributes, battle-position changes and end-turn discards. Keep effect exceptions explicit and optional; old tables retain their manual controls.
+- Guided battles select opposing monsters by public zone/slot, keep covered targets private until Damage Step, and preserve response controls on mobile. Standard damage/destruction is authoritative; card-specific exceptions require an explicit manual outcome agreed by both players.

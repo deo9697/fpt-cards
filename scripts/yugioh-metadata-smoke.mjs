@@ -21,7 +21,8 @@ const canonical=[
   {id:11110002,type:'XYZ Monster',level:4,atk:2500,def:2000,desc:'2 Level 4 monsters\nYou can detach 1 material from this card; apply an effect.'},
   {id:11110005,type:'Spell Card',race:'Field',desc:'Canonical Field Spell'},
   {id:11110006,type:'Synchro Monster',level:8,desc:'1 Tuner + 1+ non-Tuner monsters\nApply an effect.'},
-  {id:11110007,type:'Effect Monster',level:2,atk:500,def:100,desc:'Canonical missing-printing data'}
+  {id:11110007,type:'Effect Monster',level:2,atk:500,def:100,desc:'Canonical missing-printing data'},
+  {id:11110008,type:'Synchro Monster',level:8,atk:2600,def:1800,desc:'Canonical battle statistics'}
 ];
 const originalFetch=globalThis.fetch,requests=[],catalogueRequests=[];
 globalThis.fetch=async(input,init={})=>{
@@ -54,9 +55,10 @@ try{
   assert.equal(byCode['11110005'].race,'Field');assert.equal(byCode['11110006'].level,8);assert.match(byCode['11110006'].text,/1 Tuner/);
   assert.equal(byCode['11110007'].level,2);
   assert.equal(byCode['11110008'].type,'Synchro Tuner Monster');assert.equal(byCode['11110008'].isTuner,true);assert.equal(byCode['11110008'].level,8);
-  assert.deepEqual(catalogueRequests.sort(),['11110001','11110002','11110005','11110006','11110007']);
+  assert.equal(byCode['11110008'].atk,2600);assert.equal(byCode['11110008'].def,1800);
+  assert.deepEqual(catalogueRequests.sort(),['11110001','11110002','11110005','11110006','11110007','11110008']);
   const before=requests.length;assert.equal(await database.store.deck('missing',owner),null);assert.equal(requests.length,before+1,'Unresolved owner/deck must stop before reading cards or public metadata');
   console.log('PASS authorized deck hydration fills missing Level/Rank/Tuner/recipe data without null overrides');
-  console.log('PASS selected printing gaps trigger fallback, complete/Link metadata avoids unnecessary lookups and missing decks stop before hydration');
+  console.log('PASS missing battle statistics trigger fallback while complete/Link metadata avoids unnecessary lookups and missing decks stop before hydration');
 }finally{globalThis.fetch=originalFetch;}
 console.log('yugioh-metadata-smoke: OK (no real account, database or request)');

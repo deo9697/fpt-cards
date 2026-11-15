@@ -52,6 +52,7 @@ export function createPracticeTable({deck,name='Il tuo test'}) {
       }
       let next=applyAction(state,action);
       const chain=deriveChainState(next);if(chain.stage==='building'&&chain.priority===1)next=applyAction(next,{type:'passChain',player:1});
+      if(!next.chain.length&&next.battle?.priority===1&&next.battle.stage!=='replay')next=applyAction(next,{type:next.battle.stage==='manual'?'battleManualConfirm':'battlePass',player:1});
       if(next.activePlayer===1){
         if(next.turnState){
           // This field is passive: exhausting its mirrored deck must not stop

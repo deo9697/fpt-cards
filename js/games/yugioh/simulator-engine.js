@@ -2,9 +2,10 @@ import { validateYugiohDeck } from './rules.js';
 import {deriveChainState,appendChain,passChain,resolveChain} from './simulator-chain.js';
 import {getSummonKind,summonPlan} from './simulator-summoning.js';
 import {newTurnState,getTurnState,canDrawNormally,phaseError,endTurnError,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
+import {declareBattle,passBattle,cancelBattle,requestManualBattle,answerManualBattle,battleActivationError,maintainBattle,validateBattleState} from './simulator-battle.js';
 
-// A manual table: effects, costs, summoning conditions and attack resolution
-// belong to the players. This engine preserves cards, zones and public state.
+// A manual table with guided basic turns, summons and standard battles. Card
+// effects and their specific restrictions remain declarations by the players.
 export const PHASES = Object.freeze(['draw', 'standby', 'main1', 'battle', 'main2', 'end']);
 export const ZONES = Object.freeze(['deck', 'hand', 'monsters', 'spells', 'field', 'extra', 'graveyard', 'banished', 'extraMonsters']);
 const BOARD = ['monsters', 'spells', 'field', 'extraMonsters'];
@@ -139,7 +140,8 @@ export function validateSession(session) {
         if (typeof card.token !== 'boolean' || typeof card.faceUp !== 'boolean' || !['attack', 'defense'].includes(card.position) || !integer(card.atkModifier, -1000000, 1000000) || !integer(card.defModifier, -1000000, 1000000) || !integer(card.counters, 0, 999)) errors.push('Stato della carta non valido.');
         if (['atk', 'def'].some(stat => card[stat] !== null && (!Number.isFinite(card[stat]) || Math.abs(card[stat]) > 1000000))) errors.push('Statistiche della carta non valide.');
         if (['level','rank'].some(stat=>card[stat]!=null&&!integer(card[stat],1,1000000))||card.isTuner!==undefined&&typeof card.isTuner!=='boolean') errors.push('Livello, Rango o Tuner non validi.');
-        if(['summonedTurn','positionChangedTurn'].some(key=>card[key]!==undefined&&!integer(card[key],0,session.turn)))errors.push('Cronologia della posizione non valida.');
+        if(['summonedTurn','positionChangedTurn','attackedTurn'].some(key=>card[key]!==undefined&&!integer(card[key],0,session.turn)))errors.push('Cronologia della posizione non valida.');
+        if(['atkOverride','defOverride'].some(key=>card[key]!==undefined&&!integer(card[key],0,1000000)))errors.push('Valore corrente ATK/DEF non valido.');
         if (!Array.isArray(card.materials) || card.materials.length > 90 || card.materials.some(material => material.materials?.length || material.token)) errors.push('Materiali Xyz non validi.');
         if (card.materials.length && !player.monsters.includes(card) && !player.extraMonsters.includes(card)) errors.push('Materiali assegnati fuori dalla zona Mostri.');
         if (isLink(card) && card.position !== 'attack') errors.push('Un Mostro Link non può andare in Difesa.');
@@ -149,13 +151,14 @@ export function validateSession(session) {
     }
     if (!Array.isArray(session.chain) || session.chain.length > 50 || session.chain.some(link => !link || !integer(link.player, 0, 1) || !text(link.cardId, 100) || !text(link.cardName, 300))) errors.push('Catena non valida.');
     if(Array.isArray(session.chain)){try{deriveChainState(session);}catch{errors.push('Stato della catena non valido.');}}
+    if(!validateBattleState(session))errors.push('Stato del combattimento non valido.');
     if (!Array.isArray(session.log) || session.log.length > 200 || session.log.some(row => !row || !text(row.text, 1200) || !text(row.type, 40) || !Number.isFinite(Date.parse(row.at)) || !integer(row.turn, 1, 100000) || row.player !== null && !integer(row.player, 0, 1))) errors.push('Registro non valido.');
     if (session.result !== null && (!session.result || ![0, 1, 'draw'].includes(session.result.winner) || !text(session.result.notes, 4000) || !Number.isFinite(Date.parse(session.result.at)))) errors.push('Risultato non valido.');
   } catch { errors.push('Tavolo incompleto o danneggiato.'); }
   return { valid:errors.length === 0, errors:[...new Set(errors)] };
 }
 function assertSession(session) { const checked = validateSession(session); if (!checked.valid) fail(checked.errors.join(' ')); }
-function clearBoardState(card) { card.slot = null; card.counters = 0; card.atkModifier = 0; card.defModifier = 0; card.position = 'attack'; delete card.summonedTurn; delete card.positionChangedTurn; }
+function clearBoardState(card) { card.slot = null; card.counters = 0; card.atkModifier = 0; card.defModifier = 0; card.position = 'attack'; delete card.summonedTurn; delete card.positionChangedTurn; delete card.attackedTurn;delete card.atkOverride;delete card.defOverride; }
 function advanceTurn(session){session.turn++;session.activePlayer=1-session.activePlayer;session.phase='draw';if(session.turnState)session.turnState=newTurnState(session.turn);}
 function releaseMaterials(player, card) {
   for (const material of card.materials) { clearBoardState(material); material.faceUp = true; player.graveyard.push(material); }
@@ -198,7 +201,7 @@ function moveCard(session, playerIndex, action, {summoning=false}={}) {
   if (!MONSTERS.includes(destination)) releaseMaterials(player, card);
   if (!enteringBoard) clearBoardState(card);
   card.slot = slot; card.faceUp = faceUp; card.position = position;
-  if(MONSTERS.includes(found.zone)&&!MONSTERS.includes(destination)){delete card.summonedTurn;delete card.positionChangedTurn;}
+  if(MONSTERS.includes(found.zone)&&!MONSTERS.includes(destination)){delete card.summonedTurn;delete card.positionChangedTurn;delete card.attackedTurn;delete card.atkOverride;delete card.defOverride;}
   if(MONSTERS.includes(destination)&&!MONSTERS.includes(found.zone)){card.summonedTurn=session.turn;delete card.positionChangedTurn;}
   if (action.placement !== undefined && !['top', 'bottom'].includes(action.placement)) fail('Posizione nel mazzo non valida.');
   if (destination === 'deck' && action.placement !== 'bottom') player.deck.unshift(card); else player[destination].push(card);
@@ -216,7 +219,36 @@ export function applyAction(session, action) {
     next.phase = 'draw'; message = 'Duello iniziato. Il primo giocatore salta la prima pescata; azioni e risoluzioni restano manuali.';
   } else {
     if (next.phase === 'setup') fail('Attendi che entrambi i giocatori siano pronti.');
+    if(next.battle&&['setPhase','nextPhase','nextTurn','discardEnd','summon'].includes(action.type))fail('Completa o annulla il combattimento prima di cambiare fase o turno.');
     switch (action.type) {
+      case 'declareAttack': case 'replayAttack': {
+        const battle=declareBattle(next,playerIndex,action.cardId,action.target,{replay:action.type==='replayAttack'});
+        const attacker=findCard(player,battle.attackerId,true).card;
+        message=`${player.name} ${action.type==='replayAttack'?'sceglie nuovamente il bersaglio di':'dichiara un attacco con'} ${attacker.cardName}${battle.target?' contro un Mostro avversario':': attacco diretto'}.`;break;
+      }
+      case 'battleCancel': {
+        const outcome=cancelBattle(next,playerIndex);message=`${player.name}: ${outcome.summary}`;break;
+      }
+      case 'battleManual': {
+        requestManualBattle(next,playerIndex);message=`${player.name} richiede di risolvere manualmente il combattimento per un effetto dichiarato. L’altro giocatore deve confermare.`;break;
+      }
+      case 'battleManualConfirm': case 'battleManualReject': {
+        const accept=action.type==='battleManualConfirm';answerManualBattle(next,playerIndex,{accept});
+        message=accept?'Combattimento risolto manualmente per effetto dichiarato.':`${player.name} non conferma la risoluzione manuale. Riprende il Damage Step.`;break;
+      }
+      case 'battlePass': {
+        const progress=passBattle(next,playerIndex);
+        if(progress.calculate){
+          const plan=progress.plan;
+          for(const [index,damage]of plan.damage.entries())next.players[index].lp=Math.max(0,next.players[index].lp-damage);
+          for(const ref of plan.destroy)moveCard(next,ref.player,{cardId:ref.cardId,to:'graveyard',faceUp:true});
+          next.lastBattle=plan.publicResult;next.battle=null;
+          const zero=next.players.map((p,index)=>p.lp===0?index:null).filter(index=>index!==null);
+          if(zero.length)next.result={winner:zero.length===2?'draw':1-zero[0],notes:'Duello concluso per danno da combattimento.',at};
+          message=plan.publicResult.summary;
+        }else message=progress.revealed?'Inizio del Damage Step: il Mostro attaccato viene scoperto.':next.battle.stage==='damage'?'Damage Step: possibilità di applicare gli effetti dichiarati.':`${player.name} non risponde all’attacco.`;
+        break;
+      }
       case 'draw': case 'drawEffect': {
         if(action.type==='draw'&&getTurnState(next)&&(!canDrawNormally(next,playerIndex)||(action.count??1)!==1))fail(next.turn===1?'Il primo giocatore salta la prima pescata: per un effetto usa Pesca per effetto.':'La pescata normale è una sola carta nella tua Draw Phase, una volta per turno.');
         const count = action.count ?? 1; if (!integer(count, 1, 60) || player.deck.length < count) fail('Non ci sono abbastanza carte nel mazzo.');
@@ -264,7 +296,12 @@ export function applyAction(session, action) {
       }
       case 'stats': {
         const { card, zone } = findCard(player, action.cardId, true);
-        if (!MONSTERS.includes(zone) || !['atk', 'def'].includes(action.stat) || !integer(action.delta, -1000000, 1000000)) fail('Modifica ATK/DEF non valida.');
+        if (!MONSTERS.includes(zone) || !['atk', 'def'].includes(action.stat)||isLink(card)&&action.stat==='def') fail('Modifica ATK/DEF non valida.');
+        if(action.value!==undefined){
+          if(!integer(action.value,0,1000000))fail('Valore corrente ATK/DEF non valido.');
+          card[`${action.stat}Override`]=action.value;card[`${action.stat}Modifier`]=0;message=`${player.name} imposta ${action.stat.toUpperCase()} di ${card.faceUp?card.cardName:'un Mostro coperto'} a ${action.value} per effetto dichiarato.`;break;
+        }
+        if(!integer(action.delta,-1000000,1000000))fail('Modifica ATK/DEF non valida.');
         const key = `${action.stat}Modifier`; if (!integer(card[key] + action.delta, -1000000, 1000000)) fail('Modificatore troppo grande.');
         card[key] += action.delta; message = `${player.name} modifica ${action.stat.toUpperCase()} di ${card.faceUp ? card.cardName : 'un Mostro coperto'}.`; break;
       }
@@ -274,6 +311,7 @@ export function applyAction(session, action) {
         card.counters += action.delta; message = `${player.name} aggiorna i segnalini di ${card.faceUp ? card.cardName : 'una carta coperta'}.`; break;
       }
       case 'activate': {
+        const battleError=battleActivationError(next,playerIndex);if(battleError)fail(battleError);
         let {card,zone}=findCard(player,action.cardId);
         if(zone==='deck')fail('Attivazione non disponibile.');
         if(action.playTo!==undefined){
@@ -289,6 +327,7 @@ export function applyAction(session, action) {
         for(const id of ids){const index=card.materials.findIndex(material=>material.id===id),material=card.materials.splice(index,1)[0];clearBoardState(material);material.faceUp=true;player.graveyard.push(material);}
         if(zone!=='hand')card.faceUp=true;
         const link=appendChain(next,playerIndex,card);
+        if(next.battle)next.battle.passes=0;
         message=`Catena ${link.number}: ${player.name} attiva ${card.cardName}${count?` e stacca ${count} materiale/i`:''}.`;break;
       }
       case 'passChain': {
@@ -296,7 +335,7 @@ export function applyAction(session, action) {
         message=`${player.name} non risponde.${chain.stage==='resolving'?' La catena si risolve dall’ultimo anello.':''}`;break;
       }
       case 'resolveChain': {
-        const link=resolveChain(next,playerIndex);message=`Risolto manualmente anello ${link.number}: ${link.cardName}.`;break;
+        const link=resolveChain(next,playerIndex);if(next.battle&&!next.chain.length){next.battle.priority=next.battle.player;next.battle.passes=0;}message=`Risolto manualmente anello ${link.number}: ${link.cardName}.`;break;
       }
       case 'shuffle': {
         if (action.zone !== undefined && action.zone !== 'deck') fail('Puoi mescolare soltanto il Main Deck.');
@@ -364,6 +403,7 @@ export function applyAction(session, action) {
       default: fail('Azione non disponibile.');
     }
   }
+  maintainBattle(session,next);
   next.updatedAt = at; next.log.push({ at, turn:next.turn, type:action.type, player:action.type === 'start' ? null : playerIndex, text:message }); next.log = next.log.slice(-200);
   assertSession(next); return next;
 }

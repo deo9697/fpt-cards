@@ -17,6 +17,7 @@ function needsYugiohMetadata(info) {
   if(!type||/^(?:monster|mostro)$/i.test(type))return true;
   if(/spell|magia/i.test(type)&&!info?.race)return true;
   if(!/monster|mostro|token/i.test(type))return false;
+  if(metadataNumber(info?.atk)===null||!/link/i.test(type)&&metadataNumber(info?.def)===null)return true;
   if(/xyz/i.test(type))return (metadataLevel(info?.rank)??metadataLevel(info?.level))===null||!metadataText(info);
   if(/link/i.test(type))return false; // Link Monsters have no Level.
   return metadataLevel(info?.level)===null||/synchro/i.test(type)&&!metadataText(info);

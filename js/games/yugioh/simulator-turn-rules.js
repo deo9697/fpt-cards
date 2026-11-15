@@ -15,6 +15,7 @@ export function phaseError(session,player,phase){
   if(!phases.includes(phase))return 'Fase di gioco non valida.';
   if(player!==session.activePlayer)return 'Il cambio fase spetta al giocatore attivo.';
   if(session.chain.length)return 'Completa la catena prima di cambiare fase o turno.';
+  if(session.battle)return 'Completa o annulla il combattimento prima di cambiare fase o turno.';
   if(session.result||session.phase==='setup')return 'Il duello non è disponibile.';
   const rules=getTurnState(session);if(!rules)return null;
   if(phase===session.phase)return null;
@@ -35,6 +36,7 @@ export const canSelectPhase=(session,player,phase)=>!phaseError(session,player,p
 export function endTurnError(session,player,{ignoreHand=false}={}){
   if(player!==session.activePlayer)return 'Il cambio turno spetta al giocatore attivo.';
   if(session.chain.length)return 'Completa la catena prima di cambiare fase o turno.';
+  if(session.battle)return 'Completa o annulla il combattimento prima di cambiare fase o turno.';
   if(session.result||session.phase==='setup')return 'Il duello non è disponibile.';
   const rules=getTurnState(session);if(!rules)return null;
   if(!rules.drawn)return 'Esegui la pescata del turno prima di terminarlo.';
@@ -49,6 +51,7 @@ export function requiredTributes(card){
 }
 export function normalPlayError(session,player,card){
   if(!getTurnState(session))return null;
+  if(session.battle)return 'Completa o annulla il combattimento prima di evocare normalmente.';
   if(player!==session.activePlayer||!['main1','main2'].includes(session.phase))return 'Evoca o posiziona normalmente durante la tua Main Phase.';
   if(session.chain.length)return 'Completa la catena prima dell’Evocazione Normale/Set.';
   if(session.turnState.normalUsed>=session.turnState.normalLimit)return 'Hai già usato l’Evocazione Normale/Set di questo turno.';
@@ -70,6 +73,8 @@ export function positionChangeError(session,player,card,zone,{position,faceUp}={
   if(!getTurnState(session)||!monsterZones.includes(zone))return null;
   if(player!==session.activePlayer||!['main1','main2'].includes(session.phase))return 'Cambia posizione durante la tua Main Phase.';
   if(session.chain.length)return 'Completa la catena prima di cambiare posizione.';
+  if(session.battle)return 'Completa o annulla il combattimento prima di cambiare posizione.';
+  if(card.attackedTurn===session.turn)return 'Un Mostro che ha dichiarato un attacco non può cambiare posizione manualmente in questo turno.';
   if(card.summonedTurn===session.turn)return 'Non puoi cambiare posizione a un Mostro evocato o posizionato in questo turno.';
   if(card.positionChangedTurn===session.turn)return 'Questo Mostro ha già cambiato posizione in questo turno.';
   if(!faceUp)return 'Per coprire un Mostro usa il comando di posizione per effetto.';
