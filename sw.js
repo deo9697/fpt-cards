@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v283';
+const CACHE = 'fpt-cards-v284';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -8,7 +8,7 @@ const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // bump di CACHE non tocca più questi file.
 const MEDIA_CACHE = 'fpt-cards-media-v1';
 const FILES = ['./', './index.html', './styles.css', './app.js', './js/app-launch.js', './js/core.js', './js/api.js', './js/pagination.js', './js/cards.js', './js/games/index.js', './js/games/yugioh/catalog.js', './js/games/yugioh/rules.js', './js/games/onepiece/catalog.js', './js/games/onepiece/rules.js', './js/games/onepiece/collection.js', './js/catalog-verification.js', './js/icons.js', './js/fpt-feedback.js', './js/academy.js', './js/academy-content.js', './css/academy.css', './js/dashboard.js', './js/team.js', './js/tutorial.js', './js/login-vault.js', './js/collection.js', './js/collection-search.js', './js/collection-name-aliases.js', './js/collection-share.js', './js/decks.js', './js/deck-stats.js', './js/deck-box.js', './js/deck-archetype-unlocks.js', './js/stats.js', './js/progression.js', './js/cosmetics.js', './js/missions.js', './js/market-watch.js', './js/fast-scan.js', './js/fast-scan-core.js', './js/fast-scan-printing-identity.js', './js/fast-scan-camera.js', './js/fast-scan-ocr-engine-b.js', './js/fast-scan-catalog-cache.js', './js/fast-scan-storage.js', './js/fast-scan-sync.js', './js/push.js', './js/easter-egg.js', './js/pwa-update.js', './js/connectivity.js', './config.js', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './manifest.webmanifest'];
-const MEDIA_FILES = ['./assets/game-logos/yugioh-tcg.png', './assets/fpt-card-hero.webp', './icon-384.webp', './assets/tutorial/blattaman-welcome-sm.webp', './assets/tutorial/blattaman-sexy-sm.webp', './assets/tutorial/blattaman-panicking-sm.webp', './assets/tutorial/blattaman-who-laughs-sm.webp', './assets/background/yugioh-01.png', './assets/backgrounds/deck-image-arena.jpg', './assets/fpt-logo.jpeg', './assets/market-watch-dan.jpg', './assets/notification-badge.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/deck-boxes/sacred_beast_orcust_deckbox.png', './assets/deck-boxes/mitsurugi_deckbox.png', './assets/deck-boxes/skystriker_deckbox.png', './assets/avatars/avatar-tonno.jpg', './assets/avatars/nellentone.jpeg', './assets/avatars/cristofer.jpeg', './assets/avatars/capeleira.jpeg', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4', './assets/ester-eggs/Cat%20Laughing%20At%20You.mp4'];
+const MEDIA_FILES = ['./assets/game-logos/yugioh-tcg.png', './assets/fpt-card-hero.webp', './icon-384.webp', './assets/tutorial/blattaman-welcome-sm.webp', './assets/tutorial/blattaman-sexy-sm.webp', './assets/tutorial/blattaman-panicking-sm.webp', './assets/tutorial/blattaman-who-laughs-sm.webp', './assets/background/yugioh-01.png', './assets/backgrounds/deck-image-arena.jpg', './assets/fpt-logo.jpeg', './assets/market-watch-dan.jpg', './assets/notification-badge-fpt.png', './assets/notification-icon.png', './assets/deck-boxes/arcane-vault.png', './assets/deck-boxes/infernal-dragon.png', './assets/deck-boxes/cyber-core.png', './assets/deck-boxes/sacred_beast_orcust_deckbox.png', './assets/deck-boxes/mitsurugi_deckbox.png', './assets/deck-boxes/skystriker_deckbox.png', './assets/avatars/avatar-tonno.jpg', './assets/avatars/nellentone.jpeg', './assets/avatars/cristofer.jpeg', './assets/avatars/capeleira.jpeg', './assets/fonts/cinzel-latin-variable.woff2', './assets/fonts/manrope-latin-variable.woff2', './assets/ester-eggs/videoplayback.mp4', './assets/ester-eggs/skelet_roar.mp4', './assets/ester-eggs/Cat%20Laughing%20At%20You.mp4'];
 FILES.push('./css/onepiece-simulator.css', './css/onepiece-battlefield.css', './js/games/onepiece/simulator-arena.js', './js/games/onepiece/simulator-multiplayer.js', './js/games/onepiece/simulator.js', './js/games/onepiece/simulator-engine.js', './js/games/onepiece/simulator-storage.js');
 FILES.push('./css/yugioh-simulator.css', './js/games/yugioh/simulator-arena.js', './js/games/yugioh/simulator-multiplayer.js', './js/games/yugioh/simulator-engine.js', './js/games/yugioh/simulator-orientation.js', './js/games/yugioh/simulator-practice.js', './js/games/yugioh/simulator-touch.js', './js/games/yugioh/simulator-card-actions.js', './js/games/yugioh/simulator-chain.js', './js/games/yugioh/simulator-summoning.js', './js/games/yugioh/simulator-rules-ui.js', './js/games/yugioh/simulator-reveal.js', './js/games/yugioh/simulator-turn-rules.js');
 FILES.push('./css/app-launch.css');
@@ -95,14 +95,16 @@ self.addEventListener('push', event => {
   // monocromatica (solo il canale alpha, colore ignorato) nella status bar
   // e nella notifica compatta — l'icona F.P.T piena di dettagli e testo
   // piccolo diventava una macchia illeggibile una volta appiattita così.
-  // notification-badge.png è una sagoma semplice pensata apposta per questo.
+  // notification-badge-fpt.png è il monogramma FPT in un esagono (solo sagoma);
+  // notification-icon.png è il sigillo neon a colori. Nomi nuovi: MEDIA_CACHE non
+  // riscarica un file già in cache con lo stesso nome.
   event.waitUntil((async () => {
     const owner = await caches.open('fpt-push-state-v1').then(cache => cache.match('/__push_owner')).then(hit => hit?.text()).catch(() => null);
     const authorized = owner && data.member === owner;
     // Queued pushes can outlive logout/account switching. Do not show private text.
     return self.registration.showNotification(authorized ? data.title : 'F.P.T. Cards', {
       body:authorized ? data.body : 'Apri F.P.T. Cards per controllare i tuoi aggiornamenti.',
-      icon:'/icon-192.png', badge:'/assets/notification-badge.png', tag:data.tag || 'fpt-push', renotify:false,
+      icon:'/assets/notification-icon.png', badge:'/assets/notification-badge-fpt.png', tag:data.tag || 'fpt-push', renotify:false,
       vibrate:[200,80,200], data:{ url:authorized ? data.url || './' : './', member:data.member }
     });
   })());

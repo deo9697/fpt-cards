@@ -37,6 +37,7 @@ const JOIN_HASH = /^#\/join\/([0-9a-f]{16})$/i;
 let guestShare;
 const displayedXpProgress = new Map();
 let page = routeFromHash();
+let navFlashPage = page, navFlashUntil = 0; // ultima pagina per cui la dock mobile ha fatto il lampo (flashMobileNav)
 let loanFilters = { direction: 'all', member: 'all', query: '', status: 'all' };
 let selectedLoanId = '';
 let loanFiltersExpanded = false;
@@ -396,6 +397,7 @@ function render(force = false) {
   document.body.dataset.game = state.game || 'yugioh';
   document.body.dataset.page = state.currentUser ? page : 'login';
   document.querySelector('#app').innerHTML = state.currentUser ? appView() : loginView();
+  if (state.currentUser) flashMobileNav();
   bind();
   animateXpFill();
   if (!state.currentUser) fillLoginShowcase();
@@ -424,8 +426,21 @@ function renderRoute() {
     const node = shell.querySelector(selector);
     if (node) node.replaceWith(node.cloneNode(true));
   }
+  flashMobileNav();
   bind();
   animateXpFill();
+}
+// Dock mobile: quando cambia pagina la voce attiva fa un lampo nell'esagono
+// e un piccolo glitch (una volta sola, non a ogni refresh della stessa pagina).
+function flashMobileNav() {
+  // La pagina può essere ridisegnata di nuovo subito dopo (dati in arrivo): per
+  // ~0,5 s la voce attiva riprende il lampo anche sui nodi nuovi.
+  if (navFlashPage !== page) { navFlashPage = page; navFlashUntil = Date.now() + 520; }
+  const left = navFlashUntil - Date.now();
+  if (left <= 0) return;
+  document.querySelectorAll('.mobile-nav .nav-hit').forEach(item => item.classList.remove('nav-hit'));
+  document.querySelector('.mobile-nav button.active')?.classList.add('nav-hit');
+  setTimeout(() => { if (Date.now() >= navFlashUntil) document.querySelectorAll('.mobile-nav .nav-hit').forEach(item => item.classList.remove('nav-hit')); }, left + 20);
 }
 
 // Login "Vetrina dei Rari": vetrina delle carte più rare del team (riempita
@@ -503,7 +518,7 @@ function appView() {
   const notifications = state.loans.filter(l => l.game === state.game && ((l.borrower === state.currentUser && ['pending','reserved'].includes(l.status)) || (l.owner === state.currentUser && ['requested','return_pending'].includes(l.status)))).length;
   const desktopNav = [['home','home','Home'],['cards','card','Carte'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['stats','trophy','Statistiche'],['loans','swap','Prestiti'],['market','chart','Market Watch'],['team','team','Team'],['settings','settings','Impostazioni']];
   if (canUseSimulator()) desktopNav.push(['more','more','Altro']);
-  const mobileNav = [['home','home','Home'],['market','chart','Market Watch'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
+  const mobileNav = [['home','home','Home'],['market','chart','Market'],['collection','collection','Raccolta'],['decks','deck','Mazzi'],['loans','swap','Prestiti'],['more','more','Altro']];
   // Va renderizzato qui (fuori da .page-stage), non dentro loansView(): .page-stage
   // ha view-transition-name, che in Chrome le dà una propria stacking context.
   // Un .detail-backdrop con z-index:50 annidato lì dentro resta comunque
@@ -3003,7 +3018,7 @@ async function showLoanNotification(count) {
   const registration = await navigator.serviceWorker?.ready;
   if (registration) registration.showNotification('F.P.T Cards', {
     body: count === 1 ? 'Hai una nuova richiesta da gestire' : `Hai ${count} nuove richieste da gestire`,
-    icon: 'icon-192.png', badge: 'icon-192.png', tag: 'fpt-loans', renotify: true
+    icon: 'assets/notification-icon.png', badge: 'assets/notification-badge-fpt.png', tag: 'fpt-loans', renotify: true
   });
 }
 

@@ -4111,3 +4111,26 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
   .loan-transmit.is-done .loan-transmit-stamp { animation:none; opacity:1; transform:rotate(-4deg); }
   .loan-transmit-bar i { transition:none; }
 }
+
+/* Dock mobile cyber (2026-11-15, versione A approvata): barra a tutta larghezza
+   attaccata al fondo, linea neon, voce attiva in un esagono dorato. */
+@media (max-width:820px) {
+  .mobile-nav { left:0;right:0;bottom:0;padding:0 6px calc(6px + env(safe-area-inset-bottom,0px));border:0;border-top:1px solid #3a2a5c;background:linear-gradient(180deg,#0b0914eb,#07060dfa);clip-path:none;box-shadow:0 -10px 30px #000a;backdrop-filter:blur(8px); }
+  .mobile-nav::before { content:'';display:block;position:absolute;left:0;right:0;top:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--fpt-pink) 20%,var(--fpt-violet) 50%,var(--fpt-gold) 80%,transparent);pointer-events:none; }
+  .mobile-nav::after { content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,#ffffff06 0 1px,transparent 1px 3px);pointer-events:none; }
+  .mobile-nav button { min-height:58px;padding:10px 0 2px;display:grid;justify-items:center;align-content:end;gap:4px;background:transparent!important;box-shadow:none!important;color:#8a80a8;font:800 .5rem/1 var(--fpt-mono)!important;letter-spacing:.1em;text-transform:uppercase;-webkit-tap-highlight-color:transparent; }
+  .mobile-nav button span { position:relative;width:38px;height:34px;margin:0;display:grid;place-items:center;transition:transform .25s; }
+  .mobile-nav button span::before, .mobile-nav button span::after { content:'';position:absolute;inset:0;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);pointer-events:none; }
+  .mobile-nav button .icon { position:relative;width:20px;height:20px;transition:filter .25s; }
+  .mobile-nav button.active { color:var(--fpt-gold); }
+  .mobile-nav button.active span { transform:translateY(-2px); }
+  .mobile-nav button.active span::before { background:linear-gradient(160deg,#e8b84f33,#9b5cff22); }
+  .mobile-nav button.active .icon { filter:drop-shadow(0 0 6px #e8b84fcc); }
+  .mobile-nav button.active::before { content:'';position:absolute;top:0;left:50%;width:28px;height:2px;margin-left:-14px;background:var(--fpt-gold);box-shadow:0 0 10px var(--fpt-gold),0 0 2px #fff; }
+  .mobile-nav button span i { position:absolute;z-index:1;top:-2px;left:calc(50% + 6px);min-width:15px;height:15px;padding:0 3px;border-radius:0;background:var(--fpt-pink);color:#160312;font:900 .5rem/15px var(--fpt-mono);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,0 100%);filter:drop-shadow(0 0 4px var(--fpt-pink)); }
+  .mobile-nav button.nav-hit span::after { background:linear-gradient(100deg,transparent 30%,#ffffff70 50%,transparent 70%);background-size:300% 100%;background-position:100% 0;animation:fpt-nav-sweep .45s ease-out; }
+  .mobile-nav button.nav-hit .icon { animation:fpt-nav-glitch .3s steps(2); }
+}
+@keyframes fpt-nav-sweep { from { background-position:100% 0; } to { background-position:0 0; } }
+@keyframes fpt-nav-glitch { 30% { transform:translate(1px,-1px);filter:drop-shadow(-2px 0 #ff4fd8) drop-shadow(2px 0 #4fd8ff); } 60% { transform:translate(-1px,1px); } }
+@media (prefers-reduced-motion:reduce) { .mobile-nav button.nav-hit span::after, .mobile-nav button.nav-hit .icon { animation:none; } }

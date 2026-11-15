@@ -107,7 +107,7 @@ await test('service worker branding, duplicate tags, privacy, click routing and 
   vm.runInNewContext(fs.readFileSync('sw.js','utf8'),context);
   async function push(data){let task;handlers.push({data:{json:()=>data},waitUntil:p=>task=p});await task}
   await push({member:'a',title:'Evento',body:'privato',tag:'same',url:'/#/loans?loanId=1'});await push({member:'a',title:'Evento',tag:'same'});
-  assert.equal(shown[0].icon,'/icon-192.png');assert.equal(shown[0].badge,'/assets/notification-badge.png');assert.equal(shown[0].renotify,false);assert.equal(shown[0].tag,shown[1].tag);
+  assert.equal(shown[0].icon,'/assets/notification-icon.png');assert.equal(shown[0].badge,'/assets/notification-badge-fpt.png');assert.equal(shown[0].renotify,false);assert.equal(shown[0].tag,shown[1].tag);
   owner='b';await push({member:'a',body:'privato'});assert(!shown.at(-1).body.includes('privato'));
   let task;handlers.notificationclick({notification:{data:{url:'/#/loans?loanId=1'},close(){}},waitUntil:p=>task=p});await task;assert.match(messages[0].url,/loanId=1/);
   clients.matchAll=async()=>[];handlers.notificationclick({notification:{data:{url:'https://evil.test/'},close(){}},waitUntil:p=>task=p});await task;assert.equal(opened[0],'https://example.test/');
