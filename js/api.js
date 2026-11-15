@@ -478,6 +478,9 @@ export const api = {
   async enrichLoan(id, card) {
     ensure(); return unwrap(await client.rpc('enrich_loan_card', { p_token:token(), p_id:id, p_external_id:card.id, p_image:card.fullImage || card.image }));
   },
+  // Restituisce { tempPin } per 'add' e 'reset-pin' dopo la migration di
+  // sicurezza 2026-11-15 (prima: nessun valore).
+  async changeMyPin(currentPin, newPin) { ensure(); const result = unwrap(await client.rpc('change_my_pin', { p_token:token(), p_current_pin:currentPin, p_new_pin:newPin })); if (result && result.ok === false) throw Object.assign(new Error(result.message || 'PIN non aggiornato'), { code:result.code }); return result; },
   async manageMember(action, slug, name = null) {
     ensure(); return unwrap(await client.rpc('admin_manage_member', { p_token:token(), p_action:action, p_slug:slug, p_name:name }));
   },

@@ -14,6 +14,11 @@ const mime = {
   '.woff2':'font/woff2', '.mp3':'audio/mpeg', '.mp4':'video/mp4'
 };
 
+// Stessi header di sicurezza della produzione (vercel.json, CSP compresa): i
+// browser smoke girano con la policy vera e una violazione si vede nei test.
+// FPT_PREVIEW_NO_HEADERS=1 per disattivarli durante un debug.
+const securityHeaders = process.env.FPT_PREVIEW_NO_HEADERS === '1' ? [] : JSON.parse(await fs.readFile(path.join(root, 'vercel.json'), 'utf8')).headers.flatMap(rule => rule.headers);
+
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${host}:${port}`);
@@ -26,6 +31,7 @@ const server = http.createServer(async (request, response) => {
     const body = await fs.readFile(target);
     response.setHeader('Content-Type', mime[path.extname(target).toLowerCase()] || 'application/octet-stream');
     response.setHeader('Cache-Control', relative === 'sw.js' ? 'no-store' : 'no-cache');
+    for (const { key, value } of securityHeaders) response.setHeader(key, value);
     response.end(body);
   } catch (error) {
     response.writeHead(error?.code === 'ENOENT' ? 404 : 500).end(error?.code === 'ENOENT' ? 'Not found' : 'Server error');

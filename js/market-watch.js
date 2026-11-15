@@ -653,7 +653,7 @@ function rowSparkline(history,delta){
 // tag con lo stesso placeholder usato quando l'URL manca del tutto.
 function cardArt(imageUrl){
   if(!imageUrl)return `<span class="market-art-empty">${icon('card')}</span>`;
-  return `<img src="${esc(imageUrl)}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(`<span class="market-art-empty">${icon('card')}</span>`)}">`;
+  return `<img src="${esc(imageUrl)}" alt="" loading="lazy" data-img-fallback data-fallback="${esc(`<span class="market-art-empty">${icon('card')}</span>`)}">`;
 }
 export function isAggregatePrice(item){return item?.resolverStatus==='PROVIDER_AGGREGATE';}
 function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scope.language!=='specific')labels.push('lingua');if(scope.edition!=='specific')labels.push('edizione');if(scope.rarity!=='specific')labels.push('rarità');if(scope.foil!=='specific')labels.push('foil');const productNote=scope.product==='minimum_across_candidates'?' Usa il prezzo minimo fra i Product ID compatibili.':'';

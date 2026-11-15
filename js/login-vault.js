@@ -44,7 +44,7 @@ function cascadeHtml() {
   const cardHeight = Math.min(96, window.innerWidth / columns) * 1.46 + 12;
   const perColumn = Math.max(4, Math.ceil((window.innerHeight + 240) / cardHeight));
   return `<div class="pinpad-cascade" aria-hidden="true">${Array.from({ length: columns }, (_, c) => {
-    const cards = Array.from({ length: perColumn }, (_, j) => `<img src="${esc(thumb(ids[(c * 7 + j) % ids.length]))}" alt="" decoding="async" onerror="this.remove()">`).join('');
+    const cards = Array.from({ length: perColumn }, (_, j) => `<img src="${esc(thumb(ids[(c * 7 + j) % ids.length]))}" alt="" decoding="async" data-img-remove-on-error>`).join('');
     // Contenuto ripetuto due volte: la traslazione del 50% si ricongiunge senza salti.
     return `<div class="pinpad-col"><div class="pinpad-track" style="--t:${22 + (c * 5) % 13}s;--d:-${(c * 3.7) % 20}s">${cards}${cards}</div></div>`;
   }).join('')}</div>`;

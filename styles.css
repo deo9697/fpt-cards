@@ -4134,3 +4134,9 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
 @keyframes fpt-nav-sweep { from { background-position:100% 0; } to { background-position:0 0; } }
 @keyframes fpt-nav-glitch { 30% { transform:translate(1px,-1px);filter:drop-shadow(-2px 0 #ff4fd8) drop-shadow(2px 0 #4fd8ff); } 60% { transform:translate(-1px,1px); } }
 @media (prefers-reduced-motion:reduce) { .mobile-nav button.nav-hit span::after, .mobile-nav button.nav-hit .icon { animation:none; } }
+
+/* Finestra PIN (sicurezza 2026-11-15) */
+.fpt-pin-dialog .fpt-pin-field { position:relative;display:grid;gap:5px;margin-top:10px;font:700 .62rem var(--fpt-mono);letter-spacing:.12em;text-transform:uppercase;color:#b9aed6; }
+.fpt-pin-dialog .fpt-pin-field input { width:100%;padding:10px 12px;border:1px solid var(--fpt-line);border-radius:0;background:#07060d;color:var(--fpt-gold);font:800 1.3rem var(--fpt-mono);letter-spacing:.6em;text-align:center; }
+.fpt-pin-dialog .fpt-pin-field input:focus { outline:none;border-color:var(--fpt-gold);box-shadow:0 0 0 1px var(--fpt-gold),0 0 12px #e8b84f44; }
+.fpt-pin-dialog .fpt-pin-error { position:relative;min-height:1.2em;margin:8px 0 0;color:var(--fpt-danger);font-size:.78rem; }

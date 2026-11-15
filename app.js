@@ -5,6 +5,15 @@ import { collectionSearchAliases, collectionSearchText, enrichCollectionAliases,
 // market/providers.js (~56 KB) serve solo al backfill del pannello admin Market
 // variant: import dinamico dentro le due funzioni che lo usano.
 const loadMarketProviders = () => import('./market/providers.js');
+// La Content-Security-Policy (vercel.json) vieta gli handler inline (onerror=,
+// onclick=): li sostituiscono questi listener delegati, attivi prima di ogni render.
+document.addEventListener('error', event => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement)) return;
+  if (image.hasAttribute('data-img-remove-on-error')) image.remove();
+  else if (image.hasAttribute('data-img-fallback') && image.dataset.fallback != null) image.outerHTML = image.dataset.fallback;
+}, true);
+document.addEventListener('click', event => { const field = event.target?.closest?.('[data-select-on-click]'); if (field) field.select(); });
 import { MEMBERS, GAMES, FUTURE_GAMES, state, saveState, setMembers, member, initials, esc, formatDate } from './js/core.js';
 import { api } from './js/api.js';
 import { findCardById, cardTypesByIds, cardLevelsByIds, backgroundForCardType, resolveStoredCard, reconcileCatalogCard, cardImageMatches, normalizeCardImageUrl, canonicalYgoCardImage, tcgBanlistStatuses, catalogImageNeedsRepair, collectionCardWithLocalizedPrintings, normalizeCatalogRarity, setCodeMatchesLanguage, printingSetCodeForLanguage, canonicalCatalogCardId, mergeAuthoritativePrintings } from './js/cards.js';
@@ -13,7 +22,7 @@ import { getGameAdapter } from './js/games/index.js';
 import { verifyPendingCollectionCatalog } from './js/catalog-verification.js';
 import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconciliation.js';
 import { icon } from './js/icons.js';
-import { showToast, fptConfirm, watchNoticeExits } from './js/fpt-feedback.js';
+import { showToast, fptConfirm, fptPinDialog, watchNoticeExits } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
 import { stageGlitchLayers, stageTypeLabel, collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured, pushStatus, pushResetPaused, resetPushNotifications, onPushStatus, setPushAccount, reconcilePush, stopPush, testPush, shouldOfferPush, deferPush } from './js/push.js';
@@ -753,7 +762,7 @@ function collectionMatchesQuery(card) { return card.name.toLowerCase().includes(
 function collectionCard(card) {
   const active = card.loans.filter(l => l.status !== 'returned').length;
   const ownerNames = [...card.owners].map(id => member(id)?.name).filter(Boolean);
-  return `<button class="collection-card" data-card-key="${esc(card.key)}"><span class="collection-art">${card.image ? `<img src="${card.image}" alt="${esc(card.name)}" loading="lazy">` : icon('card')}</span><span class="collection-info"><strong>${esc(card.name)}</strong><small>${card.externalId ? `ID ${esc(card.externalId)}` : 'Inserimento manuale'}</small><span class="rarity-badge">${card.loans.length} ${card.loans.length === 1 ? 'movimento' : 'movimenti'}</span><span class="owner-line">${ownerNames.slice(0,2).map(name => esc(name.split(' ')[0])).join(', ') || 'Proprietario non disponibile'}</span></span><span class="availability ${active ? 'busy' : 'ok'}"><b>${active}</b><small>attivi</small></span></button>`;
+  return `<button class="collection-card" data-card-key="${esc(card.key)}"><span class="collection-art">${card.image ? `<img src="${esc(card.image)}" alt="${esc(card.name)}" loading="lazy">` : icon('card')}</span><span class="collection-info"><strong>${esc(card.name)}</strong><small>${card.externalId ? `ID ${esc(card.externalId)}` : 'Inserimento manuale'}</small><span class="rarity-badge">${card.loans.length} ${card.loans.length === 1 ? 'movimento' : 'movimenti'}</span><span class="owner-line">${ownerNames.slice(0,2).map(name => esc(name.split(' ')[0])).join(', ') || 'Proprietario non disponibile'}</span></span><span class="availability ${active ? 'busy' : 'ok'}"><b>${active}</b><small>attivi</small></span></button>`;
 }
 
 function emptyArchive() {
@@ -765,7 +774,7 @@ function cardDetailView(key) {
   if (!card) return '';
   const owners = [...card.owners].map(id => member(id)).filter(Boolean);
   const active = card.loans.filter(l => l.status !== 'returned');
-  return `<div class="detail-backdrop" data-close-detail><aside class="card-detail" role="dialog" aria-modal="true" aria-labelledby="card-detail-title"><button class="detail-close" data-close-detail aria-label="Chiudi">×</button><div class="detail-layout"><div class="detail-art">${card.image ? `<img src="${card.image}" alt="${esc(card.name)}">` : icon('card')}</div><div class="detail-copy"><span class="eyebrow">Dettaglio carta</span><h2 id="card-detail-title">${esc(card.name)}</h2><p>${card.externalId ? `ID catalogo ${esc(card.externalId)}` : 'Carta inserita manualmente'}</p><dl><div><dt>Movimenti registrati</dt><dd>${card.loans.length}</dd></div><div><dt>Prestiti non conclusi</dt><dd>${active.length}</dd></div><div><dt>Gioco</dt><dd>${esc(GAMES[state.game].name)}</dd></div></dl><h3>Proprietari nello storico</h3><div class="owner-list">${owners.map(owner => `<span><i class="mini-avatar member-${owner.id}">${initials(owner.name)}</i><b>${esc(owner.name)}</b></span>`).join('')}</div><div class="actions"><button class="btn" data-page="new">${icon('swap')} Crea prestito</button><button class="btn secondary" disabled title="Funzionalità futura">${icon('chart')} Watchlist futura</button></div><p class="data-note">Set, rarità, lingua, condizione e disponibilità reale richiedono campi dati non ancora presenti.</p></div></div></aside></div>`;
+  return `<div class="detail-backdrop" data-close-detail><aside class="card-detail" role="dialog" aria-modal="true" aria-labelledby="card-detail-title"><button class="detail-close" data-close-detail aria-label="Chiudi">×</button><div class="detail-layout"><div class="detail-art">${card.image ? `<img src="${esc(card.image)}" alt="${esc(card.name)}">` : icon('card')}</div><div class="detail-copy"><span class="eyebrow">Dettaglio carta</span><h2 id="card-detail-title">${esc(card.name)}</h2><p>${card.externalId ? `ID catalogo ${esc(card.externalId)}` : 'Carta inserita manualmente'}</p><dl><div><dt>Movimenti registrati</dt><dd>${card.loans.length}</dd></div><div><dt>Prestiti non conclusi</dt><dd>${active.length}</dd></div><div><dt>Gioco</dt><dd>${esc(GAMES[state.game].name)}</dd></div></dl><h3>Proprietari nello storico</h3><div class="owner-list">${owners.map(owner => `<span><i class="mini-avatar member-${owner.id}">${initials(owner.name)}</i><b>${esc(owner.name)}</b></span>`).join('')}</div><div class="actions"><button class="btn" data-page="new">${icon('swap')} Crea prestito</button><button class="btn secondary" disabled title="Funzionalità futura">${icon('chart')} Watchlist futura</button></div><p class="data-note">Set, rarità, lingua, condizione e disponibilità reale richiedono campi dati non ancora presenti.</p></div></div></aside></div>`;
 }
 
 function futureView(title, iconName, description) {
@@ -792,7 +801,7 @@ function settingsView() {
   }${
     row('info', 'Tutorial', 'Blattaman ti rispiega l\'app', '<button class="btn small settings-action ghost" data-tutorial-open>Rivedi</button>')
   }${
-    row('logout', 'Sessione', `<em class="settings-state on">Connesso</em> come ${esc(u?.name || state.currentUser || 'membro')}`, '<button class="btn small settings-action danger" data-logout>Esci</button>')
+    row('lock', 'PIN di accesso', 'Cambialo quando vuoi: serve il PIN attuale.', '<button class="btn small settings-action ghost" data-change-pin>Cambia PIN</button>')}${row('logout', 'Sessione', `<em class="settings-state on">Connesso</em> come ${esc(u?.name || state.currentUser || 'membro')}`, '<button class="btn small settings-action danger" data-logout>Esci</button>')
   }</section><p class="settings-terminal" aria-label="Informazioni sull'app">&gt; F.P.T CARDS <b data-app-build>web</b> · MEMBRO <b>${esc(state.currentUser || '—')}</b> · GIOCO <b>${esc(game.short)}</b><br>&gt; STATO <i class="${online() ? 'on' : 'off'}">● ${online() ? 'online' : 'offline'}</i></p></section>`;
 }
 
@@ -1042,7 +1051,7 @@ function loanListRow(l) {
   const presentation = loanPresentation(l, outgoing, incoming, owner, borrower);
   const remaining = Math.max(0, (l.acceptedQuantity || l.quantity) - (l.returnedQuantity || 0));
   const shownQuantity = ['returned','completed'].includes(l.status) ? l.quantity : remaining;
-  const visual = l.image ? `<div class="loan-thumb"><img src="${l.image}" alt="" loading="lazy"><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
+  const visual = l.image ? `<div class="loan-thumb"><img src="${esc(l.image)}" alt="" loading="lazy"><em>${shownQuantity}</em></div>` : `<div class="loan-qty">${shownQuantity}<small>pz</small></div>`;
   const memberMarker = person ? `<i class="member-dot ${person.id}"></i>` : '';
   // Biglietto (stile FPT 2026-11-09): la striscia a sinistra dice lo stato,
   // set e rarità restano nel dettaglio così la riga sta su poche righe.
@@ -1080,8 +1089,8 @@ function loanDetailSheetView(l) {
   const printing = [l.setCode,l.setName,l.rarity].filter(Boolean).join(' · ');
   const quantities = l.acceptedQuantity > 0 && l.requestedQuantity !== l.acceptedQuantity ? `<p class="quantity-help">Richieste ${l.requestedQuantity} · accettate ${l.acceptedQuantity} · rimanenti ${remaining}</p>` : l.status === 'requested' ? `<p class="quantity-help">Richieste ${l.requestedQuantity}${Number.isFinite(available) ? ` · disponibili ora ${available}` : ''}</p>` : '';
   return `<div class="detail-backdrop" data-close-loan-detail><aside class="card-detail loan-detail-sheet" role="dialog" aria-modal="true"><button class="detail-close" data-close-loan-detail aria-label="Chiudi">×</button>
-    <div class="deck-sheet-body"><span class="deck-sheet-art">${l.image ? `<img src="${l.image}" alt="">` : icon('card')}</span><span class="deck-sheet-copy"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></span></div>
-    <div class="ownership"><span><small>Proprietario</small><b>${owner.name}</b></span><span>→</span><span><small>Richiedente</small><b>${borrower.name}</b></span></div>
+    <div class="deck-sheet-body"><span class="deck-sheet-art">${l.image ? `<img src="${esc(l.image)}" alt="">` : icon('card')}</span><span class="deck-sheet-copy"><strong>${esc(l.cardName)}</strong>${printing ? `<small>${esc(printing)}</small>` : ''}<span class="badge ${presentation.badgeClass}">${presentation.shortStatus}</span></span></div>
+    <div class="ownership"><span><small>Proprietario</small><b>${esc(owner.name)}</b></span><span>→</span><span><small>Richiedente</small><b>${esc(borrower.name)}</b></span></div>
     <p class="quantity-help">Registrato il ${formatDate(l.createdAt)}</p>
     ${quantities}
     <p>${l.notes ? esc(l.notes) : 'Nessuna nota'}</p>
@@ -1093,8 +1102,8 @@ function loanPresentation(l, outgoing, incoming, owner, borrower) {
   if (outgoing) {
     const states = {
       requested: l.preAgreed
-        ? [`${borrower.name} conferma il prestito già concordato di ${l.cardName} ×${l.requestedQuantity}`, 'Da confermare', 'wait', true]
-        : [`${borrower.name} richiede ${l.cardName} ×${l.requestedQuantity}`, 'Da valutare', 'wait', true],
+        ? [`${esc(borrower.name)} conferma il prestito già concordato di ${esc(l.cardName)} ×${l.requestedQuantity}`, 'Da confermare', 'wait', true]
+        : [`${esc(borrower.name)} richiede ${esc(l.cardName)} ×${l.requestedQuantity}`, 'Da valutare', 'wait', true],
       reserved: ['Attendi la conferma di ricezione', 'Riservata', 'wait', false],
       pending: ['Attendi che il destinatario accetti', 'In attesa', 'wait', false],
       active: ['La carta deve tornare a te', 'Da ricevere', 'outgoing', false],
@@ -1104,7 +1113,8 @@ function loanPresentation(l, outgoing, incoming, owner, borrower) {
       rejected: ['Richiesta rifiutata', 'Rifiutata', 'ok', false]
     };
     const [action, shortStatus, badgeClass, urgent] = states[l.status];
-    return { direction:'HAI PRESTATO A', person:borrower.name, action, shortStatus, badgeClass, urgent, kind:'outgoing' };
+    // person/action finiscono in HTML (loanListRow): già escapati qui.
+    return { direction:'HAI PRESTATO A', person:esc(borrower.name), action, shortStatus, badgeClass, urgent, kind:'outgoing' };
   }
   if (incoming) {
     const states = {
@@ -1118,9 +1128,9 @@ function loanPresentation(l, outgoing, incoming, owner, borrower) {
       rejected: ['La richiesta è stata rifiutata', 'Rifiutata', 'ok', false]
     };
     const [action, shortStatus, badgeClass, urgent] = states[l.status];
-    return { direction:'HAI RICEVUTO DA', person:owner.name, action, shortStatus, badgeClass, urgent, kind:'incoming' };
+    return { direction:'HAI RICEVUTO DA', person:esc(owner.name), action, shortStatus, badgeClass, urgent, kind:'incoming' };
   }
-  return { direction:'SCAMBIO DEL TEAM', person:`${owner.name} → ${borrower.name}`, action:statusLabel(l.status), shortStatus:statusLabel(l.status), badgeClass:l.status === 'returned' ? 'ok' : 'team', urgent:false, kind:'team' };
+  return { direction:'SCAMBIO DEL TEAM', person:`${esc(owner.name)} → ${esc(borrower.name)}`, action:statusLabel(l.status), shortStatus:statusLabel(l.status), badgeClass:l.status === 'returned' ? 'ok' : 'team', urgent:false, kind:'team' };
 }
 
 function statusLabel(status) { return ({pending:'In attesa (legacy)',requested:'Richiesta',reserved:'Riservata',active:'In prestito',return_pending:'Resa da confermare',returned:'Restituita',completed:'Conclusa',rejected:'Rifiutata'})[status] || 'Aggiornato'; }
@@ -1132,7 +1142,7 @@ function loanCard(l) {
   if (l.status === 'active' && !isOwner) buttons = `<button class="btn secondary small" data-action="return" data-id="${l.id}">Segnala restituzione</button>`;
   if (l.status === 'return_pending' && isOwner) buttons = `<button class="btn small" data-action="confirm-return" data-id="${l.id}">Conferma restituzione</button>`;
   if (isAdmin && !buttons) buttons = `<button class="btn secondary danger small" data-action="admin-delete" data-id="${l.id}">Elimina</button>`;
-  return `<article class="card loan"><div><p><strong>${esc(l.cardName)}</strong> × ${l.quantity}</p><div class="meta">${isOwner ? `A ${member(l.borrower).name}` : `Da ${member(l.owner).name}`} · ${formatDate(l.createdAt)}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ''}</div><span class="badge ${l.status === 'returned' ? 'ok' : l.status.includes('pending') ? 'wait' : ''}">${statusLabel(l.status)}</span>${buttons ? `<div class="actions">${buttons}</div>` : ''}</article>`;
+  return `<article class="card loan"><div><p><strong>${esc(l.cardName)}</strong> × ${l.quantity}</p><div class="meta">${isOwner ? `A ${esc(member(l.borrower).name)}` : `Da ${esc(member(l.owner).name)}`} · ${formatDate(l.createdAt)}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ''}</div><span class="badge ${l.status === 'returned' ? 'ok' : l.status.includes('pending') ? 'wait' : ''}">${statusLabel(l.status)}</span>${buttons ? `<div class="actions">${buttons}</div>` : ''}</article>`;
 }
 
 // Beta: inviti del team. null = non ancora caricati.
@@ -1736,6 +1746,7 @@ function bind() {
   document.querySelectorAll('[data-close-loan-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); selectedLoanId = ''; render(); }));
   document.querySelector('#reset-data')?.addEventListener('click', () => toast('I dati condivisi non si cancellano dal dispositivo'));
   document.querySelector('#enable-notifications')?.addEventListener('click', enableNotifications);
+  document.querySelector('[data-change-pin]')?.addEventListener('click', () => void changeOwnPin());
   document.querySelector('#onboard-notifications')?.addEventListener('click', enableNotifications);
   document.querySelector('#reset-notifications')?.addEventListener('click', async () => {
     try { await resetPushNotifications(); toast('Registrazione azzerata su questo dispositivo.'); }
@@ -1967,7 +1978,7 @@ function collectionShareModalView() {
     <span class="eyebrow">Condividi raccolta</span><h2 id="share-modal-title">Link pubblico</h2>
     <p>Chi apre questo link vede le tue carte (${esc(GAMES[state.game]?.short || state.game)}) e può segnalarti quali gli interessano — non serve un account F.P.T Cards.</p>
     ${collectionShareLink ? `
-      <div class="share-link-box"><input type="text" readonly value="${esc(url)}" data-share-url onclick="this.select()"><button type="button" class="btn secondary small" data-copy-share-link>Copia</button></div>
+      <div class="share-link-box"><input type="text" readonly value="${esc(url)}" data-share-url data-select-on-click><button type="button" class="btn secondary small" data-copy-share-link>Copia</button></div>
       <button type="button" class="btn share-send-btn" data-share-collection-link>${icon('share')} Condividi con…</button>
       <div class="share-owner-actions"><button type="button" class="btn secondary" data-regenerate-share ${collectionSharePending ? 'disabled' : ''}>Rigenera</button><button type="button" class="btn secondary danger" data-revoke-share ${collectionSharePending ? 'disabled' : ''}>Revoca</button></div>
     ` : `<button type="button" class="btn" data-generate-share ${collectionSharePending ? 'disabled' : ''}>${collectionSharePending ? 'Genero…' : 'Genera link'}</button>`}
@@ -2862,9 +2873,34 @@ async function addMember(event) {
   const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   if (name.length < 2 || !slug) return toast('Inserisci un nome valido');
   try {
-    await api.manageMember('add', slug, name);
+    const result = await api.manageMember('add', slug, name);
     await loadMembers(); render(); toast('Membro aggiunto');
+    if (result?.tempPin) await showTemporaryPin(name, result.tempPin);
   } catch (error) { toast(error.message); }
+}
+
+// Sicurezza 2026-11-15: un PIN azzerato non resta più "libero" (prima il primo
+// che entrava sceglieva il PIN di quel profilo). L'admin riceve un PIN
+// temporaneo da comunicare; al primo accesso il membro ne sceglie uno nuovo.
+async function showTemporaryPin(name, tempPin) {
+  await fptConfirm(`PIN temporaneo di ${name}: ${tempPin}. Comunicaglielo di persona: al primo accesso dovrà sceglierne uno nuovo.`, { title:'PIN temporaneo', confirmLabel:'Fatto', cancelLabel:'Chiudi', danger:false });
+}
+async function changeOwnPin({ temporaryPin = '' } = {}) {
+  const forced = Boolean(temporaryPin);
+  for (;;) {
+    const answer = await fptPinDialog(forced
+      ? { title:'Scegli il tuo PIN', text:'Sei entrato con un PIN temporaneo dell\u2019amministratore. Scegline uno tuo: lo userai dal prossimo accesso.', cancelable:false }
+      : { title:'Cambia PIN', text:'Il nuovo PIN vale da subito su tutti i dispositivi.', needCurrent:true });
+    if (!answer) return;
+    try {
+      await api.changeMyPin(forced ? temporaryPin : answer.current, answer.next);
+      toast('PIN aggiornato');
+      return;
+    } catch (error) {
+      toast(/change_my_pin|function/i.test(error.message || '') ? 'Funzione non ancora attiva sul server' : (error.message || 'PIN non aggiornato'));
+      if (!forced) return;
+    }
+  }
 }
 
 async function manageMember(action, slug) {
@@ -2873,9 +2909,10 @@ async function manageMember(action, slug) {
   if (action === 'deactivate' && !(await fptConfirm(`Disattivare ${target.name}?`, { title:'Disattivare il membro?', confirmLabel:'Disattiva' }))) return;
   if (action === 'reset-pin' && !(await fptConfirm(`Azzerare il PIN di ${target.name}?`, { title:'Azzerare il PIN?', confirmLabel:'Azzera PIN' }))) return;
   try {
-    await api.manageMember(action, slug);
+    const result = await api.manageMember(action, slug);
     await loadMembers(); render();
     toast(action === 'deactivate' ? 'Membro disattivato' : 'PIN azzerato');
+    if (result?.tempPin) await showTemporaryPin(target.name, result.tempPin);
   } catch (error) { toast(error.message); }
 }
 
@@ -2907,6 +2944,7 @@ async function login(e) {
     loginDraft = { member:'', pin:'', mode:loginDraft.mode };
     saveState();
     render();
+    if (profile.mustChangePin) void changeOwnPin({ temporaryPin:pin });
     await Promise.all([loadMembers().catch(() => {}), loadPrimaryData()]);
     startRealtime();
     void startNotificationSession();

@@ -136,3 +136,48 @@ export function watchNoticeExits(root = typeof document !== 'undefined' ? docume
   noticeObserver.observe(root, { childList:true, subtree:true });
   scan();
 }
+
+// Finestra PIN (sicurezza 2026-11-15): scelta di un nuovo PIN dopo un PIN
+// temporaneo dell'admin, o "Cambia PIN" dalle Impostazioni. Restituisce
+// { current, next } oppure null se annullata. Nessun HTML dai parametri:
+// titolo e testo passano da textContent.
+export function fptPinDialog({ title = 'Scegli il tuo PIN', text = '', needCurrent = false, cancelable = true } = {}) {
+  if (typeof document === 'undefined') return Promise.resolve(null);
+  return new Promise(resolve => {
+    document.querySelector('.fpt-confirm-backdrop')?.remove();
+    const back = document.createElement('div');
+    back.className = 'fpt-confirm-backdrop';
+    const box = document.createElement('form'); box.className = 'fpt-confirm fpt-pin-dialog'; box.noValidate = true;
+    const field = (id, label) => `<label class="fpt-pin-field"><span>${label}</span><input id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" required></label>`;
+    box.innerHTML = '<span class="fpt-toast-line" aria-hidden="true"></span><div class="fpt-confirm-box" role="dialog" aria-modal="true" aria-labelledby="fpt-pin-title"><small>// PIN di accesso</small><h3 id="fpt-pin-title"></h3><p class="fpt-pin-text"></p>'
+      + (needCurrent ? field('fpt-pin-current', 'PIN attuale') : '') + field('fpt-pin-next', 'Nuovo PIN (4 cifre)') + field('fpt-pin-again', 'Ripeti il nuovo PIN')
+      + '<p class="fpt-pin-error" role="alert"></p><div class="fpt-confirm-actions">' + (cancelable ? '<button type="button" class="fpt-confirm-no">Annulla</button>' : '') + '<button type="submit" class="fpt-confirm-yes">Salva PIN</button></div></div>';
+    box.querySelector('h3').textContent = title;
+    box.querySelector('.fpt-pin-text').textContent = text;
+    back.append(box); document.body.append(back);
+    const error = box.querySelector('.fpt-pin-error');
+    const value = id => box.querySelector(`#${id}`)?.value || '';
+    let settled = false;
+    const close = answer => {
+      if (settled) return; settled = true;
+      document.removeEventListener('keydown', onKey, true);
+      box.classList.add('zap');
+      setTimeout(() => back.remove(), ZAP_MS);
+      resolve(answer);
+    };
+    const onKey = event => { if (event.key === 'Escape' && cancelable) { event.preventDefault(); event.stopPropagation(); close(null); } };
+    document.addEventListener('keydown', onKey, true);
+    box.querySelector('.fpt-confirm-no')?.addEventListener('click', () => close(null));
+    box.addEventListener('input', () => { error.textContent = ''; });
+    box.addEventListener('submit', event => {
+      event.preventDefault();
+      const current = value('fpt-pin-current'), next = value('fpt-pin-next'), again = value('fpt-pin-again');
+      if (needCurrent && !/^\d{4}$/.test(current)) { error.textContent = 'Inserisci il PIN attuale (4 cifre).'; return; }
+      if (!/^\d{4}$/.test(next)) { error.textContent = 'Il nuovo PIN deve avere 4 cifre.'; return; }
+      if (next !== again) { error.textContent = 'I due PIN non coincidono.'; return; }
+      if (/^(\d)\1{3}$/.test(next) || ['1234', '4321', '0123', '9876'].includes(next)) { error.textContent = 'PIN troppo facile: scegline un altro.'; return; }
+      close({ current, next });
+    });
+    setTimeout(() => box.querySelector('input')?.focus({ preventScroll:true }), 30);
+  });
+}
