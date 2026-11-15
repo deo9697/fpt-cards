@@ -343,10 +343,29 @@ export class FastScanController {
   openQuickMenu(scanId){
     const scan=this.buffer.getScan(scanId),printing=scan?.printing;if(!printing||scan.status!=='CONFIRMED')return;
     this.stopLoop();clearTimeout(this.feedbackTimer);this.detection=null;this.renderDetection();
-    this.quickMenu={scanId,sequence:scan.sequence,condition:printing.condition||this.buffer.settings.condition||'Near Mint',firstEdition:isFirstEdition(printing.edition),quantity:1,arts:[],art:-1,
+    this.quickMenu={scanId,sequence:scan.sequence,condition:printing.condition||this.buffer.settings.condition||'Near Mint',firstEdition:isFirstEdition(printing.edition),quantity:1,arts:[],art:-1,rarities:[],rarity:-1,
       baseCatalogCardId:printing.artworkOf||printing.catalogCardId,card:{cardName:printing.cardName,setCode:printing.setCode,rarity:printing.rarity,imageUrl:printing.imageUrl,language:printing.language,catalogCardId:printing.catalogCardId,game:printing.game}};
     this.renderQuickMenu(true);
-    if(printing.game==='yugioh')void this.loadQuickMenuArts(scanId);
+    if(printing.game==='yugioh'){void this.loadQuickMenuRarities(scanId);void this.loadQuickMenuArts(scanId);}
+  }
+  // Rarità (2026-11-15): stesso codice stampato in più rarità (es. CORI-EN027
+  // Ultra/Secret/Starlight, immagine identica). La scelta fatta allo scanner
+  // resta preselezionata ma si corregge qui, prima che la carta entri in sessione.
+  async loadQuickMenuRarities(scanId){
+    const menu=this.quickMenu;if(!menu)return;
+    let matches=[];try{matches=(await this.lookupDetailed(menu.card.setCode))?.matches||[];}catch{}
+    if(this.quickMenu!==menu||menu.closing)return;
+    const rarities=quickMenuRarityOptions(matches,menu.card);if(rarities.length<2)return;
+    menu.rarities=rarities;menu.rarity=Math.max(0,rarities.findIndex(option=>sameRarity(option.rarity,menu.card.rarity)));
+    const panel=typeof document!=='undefined'?document.querySelector('[data-scan-quick-menu]'):null,anchor=panel?.querySelector('.fsx-qm-art')||panel?.querySelector('.fsx-qm-actions');
+    if(!anchor){this.renderQuickMenu(false);return;}
+    anchor.insertAdjacentHTML('beforebegin',this.quickMenuRarityRow(menu));
+    const row=anchor.previousElementSibling;
+    if(quickMenuMotion(row))row.animate([{opacity:0},{opacity:1,offset:.3},{opacity:.25,offset:.55},{opacity:1}],{duration:150,delay:330,fill:'backwards'});
+  }
+  quickMenuRarityRow(menu){
+    if(menu.rarities.length<2)return '';
+    return `<div class="fsx-qm-rarity"><div class="fsx-qm-label"><span>Che rarità è?</span><span>${menu.rarities.length} per ${esc(menu.card.setCode||'questo codice')}</span></div><div class="fsx-qm-rarities" role="radiogroup" aria-label="Rarità">${menu.rarities.map((option,index)=>`<button type="button" role="radio" data-qm-rarity="${index}" aria-checked="${index===menu.rarity}">${esc(option.rarity)}</button>`).join('')}</div></div>`;
   }
   async loadQuickMenuArts(scanId){
     const menu=this.quickMenu;if(!menu)return;
@@ -368,14 +387,14 @@ export class FastScanController {
   }
   quickMenuView(){
     const menu=this.quickMenu;if(!menu)return '';
-    const card=menu.card,art=menu.arts[menu.art],image=art?art.imageUrl:cardImage(card,{small:true}),rarityTag=String(card.rarity||'').replace(/ Rare$/i,'').toUpperCase();
-    const artRow=this.quickMenuArtRow(menu);
+    const card=menu.card,art=menu.arts[menu.art],image=art?art.imageUrl:cardImage(card,{small:true}),rarityTag=quickMenuRarityTag(menu.rarities[menu.rarity]?.rarity||card.rarity);
+    const artRow=this.quickMenuRarityRow(menu)+this.quickMenuArtRow(menu);
     return `<div class="fsx-qm-dim"></div><div class="fsx-qm-line"></div><div class="fsx-qm-wrap"><section class="fsx-qm-panel" role="dialog" aria-modal="true" aria-label="Dettagli della carta scansionata">
       <div class="fsx-qm-top"><figure class="fsx-qm-card">${image?`<img src="${esc(image)}" alt="">`:`<span class="fsx-thumb-empty">${icon('card')}</span>`}${rarityTag?`<figcaption>${esc(rarityTag)}</figcaption>`:''}</figure>
       <div class="fsx-qm-cond"><div class="fsx-qm-label"><span>Condizione</span></div><div class="fsx-qm-conds" role="radiogroup" aria-label="Condizione">${SCAN_CONDITIONS.map(value=>`<button type="button" role="radio" data-qm-cond="${esc(value)}" aria-checked="${value===menu.condition}">${CONDITION_SHORT[value]||esc(value)}<small>${esc(value)}</small></button>`).join('')}</div></div></div>
       ${artRow}
       <div class="fsx-qm-actions"><button type="button" class="fsx-qm-ed" data-qm-ed aria-pressed="${menu.firstEdition}">1ª Edizione</button><div class="fsx-qm-qty" role="group" aria-label="Copie"><button type="button" data-qm-qty="-1" aria-label="Una copia in meno" ${menu.quantity<=1?'disabled':''}>−</button><output aria-live="polite">${menu.quantity}</output><button type="button" data-qm-qty="1" aria-label="Una copia in più" ${menu.quantity>=99?'disabled':''}>+</button></div><button type="button" class="fsx-qm-ok" data-qm-ok>OK</button></div>
-      <div class="fsx-qm-meta"><b>${esc(card.cardName||card.setCode)}</b><small>${esc([card.setCode,card.rarity].filter(Boolean).join(' · '))}${card.language?` · <em>${esc(LANGUAGE_SHORT[card.language]||card.language)} auto</em>`:''}</small></div>
+      <div class="fsx-qm-meta"><b>${esc(card.cardName||card.setCode)}</b><small data-qm-meta>${esc([card.setCode,menu.rarities[menu.rarity]?.rarity||card.rarity].filter(Boolean).join(' · '))}${card.language?` · <em>${esc(LANGUAGE_SHORT[card.language]||card.language)} auto</em>`:''}</small></div>
       <div class="fsx-qm-notch" aria-hidden="true">FPT</div><div class="fsx-qm-sweep"></div>
     </section><div class="fsx-qm-tab">SCAN // ${String(menu.sequence||0).padStart(3,'0')}</div><div class="fsx-qm-stamp" aria-hidden="true">OK</div></div>`;
   }
@@ -388,8 +407,9 @@ export class FastScanController {
   }
   quickMenuClick(event){
     const menu=this.quickMenu;if(!menu||menu.closing)return;
-    const cond=event.target.closest('[data-qm-cond]'),art=event.target.closest('[data-qm-art]'),step=event.target.closest('[data-qm-qty]');
+    const cond=event.target.closest('[data-qm-cond]'),art=event.target.closest('[data-qm-art]'),step=event.target.closest('[data-qm-qty]'),rarity=event.target.closest('[data-qm-rarity]');
     if(cond)menu.condition=cond.dataset.qmCond;
+    else if(rarity)menu.rarity=Number(rarity.dataset.qmRarity);
     else if(art)menu.art=Number(art.dataset.qmArt);
     else if(event.target.closest('[data-qm-ed]'))menu.firstEdition=!menu.firstEdition;
     else if(step)menu.quantity=Math.min(99,Math.max(1,menu.quantity+Number(step.dataset.qmQty)));
@@ -403,6 +423,9 @@ export class FastScanController {
     const menu=this.quickMenu;if(!menu||!node)return;
     node.querySelectorAll('[data-qm-cond]').forEach(button=>button.setAttribute('aria-checked',String(button.dataset.qmCond===menu.condition)));
     node.querySelectorAll('[data-qm-art]').forEach(button=>button.setAttribute('aria-checked',String(Number(button.dataset.qmArt)===menu.art)));
+    node.querySelectorAll('[data-qm-rarity]').forEach(button=>button.setAttribute('aria-checked',String(Number(button.dataset.qmRarity)===menu.rarity)));
+    const chosenRarity=menu.rarities[menu.rarity]?.rarity||menu.card.rarity,tag=node.querySelector('.fsx-qm-card figcaption'),meta=node.querySelector('[data-qm-meta]');
+    if(tag)tag.textContent=quickMenuRarityTag(chosenRarity);if(meta)meta.textContent=[menu.card.setCode,chosenRarity].filter(Boolean).join(' · ');
     node.querySelector('[data-qm-ed]')?.setAttribute('aria-pressed',String(menu.firstEdition));
     const output=node.querySelector('.fsx-qm-qty output');if(output)output.textContent=String(menu.quantity);
     const minus=node.querySelector('[data-qm-qty="-1"]'),plus=node.querySelector('[data-qm-qty="1"]');if(minus)minus.disabled=menu.quantity<=1;if(plus)plus.disabled=menu.quantity>=99;
@@ -410,14 +433,22 @@ export class FastScanController {
   }
   applyQuickMenu(menu){
     const scan=this.buffer.getScan(menu.scanId);if(!scan||scan.status!=='CONFIRMED'||!scan.printing)return;
-    let key=scan.printing.key;const art=menu.arts[menu.art];
-    if(art&&String(art.id)!==String(scan.printing.catalogCardId)){
+    const rarityOption=menu.rarities[menu.rarity];
+    if(rarityOption&&!sameRarity(rarityOption.rarity,scan.printing.rarity)){
+      // Rarità corretta nel menu: la carta passa alla stampa a catalogo di quella
+      // rarità (stesso codice, stessa carta), con il suo printingId esatto.
+      const version=this.buffer.invalidateScan(scan.id),picked=rarityOption.printing;
+      this.buffer.confirmScan(scan.id,{...scan.printing,key:'',printingId:picked.printingId||'',rarity:picked.rarity,setName:picked.setName||scan.printing.setName,imageUrl:picked.imageUrl||scan.printing.imageUrl,userRarity:picked.rarity},scan.matchType,scan.warning||'',version);
+    }
+    const current=this.buffer.getScan(menu.scanId);if(!current?.printing)return;
+    let key=current.printing.key;const art=menu.arts[menu.art];
+    if(art&&String(art.id)!==String(current.printing.catalogCardId)){
       // Illustrazione diversa da quella della stampa a catalogo: la carta
       // diventa la stessa stampa con l'id dell'art scelta. Al salvataggio
       // canonicalizeFastScanEntries la crea (CREATE_ARTWORK_PRINTING) o la
       // ritrova se qualcuno l'ha già registrata.
       const version=this.buffer.invalidateScan(scan.id);
-      this.buffer.confirmScan(scan.id,{...scan.printing,key:'',printingId:'',catalogCardId:String(art.id),imageUrl:art.imageUrl,userArtwork:true,artworkOf:menu.baseCatalogCardId,artworkLabel:`Art ${String(menu.art+1).padStart(2,'0')}`},scan.matchType,scan.warning||'',version);
+      this.buffer.confirmScan(scan.id,{...current.printing,key:'',printingId:'',catalogCardId:String(art.id),imageUrl:art.imageUrl,userArtwork:true,artworkOf:menu.baseCatalogCardId,artworkLabel:`Art ${String(menu.art+1).padStart(2,'0')}`},scan.matchType,scan.warning||'',version);
       key=this.buffer.getScan(scan.id).printing.key;
     }
     this.buffer.setCondition(key,menu.condition);
@@ -509,6 +540,7 @@ export class FastScanController {
         this.onToast?.(`Nessuna carta salvabile: da correggere · ${rejectedNames.join(', ')}`);
         return;
       }
+      const savedExpectation=prepared.items.map(item=>({cardName:item.cardName,setCode:item.setCode,rarity:item.rarity,game:item.game}));
       stage='rpc';const rpcPayload=prepared.items;this.sync=prepareFastScanSync(rpcPayload,this.sync);await this.persist(true);this.debugTrace('save:rpc-request',{batchId:this.sync.batchId,chunks:this.sync.chunks.length,rpcPayload});
       let repairAttempts=0;
       for(const index of pendingChunkIndexes(this.sync)){
@@ -534,15 +566,24 @@ export class FastScanController {
         this.currentScanId=null;this.pendingCaptureId=null;await this.disposeProductionOcr();this.buffer.clear();this.hasRecovery=false;await clearScanSession();
         // La ricarica della Raccolta (tutta, tua e del team) non blocca più la fine
         // del salvataggio: si va subito alla Raccolta e l'elenco si aggiorna da solo.
-        stage='refresh';void Promise.resolve().then(()=>this.onSaved?.()).then(()=>this.debugTrace('save:refresh',{saveAccepted:true}),error=>{this.debugTrace('save:refresh-failed',{saveAccepted:true,error:error?.message||String(error)});this.onToast?.('Raccolta salvata. Aggiornamento elenco rimandato.');});
+        stage='refresh';void Promise.resolve().then(()=>this.onSaved?.()).then(()=>this.verifySavedRarities(savedExpectation)).then(()=>this.debugTrace('save:refresh',{saveAccepted:true}),error=>{this.debugTrace('save:refresh-failed',{saveAccepted:true,error:error?.message||String(error)});this.onToast?.('Raccolta salvata. Aggiornamento elenco rimandato.');});
         this.phase='setup';const repaired=prepared.repaired+repairAttempts;this.onToast?.(repaired?`Sessione salvata · ${repaired} identità canoniche aggiornate`:'Sessione salvata nella Raccolta');this.onRoute?.('collection');
       }else{
-        stage='refresh';void Promise.resolve().then(()=>this.onSaved?.()).catch(()=>{});
+        stage='refresh';void Promise.resolve().then(()=>this.onSaved?.()).then(()=>this.verifySavedRarities(savedExpectation)).catch(()=>{});
         this.hasRecovery=true;
         this.onToast?.(`${rpcPayload.length} carte salvate · ${rejectedNames.length} da correggere: ${rejectedNames.join(', ')}`);
       }
     }catch(error){const reason=saveRejectionReason(error,stage);this.debugTrace('save:rejected',{saveAccepted:false,saveRejected:true,saveRejectionReason:reason,stage,error:error?.message||String(error),details:error?.details||null});this.onToast?.('Sincronizzazione interrotta. I tuoi scan sono salvati sul dispositivo.');}
     finally{this.saving=false;this.onRender();}
+  }
+  // Dopo il salvataggio e la ricarica della Raccolta: ogni carta deve risultare
+  // con lo stesso codice e la stessa rarità scelti. Se no, lo si dice subito.
+  verifySavedRarities(expected=[]){
+    const mine=this.getCollection?.()?.mine;if(!Array.isArray(mine)||!mine.length)return [];
+    const missing=expected.filter(item=>(item.game||'yugioh')==='yugioh'&&item.rarity&&!mine.some(row=>String(row.setCode||'').toUpperCase()===String(item.setCode||'').toUpperCase()&&sameRarity(row.rarity,item.rarity)));
+    this.debugTrace('save:verify-rarities',{checked:expected.length,missing});
+    if(missing.length)this.onToast?.(`Controlla in Raccolta: ${missing.map(item=>`${item.cardName||item.setCode} (${item.setCode} ${item.rarity})`).join(', ')} non risulta con la rarità scelta`,'warn');
+    return missing;
   }
   async discard(render=true){this.quickMenu=null;this.currentScanId=null;this.pendingCaptureId=null;clearTimeout(this.persistTimer);this.beginCaptureFeedback();this.startRequestId+=1;this.stopLoop();clearTimeout(this.backgroundStopTimer);this.backgroundCameraStopped=false;this.camera.stop('discard-session');this.buffer=new ScanSessionBuffer();this.sync=null;this.hasRecovery=false;this.exitOpen=false;this.manualOpen=false;this.settingsOpen=false;this.recoveringCamera=false;this.cameraStarting=false;this.phase='setup';await this.disposeProductionOcr();await clearScanSession();if(render)this.onRender();}
   async switchCamera(){if(this.devices.length<2)return;const index=this.devices.findIndex(item=>item.deviceId===this.camera.deviceId);const next=this.devices[(index+1)%this.devices.length];this.camera.deviceId=next.deviceId;this.cameraPreferenceChecked=true;writeCameraPreference(next.deviceId,true);this.autoZoomed=false;await this.start();}
@@ -973,6 +1014,28 @@ function hardValidationReason(base){
 // questa funzione conferma esplicitamente che la fonte ufficiale (YGOPRODeck)
 // ha esattamente quel codice e quella rarità per quella carta. Senza la
 // funzione il comportamento resta quello di sempre: nessuna creazione implicita.
+const RARITY_RANK=['Common','Short Print','Rare','Super Rare','Ultra Rare','Ultimate Rare','Secret Rare','Prismatic Secret Rare','Platinum Secret Rare','Quarter Century Secret Rare','Starlight Rare','Collector\'s Rare','Ghost Rare','Gold Rare'];
+function sameRarity(left,right){return String(left||'').trim().toLowerCase()===String(right||'').trim().toLowerCase();}
+function quickMenuRarityTag(rarity){return String(rarity||'').replace(/ Rare$/i,'').toUpperCase();}
+// Stampe a catalogo dello stesso codice e della stessa carta, una per rarità.
+export function quickMenuRarityOptions(matches=[],card={}){
+  const code=String(card.setCode||'').toUpperCase(),catalog=String(card.catalogCardId||''),seen=new Map();
+  for(const row of matches||[]){
+    const rarity=sanitizeYugiohRarity(row?.rarity);if(!rarity||String(row.setCode||'').toUpperCase()!==code)continue;
+    if(catalog&&String(row.catalogCardId||'')!==catalog)continue;if(row.variantId||row.artworkId)continue;
+    const key=rarity.toLowerCase();if(!seen.has(key)||(!seen.get(key).printing.printingId&&row.printingId))seen.set(key,{rarity,printing:{...row,rarity}});
+  }
+  const rank=value=>{const index=RARITY_RANK.findIndex(item=>sameRarity(item,value));return index<0?99:index;};
+  return [...seen.values()].sort((a,b)=>rank(a.rarity)-rank(b.rarity)||a.rarity.localeCompare(b.rarity));
+}
+// Guardia (2026-11-15): la rarità scelta dall'utente non deve mai cambiare
+// in silenzio al salvataggio. Se il catalogo la ricollegherebbe a un'altra
+// rarità, la carta resta in sessione con il motivo invece di salvarne un'altra.
+function chosenRarityChange(entry,item){
+  if((item.game||entry.game||'yugioh')!=='yugioh')return '';
+  const chosen=sanitizeYugiohRarity(entry.userRarity||entry.rarity);
+  return chosen&&item.rarity&&!sameRarity(chosen,item.rarity)?`hai scelto ${chosen}, il catalogo la salverebbe come ${item.rarity}`:'';
+}
 export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=async()=>[],resolveCanonicalCard=async()=>null,confirmSourcePrinting=async()=>false) {
   const items=[],decisions=[],rejected=[];let repaired=0;
   const sourceConfirms=async base=>{try{return base.game==='yugioh'&&!base.variantId&&!base.artworkId&&Boolean(await confirmSourcePrinting(base));}catch{return false;}};
@@ -985,6 +1048,7 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
   const prefetch=[...new Map(entries.map(entry=>{try{const base=batchItem(entry);return base.game==='yugioh'&&base.setCode?[base.game+':'+base.setCode,[base.setCode,base.game]]:null;}catch{return null;}}).filter(Boolean)).values()];
   await mapWithConcurrency(prefetch,LOOKUP_PREFETCH_CONCURRENCY,([code,game])=>lookupOnce(code,game).catch(()=>null));
   for(const entry of entries){
+    const itemsBefore=items.length,decisionsBefore=decisions.length;
     // Ogni entry è isolata in un proprio try/catch: una singola identità
     // irrisolvibile (rarity contaminata sopravvissuta alla sanitizzazione,
     // mismatch di catalogo, ambiguità reale) non deve più far fallire l'intera
@@ -1063,6 +1127,9 @@ export async function canonicalizeFastScanEntries(entries=[],lookupPrintings=asy
       const canonical=best.item,item={...base,printingId:canonical.printingId,game:canonical.game,catalogCardId:canonical.catalogCardId,cardName:canonical.cardName,setCode:canonical.setCode,setName:canonical.setName,rarity:canonical.rarity,imageUrl:canonical.imageUrl};items.push(item);decisions.push(canonicalDecision(item,'CANONICAL_PRINTING_ID'));repaired+=1;
     }catch(error){
       rejected.push({entry,code:error?.code||'PRINTING_CANONICALIZATION_FAILED',message:error?.message||String(error),details:error?.details||null,sourceUnconfirmed:Boolean(error?.sourceUnconfirmed)});
+    }finally{
+      const changed=items.slice(itemsBefore).map(item=>chosenRarityChange(entry,item)).find(Boolean);
+      if(changed){items.length=itemsBefore;decisions.length=decisionsBefore;rejected.push({entry,code:'RARITY_CHANGED',message:`${entry.cardName||entry.setCode}: ${changed}`,details:null,sourceUnconfirmed:false});}
     }
   }
   return {items,repaired,decisions,rejected};

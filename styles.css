@@ -4140,3 +4140,9 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
 .fpt-pin-dialog .fpt-pin-field input { width:100%;padding:10px 12px;border:1px solid var(--fpt-line);border-radius:0;background:#07060d;color:var(--fpt-gold);font:800 1.3rem var(--fpt-mono);letter-spacing:.6em;text-align:center; }
 .fpt-pin-dialog .fpt-pin-field input:focus { outline:none;border-color:var(--fpt-gold);box-shadow:0 0 0 1px var(--fpt-gold),0 0 12px #e8b84f44; }
 .fpt-pin-dialog .fpt-pin-error { position:relative;min-height:1.2em;margin:8px 0 0;color:var(--fpt-danger);font-size:.78rem; }
+
+/* Fast Scan menu rapido: riga Rarità (2026-11-15) */
+.fsx-qm-rarity { display:grid;gap:6px; }
+.fsx-qm-rarities { display:flex;flex-wrap:wrap;gap:4px; }
+.fsx-qm-rarities button { flex:1 1 auto;min-height:34px;padding:4px 10px;border:1px solid #2a3142;border-radius:0;background:rgba(255,255,255,.03);color:#eef0f6;font:800 .72rem var(--qm-mono,ui-monospace,monospace);letter-spacing:.04em;text-transform:uppercase; }
+.fsx-qm-rarities button[aria-checked="true"] { border-color:var(--qm-gold,#e8b84f);background:var(--qm-gold,#e8b84f);color:#0a0a0a;box-shadow:0 0 14px rgba(232,184,79,.45); }

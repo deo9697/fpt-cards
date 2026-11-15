@@ -149,6 +149,60 @@ await check('fotocamera: sui telefoni con più obiettivi si sceglie il principal
   assert.equal(preferredBackCamera([]), null);
 });
 
+// 2026-11-15: CORI-EN027 esiste in Ultra/Secret/Starlight con la stessa
+// immagine; una Ultra Rare era finita in Raccolta come Secret (prezzo 40 € invece di 5 €).
+const { quickMenuRarityOptions } = await import('../js/fast-scan.js');
+const coriRow = (rarity, printingId) => ({ printingId, game: 'yugioh', catalogCardId: '44001993', cardName: 'Magician of Dark Chaos - Black Chaos', setCode: 'CORI-EN027', setName: 'Chaos Origins', rarity, imageUrl: 'https://images.ygoprodeck.com/images/cards/44001993.jpg' });
+const coriRows = [coriRow('Starlight Rare', 'p-star'), coriRow('Secret Rare', 'p-secret'), coriRow('Ultra Rare', 'p-ultra'), { ...coriRow('Ultra Rare', ''), printingId: '' }];
+await check('rarità: opzioni uniche per codice e carta, in ordine Ultra < Secret < Starlight', async () => {
+  const options = quickMenuRarityOptions(coriRows, coriRow('Secret Rare', 'p-secret'));
+  assert.deepEqual(options.map(option => option.rarity), ['Ultra Rare', 'Secret Rare', 'Starlight Rare']);
+  assert.equal(options[0].printing.printingId, 'p-ultra', 'tra due righe uguali vince quella con printingId');
+  assert.equal(quickMenuRarityOptions([coriRow('Ultra Rare', 'x'), { ...coriRow('Secret Rare', 'y'), catalogCardId: '999' }], coriRow('Ultra Rare', 'x')).length, 1, 'mai rarità di un\'altra carta');
+});
+await check('rarità: nel menu si corregge Secret → Ultra e la sessione usa la stampa Ultra esatta', async () => {
+  const c = controller(async () => null);
+  c.lookupDetailed = async () => ({ matches: coriRows });
+  const scan = scanOf(c, coriRow('Secret Rare', 'p-secret'));
+  c.openQuickMenu(scan.id);
+  await c.loadQuickMenuRarities(scan.id);
+  assert.equal(c.quickMenu.rarities.length, 3);
+  assert.equal(c.quickMenu.rarities[c.quickMenu.rarity].rarity, 'Secret Rare', 'preselezionata la rarità scelta allo scanner');
+  assert.match(c.quickMenuView(), /Che rarità è\?/);
+  c.quickMenu.rarity = 0;
+  await c.confirmQuickMenu();
+  const entries = [...c.buffer.entries.values()];
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].rarity, 'Ultra Rare');
+  assert.equal(entries[0].printingId, 'p-ultra');
+  clearTimeout(c.persistTimer);
+});
+await check('rarità: un codice con una sola rarità non mostra la riga', async () => {
+  const c = controller(async () => null);
+  c.lookupDetailed = async () => ({ matches: [blueEyes] });
+  const scan = scanOf(c, blueEyes);
+  c.openQuickMenu(scan.id);
+  await c.loadQuickMenuRarities(scan.id);
+  assert.doesNotMatch(c.quickMenuView(), /Che rarità è/);
+  clearTimeout(c.persistTimer);
+});
+await check('salvataggio: la rarità scelta non cambia mai in silenzio', async () => {
+  const chosen = { ...coriRow('Ultra Rare', ''), printingId: '', quantity: 1, language: 'Inglese', condition: 'Near Mint', edition: '', key: 'k' };
+  const lookup = async () => [{ printing_id: 'p-secret', game: 'yugioh', catalog_card_id: '44001993', card_name: chosen.cardName, set_code: 'CORI-EN027', set_name: 'Chaos Origins', rarity: 'Secret Rare', image_url: chosen.imageUrl }];
+  const result = await canonicalizeFastScanEntries([chosen], lookup);
+  assert.equal(result.items.filter(item => item.rarity === 'Secret Rare').length, 0, 'mai salvata come Secret');
+  assert.equal(result.rejected.length, 1, 'resta in sessione con il motivo');
+  const ok = await canonicalizeFastScanEntries([chosen], async () => [...(await lookup()), { printing_id: 'p-ultra', game: 'yugioh', catalog_card_id: '44001993', card_name: chosen.cardName, set_code: 'CORI-EN027', set_name: 'Chaos Origins', rarity: 'Ultra Rare', image_url: chosen.imageUrl }]);
+  assert.equal(ok.items[0]?.rarity, 'Ultra Rare'); assert.equal(ok.items[0]?.printingId, 'p-ultra');
+});
+await check('dopo il salvataggio: avviso se in Raccolta la rarità non è quella scelta', async () => {
+  const toasts = [];
+  const c = new FastScanController({ camera: {}, api: {}, paddleOcr: {}, getCollection: () => ({ mine: [{ setCode: 'CORI-EN027', rarity: 'Secret Rare' }, { setCode: 'SDBE-IT001', rarity: 'Ultra Rare' }], team: [] }), isOnline: () => true, onRender() {}, onRoute() {}, onToast: m => toasts.push(m) });
+  const missing = c.verifySavedRarities([{ cardName: 'Black Chaos', setCode: 'CORI-EN027', rarity: 'Ultra Rare' }, { cardName: 'Blue-Eyes', setCode: 'SDBE-IT001', rarity: 'Ultra Rare' }]);
+  assert.equal(missing.length, 1); assert.match(toasts[0], /CORI-EN027 Ultra Rare/);
+  clearTimeout(c.persistTimer);
+});
+
 await check('salvataggio: art scelta assente a catalogo → si crea accanto a quella principale', async () => {
   const result = await canonicalizeFastScanEntries([altEntry], async () => [mainRow]);
   assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
