@@ -53,14 +53,14 @@ try {
     await viewport(width,height);await call('Page.navigate',{url:origin+'/launch-fixture'});
     await wait('document.querySelector("#app-launch")?.classList.contains("is-branded") && document.querySelector("#app-launch")?.classList.contains("has-mascot")');
     await evaluate('document.fonts.ready');await delay(120);
-    const layout=await evaluate('(()=>{const scene=document.querySelector(".launch-arcane"),img=document.querySelector("[data-launch-mascot]"),hero=img.getBoundingClientRect(),title=document.querySelector(".launch-title").getBoundingClientRect(),progress=document.querySelector(".launch-progress").getBoundingClientRect();return {scroll:document.documentElement.scrollWidth,width:innerWidth,sceneBottom:scene.getBoundingClientRect().bottom,sceneScroll:scene.scrollHeight,sceneHeight:scene.clientHeight,heroTop:hero.top,heroBottom:hero.bottom,titleBottom:title.bottom,progressTop:progress.top,border:getComputedStyle(img).borderTopWidth,cards:document.querySelectorAll(".launch-card").length}})()');
+    const layout=await evaluate('(()=>{const scene=document.querySelector(".launch-arcane"),img=document.querySelector("[data-launch-mascot]"),hero=img.getBoundingClientRect(),title=document.querySelector(".launch-title").getBoundingClientRect(),progress=document.querySelector(".launch-progress").getBoundingClientRect();return {scroll:document.documentElement.scrollWidth,width:innerWidth,sceneBottom:scene.getBoundingClientRect().bottom,sceneScroll:scene.scrollHeight,sceneHeight:scene.clientHeight,heroTop:hero.top,heroBottom:hero.bottom,titleBottom:title.bottom,progressTop:progress.top,border:getComputedStyle(img).borderTopWidth,cards:Number(document.querySelector("#app-launch").dataset.launchCards),canvases:document.querySelectorAll("canvas.launch-storm").length,storm:document.querySelector("#app-launch").dataset.launchStorm}})()');
     assert(layout.scroll<=width&&layout.sceneBottom<=height+1&&layout.sceneScroll<=layout.sceneHeight+1,JSON.stringify(layout));
     if(height>500)assert(layout.heroTop>layout.titleBottom&&layout.heroBottom<layout.progressTop,JSON.stringify(layout));
-    assert.equal(layout.cards,11);assert.equal(layout.border,'0px');
+    assert.equal(layout.cards,34);assert.equal(layout.canvases,2);assert.equal(layout.storm,"live");assert.equal(layout.border,'0px');
     assert(await evaluate('document.querySelector(".launch-title").textContent.includes("YEAH BABY LES GOH!")'));
     if(width===390){await delay(350);fs.writeFileSync(path.join(output,'phone-arcane-launch.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));}
   }
-  console.log('PASS real arcane launch at 320/360/390/412 px and landscape; unframed mascot and 11 cards');
+  console.log('PASS real arcane launch at 320/360/390/412 px and landscape; unframed mascot and 34-card storm on two canvases');
 
   await viewport(390,844);await call('Page.navigate',{url:origin+'/launch-fixture'});await wait('!!window.FPT_LAUNCH');
   await evaluate('window.FPT_LAUNCH.hold("Sincronizzazione in corso");document.querySelector("#app").innerHTML="<main class=app-shell>Ready</main>"');await delay(180);
@@ -70,12 +70,20 @@ try {
   assert.equal(await evaluate('document.querySelector("meta[name=theme-color]").content'),'#07080d');
   console.log('PASS restored-session hold follows actual bootstrap; release restores theme and dismisses');
 
+  // Easter egg del team: compare tra le righe di attesa (forzato con ?launch-egg).
+  await call('Page.navigate',{url:origin+'/launch-fixture?launch-egg'});await wait('!!window.FPT_LAUNCH');
+  await evaluate('window.FPT_LAUNCH.hold("Sincronizzazione in corso")');
+  await wait('/Cristofer|Arlia|Nello/.test(document.querySelector("[data-launch-log]")?.textContent||"")');
+  assert.equal(await evaluate('document.querySelector("#app-launch").dataset.launchEgg'),'on');
+  await evaluate('window.FPT_LAUNCH.release()');
+  console.log('PASS team easter egg appears in the boot log');
+
   await call('Page.navigate',{url:origin+'/launch-fixture?ready'});await wait('!!document.querySelector(".app-shell")');await wait('!document.querySelector("#app-launch")');
   console.log('PASS fast usable UI closes splash without a minimum display time');
 
   await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
-  await call('Page.navigate',{url:origin+'/launch-fixture'});await wait('!!document.querySelector(".launch-card")');
-  assert.equal(await evaluate('getComputedStyle(document.querySelector(".launch-card")).animationName'),'none');
+  await call('Page.navigate',{url:origin+'/launch-fixture'});await wait('document.querySelector("#app-launch")?.dataset.launchStorm==="static"');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".launch-logo")).animationName'),'none');
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".launch-mascot")).animationName'),'none');
   await call('Emulation.setEmulatedMedia',{features:[]});
   console.log('PASS reduced motion preserves static mascot, cards and progress indicator');

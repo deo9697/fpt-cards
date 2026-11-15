@@ -1,64 +1,67 @@
-/* Arcane launch: the native-compatible logo remains the first painted frame. */
+/* Arcane launch: the native-compatible logo remains the first painted frame.
+   2026-11-15 "tempesta di carte" (versione A approvata): glitch title, card
+   storm on two canvases around Blattaman, terminal status with step log. */
 #app-launch{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;overflow:hidden;background:#050711;color:#f1edf7;pointer-events:none;opacity:1;transition:opacity .4s ease;font-family:'Manrope FPT',system-ui,sans-serif}
 #app-launch.is-ready{opacity:0}
 #app-launch .app-launch-mark{grid-area:1/1;position:relative;z-index:2;width:clamp(84px,24vw,128px);height:clamp(84px,24vw,128px);object-fit:contain;transition:opacity .35s ease,transform .6s ease}
 #app-launch.is-branded.has-mascot .app-launch-mark{opacity:0;transform:scale(.92)}
-#app-launch .launch-arcane{position:absolute;inset:0;display:flex;flex-direction:column;width:min(100%,440px);margin:auto;padding:max(28px,env(safe-area-inset-top)) 26px max(22px,env(safe-area-inset-bottom));isolation:isolate;opacity:0;transition:opacity .55s ease}
+#app-launch .launch-arcane{position:absolute;inset:0;display:flex;flex-direction:column;width:min(100%,440px);margin:auto;padding:max(22px,env(safe-area-inset-top)) 20px max(16px,env(safe-area-inset-bottom));isolation:isolate;opacity:0;transition:opacity .55s ease}
 #app-launch.is-branded .launch-arcane{opacity:1}
-#app-launch .launch-arcane::before{content:'';position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 50% 48%,#6d28ab33,transparent 57%),linear-gradient(180deg,#0e0919,#08070d)}
-#app-launch .launch-arcane::after{content:'';position:absolute;inset:0;z-index:8;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,#0000000c 3px 4px);opacity:.35}
-#app-launch .launch-top{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#ad9bbf;font:9px ui-monospace,monospace;letter-spacing:.16em}
-#app-launch .launch-top strong{font:700 11px 'Manrope FPT',sans-serif;letter-spacing:.12em;color:#ede2f8}
-#app-launch .launch-live{display:flex;align-items:center;gap:6px;white-space:nowrap}
-#app-launch .launch-live i{width:4px;height:4px;border-radius:50%;background:#a470ff;box-shadow:0 0 9px #a470ff;animation:launch-live-pulse 1.8s ease-in-out infinite}
-#app-launch .launch-rule{height:1px;flex:none;margin-top:16px;background:linear-gradient(90deg,#d8ab6d55,#8d54db66,transparent)}
-#app-launch .launch-title{text-align:center;margin-top:36px}
-#app-launch .launch-eyebrow{color:#eacb88;font:9px ui-monospace,monospace;letter-spacing:.2em}
-#app-launch .launch-title h2{font:500 27px/1.32 'Cinzel FPT',Georgia,serif;letter-spacing:.035em;margin:12px 0 0}
-#app-launch .launch-title em{font-style:normal;color:#eacb88}
-#app-launch .launch-battlecry{margin:12px 0 0;color:#c4a0f4;font-size:12px;font-weight:800;letter-spacing:.12em;text-shadow:0 0 16px #a96bf833}
-#app-launch .launch-stage{--storm-x:146px;--storm-y:111px;position:relative;flex:1;min-height:220px;display:grid;place-items:center;perspective:850px;margin:0 -10px}
-#app-launch .launch-aura{position:absolute;width:286px;height:248px;border-radius:50%;background:#9a3cfc30;filter:blur(38px);animation:launch-aura-breathe 4s ease-in-out infinite}
-#app-launch .launch-orbit{position:absolute;width:310px;height:310px;border:1px solid #a871f32b;border-radius:50%;transform:rotateX(58deg);box-shadow:0 0 32px #8444c218}
-#app-launch .launch-orbit::before{content:'';position:absolute;inset:-5px;border-radius:50%;border:1px dashed #d5a56052;animation:launch-orbit-spin 38s linear infinite}
-#app-launch .launch-orbit::after{content:'';position:absolute;inset:14px;border-radius:50%;border:1px solid transparent;border-top-color:#efc883bb;border-left-color:#b780f844;animation:launch-orbit-spin 5s linear infinite}
-#app-launch .launch-orbit-alt{width:270px;height:350px;border-color:#ae79f51c;transform:rotateZ(-24deg) rotateY(44deg)}
-#app-launch .launch-orbit-alt::before{animation-direction:reverse;border-style:solid;border-color:#e3ac4e1a}
-#app-launch .launch-orbit-alt::after{animation-duration:8s;border-top-color:#b07dff88}
-#app-launch .launch-mascot{position:relative;z-index:4;width:min(292px,84vw);aspect-ratio:640/498;filter:drop-shadow(0 15px 20px #0007) drop-shadow(0 0 13px #ae68ff38);animation:launch-mascot-float 5.5s ease-in-out infinite;opacity:0;transition:opacity .35s ease}
+#app-launch .launch-arcane::before{content:'';position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse 80% 45% at 50% 56%,#5b1fa040,transparent 70%),radial-gradient(ellipse 60% 30% at 50% 100%,#ff4fd81a,transparent 70%),linear-gradient(180deg,#0d0818,#050409)}
+#app-launch .launch-arcane::after{content:'';position:absolute;inset:0;z-index:9;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,#00000014 3px 4px)}
+#app-launch .launch-flash{position:absolute;inset:0;z-index:8;pointer-events:none;background:radial-gradient(circle at 50% 56%,#e9d6ff,#9b5cff55 40%,transparent 70%);opacity:0;mix-blend-mode:screen}
+#app-launch .launch-flash.is-on{animation:launch-flash .55s ease-out}
+#app-launch .launch-top{position:relative;z-index:7;display:flex;justify-content:space-between;align-items:center;gap:8px;font:700 9px ui-monospace,monospace;letter-spacing:.16em;color:#ad9bbf}
+#app-launch .launch-top strong{font:700 9px ui-monospace,monospace;letter-spacing:.14em;color:#ede2f8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app-launch .launch-live{display:flex;align-items:center;gap:6px;white-space:nowrap;color:#ff4fd8}
+#app-launch .launch-live i{width:6px;height:6px;background:#ff4fd8;box-shadow:0 0 8px #ff4fd8;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);animation:launch-blink 1s steps(2) infinite}
+#app-launch .launch-rule{position:relative;z-index:7;height:1px;flex:none;margin-top:12px;background:linear-gradient(90deg,#ff4fd8,#9b5cff 45%,#e8b84f 80%,transparent)}
+#app-launch .launch-title{position:relative;z-index:7;text-align:center;margin-top:18px}
+#app-launch .launch-eyebrow{font:800 9px ui-monospace,monospace;letter-spacing:.32em;color:#e8b84f}
+#app-launch .launch-logo{position:relative;display:block;width:max-content;margin:6px auto 0;font:900 56px/1 'Cinzel FPT',Georgia,serif;letter-spacing:.06em;background:linear-gradient(180deg,#fff1c4,#e8b84f 55%,#9b6a18);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 14px #e8b84f55)}
+#app-launch .launch-logo::before,#app-launch .launch-logo::after{content:attr(data-text);position:absolute;inset:0;background:none;-webkit-text-fill-color:currentColor;opacity:0}
+#app-launch .launch-logo::before{color:#ff4fd8}
+#app-launch .launch-logo::after{color:#4fd8ff}
+#app-launch .launch-logo.is-glitch::before{animation:launch-gl1 .3s steps(3) forwards}
+#app-launch .launch-logo.is-glitch::after{animation:launch-gl2 .3s steps(3) forwards}
+#app-launch .launch-cards-word{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px;padding-left:.6em;font:800 10px ui-monospace,monospace;letter-spacing:.6em;color:#c8a8ff}
+#app-launch .launch-cards-word::before,#app-launch .launch-cards-word::after{content:'';width:36px;height:1px;background:linear-gradient(90deg,transparent,#ff4fd8)}
+#app-launch .launch-cards-word::after{transform:scaleX(-1)}
+#app-launch .launch-battlecry{display:inline-block;margin:12px 0 0;padding:5px 12px;border:1px solid #ff4fd866;background:#ff4fd812;color:#ffd9f6;font:900 12px 'Manrope FPT',sans-serif;letter-spacing:.14em;text-shadow:0 0 8px #ff4fd8,0 0 18px #ff4fd888;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+#app-launch .launch-stage{position:relative;flex:1;min-height:220px;margin:0 -20px}
+#app-launch .launch-aura{position:absolute;left:50%;top:50%;width:286px;height:248px;margin:-124px 0 0 -143px;border-radius:50%;background:#9a3cfc30;filter:blur(38px);animation:launch-aura-breathe 4s ease-in-out infinite}
+#app-launch .launch-storm{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#app-launch .launch-storm-back{z-index:1}
+#app-launch .launch-storm-front{z-index:5}
+#app-launch .launch-mascot{position:absolute;z-index:3;left:50%;top:50%;width:min(270px,72vw);aspect-ratio:640/498;transform:translate(-50%,-50%);filter:drop-shadow(0 14px 18px #000a) drop-shadow(0 0 16px #ae68ff55);animation:launch-mascot-float 5.5s ease-in-out infinite;opacity:0;transition:opacity .35s ease}
 #app-launch.has-mascot .launch-mascot{opacity:1}
 #app-launch .launch-mascot img{display:block;width:100%;height:100%;object-fit:contain;border:0;border-radius:0;box-shadow:none}
-#app-launch .launch-storm,#app-launch .launch-particles{position:absolute;inset:0;pointer-events:none}
-#app-launch .launch-card{position:absolute;left:50%;top:50%;width:var(--card-width);aspect-ratio:428/614;opacity:0;will-change:transform;animation:launch-card-vortex var(--orbit-time) linear infinite;animation-delay:var(--orbit-delay)}
-#app-launch .launch-card img{display:block;width:100%;height:100%;object-fit:contain;border-radius:2px;box-shadow:0 0 0 1px #d6965b88,0 0 12px #ad61ff55}
-#app-launch .launch-card::after{content:'';position:absolute;left:72%;top:58%;height:1px;width:var(--trail);background:linear-gradient(90deg,#e5c57a66,#a564ff44,transparent);transform-origin:left center;transform:rotate(-24deg);filter:blur(.35px);z-index:-1}
-#app-launch .launch-particle{position:absolute;left:var(--x);bottom:18%;width:2px;height:2px;border-radius:50%;background:#d9adff;box-shadow:0 0 12px #cf90ff;opacity:0;animation:launch-ember-rise var(--duration) linear infinite;animation-delay:var(--delay)}
-#app-launch .launch-floor{position:absolute;bottom:18px;left:50%;width:215px;height:6px;border-radius:100%;background:#bd6eff44;filter:blur(6px);transform:translateX(-50%)}
-#app-launch .launch-progress{flex:none;padding:0 3px;margin-top:8px}
-#app-launch .launch-caption{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
-#app-launch .launch-caption p{margin:0;font-size:12px;line-height:1.5;color:#e3d9ec}
-#app-launch .launch-wait{font:9px ui-monospace,monospace;letter-spacing:.1em;color:#ad94c6}
-#app-launch .launch-track{height:4px;overflow:hidden;background:#39274388}
-#app-launch .launch-track i{display:block;width:38%;height:100%;background:linear-gradient(90deg,#8043c9,#ba84fe 65%,#f1cb84);box-shadow:0 0 14px #ac6aff88;animation:launch-track-sweep 1.5s ease-in-out infinite}
-#app-launch .launch-footer{display:flex;justify-content:space-between;gap:12px;align-items:center;flex:none;margin-top:26px;padding-top:16px;border-top:1px solid #61417d24;font:8px ui-monospace,monospace;letter-spacing:.15em;color:#796885}
-#app-launch .launch-footer strong{font-weight:400;color:#ba9bd0}
-@keyframes launch-live-pulse{50%{opacity:.35}}
+#app-launch .launch-progress{position:relative;z-index:7;flex:none;padding:9px 12px;border:1px solid #3a2a5c;background:#0b0814e6;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+#app-launch .launch-log{min-height:30px;font:600 9px/1.6 ui-monospace,monospace;letter-spacing:.04em;color:#7d6e95}
+#app-launch .launch-log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app-launch .launch-log b{color:#48d98b;font-weight:800}
+#app-launch .launch-log .is-egg{color:#ffb3ef;text-shadow:0 0 8px #ff4fd888}
+#app-launch .launch-log .is-egg b{color:#ff4fd8}
+#app-launch .launch-caption{display:flex;align-items:center;gap:6px;min-width:0;font:600 12px/1.4 ui-monospace,monospace;color:#e3d9ec}
+#app-launch .launch-prompt{flex:none;color:#ff4fd8}
+#app-launch .launch-caption p{margin:0;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app-launch .launch-caption p.is-typing{max-width:0;animation:launch-type calc(var(--chars,20)*22ms) steps(var(--chars,20)) forwards}
+#app-launch .launch-cursor{flex:none;width:.55em;height:1em;background:#e8b84f;animation:launch-blink .8s steps(2) infinite}
+#app-launch .launch-bar{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin-top:8px}
+#app-launch .launch-bar i{height:6px;background:#2a2140;clip-path:polygon(2px 0,100% 0,calc(100% - 2px) 100%,0 100%);transition:background .25s}
+#app-launch .launch-bar i.on{background:linear-gradient(90deg,#9b5cff,#ff4fd8);box-shadow:0 0 8px #ff4fd8}
+#app-launch .launch-bar i.is-done{background:#e8b84f;box-shadow:0 0 8px #e8b84f}
+#app-launch .launch-footer{position:relative;z-index:7;display:flex;justify-content:space-between;gap:10px;align-items:center;flex:none;margin-top:12px;padding-top:10px;border-top:1px solid #61417d33;font:700 8px ui-monospace,monospace;letter-spacing:.18em;color:#796885}
+#app-launch .launch-footer strong{font-weight:700;color:#796885}
+#app-launch .launch-footer b{color:#e8b84f;font-weight:700}
+@keyframes launch-flash{0%{opacity:.85}100%{opacity:0}}
+@keyframes launch-blink{50%{opacity:.2}}
+@keyframes launch-type{to{max-width:calc(var(--chars,20)*1ch + 2px)}}
+@keyframes launch-gl1{0%{opacity:.8;transform:translate(-4px,1px);clip-path:inset(10% 0 55% 0)}50%{opacity:.8;transform:translate(3px,-1px);clip-path:inset(60% 0 8% 0)}100%{opacity:0}}
+@keyframes launch-gl2{0%{opacity:.7;transform:translate(4px,-1px);clip-path:inset(50% 0 20% 0)}50%{opacity:.7;transform:translate(-3px,1px);clip-path:inset(5% 0 70% 0)}100%{opacity:0}}
 @keyframes launch-aura-breathe{50%{transform:scale(1.14);opacity:.55}}
-@keyframes launch-orbit-spin{to{transform:rotate(360deg)}}
-@keyframes launch-mascot-float{0%,100%{transform:translateY(3px) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}
-@keyframes launch-track-sweep{from{transform:translateX(-115%)}to{transform:translateX(370%)}}
-@keyframes launch-ember-rise{10%{opacity:0}25%{opacity:.65}80%{opacity:.2}100%{transform:translate(12px,-220px);opacity:0}}
-@keyframes launch-card-vortex{
-0%{transform:perspective(600px) translate3d(calc(-50% - var(--storm-x)),calc(-50% - 10px),-35px) rotateZ(-36deg) rotateY(70deg) scale(.65);opacity:.25;z-index:1}
-18%{transform:perspective(600px) translate3d(calc(-50% - var(--storm-x)*.55),calc(-50% - var(--storm-y)),-50px) rotateZ(8deg) rotateY(32deg) scale(.6);opacity:.45;z-index:1}
-36%{transform:perspective(600px) translate3d(calc(-50% + var(--storm-x)*.7),calc(-50% - var(--storm-y)*.7),-30px) rotateZ(50deg) rotateY(-45deg) scale(.68);opacity:.5;z-index:1}
-49%{transform:perspective(600px) translate3d(calc(-50% + var(--storm-x)),calc(-50% + 5px),0) rotateZ(80deg) rotateY(-70deg) scale(.8);opacity:.75;z-index:1}
-51%{z-index:6}
-68%{transform:perspective(600px) translate3d(calc(-50% + var(--storm-x)*.5),calc(-50% + var(--storm-y)),20px) rotateZ(124deg) rotateY(-15deg) scale(1.12);opacity:.95;z-index:6}
-84%{transform:perspective(600px) translate3d(calc(-50% - var(--storm-x)*.65),calc(-50% + var(--storm-y)*.68),10px) rotateZ(172deg) rotateY(48deg) scale(.95);opacity:.9;z-index:6}
-98%{z-index:1}
-100%{transform:perspective(600px) translate3d(calc(-50% - var(--storm-x)),calc(-50% - 10px),-35px) rotateZ(324deg) rotateY(70deg) scale(.65);opacity:.25;z-index:1}}
-@media(max-width:370px){#app-launch .launch-arcane{padding-left:21px;padding-right:21px}#app-launch .launch-title h2{font-size:24px}#app-launch .launch-stage{--storm-x:126px;--storm-y:104px}#app-launch .launch-mascot{width:256px}#app-launch .launch-orbit{width:266px;height:266px}#app-launch .launch-orbit-alt{width:238px;height:306px}#app-launch .launch-footer{font-size:7px}}
-@media(max-height:700px){#app-launch .launch-arcane{padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(14px,env(safe-area-inset-bottom))}#app-launch .launch-title{margin-top:20px}#app-launch .launch-title h2{font-size:23px;margin-top:9px}#app-launch .launch-battlecry{margin-top:9px}#app-launch .launch-stage{--storm-x:116px;--storm-y:82px;min-height:160px}#app-launch .launch-mascot{width:236px}#app-launch .launch-orbit{width:248px;height:248px}#app-launch .launch-orbit-alt{width:218px;height:282px}#app-launch .launch-footer{margin-top:17px;padding-top:12px}}
-@media(orientation:landscape) and (max-height:500px){#app-launch .launch-arcane{width:min(100%,900px);padding:20px 24px}#app-launch .launch-top{position:absolute;left:24px;right:24px;top:20px}#app-launch .launch-rule{position:absolute;left:24px;right:24px;top:44px;margin:0}#app-launch .launch-title{position:absolute;left:24px;top:73px;width:42%;margin:0;text-align:left}#app-launch .launch-title h2{font-size:26px}#app-launch .launch-stage{position:absolute;right:25px;top:55px;width:46%;height:255px;min-height:0;margin:0;--storm-x:140px;--storm-y:89px}#app-launch .launch-mascot{width:244px}#app-launch .launch-progress{position:absolute;left:24px;bottom:65px;width:43%;margin:0}#app-launch .launch-footer{position:absolute;left:24px;right:24px;bottom:14px;margin:0}}
-@media(prefers-reduced-motion:reduce){#app-launch,#app-launch *,#app-launch *::before,#app-launch *::after{animation:none!important;transition:none!important;will-change:auto!important}#app-launch .launch-card{opacity:.6;transform:translate3d(var(--still-x),var(--still-y),0) rotate(var(--still-rotate))}#app-launch .launch-track i{width:100%}}
+@keyframes launch-mascot-float{0%,100%{transform:translate(-50%,-50%) translateY(3px) rotate(-1deg)}50%{transform:translate(-50%,-50%) translateY(-7px) rotate(1deg)}}
+@media(max-width:370px){#app-launch .launch-arcane{padding-left:16px;padding-right:16px}#app-launch .launch-stage{margin:0 -16px}#app-launch .launch-logo{font-size:48px}#app-launch .launch-mascot{width:236px}#app-launch .launch-top strong{font-size:8px;letter-spacing:.1em}#app-launch .launch-footer{font-size:7px;letter-spacing:.12em}}
+@media(max-height:700px){#app-launch .launch-arcane{padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}#app-launch .launch-title{margin-top:12px}#app-launch .launch-logo{font-size:42px}#app-launch .launch-battlecry{margin-top:8px;font-size:11px}#app-launch .launch-stage{min-height:150px}#app-launch .launch-mascot{width:210px}#app-launch .launch-log{min-height:15px}#app-launch .launch-log div:first-child:not(:last-child){display:none}#app-launch .launch-footer{margin-top:8px;padding-top:8px}}
+@media(orientation:landscape) and (max-height:500px){#app-launch .launch-arcane{width:min(100%,900px);padding:16px 24px}#app-launch .launch-top{position:absolute;left:24px;right:24px;top:16px}#app-launch .launch-rule{position:absolute;left:24px;right:24px;top:38px;margin:0}#app-launch .launch-title{position:absolute;left:24px;top:56px;width:42%;margin:0}#app-launch .launch-logo{font-size:44px}#app-launch .launch-stage{position:absolute;right:24px;top:48px;bottom:40px;width:50%;min-height:0;margin:0}#app-launch .launch-mascot{width:220px}#app-launch .launch-progress{position:absolute;left:24px;bottom:44px;width:42%}#app-launch .launch-footer{position:absolute;left:24px;right:24px;bottom:10px;margin:0}}
+@media(prefers-reduced-motion:reduce){#app-launch,#app-launch *,#app-launch *::before,#app-launch *::after{animation:none!important;transition:none!important;will-change:auto!important}#app-launch .launch-caption p.is-typing{max-width:100%}}

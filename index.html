@@ -49,17 +49,18 @@
   <div id="app-launch" class="app-launch" role="status" aria-label="Avvio F.P.T. Cards">
     <img class="app-launch-mark" src="icon-384.webp" alt="" fetchpriority="high" width="384" height="384">
     <div class="launch-arcane">
-      <div class="launch-top"><strong>F.P.T. CARDS</strong><span class="launch-live"><i aria-hidden="true"></i>RISVEGLIO IN CORSO</span></div>
+      <div class="launch-flash" data-launch-flash aria-hidden="true"></div>
+      <div class="launch-top"><strong>F.P.T · FIGURINES PRESILIAN TEAM</strong><span class="launch-live"><i aria-hidden="true"></i>LIVE</span></div>
       <div class="launch-rule" aria-hidden="true"></div>
-      <div class="launch-title"><span class="launch-eyebrow">L’ARCHIVIO SI RISVEGLIA</span><h2>La tua collection<br><em>in un’app</em></h2><p class="launch-battlecry">YEAH BABY LES GOH!</p></div>
+      <div class="launch-title"><span class="launch-eyebrow">IL PATTO SI RISVEGLIA</span><h2 class="launch-logo" data-text="F.P.T." data-launch-logo>F.P.T.</h2><span class="launch-cards-word">CARDS</span><p class="launch-battlecry">YEAH BABY LES GOH!</p></div>
       <div class="launch-stage" aria-hidden="true">
-        <div class="launch-aura"></div><div class="launch-orbit"></div><div class="launch-orbit launch-orbit-alt"></div>
-        <div class="launch-storm" data-launch-storm></div>
+        <div class="launch-aura"></div>
+        <canvas class="launch-storm launch-storm-back" data-launch-storm="back"></canvas>
         <div class="launch-mascot"><img src="assets/loading/blattaman-arcane.webp" alt="" width="640" height="498" data-launch-mascot></div>
-        <div class="launch-particles" data-launch-particles></div><div class="launch-floor"></div>
+        <canvas class="launch-storm launch-storm-front" data-launch-storm="front"></canvas>
       </div>
-      <div class="launch-progress"><div class="launch-caption"><p data-launch-status>Preparazione del tuo spazio…</p><span class="launch-wait" aria-hidden="true">AVVIO</span></div><div class="launch-track" aria-hidden="true"><i></i></div></div>
-      <div class="launch-footer"><strong>TRADE · TRUST · TRIUMPH</strong><span>IL PATTO È IL TEAM</span></div>
+      <div class="launch-progress"><div class="launch-log" data-launch-log aria-hidden="true"></div><div class="launch-caption"><span class="launch-prompt" aria-hidden="true">&gt;</span><p data-launch-status>Preparazione del tuo spazio…</p><span class="launch-cursor" aria-hidden="true"></span></div><div class="launch-bar" data-launch-bar aria-hidden="true"></div></div>
+      <div class="launch-footer"><strong><b>TRADE</b> · TRUST · <b>TRIUMPH</b></strong><span>IL PATTO È IL TEAM</span></div>
     </div>
   </div>
   <script src="js/app-launch.js"></script>
