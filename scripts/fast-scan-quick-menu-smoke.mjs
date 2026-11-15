@@ -110,6 +110,45 @@ await check('uscendo con il menu aperto valgono le scelte fatte', async () => {
 const mainRow = { printing_id: 'db-sdbe-it001', game: 'yugioh', catalog_card_id: MAIN, card_name: 'Blue-Eyes White Dragon', set_code: 'SDBE-IT001', set_name: 'Saga', rarity: 'Ultra Rare', image_url: blueEyes.imageUrl };
 const altEntry = { ...blueEyes, printingId: '', catalogCardId: ALT, imageUrl: `https://images.ygoprodeck.com/images/cards/${ALT}.jpg`, userArtwork: true, artworkOf: MAIN, quantity: 1, language: 'Italiano', condition: 'Near Mint', edition: '' };
 
+// 2026-11-15: con le stampe non ancora nell'indice locale la conferma arriva
+// dalla verifica in rete (percorso "pendingId") e il menu non si apriva mai:
+// agli utenti sembrava che si aprisse "a caso".
+const pendingRun = async ({ moveOn = false } = {}) => {
+  const c = controller();
+  c.persist = async () => {}; c.showDetection = () => {}; c.showResolvedFeedback = () => {}; c.setStatus = () => {}; c.refreshHud = () => {}; c.feedback = () => {};
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  c.resolve = async code => { await gate; return { status:'high_confidence', decision:'EXACT_UNIQUE', matches:[blueEyes], code, ocrConfidence:95 }; };
+  const result = await c.resolveCapturedReading({ text:'SDBE-IT001', confidence:95 });
+  assert.equal(result.status, 'pending_async', 'la carta passa dalla verifica in rete');
+  assert.equal(c.quickMenu, null, 'nessun menu mentre la verifica è in corso');
+  if (moveOn) c.currentScanId = 'altra-carta';
+  release();
+  await c.pendingResolution;
+  return c;
+};
+await check('verifica in rete: a conferma arrivata il menu si apre sulla carta in mano', async () => {
+  const c = await pendingRun();
+  assert.ok(c.quickMenu, 'menu aperto anche dopo la conferma remota');
+  assert.equal(c.buffer.getScan(c.quickMenu.scanId).status, 'CONFIRMED');
+  assert.equal(c.timer, 0, 'la cattura resta in pausa');
+  clearTimeout(c.persistTimer);
+});
+await check('verifica in rete: se nel frattempo sei passato a un\'altra carta il menu non salta fuori', async () => {
+  const c = await pendingRun({ moveOn:true });
+  assert.equal(c.quickMenu, null);
+  clearTimeout(c.persistTimer);
+});
+await check('fotocamera: sui telefoni con più obiettivi si sceglie il principale ("camera2 0")', async () => {
+  const { preferredBackCamera } = await import('../js/fast-scan-camera.js');
+  const device = (deviceId, label) => ({ deviceId, label, kind:'videoinput' });
+  const samsung = [device('front', 'camera2 1, facing front'), device('wide', 'camera2 2, facing back'), device('main', 'camera2 0, facing back'), device('tele', 'camera2 3, facing back')];
+  assert.equal(preferredBackCamera(samsung)?.deviceId, 'main');
+  assert.equal(preferredBackCamera([device('a', 'Back Camera'), device('b', 'Front Camera')]), null, 'etichette senza numero (iPhone): nessun cambio');
+  assert.equal(preferredBackCamera([device('main', 'camera2 0, facing back'), device('front', 'camera2 1, facing front')]), null, 'un solo obiettivo posteriore: nessun cambio');
+  assert.equal(preferredBackCamera([]), null);
+});
+
 await check('salvataggio: art scelta assente a catalogo → si crea accanto a quella principale', async () => {
   const result = await canonicalizeFastScanEntries([altEntry], async () => [mainRow]);
   assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));

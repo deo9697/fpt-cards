@@ -159,6 +159,21 @@ export class FastScanCamera {
   }
 }
 
+// Telefoni Android con più fotocamere posteriori (Samsung Galaxy in testa):
+// Chrome le espone come "camera2 0, facing back", "camera2 2, facing back"…
+// e con facingMode:"environment" a volte apre il grandangolo, che non mette a
+// fuoco da vicino. L'obiettivo principale è quello con il numero più basso.
+// Restituisce null se le etichette non seguono questo schema (iPhone, PC):
+// lì non si cambia nulla.
+export function preferredBackCamera(devices = []) {
+  const numbered = devices
+    .filter(device => device?.kind === 'videoinput' && /back|rear|environment|posteriore/i.test(device.label || ''))
+    .map(device => ({ device, index: Number((String(device.label).match(/camera2?\s*(\d+)/i) || [])[1]) }))
+    .filter(item => Number.isInteger(item.index));
+  if (numbered.length < 2) return null;
+  return numbered.sort((a, b) => a.index - b.index)[0].device;
+}
+
 export function readCapabilities(track) {
   let raw={}; try { raw=track?.getCapabilities?.()||{}; } catch {}
   const focusModes=Array.isArray(raw.focusMode)?raw.focusMode.filter(mode=>['continuous','single-shot','manual'].includes(mode)):[];

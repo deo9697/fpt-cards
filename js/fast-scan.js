@@ -5,7 +5,10 @@ const USER_RARITY_CHOICES=['Common','Rare','Super Rare','Ultra Rare','Secret Rar
 import { icon } from './icons.js';
 import { normalizeSetCode, extractSetCodeCandidates, setCodeCandidates, classifyPrintingMatch, classifyNearPrintingMatch, OcrConsensus, ScanGate, ScanSessionBuffer, defaultScanSettings } from './fast-scan-core.js';
 import { isFirstEdition, editionState } from './collection.js';
-import { FastScanCamera, preprocessCodeImage } from './fast-scan-camera.js';
+import { FastScanCamera, preferredBackCamera, preprocessCodeImage } from './fast-scan-camera.js';
+const CAMERA_PREFERENCE_KEY='fpt-fast-scan-camera-v1';
+function readCameraPreference(){try{const value=JSON.parse(localStorage.getItem(CAMERA_PREFERENCE_KEY)||'null');return value&&typeof value.deviceId==='string'?value:null;}catch{return null;}}
+function writeCameraPreference(deviceId,manual){try{localStorage.setItem(CAMERA_PREFERENCE_KEY,JSON.stringify({deviceId,manual:Boolean(manual)}));}catch{}}
 import { loadScanSession, saveScanSession, clearScanSession } from './fast-scan-storage.js';
 import { syncCatalogIndex } from './fast-scan-catalog-cache.js';
 import { prepareFastScanSync, markChunk, pendingChunkIndexes, syncProgress } from './fast-scan-sync.js';
@@ -89,6 +92,8 @@ export class FastScanController {
     this.buffer=new ScanSessionBuffer();this.sync=null; this.gate=new ScanGate(); this.consensus=new OcrConsensus(); this.failureStreak=0; this.localCatalog=new Map(); this.resolutionCache=new Map(); this.missCache=new Map(); this.phase='setup'; this.status='Pronto';this.debugMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('debugScan')==='1';this.telemetry=new ScanTelemetry();this.cycleTelemetry=null;this.cacheState='LOADING';this.lastCycleDecision=null;this.catalogIndex=new Map();this.pendingCodes=new Set();this.backgroundQueue=[];this.activeBackgroundResolutions=0;
     this.last=null;this.scanState='IDLE';this.recoveringCamera=false;this.recoveryCount=0;this.recoveryAttempts=[];this.startRequestId=0;this.hiddenSuspended=false;this.roiPreset='narrow';this.forceSnapshot=false;this.snapshotInFlight=false;this.scanCycleInFlight=false; this.devices=[]; this.timer=0; this.persistTimer=0; this.feedbackTimer=0; this.zoomTimer=0; this.backgroundStopTimer=0; this.backgroundCameraStopped=false; this.pinch=null; this.hasRecovery=false; this.saving=false; this.cameraError=''; this.exitOpen=false; this.manualOpen=false;this.settingsOpen=false;
     if(this.debugMode)this.camera.onDiagnostic=(event,payload)=>this.debugTrace(`camera:${event}`,payload);
+    // Obiettivo scelto in precedenza (automatico o dall'utente): si riapre quello.
+    const cameraPreference=camera?null:readCameraPreference();if(cameraPreference&&!this.camera.deviceId)this.camera.deviceId=cameraPreference.deviceId;this.cameraPreferenceChecked=Boolean(cameraPreference?.manual);
     this.scanActionHandler=event=>void this.handleScanAction(event);document.addEventListener('click',this.scanActionHandler);
     this.visibilityHandler=()=>void this.handleVisibilityChange(); document.addEventListener('visibilitychange',this.visibilityHandler);
     this.focusHandler=event=>{if(event.target.closest?.('.live-roi,#fast-scan-video'))void this.refocus();}; document.addEventListener('click',this.focusHandler);
@@ -181,7 +186,8 @@ export class FastScanController {
     this.beginCaptureFeedback();
     const requestId=++this.startRequestId;this.recoveringCamera=false;this.cameraStarting=true;this.stopLoop();if(this.phase==='setup'&&!this.hasScans)this.camera.resetSnapshotStrategy?.();this.consensus.reset();this.failureStreak=0;this.forceSnapshot=false;this.snapshotInFlight=false;this.scanState='LIVE';this.buildLocalCatalog();this.loadCatalogIndex();this.exitOpen=false;this.manualOpen=false;this.settingsOpen=false;this.hiddenSuspended=false;this.phase='scanning';this.cameraError='';this.status='Avvio fotocamera…';this.onRoute?.('scan');this.onRender();const video=document.querySelector('#fast-scan-video');this.debugTrace('camera:start-controller',{requestId});
     const preparingOcr=this.prepareProductionOcr();
-    try{const devices=await this.camera.start(video,this.camera.deviceId);if(requestId!==this.startRequestId||this.phase!=='scanning'||document.hidden)return;this.devices=devices;this.cameraStarting=false;this.refreshControls();this.setStatus('Preparazione OCR…');await preparingOcr;if(requestId!==this.startRequestId||this.phase!=='scanning')return;if(this.paddleState==='unavailable'){this.setStatus('OCR non disponibile · usa Manuale');return;}this.setStatus('Pronto allo scatto');this.schedule(250);}catch(error){if(requestId!==this.startRequestId)return;this.cameraStarting=false;this.camera.stop('start-failed');if(this.phase!=='scanning')return;this.scanState='CAMERA_ERROR';this.cameraError=error.message||'Fotocamera non disponibile';this.status='Riavvia fotocamera';this.debugTrace('camera:start-failed',{requestId,error:this.cameraError});this.onRender();setTimeout(()=>this.showRestartControl(),0);}
+    try{const devices=await this.camera.start(video,this.camera.deviceId);if(requestId!==this.startRequestId||this.phase!=='scanning'||document.hidden)return;this.devices=devices;
+      if(!this.cameraPreferenceChecked){this.cameraPreferenceChecked=true;const main=preferredBackCamera(devices);if(main&&main.deviceId!==this.camera.deviceId){this.debugTrace('camera:prefer-main-lens',{from:this.camera.deviceId,to:main.deviceId,label:main.label});this.camera.deviceId=main.deviceId;writeCameraPreference(main.deviceId,false);this.cameraStarting=false;return this.start();}if(this.camera.deviceId&&!this.camera.deviceId.startsWith('default'))writeCameraPreference(this.camera.deviceId,false);}this.cameraStarting=false;this.refreshControls();this.setStatus('Preparazione OCR…');await preparingOcr;if(requestId!==this.startRequestId||this.phase!=='scanning')return;if(this.paddleState==='unavailable'){this.setStatus('OCR non disponibile · usa Manuale');return;}this.setStatus('Pronto allo scatto');this.schedule(250);}catch(error){if(requestId!==this.startRequestId)return;this.cameraStarting=false;this.camera.stop('start-failed');if(this.phase!=='scanning')return;this.scanState='CAMERA_ERROR';this.cameraError=error.message||'Fotocamera non disponibile';this.status='Riavvia fotocamera';this.debugTrace('camera:start-failed',{requestId,error:this.cameraError});this.onRender();setTimeout(()=>this.showRestartControl(),0);}
   }
   async prepareProductionOcr(){
     if(this.paddleState==='paddle')return;if(this.primaryOcrPreparing)return this.primaryOcrPreparing;this.paddleState='preparing';this.paddleError='';this.primaryOcrPreparing=(async()=>{try{await this.paddleOcr.prepare();this.paddleState='paddle';}catch(error){this.paddleState='unavailable';this.paddleError=error?.message||String(error);}})();try{await this.primaryOcrPreparing;}finally{this.primaryOcrPreparing=null;}}
@@ -330,6 +336,10 @@ export class FastScanController {
   // illustrazioni note su YGOPRODeck, quale art. La cattura resta in pausa
   // finché il menu è aperto (vedi le guardie su this.quickMenu).
   quickMenuEnabled(){return this.buffer.settings?.quickMenu!==false;}
+  // Il menu si apre anche quando la carta è confermata dopo la verifica in rete
+  // (prima solo con l'indice locale: per le stampe nuove sembrava "casuale"),
+  // ma solo se è ancora la carta in mano e non c'è un'altra finestra aperta.
+  canOpenQuickMenuFor(scanId){return this.quickMenuEnabled()&&this.phase==='scanning'&&this.currentScanId===scanId&&!this.quickMenu&&!this.exitOpen&&!this.manualOpen&&!this.settingsOpen&&!document.hidden;}
   openQuickMenu(scanId){
     const scan=this.buffer.getScan(scanId),printing=scan?.printing;if(!printing||scan.status!=='CONFIRMED')return;
     this.stopLoop();clearTimeout(this.feedbackTimer);this.detection=null;this.renderDetection();
@@ -535,7 +545,7 @@ export class FastScanController {
     finally{this.saving=false;this.onRender();}
   }
   async discard(render=true){this.quickMenu=null;this.currentScanId=null;this.pendingCaptureId=null;clearTimeout(this.persistTimer);this.beginCaptureFeedback();this.startRequestId+=1;this.stopLoop();clearTimeout(this.backgroundStopTimer);this.backgroundCameraStopped=false;this.camera.stop('discard-session');this.buffer=new ScanSessionBuffer();this.sync=null;this.hasRecovery=false;this.exitOpen=false;this.manualOpen=false;this.settingsOpen=false;this.recoveringCamera=false;this.cameraStarting=false;this.phase='setup';await this.disposeProductionOcr();await clearScanSession();if(render)this.onRender();}
-  async switchCamera(){if(this.devices.length<2)return;const index=this.devices.findIndex(item=>item.deviceId===this.camera.deviceId);const next=this.devices[(index+1)%this.devices.length];this.camera.deviceId=next.deviceId;await this.start();}
+  async switchCamera(){if(this.devices.length<2)return;const index=this.devices.findIndex(item=>item.deviceId===this.camera.deviceId);const next=this.devices[(index+1)%this.devices.length];this.camera.deviceId=next.deviceId;this.cameraPreferenceChecked=true;writeCameraPreference(next.deviceId,true);this.autoZoomed=false;await this.start();}
   persist(now=false){clearTimeout(this.persistTimer);const save=()=>saveScanSession({...this.buffer.snapshot(),sync:this.sync});if(now)return save();this.persistTimer=setTimeout(()=>void save().catch(()=>{}),180);}
   // Riscontro distinto per esito (vibrazione + suono), riconoscibile senza guardare lo schermo.
   feedback(tone='ok'){const pattern={ok:35,warn:[30,70,30],error:[110]}[tone]||35;if(this.buffer.settings.vibration)navigator.vibrate?.(pattern);if(this.buffer.settings.sound)beep(tone);}
@@ -699,7 +709,12 @@ export class FastScanController {
     const hint=catalogMiss?'':captureHint(this.lastPreprocessing,this.camera.torchSupported);this.lastPreprocessing=null;
     this.showDetection(catalogMiss?'Codice non confermato':'Codice non letto','Riprova questa carta','error');
     this.consensus.miss();this.gate.miss();this.failureStreak+=1;
-    if(this.failureStreak>=4){this.failureStreak=0;const focused=await this.camera.refocus();this.setStatus(focused?'Messa a fuoco…':this.camera.focusSupported?'Tocca per mettere a fuoco':'Avvicina la carta');}
+    if(this.failureStreak>=4){this.failureStreak=0;const focused=await this.camera.refocus();
+      // Da troppo vicino la fotocamera non mette a fuoco (Samsung, ~10 cm): con lo
+      // zoom 2× il codice resta grande tenendo la carta più lontana. Una volta sola.
+      const range=this.camera.zoomSupported?this.camera.capabilities.zoom:null;
+      if(range&&!this.autoZoomed&&range.max>=2&&(this.camera.zoomValue||range.min)<1.5){this.autoZoomed=true;const applied=await this.camera.setZoom(Math.min(2,range.max));if(applied){this.updateZoomUi(this.camera.zoomValue);this.setStatus('Zoom 2× · allontana un po\u2019 la carta');return;}}
+      this.setStatus(focused?'Messa a fuoco…':this.camera.focusSupported?'Tocca per mettere a fuoco':'Allontana un po\u2019 la carta');}
     else this.setStatus(catalogMiss?'Codice non trovato · controlla la review':hint||'Codice non letto · riprova lo scatto');
   }
   async refocus(){const requestId=this.startRequestId,focused=await this.camera.refocus();if(requestId!==this.startRequestId||this.phase!=='scanning'||document.hidden)return;this.setStatus(focused?'Messa a fuoco…':'Avvicina la carta');if(focused)setTimeout(()=>{if(requestId===this.startRequestId&&this.phase==='scanning'&&!document.hidden)this.setStatus('Pronto allo scatto');},650);}
@@ -716,7 +731,8 @@ export class FastScanController {
       await this.commitResolution(result,reading.text,false,pendingId,{scanId:scan.id,version});
       if(!current())return;
       if(pendingId){
-        if(scan.status==='CONFIRMED'){const entry=this.buffer.entries.get(scan.printing?.key);this.showResolvedFeedback(code,'Salvata','ok',captureId,scan.sequence,entry?{imageUrl:entry.imageUrl,cardName:entry.cardName,setCode:entry.setCode,rarity:entry.rarity,quantity:entry.quantity}:null);}
+        if(scan.status==='CONFIRMED'&&this.canOpenQuickMenuFor(scan.id)){this.last=this.buffer.entries.get(scan.printing?.key);this.feedback();this.scanState='RESULT';this.status='Aggiunta alla sessione';this.openQuickMenu(scan.id);}
+        else if(scan.status==='CONFIRMED'){const entry=this.buffer.entries.get(scan.printing?.key);this.showResolvedFeedback(code,'Salvata','ok',captureId,scan.sequence,entry?{imageUrl:entry.imageUrl,cardName:entry.cardName,setCode:entry.setCode,rarity:entry.rarity,quantity:entry.quantity}:null);}
         else if(scan.status==='FAILED')this.showResolvedFeedback(code,'Codice non letto — riprova','error',captureId,scan.sequence);
         else this.showResolvedFeedback(code,'Conferma la carta qui sopra','warn',captureId,scan.sequence);
       }
