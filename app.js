@@ -1633,6 +1633,8 @@ function bind() {
     button.addEventListener('click', () => selectGame(button.dataset.game));
   });
   document.querySelectorAll('button[data-page]').forEach(b => b.addEventListener('click', () => { selectedCardKey = ''; navigate(b.dataset.page); }));
+  // "Vedi mercato" nel dettaglio Raccolta: dopo la navigazione apre il dettaglio di quella printing.
+  document.querySelectorAll('button[data-market-printing]').forEach(b => b.addEventListener('click', () => { const id = b.dataset.marketPrinting, query = b.dataset.marketQuery || ''; if (id) void loadAppControllers().then(() => page === 'market' && marketWatch.focusPrinting(id, { query })).catch(() => {}); }));
   document.querySelectorAll('[data-ygo-practice-launch]').forEach(button=>button.addEventListener('click',openYugiohPractice));
   document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quickNavigate(b.dataset.quick)));
   document.querySelectorAll('[data-collection-add]').forEach(button => button.addEventListener('click', () => { if (!online()) return toast('Torna online per modificare la raccolta'); collectionEditor = { item:null, card:null, printing:null, draft:{ quantityOwned:1, language:'Italiano', condition:'Near Mint', edition:'' } }; collectionSearchResults = []; render(); }));

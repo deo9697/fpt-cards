@@ -277,7 +277,21 @@ export class MarketWatchController {
     if(this.tab==='owned')return this.ownedPage.items;
     return sortItems(this.extra.items.filter(item=>item.sources.includes(this.tab)&&matchesMarketQuery(item,this.query)),this.sort);
   }
-  allLoadedItems(){return [...this.ownedPage.items,...this.extra.items];}
+  allLoadedItems(){const rows=[...this.ownedPage.items,...this.extra.items];for(const [id,item] of this.focusItems||[])if(!rows.some(row=>row.printingId===id))rows.push(item);return rows;}
+  // "Vedi mercato" dalla Raccolta (2026-11-15): apre il dettaglio di QUELLA
+  // printing. La lista è paginata, quindi se non è tra le righe caricate la
+  // cerca per codice set/nome e la tiene in focusItems (la lista visibile e la
+  // sua ricerca non cambiano). Prima si apriva solo la pagina, a caso.
+  async focusPrinting(printingId,{query=''}={}){
+    if(!printingId)return false;
+    if(!this.focusItems)this.focusItems=new Map();
+    this.tab='owned';this.selectedDeck='';
+    if(!this.findItem(printingId)&&query){
+      try{const payload=await this.api.marketWatchOwnedPage(this.getGame(),{limit:60,offset:0,sort:this.sort,query});const hit=mapOwnedPagePayload(payload).items.find(item=>item.printingId===printingId);if(hit)this.focusItems.set(printingId,hit);}catch{}
+    }
+    if(!this.findItem(printingId)){this.onToast?.('Questa carta non è ancora nel Market Watch');return false;}
+    await this.openDetail(printingId);return true;
+  }
   findItem(printingId){return this.allLoadedItems().find(item=>item.printingId===printingId);}
   // P0 fix dettaglio Raccolta — vedi commento sul costruttore. Letto dal
   // chiamante (app.js) per decidere cosa mostrare: 'loading' -> "Caricamento
