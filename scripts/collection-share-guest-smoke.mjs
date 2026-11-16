@@ -107,9 +107,14 @@ try {
   if(await evaluate('window.__typeFetches'))throw Error('Guest grid fetched decorative card types');
 
   // 3) Ricerca per alternateName (Blue-Eyes -> p1) e per nome italiano (Tuning -> p4, stesso esempio del commento RPC)
-  await evaluate(`window.__share.search('Blue-Eyes')`); await delay(250);
+  // 2026-11-15: stessa regola della Raccolta (frase intera, accenti/trattini ignorati):
+  // "Blue-Eyes" da solo troverebbe anche il set "Legend of Blue Eyes", come in Raccolta.
+  await evaluate(`window.__share.search('Blue-Eyes White')`); await delay(250);
   const searchAlt = await evaluate(`[...document.querySelectorAll('.share-guest-tile')].map(t=>t.dataset.shareToggle)`);
-  if (JSON.stringify(searchAlt) !== JSON.stringify(['p1'])) throw new Error(`Ricerca alternateName "Blue-Eyes" errata: ${JSON.stringify(searchAlt)}`);
+  if (JSON.stringify(searchAlt) !== JSON.stringify(['p1'])) throw new Error(`Ricerca alternateName "Blue-Eyes White" errata: ${JSON.stringify(searchAlt)}`);
+  await evaluate(`window.__share.search('blue eyes white')`); await delay(250);
+  const searchLoose = await evaluate(`[...document.querySelectorAll('.share-guest-tile')].map(t=>t.dataset.shareToggle)`);
+  if (JSON.stringify(searchLoose) !== JSON.stringify(['p1'])) throw new Error(`Ricerca senza trattino errata: ${JSON.stringify(searchLoose)}`);
   await evaluate(`window.__share.search('Tuning')`); await delay(250);
   const searchAlt2 = await evaluate(`[...document.querySelectorAll('.share-guest-tile')].map(t=>t.dataset.shareToggle)`);
   if (JSON.stringify(searchAlt2) !== JSON.stringify(['p4'])) throw new Error(`Ricerca alternateName "Tuning" errata: ${JSON.stringify(searchAlt2)}`);

@@ -1,5 +1,6 @@
 import { esc, GAMES } from './core.js';
 import { icon } from './icons.js';
+import { normalizeCollectionSearch } from './collection-search.js';
 
 const PAGE_SIZE = 60;
 const SORT_OPTIONS = [
@@ -194,16 +195,20 @@ export class CollectionShareController {
   searchFields(item) {
     let fields = this.searchIndex.get(item);
     if (!fields) {
-      fields = [item.cardName, item.setName, item.setCode, ...(item.alternateNames || [])].map(value => String(value || '').toLowerCase());
+      // Stessa normalizzazione della Raccolta (P1 2026-11-15): accenti, trattini e
+      // apostrofi non contano, quindi "blue eyes" trova Blue-Eyes.
+      fields = [item.cardName, item.setName, item.setCode, ...(item.alternateNames || [])].map(value => normalizeCollectionSearch(String(value || ''))).filter(Boolean).join('\n');
       this.searchIndex.set(item, fields);
     }
     return fields;
   }
   matchesQuery(item, query) {
-    return !query || this.searchFields(item).some(value => value.includes(query));
+    // Stessa regola della Raccolta (matchesCollectionQuery): frase intera dentro
+    // un singolo campo; il separatore impedisce di unire due campi diversi.
+    return !query || this.searchFields(item).includes(query);
   }
   visibleItems() {
-    const query = this.query.trim().toLowerCase();
+    const query = normalizeCollectionSearch(this.query);
     const { rarity, edition, condition, language, availability } = this.filters;
     const source = this.data?.items;
     if (!this.sortedItemsCache || this.sortedItemsCache.source !== source || this.sortedItemsCache.sort !== this.sort || this.sortedItemsCache.length !== source?.length) {
