@@ -747,7 +747,12 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
   try{
     // Filter the quarter-hour queue before downloading/paginating the RPC result.
     // An empty queue must not transfer the full multi-megabyte target catalog.
-    const targetResult=await rpcPages('market_sync_targets',{p_provider:provider.name},{filters:priorityOnly?{refresh_requested_at:'not.is.null'}:{},order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
+    // resolveNew (2026-11-16): market_sync_targets completo andava in timeout 57014
+    // ogni notte; market_sync_new_targets restituisce SOLO le printing monitorate
+    // senza mapping per questo provider, già limitate, con le stesse colonne.
+    const targetResult=newMappingsOnly
+      ?await rpcPages('market_sync_new_targets',{p_provider:provider.name,p_limit:pendingResolverLimit||500},{key:(row:any)=>`${row.printing_id}:${row.variant_key||'default'}`})
+      :await rpcPages('market_sync_targets',{p_provider:provider.name},{filters:priorityOnly?{refresh_requested_at:'not.is.null'}:{},order:'printing_id.asc,variant_key.asc.nullslast,mapping_id.asc.nullslast',key:(row:any)=>row.mapping_id||`${row.printing_id}:${row.variant_key||'default'}`});
     const allTargets=targetResult.rows;targetPages=targetResult.requests;
     const selectedIds=new Set(targetPrintingIds),targets=selectedIds.size?allTargets.filter((target:any)=>selectedIds.has(String(target.printing_id))):newPrintingsOnly?allTargets.filter((target:any)=>!target.mapping_id||target.refresh_requested_at).slice(0,100):priorityOnly?allTargets.filter((target:any)=>target.refresh_requested_at):pendingResolverLimit?allTargets.filter(newMappingsOnly?(target:any)=>!target.mapping_id:cardmarketMappingNeedsResolver).slice(0,pendingResolverLimit):allTargets;
     if(newPrintingsOnly&&targets.length&&targets.every((target:any)=>isAuthorizedCardmarketMapping(target)))pricesOnly=true;
