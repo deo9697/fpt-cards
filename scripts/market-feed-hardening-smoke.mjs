@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {stripTypeScriptTypes} from 'node:module';
 import {PGlite} from '@electric-sql/pglite';
 import { marketSyncForVm, withSharedModules } from './lib/market-sync-vm.mjs';
-const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
+const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8').replace(/\r\n/g,'\n'); // CRLF/LF del checkout Windows non è una differenza di codice
 const worker=read('supabase/functions/market-sync/index.ts');
 const queue=read('supabase/functions/market-refresh-queue-cached/index.ts');
 const policy=s=>s.slice(s.indexOf('// Queue policy:'),s.indexOf('// End queue policy.'));

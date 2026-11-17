@@ -68,7 +68,7 @@ try{
   const backNav=await evaluate(`({closed:!document.querySelector('.market-detail'),onListStillMarket:!!document.querySelector('.market-page'),historyState:history.state})`);
   if(!backNav.closed||!backNav.onListStillMarket||backNav.historyState)throw new Error(`Back fisico dal dettaglio non torna alla lista Market Watch: ${JSON.stringify(backNav)}`);
   await evaluate(`document.querySelector('[data-market-card="p3"]').click()`);await delay(50);
-  const aggregateDetail=await evaluate(`({notice:document.body.innerText.includes('Prezzo Cardmarket aggregato'),excluded:document.body.innerText.includes('Trend escluso'),scope:document.body.innerText.includes('lingua, edizione, rarità, foil')})`);
+  const aggregateDetail=await evaluate(`({notice:document.body.textContent.includes('Prezzo Cardmarket aggregato'),excluded:document.body.textContent.includes('Trend escluso'),scope:document.body.textContent.includes('lingua, edizione, rarità, foil')})`);
   if(!aggregateDetail.notice||!aggregateDetail.excluded||!aggregateDetail.scope)throw new Error(`Dettaglio aggregate incompleto: ${JSON.stringify(aggregateDetail)}`);
   await evaluate(`document.querySelector('[data-market-detail-close]').click()`);await delay(150);
   await evaluate(`document.querySelector('[data-market-tab="deck"]').click()`);await delay(50);

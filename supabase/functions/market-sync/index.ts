@@ -743,7 +743,7 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
   if(recoverStale)await releaseProviderSync(provider.name);
   const runId=await rpc('begin_market_provider_sync',{p_provider:provider.name});
   if(!runId)return {provider:provider.name,status:'skipped',reason:'sync_already_running'};
-  let requestCount=0,snapshots=0,failures=0,feedStats:any=null,targetPages=0,printingPages=0,printingRows=0;
+  let requestCount=0,snapshots=0,failures=0,awaitingConfirmation=0,feedStats:any=null,targetPages=0,printingPages=0,printingRows=0;
   try{
     // Filter the quarter-hour queue before downloading/paginating the RPC result.
     // An empty queue must not transfer the full multi-megabyte target catalog.
@@ -785,7 +785,10 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     for(const target of resolvedTargets){
       try{
         const authorized=provider.name==='cardmarket'?isAuthorizedCardmarketMapping(target):['resolved','manual'].includes(target.resolution_status);
-        if(!authorized||!target.mapping_id){failures++;continue;}
+        // 2026-11-17: un mapping non autorizzato (da confermare in Market Watch,
+        // rarità incerta, non risolto) non è un errore della sincronizzazione:
+        // prima gonfiava "N mapping non aggiornati" e lasciava il run sempre partial.
+        if(!authorized||!target.mapping_id){awaitingConfirmation++;continue;}
         const value=await provider.getCurrentPrice(target);
         if(value.status!=='available')continue;
         const capturedAt=value.capturedAt||new Date().toISOString(),day=capturedAt.slice(0,10);
@@ -814,8 +817,8 @@ async function syncProvider(provider:any,{recoverStale=false,pricesOnly=false,ta
     }
     const mappingStates=resolvedTargets.reduce((counts:any,target:any)=>{const key=target.provider_metadata?.resolverStatus||target.resolution_status||'unresolved';counts[key]=(counts[key]||0)+1;return counts;},{});
     const status=failures&&snapshots?'partial':failures&&!snapshots?'failed':'succeeded';
-    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots,exactVariantTargets,inferredVariants:inferredVariants?.written??null}});
-    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,exactVariantTargets,inferredVariants,failures,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
+    await finish(runId,status,{request_count:requestCount,attempt_count:1,error_code:failures?'target_failures':null,error_message:failures?`${failures} mapping non aggiornati`:null,metadata:{targets:unique.size,snapshots,exactVariantTargets,inferredVariants:inferredVariants?.written??null,awaitingConfirmation}});
+    return {provider:provider.name,status,targets:unique.size,requestedTargets:selectedIds.size||null,snapshots,exactVariantTargets,inferredVariants,failures,awaitingConfirmation,feedStats,mappingStates,pagination:{targetPages,targetRows:allTargets.length,printingPages,printingRows}};
   }catch(error:any){await finish(runId,'failed',{request_count:requestCount,attempt_count:1,error_code:error?.code||'sync_failed',error_message:String(error?.message||error).slice(0,500)});return {provider:provider.name,status:'failed',error:String(error?.message||error)};}
 }
 
