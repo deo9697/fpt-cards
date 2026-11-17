@@ -4303,3 +4303,10 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
 .hv-card .market-featured-art, .hv-bg .market-featured-art { position:static; inset:auto; width:100%; height:auto; max-height:none; object-fit:contain; transform:none; }
 .hv-bg .market-featured-art { height:100%; object-fit:cover; }
 .stats-page .stats-compare-row > div { border-radius:0; clip-path:var(--fpt-cut-br); }
+
+/* ===== Market Watch · versione suggerita dal motore a indizi (2026-11-17) ===== */
+.mapping-confirm-hint { margin:0 0 10px; padding:8px 10px; border-left:3px solid var(--fpt-gold); background:linear-gradient(90deg,#e8b84f14,transparent); color:#d9cfb6; font-size:.62rem; line-height:1.4; }
+.mapping-confirm-hint b { color:var(--fpt-gold); font-weight:800; }
+.mapping-confirm-row.is-suggested { border-color:var(--fpt-gold); box-shadow:inset 3px 0 var(--fpt-gold), 0 0 14px #e8b84f22; }
+.mapping-confirm-row.is-suggested .btn { border-color:var(--fpt-gold); color:var(--fpt-gold); }
+.mapping-confirm-badge { display:inline-block; margin-left:6px; padding:1px 6px; border:1px solid var(--fpt-gold); color:var(--fpt-gold); font:800 .5rem var(--fpt-mono); font-style:normal; letter-spacing:.1em; text-transform:uppercase; vertical-align:middle; clip-path:var(--fpt-cut-br); }

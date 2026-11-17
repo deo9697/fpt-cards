@@ -105,6 +105,8 @@ test('market-sync: chiamata solo nei giri completi, prima dei prezzi, mai sopra 
   const pricing = edge.indexOf('const exact=await applyExactVariantPricing(resolvedTargets)');
   assert.ok(call > 0 && pricing > call, 'deve girare prima di applyExactVariantPricing');
   assert.match(edge, /!selectedIds\.size&&!priorityOnly&&!newPrintingsOnly&&!pendingResolverLimit/);
-  assert.match(edge, /const missing=aggregate\.filter\(\(target:any\)=>!isLiveExactVariantEligible\(/);
+  // 2026-11-17: il pool include anche le carte in coda (AMBIGUOUS); mai sopra varianti verificate o live.
+  assert.match(edge, /const missing=pool\.filter\(\(target:any\)=>\{const variant=existing\.get\(String\(target\.printing_id\)\);return !variant\?\.verified&&!isLiveExactVariantEligible\(variant\);\}\);/);
+  assert.match(edge, /from '\.\.\/_shared\/variant-evidence\.js'/);
   assert.match(edge, /catch\(error:any\)\{console\.error\('\[market-sync\] varianti automatiche fallite, uso il minimo'/);
 });
