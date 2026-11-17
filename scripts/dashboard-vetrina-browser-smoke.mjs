@@ -40,7 +40,7 @@ try {
   await evaluate('window.__testArtwork=' + JSON.stringify(artData) + ';window.__realArtwork=' + JSON.stringify(realArtwork));
 
   const setup = await evaluate(`(async()=>{
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const {mapDashboardOverview} = await import('/js/market-watch.js');
     const art = id => window.__realArtwork ? {catalogCardId:id, imageUrl:''} : {catalogCardId:'', imageUrl:window.__testArtwork};
     const card = (printingId, id, cardName, setCode, rarity, price, extra={}) => ({printingId, ...art(id), cardName, setCode, rarity, quantity:1, price, ...extra});
@@ -60,7 +60,7 @@ try {
     const day = 86400000, now = Date.UTC(2026,9,25);
     const hist = [58.24,58.26,57.9,53.72,53.72,52.87,52.87,53.28,53.47,54.39,54.39,54.39,53.9,54.13,54.32,54.32,55.15];
     const featuredHistory = new Map([['p1', hist.map((price,i)=>({price, capturedAt:new Date(now-(hist.length-1-i)*day).toISOString()}))]]);
-    document.querySelector('#app').innerHTML = dashboardView({currentUser:'daniele', loans:[]}, 'yugioh', {overview, portfolioValue:2186.25, featuredHistory});
+    document.querySelector('#app').innerHTML = featuredPanel({overview, portfolioValue:2186.25, featuredHistory});
     bindDashboardCarousel();
     return true;
   })()`);

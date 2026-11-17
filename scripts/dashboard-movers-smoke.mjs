@@ -1,7 +1,7 @@
 // Dashboard Market Watch: hero carousel (solo artwork, carte in salita) con
 // un grafico dell'andamento prezzo per slide — logica pura (positiveMovers
 // già esistente in js/market-watch.js, invariata) + markup HTML di
-// dashboardView(). Le liste Top 3 Up/Down sotto il carousel sono state
+// featuredPanel() (fuori dalla Home dal 2026-11-17). Le liste Top 3 Up/Down sotto il carousel sono state
 // rimosse su richiesta esplicita (non necessarie). Il comportamento reale
 // nel browser (artwork cropped, navigazione carousel, sfondo "La tua
 // collezione vale" della pagina Market Watch mai più oscurato) resta
@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 globalThis.window ??= { addEventListener: () => {}, FPT_CONFIG: undefined };
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { positiveMovers, negativeMovers } = await import('../js/market-watch.js');
-const { dashboardView } = await import('../js/dashboard.js');
+const { featuredPanel } = await import('../js/dashboard.js');
 
 function item(overrides) {
   return { printingId: 'p', catalogCardId: 'c', cardName: 'Card', imageUrl: '', ownedQuantity: 1, sources: ['owned'], referencePrice: 10, price24h: 10, ...overrides };
@@ -40,21 +40,21 @@ const state = { currentUser: 'daniele', loans: [] };
   console.log('PASS negativeMovers: ordina per calo maggiore, esclude 0%/positivi/non-owned (funzione riusabile, non più mostrata in Dashboard su richiesta)');
 }
 
-// --- dashboardView: solo hero carousel, niente più liste sotto -----------
+// --- featuredPanel: solo hero carousel, niente più liste sotto -----------
 {
   const items = [item({ printingId: 'up1', catalogCardId: 'u1', cardName: 'Su Uno', imageUrl: 'https://images.ygoprodeck.com/images/cards/1.jpg', referencePrice: 12, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('market-featured-carousel'), 'deve montare l\'hero carousel');
   assert(html.includes('Su Uno'), 'la carta in salita deve comparire come slide');
   assert(!html.includes('market-movers-lists') && !html.includes('market-mover-row') && !html.includes('In discesa'), 'le liste Up/Down sotto il carousel non devono più esistere');
   assert(!html.includes('market-hero-art') && !html.includes('data-hero-'), 'niente collisione di nomi con la testata della pagina Market Watch (.market-hero-*)');
-  console.log('PASS dashboardView: solo hero carousel, nessuna lista Up/Down, nessuna collisione di classi con la testata Market Watch');
+  console.log('PASS featuredPanel: solo hero carousel, nessuna lista Up/Down, nessuna collisione di classi con la testata Market Watch');
 }
 
 // --- Mai la carta completa nell'hero: solo artwork/crop --------------------
 {
   const items = [item({ printingId: 'ygo1', catalogCardId: '46986414', cardName: 'Dark Magician', imageUrl: 'https://images.ygoprodeck.com/images/cards/46986414.jpg', referencePrice: 15, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('cards_cropped/46986414.jpg'), 'per Yu-Gi-Oh! l\'hero deve usare il crop, mai images/cards/<id>.jpg così com\'è');
   assert(!html.includes('images/cards/46986414.jpg'), 'l\'URL non-cropped non deve mai comparire come hero: solo la versione cards_cropped');
   console.log('PASS artwork: Yu-Gi-Oh! usa sempre cards_cropped nell\'hero quando disponibile, mai la carta intera');
@@ -69,7 +69,7 @@ const state = { currentUser: 'daniele', loans: [] };
     { price: 12, capturedAt: new Date(now).toISOString() }
   ];
   const items = [item({ printingId: 'm1', catalogCardId: 'm1', cardName: 'Con storico mensile', referencePrice: 12, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items, featuredHistory: new Map([['m1', monthlyHistory]]) });
+  const html = featuredPanel({ items, featuredHistory: new Map([['m1', monthlyHistory]]) });
   assert(html.includes('market-featured-chart') && html.includes('market-featured-chart-line'), 'il grafico deve comparire quando c\'è storico sufficiente');
   assert(html.includes('Andamento mensile'), 'con meno di un mese di storico deve mostrare una lettura mensile');
   assert(!html.includes('NaN'), 'nessun valore rotto nel grafico');
@@ -85,7 +85,7 @@ const state = { currentUser: 'daniele', loans: [] };
     { price: 12, capturedAt: new Date(now).toISOString() }
   ];
   const items = [item({ printingId: 'y1', catalogCardId: 'y1', cardName: 'Con storico annuale', referencePrice: 12, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items, featuredHistory: new Map([['y1', yearlyHistory]]) });
+  const html = featuredPanel({ items, featuredHistory: new Map([['y1', yearlyHistory]]) });
   assert(html.includes('Andamento annuale'), 'superato il mese di storico disponibile, la lettura deve diventare annuale');
   assert(!html.includes('Andamento mensile'), 'non deve mostrare "mensile" quando lo storico supera abbondantemente un mese');
   console.log('PASS grafico andamento: diventa annuale quando lo storico disponibile supera un mese');
@@ -94,7 +94,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Nessuno storico ancora disponibile: nessun grafico rotto -------------
 {
   const items = [item({ printingId: 'noh1', catalogCardId: 'noh1', cardName: 'Senza storico', referencePrice: 12, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('market-featured-chart-empty'), 'senza storico disponibile deve mostrare uno stato vuoto dedicato, mai un grafico rotto');
   console.log('PASS grafico andamento: stato vuoto dedicato quando lo storico non è ancora disponibile');
 }
@@ -102,7 +102,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: meno di 3 movers, una sola slide senza navigazione --------
 {
   const items = [item({ printingId: 'up1', catalogCardId: 'u1', cardName: 'Unica su', referencePrice: 11, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('Unica su'), 'l\'unico mover in salita deve comparire');
   assert(!html.includes('market-featured-nav'), 'con una sola slide non deve comparire alcuna navigazione inutile');
   console.log('PASS edge case: meno di 3 movers, una sola slide senza navigazione');
@@ -111,7 +111,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: nessuna variazione (pannello vuoto) -----------------------
 {
   const items = [item({ printingId: 'flat1', catalogCardId: 'f1', cardName: 'Stabile', referencePrice: 10, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('featured-empty'), 'senza movers in salita deve tornare lo stato vuoto del pannello');
   assert(html.includes('Nessuna variazione da mostrare'), 'messaggio di stato vuoto atteso');
   assert(!html.includes('market-featured-carousel'), 'lo stato vuoto non deve montare il carousel');
@@ -120,9 +120,9 @@ const state = { currentUser: 'daniele', loans: [] };
 
 // --- Loading/errore: stato del pannello quando i trend non sono pronti ----
 {
-  const htmlLoading = dashboardView(state, 'yugioh', { items: [], trendsLoading: true });
+  const htmlLoading = featuredPanel({ items: [], trendsLoading: true });
   assert(htmlLoading.includes('Caricamento trend'), 'durante il caricamento deve mostrare uno stato dedicato, mai lo stato "nessuna variazione"');
-  const htmlError = dashboardView(state, 'yugioh', { items: [], trendsError: true });
+  const htmlError = featuredPanel({ items: [], trendsError: true });
   assert(htmlError.includes('Trend non disponibili'), 'in errore deve mostrare uno stato dedicato con invito a riprovare da Market Watch');
   console.log('PASS stati loading/errore: distinti dallo stato "nessuna variazione", mai confusi tra loro');
 }
@@ -130,7 +130,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // --- Edge case: artwork assente -> placeholder, mai un <img> rotto ---------
 {
   const items = [item({ printingId: 'noart2', catalogCardId: 'n2', cardName: 'Su senza artwork', imageUrl: '', referencePrice: 12, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items });
+  const html = featuredPanel({ items });
   assert(html.includes('market-featured-art-placeholder'), 'senza imageUrl l\'hero deve mostrare un placeholder elegante, mai un\'immagine rotta');
   console.log('PASS edge case: artwork assente, placeholder elegante nell\'hero, mai un\'immagine rotta');
 }
@@ -139,7 +139,7 @@ const state = { currentUser: 'daniele', loans: [] };
 {
   const { mapDashboardMovers } = await import('../js/market-watch.js');
   const rpcShaped = mapDashboardMovers([{ printingId: 'rpc1', catalogCardId: 'rpc1', cardName: 'Dalla RPC', referencePrice: 9, positiveChange: 12.5 }]);
-  const html = dashboardView(state, 'yugioh', { items: [], featuredMovers: rpcShaped });
+  const html = featuredPanel({ items: [], featuredMovers: rpcShaped });
   assert(html.includes('Dalla RPC'), 'un mover proveniente dalla RPC (senza price24h) deve comunque comparire nell\'hero');
   assert(!html.includes('undefined'), 'un campo mancante (price24h) non deve mai finire come testo "undefined" nel markup');
   console.log('PASS "prezzo precedente → prezzo corrente": opzionale, mai un valore rotto quando la RPC non lo fornisce');
@@ -150,7 +150,7 @@ const state = { currentUser: 'daniele', loans: [] };
 // risposto "nessuna carta in crescita" (array vuoto, non undefined).
 {
   const items = [item({ printingId: 'p1', catalogCardId: 'c1', cardName: 'Sarebbe salita', referencePrice: 50, price24h: 10 })];
-  const html = dashboardView(state, 'yugioh', { items, featuredMovers: [] });
+  const html = featuredPanel({ items, featuredMovers: [] });
   assert(!html.includes('Sarebbe salita'), 'con featuredMovers=[] esplicito (risposta completa della RPC) non si deve ricadere su positiveMovers(items) — items è solo la pagina Raccolta caricata, non la collezione completa');
   console.log('PASS featuredMovers=[] esplicito: mai un fallback a un sottoinsieme parziale quando la RPC ha già risposto con zero carte');
 }

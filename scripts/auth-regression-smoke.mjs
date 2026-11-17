@@ -249,7 +249,8 @@ async function run() {
   assert(await evaluate(`window.__authTest.lastLoginSlug === 'existing-member'`), 'Slug login inatteso');
   const identityCheck = await evaluate(`import('./js/cards.js').then(async cards=>({fuzzy:await cards.findCard('Imaginary Dark'),valid:await cards.verifyCardIdentity('46986414','Dark Magician'),invalid:await cards.verifyCardIdentity('89631139','Dark Magician')}))`);
   assert(identityCheck.fuzzy===null && identityCheck.valid===true && identityCheck.invalid===false, `Resolver identità carta non sicuro: ${JSON.stringify(identityCheck)}`);
-  assert(await evaluate(`document.querySelector('.market-featured-art')?.src?.includes('/cards_cropped/46986414.jpg')&&document.querySelector('.market-featured-slide')&&document.querySelector('.market-featured-price b')?.textContent.includes('12')`), 'Artwork cropped, prezzo o slide della carta in evidenza assente');
+  // Home Vetrina (2026-11-17): un solo riquadro d'apertura e 3 numeri; il carosello Market Watch non è più nella Home.
+  assert(await evaluate(`document.querySelectorAll('.hv-hero').length===1&&document.querySelectorAll('.hv-stats button').length===3&&!document.querySelector('.market-featured-slide')&&!document.querySelector('.duel-game-logo')`), 'Home: riquadro d’apertura o numeri assenti, oppure carosello/bandiera ancora montati');
   console.log('PASS corrispondenza esatta nome/ID/immagine + quarantena legacy');
   console.log('PASS membro esistente + PIN corretto');
 

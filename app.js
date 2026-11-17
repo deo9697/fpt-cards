@@ -736,6 +736,7 @@ function dashboardProfile() {
     portfolio: marketWatch?.summary?.portfolioValue || null,
     cardCount,
     winRate: record.matches ? Math.round((record.wins / record.matches) * 100) : null,
+    matches: record.matches,
     missions: (stats?.missions || []).map(mission => ({ ...mission, ...(DAILY_MISSIONS_META[mission.id] || { icon: 'star', label: mission.id }) }))
   };
 }
@@ -793,7 +794,7 @@ function notificationStatusCopy() {
 }
 function pushOnboardingView() {
   if (!shouldOfferPush() || !['home','loans'].includes(page)) return '';
-  return `<section class="surface push-onboarding" aria-labelledby="push-onboarding-title"><img src="assets/notification-icon.png" alt="" width="64" height="64"><div><h2 id="push-onboarding-title">Attiva le notifiche</h2><p>Prestiti, richieste e movimenti di prezzo direttamente sul telefono.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva notifiche ▸</button>' : ''}<button class="btn ghost" id="defer-notifications">Più tardi</button></div></div></section>`;
+  return `<section class="surface push-onboarding push-strip" aria-labelledby="push-onboarding-title"><img src="assets/notification-icon.png" alt="" width="32" height="32"><div><h2 id="push-onboarding-title">Attiva le notifiche</h2><p>Prestiti e prezzi sul telefono.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva</button>' : ''}<button class="btn ghost" id="defer-notifications">Più tardi</button></div></div></section>`;
 }
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();

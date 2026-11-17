@@ -47,7 +47,7 @@ try {
   await evaluate('window.__testArtwork=' + JSON.stringify(artData));
 
   const setup = await evaluate(`(async()=>{
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
     const now = Date.UTC(2026,8,15);
     // referencePrice decrescente (14,13,12) così positiveMovers() -- che
@@ -59,7 +59,7 @@ try {
       ['up0', [{price:9,capturedAt:new Date(now-20*86400000).toISOString()},{price:12,capturedAt:new Date(now).toISOString()}]],
       ['up1', [{price:7,capturedAt:new Date(now-250*86400000).toISOString()},{price:13,capturedAt:new Date(now).toISOString()}]]
     ]);
-    window.__renderDashboard = () => { document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items:upItems, featuredHistory}); bindDashboardCarousel(); };
+    window.__renderDashboard = () => { document.querySelector('#app').innerHTML = featuredPanel({items:upItems, featuredHistory}); bindDashboardCarousel(); };
     window.__renderDashboard();
     return true;
   })()`);
@@ -128,10 +128,10 @@ try {
 
   // --- Una sola carta in salita: nessuna navigazione inutile ---------------
   const singleResult = await evaluate(`(async()=>{
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
     const items = [{printingId:'solo', catalogCardId:'solo', cardName:'Unica Carta', imageUrl:window.__testArtwork, referencePrice:15, price24h:10, sources:['owned']}];
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    document.querySelector('#app').innerHTML = featuredPanel({items});
     bindDashboardCarousel();
     return {slides: document.querySelectorAll('.market-featured-slide').length, hasNav: !!document.querySelector('.market-featured-nav')};
   })()`);
@@ -140,9 +140,9 @@ try {
 
   // --- Nessun mover positivo: stato vuoto elegante del pannello ------------
   const emptyResult = await evaluate(`(async()=>{
-    const {dashboardView} = await import('/js/dashboard.js');
+    const { featuredPanel } = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items:[]});
+    document.querySelector('#app').innerHTML = featuredPanel({items:[]});
     return {hasEmpty: !!document.querySelector('.featured-empty'), hasSlide: !!document.querySelector('.market-featured-slide')};
   })()`);
   if (!emptyResult.hasEmpty || emptyResult.hasSlide) throw Error('Stato vuoto del pannello senza movers positivi non valido: ' + JSON.stringify(emptyResult));
@@ -153,14 +153,14 @@ try {
   // Ordine: già cropped > YGOPRODeck full->cropped > catalogCardId cropped >
   // YGOResources solo come ultimo fallback, con il ritaglio CSS .is-full-card.
   const priorityResult = await evaluate(`(async()=>{
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
     const items = [
       {printingId:'pri-yr', catalogCardId:'111111', cardName:'YGOResources Card', imageUrl:'https://artworks-abc123.ygoresources.com/foo/bar.jpg', referencePrice:12, price24h:10, sources:['owned']},
       {printingId:'pri-full', catalogCardId:'222222', cardName:'Full Card', imageUrl:'https://images.ygoprodeck.com/images/cards/222222.jpg', referencePrice:11, price24h:10, sources:['owned']},
       {printingId:'pri-id', catalogCardId:'333333', cardName:'Solo ID Card', imageUrl:'', referencePrice:10.5, price24h:10, sources:['owned']}
     ];
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    document.querySelector('#app').innerHTML = featuredPanel({items});
     bindDashboardCarousel();
     const imgs = [...document.querySelectorAll('img.market-featured-art')];
     const rows = imgs.map(img => ({src: img.getAttribute('src'), fallback: JSON.parse(img.dataset.artFallback||'[]'), fullCard: img.classList.contains('is-full-card')}));
@@ -179,10 +179,10 @@ try {
   // --- Fallback su errore immagine: primary -> fallback -> placeholder FPT,
   // mai un loop su errori ripetuti (data-art-fallback si accorcia e basta).
   const fallbackResult = await evaluate(`(async()=>{
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
     const items = [{printingId:'fb1', catalogCardId:'444444', cardName:'Fallback Card', imageUrl:'https://images.ygoprodeck.com/images/cards/444444.jpg', referencePrice:9, price24h:8, sources:['owned']}];
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    document.querySelector('#app').innerHTML = featuredPanel({items});
     bindDashboardCarousel();
     const img = document.querySelector('img.market-featured-art'), placeholder = img.nextElementSibling;
     const initial = {fallbackLen: JSON.parse(img.dataset.artFallback).length, imgHidden: img.hidden, placeholderHidden: placeholder.hidden};
@@ -206,10 +206,10 @@ try {
   const fetchSpyCalls = await evaluate(`(async()=>{
     let calls = 0; const originalFetch = window.fetch;
     window.fetch = (...args) => { calls++; return originalFetch(...args); };
-    const {dashboardView, bindDashboardCarousel} = await import('/js/dashboard.js');
+    const {featuredPanel, bindDashboardCarousel} = await import('/js/dashboard.js');
     const state = {currentUser:'daniele', loans:[]};
     const items = [{printingId:'nf1', catalogCardId:'555555', cardName:'No Fetch Card', imageUrl:'https://images.ygoprodeck.com/images/cards/555555.jpg', referencePrice:9, price24h:8, sources:['owned']}];
-    document.querySelector('#app').innerHTML = dashboardView(state, 'yugioh', {items});
+    document.querySelector('#app').innerHTML = featuredPanel({items});
     bindDashboardCarousel();
     const img = document.querySelector('img.market-featured-art');
     img.dispatchEvent(new Event('error')); img.dispatchEvent(new Event('error'));
