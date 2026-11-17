@@ -10,6 +10,7 @@ import { cardDropActions, cardTapActions, specialSummonPositions } from './simul
 import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
 import {attackError} from './simulator-battle.js';
 import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket, historyTicket, deckRecords, sampleHand, arenaStats } from './simulator-lobby-view.js';
+import { autoIsMulti, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const scope = context => `${context?.team || ''}:${context?.member || ''}`;
@@ -23,13 +24,14 @@ export class YugiohMultiplayer {
     this.timer=null;this.polling=false;this.lastLobby=0;this.navigationGeneration=0;this.inspectionGeneration=0;
     this.requested='';this.tab='table';this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.revealHand=true;
     this.metadata=new Map();this.metadataLoading=new Set();this.inviteRequestId=null;
-    this.inviteDraft={opponentSlug:'',deckId:'',lp:8000,firstPlayer:'0'};this.acceptDraft={deckId:'',lp:8000};this.finishDraft={winner:'0',notes:''};
+    this.inviteDraft={opponentSlug:'',deckId:'',lp:8000,firstPlayer:'0',mode:'auto'};this.acceptDraft={deckId:'',lp:8000};this.finishDraft={winner:'0',notes:''};
+    this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];
     this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:''};this.handSeed=1;
     this.dropMenu=null;this.dragBackup=null;this.rulesDialog=null;this.attackSelection=null;
     this.activationReveals=createActivationReveals({onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.rulesDialog=null;this.attackSelection=null;this.placing=null;this.selected=null;this.inspectedCard=null;}this.render();}});
     this.cardGestures=createDuelCardGestures({
-      canStart:element=>this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&!this.attackSelection&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
+      canStart:element=>!this.isAuto()&&this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&!this.attackSelection&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
       canInspect:element=>this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&Boolean(this.session)&&!this.orientation.isPortraitBlocked()&&Boolean(element.dataset.ygoCard),
       onInspect:source=>this.showCardDescription(source),
       getRevision:()=>this.gestureRevision(),onStart:source=>this.beginCardDrag(source.player,source.cardId),
@@ -40,6 +42,19 @@ export class YugiohMultiplayer {
   allowed(){const context=this.options.getContext();return !this.disposed&&context?.allowed===true&&scope(context)===this.scope;}
   get decks(){return(this.options.getDecks()||[]).filter(deck=>deck.game==='yugioh'&&(!deck.ownerSlug||deck.ownerSlug===this.context.member)&&deck.persisted!==false&&UUID.test(deck.id));}
   canControl(player){return player===this.viewer&&['setup','playing'].includes(this.duel?.status);}
+  isAuto(){return this.session?.mode==='auto'||this.duel?.mode==='auto';}
+  autoPrompt(){return this.session?.auto?.prompt;}
+  async respondAuto(choice){const prompt=this.autoPrompt();if(!this.isAuto()||this.duel?.status!=='playing'||!prompt||this.pending)return;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;await this.act({type:'autoRespond',promptId:prompt.id,choice});}
+  async chooseAutoOption(id){
+    const prompt=this.autoPrompt();if(!prompt||this.pending||this.orientation.isPortraitBlocked())return;
+    if(prompt.kind==='announce-card'){const row=this.autoSearchResults.find(row=>`announce-${row.code}`===id);if(row)await this.respondAuto({value:row.code});return;}
+    if(!prompt.options.some(option=>option.id===id))return;
+    if(autoIsMulti(prompt)){
+      this.autoSelected=this.autoSelected.includes(id)?this.autoSelected.filter(value=>value!==id):[...this.autoSelected,id];
+      this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;
+    }
+    if(prompt.kind!=='counter')await this.respondAuto({optionId:id});
+  }
   render(){if(this.allowed())this.options.onRender();}
   reset(){this.activationReveals.dispose();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
   close(){this.reset();}
@@ -100,6 +115,7 @@ export class YugiohMultiplayer {
     this.attackSelection=null;await this.act({type:choice.replay?'replayAttack':'declareAttack',player:this.viewer,...(!choice.replay?{cardId:choice.cardId}:{}),target});
   }
   showDropMenu({cardId,player,zone,slot,x,y}){
+    if(this.isAuto())return;
     this.dragBackup=null;
     if(!this.allowed()||this.pending||this.orientation.isPortraitBlocked()||player!==this.viewer||!this.canControl(player)||this.session?.phase==='setup')return;
     this.selected={player,cardId};const selected=this.selectedCard();if(!selected)return;
@@ -117,6 +133,7 @@ export class YugiohMultiplayer {
     this.placing=null;this.pile=null;this.menu=false;this.render();
   }
   async applyDropAction(id){
+    if(this.isAuto()){await this.chooseAutoOption(id);return;}
     const menu=this.dropMenu,choice=menu?.actions.find(action=>action.id===id);
     if(!choice||choice.disabled||!this.allowed()||!this.canControl(menu.player)||this.pending||menu.duelId!==this.duel?.id||menu.version!==this.duel?.version||menu.player!==this.viewer||this.orientation.isPortraitBlocked())return;
     const{activateOnly,activateAfter,positionOnly,...changes}=choice.changes;
@@ -201,8 +218,8 @@ export class YugiohMultiplayer {
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
     this.activationReveals.observe(duel);
     this.duel=duel;this.viewer=duel.viewer;this.session=['setup','playing','finished'].includes(duel.status)?duel.state||null:null;
-    if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;}
-    if(newTable){this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
+    if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
+    if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
     return changed;
   }
   async perform(payload){
@@ -213,7 +230,7 @@ export class YugiohMultiplayer {
     finally{this.pending=false;this.render();this.schedule();}
   }
   async open(id){if(this.pending||!UUID.test(id))return;this.attackSelection=null;this.activationReveals.clear();this.navigationGeneration++;this.inspectionGeneration++;this.practice=false;this.practiceTable=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.tab='table';await this.perform({op:'state',duelId:id});}
-  async act(action){if(!this.duel||!this.session||!this.allowed()||this.pending)return null;if(this.orientation.isPortraitBlocked()){this.error='Ruota il telefono per giocare in orizzontale.';this.render();return null;}if(action.player!==undefined&&action.player!==this.viewer){this.error='Puoi modificare soltanto le tue carte.';this.render();return null;}return this.perform({op:'action',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),action});}
+  async act(action){if(!this.duel||!this.session||!this.allowed()||this.pending)return null;if(this.isAuto()&&!['autoRespond','surrender','ready'].includes(action.type))return null;if(this.orientation.isPortraitBlocked()){this.error='Ruota il telefono per giocare in orizzontale.';this.render();return null;}if(action.player!==undefined&&action.player!==this.viewer){this.error='Puoi modificare soltanto le tue carte.';this.render();return null;}return this.perform({op:'action',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),action});}
   selectedCard(){
     if(!this.selected||!this.session)return null;
     if(this.inspectedCard&&this.inspectedCard.version===this.duel.version&&this.inspectedCard.player===this.selected.player&&this.inspectedCard.card.id===this.selected.cardId)return this.inspectedCard;
@@ -234,6 +251,11 @@ export class YugiohMultiplayer {
     this.selected={player,cardId};this.pile=null;this.menu=false;this.placing=null;
     const selected=this.selectedCard();
     if(!selected)this.selected=null;
+    else if(quick&&this.isAuto()){
+      const options=autoOptionsForCard(this.autoPrompt(),selected.card);
+      if(options.length&&this.duel.status==='playing')this.dropMenu={mode:'auto',cardId,player,to:selected.zone,actions:options.map(option=>({id:option.id,label:option.effect?`${option.label} · ${option.effect}`:option.label})),version:this.duel.version,duelId:this.duel.id,x,y,anchor,cardName:selected.card.cardName};
+      else{this.selected=null;this.inspectedCard=null;}
+    }
     else if(quick&&!this.pending&&this.canControl(player)&&this.session.phase!=='setup'){
       const card=this.cardForActions(selected.card);
       const actions=this.constrainPlayActions(cardTapActions(card,selected.zone),card,selected.zone);
@@ -244,6 +266,7 @@ export class YugiohMultiplayer {
     globalThis.document?.querySelector('.ygo-card-dialog')?.focus({preventScroll:true});
   }
   async inspectDeck(){
+    if(this.isAuto())return;
     if(!this.canControl(this.viewer)||this.pending)return;
     const id=this.duel.id,generation=this.inspectionGeneration;this.menu=false;
     const response=await this.perform({op:'inspect',duelId:id,zone:'deck'});
@@ -265,12 +288,12 @@ export class YugiohMultiplayer {
     const coin=this.inviteCoin?`<p class="ygo-arena-hint">Moneta: ${this.inviteDraft.firstPlayer==='0'?'inizi tu':'inizia '+esc(opponent?.name||'il compagno')}.</p>`:'';
     return`<div class="ygo-arena-sec">Tavoli attivi <em>${rows.length}</em></div>${rows.length?rows.map(row=>duelTicket(row,this.pending)).join(''):'<p class="ygo-arena-muted">Nessun duello in corso. Lancia la prima sfida qui sotto.</p>'}
       <div class="ygo-arena-sec">Nuova sfida</div>
-      <form data-ygo-invite class="ygo-composer">
+      <form data-ygo-invite class="ygo-composer"><label class="ygo-arena-field"><span class="ygo-step">Modalità di gioco</span><select name="mode"><option value="auto" ${this.inviteDraft.mode==='auto'?'selected':''}>Automatico · Regole TCG</option><option value="manual" ${this.inviteDraft.mode==='manual'?'selected':''}>Manuale guidato</option></select></label>
         <select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.inviteDraft.deckId)}</select>
         <select name="opponentSlug" class="ygo-native" tabindex="-1" aria-hidden="true" required><option value="">Scegli un compagno</option>${opponents.map(member=>`<option value="${esc(member.slug)}" ${member.slug===this.inviteDraft.opponentSlug?'selected':''}>${esc(member.name)}</option>`).join('')}</select>
         <input name="lp" type="number" class="ygo-native" tabindex="-1" aria-hidden="true" min="1" max="999999" step="1" required value="${esc(this.inviteDraft.lp)}">
         <select name="firstPlayer" class="ygo-native" tabindex="-1" aria-hidden="true"><option value="0" ${this.inviteDraft.firstPlayer==='0'?'selected':''}>Tu</option><option value="1" ${this.inviteDraft.firstPlayer==='1'?'selected':''}>Il compagno</option></select>
-        <span class="ygo-step">01 · Il tuo mazzo</span>${deckTiles(this.decks,this.inviteDraft.deckId,'deckId')}${deckIssues(deck)}
+        <span class="ygo-step">01 · Il tuo mazzo</span>${deckTiles(this.decks,this.inviteDraft.deckId,'deckId')}${this.inviteDraft.mode==='auto'?'<p class="ygo-arena-hint">Il mazzo viene verificato con il formato TCG automatico prima dell’invito.</p>':deckIssues(deck)}
         <span class="ygo-step">02 · L'avversario</span>${memberChips(opponents,this.inviteDraft.opponentSlug)}
         <div class="ygo-versus-plate"><div class="is-me"><small>TU</small><b>${esc(deck?.name||'Scegli un mazzo')}</b></div><span class="ygo-vs-hex" aria-hidden="true">VS</span><div class="is-op"><small>AVVERSARIO</small><b>${esc(opponent?.name||'Scegli un compagno')}</b></div></div>
         <div class="ygo-arena-row2"><div><span class="ygo-step">03 · LP</span><div class="ygo-seg ygo-lp-seg" role="radiogroup">${[['8000','8000'],['4000','4000']].map(([value,label])=>`<button type="button" role="radio" data-ygo-pick="lp" data-value="${value}" aria-checked="${String(this.inviteDraft.lp)===value}">${label}</button>`).join('')}<label class="${lpPreset?'':'is-current'}"><span class="ygo-native-label">LP personalizzati</span><input type="number" inputmode="numeric" min="1" max="999999" step="1" placeholder="Altro" data-ygo-lp-custom value="${lpPreset?'':esc(this.inviteDraft.lp)}"></label></div></div>
@@ -281,13 +304,13 @@ export class YugiohMultiplayer {
   }
   invitationView(row){return duelTicket(row,this.pending);}
   legacyInvitationView(row){const name=row.viewer===0?row.guestName:row.hostName;return`<article class="surface ygo-invitation"><div><small>${esc(status[row.status]||row.status)}</small><h3>${esc(name)}</h3><p>${esc([row.hostDeckName,row.guestDeckName].filter(Boolean).join(' vs '))}</p></div><button type="button" class="ygo-primary" data-ygo-open="${esc(row.id)}" ${this.pending?'disabled':''}>${row.status==='waiting'?'Apri invito':'Rientra al tavolo'}</button></article>`;}
-  waitingView(){const d=this.duel;if(d.status==='waiting'&&d.viewer===1){const deck=this.decks.find(deck=>deck.id===this.acceptDraft.deckId);return`<div class="ygo-arena-sec">Sfida ricevuta</div><form data-ygo-accept class="ygo-composer"><select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.acceptDraft.deckId)}</select><div class="ygo-versus-plate"><div class="is-op"><small>TI SFIDA</small><b>${esc(d.hostName)}</b></div><span class="ygo-vs-hex" aria-hidden="true">VS</span><div class="is-me"><small>IL SUO MAZZO</small><b>${esc(d.hostDeckName||'Yu-Gi-Oh!')}</b></div></div><span class="ygo-step">01 · Rispondi con</span>${deckTiles(this.decks,this.acceptDraft.deckId,'deckId')}${deckIssues(deck)}<label class="ygo-arena-field"><span class="ygo-step">02 · I tuoi LP iniziali</span><input type="number" name="lp" min="1" max="999999" step="1" required value="${esc(this.acceptDraft.lp)}"></label><button type="submit" class="ygo-primary ygo-cta" ${this.pending||!this.decks.length||!deck?'disabled':''}>Accetta il duello ▸</button><div class="ygo-arena-row2"><button type="button" class="ygo-ticket-action is-danger" data-ygo-response="decline" ${this.pending?'disabled':''}>Rifiuta</button>${commandButton('lobby','Torna agli inviti')}</div></form>`;}return`<div class="ygo-arena-sec">${d.status==='waiting'?'Sfida inviata':'Tavolo'}</div><section class="ygo-composer ygo-lobby"><div class="ygo-versus-plate"><div class="is-me"><small>HOST</small><b>${esc(d.hostName)}</b></div><span class="ygo-vs-hex" aria-hidden="true">VS</span><div class="is-op"><small>OSPITE</small><b>${esc(d.guestName)}</b></div></div><p class="ygo-arena-hint">${d.status==='waiting'?`Aspettiamo che ${esc(d.guestName)} scelga il mazzo.`:esc(status[d.status]||'Tavolo non disponibile.')}</p><div class="ygo-arena-row2">${d.status==='waiting'&&d.viewer===0?'<button type="button" class="ygo-ticket-action is-danger" data-ygo-response="cancel">Annulla invito</button>':''}${commandButton('lobby','Torna agli inviti')}</div></section>`;}
+  waitingView(){const d=this.duel;if(d.status==='waiting'&&d.viewer===1){const deck=this.decks.find(deck=>deck.id===this.acceptDraft.deckId);return`<div class="ygo-arena-sec">Sfida ricevuta <em>${d.mode==='auto'?'Automatico TCG':'Manuale guidato'}</em></div><form data-ygo-accept class="ygo-composer"><select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.acceptDraft.deckId)}</select><div class="ygo-versus-plate"><div class="is-op"><small>TI SFIDA</small><b>${esc(d.hostName)}</b></div><span class="ygo-vs-hex" aria-hidden="true">VS</span><div class="is-me"><small>IL SUO MAZZO</small><b>${esc(d.hostDeckName||'Yu-Gi-Oh!')}</b></div></div><span class="ygo-step">01 · Rispondi con</span>${deckTiles(this.decks,this.acceptDraft.deckId,'deckId')}${d.mode==='auto'?'<p class="ygo-arena-hint">Il mazzo viene verificato con il formato TCG automatico.</p>':deckIssues(deck)}<label class="ygo-arena-field"><span class="ygo-step">02 · I tuoi LP iniziali</span><input type="number" name="lp" min="1" max="999999" step="1" required value="${esc(this.acceptDraft.lp)}"></label><button type="submit" class="ygo-primary ygo-cta" ${this.pending||!this.decks.length||!deck?'disabled':''}>Accetta il duello ▸</button><div class="ygo-arena-row2"><button type="button" class="ygo-ticket-action is-danger" data-ygo-response="decline" ${this.pending?'disabled':''}>Rifiuta</button>${commandButton('lobby','Torna agli inviti')}</div></form>`;}return`<div class="ygo-arena-sec">${d.status==='waiting'?'Sfida inviata':'Tavolo'} <em>${d.mode==='auto'?'Automatico TCG':'Manuale guidato'}</em></div><section class="ygo-composer ygo-lobby"><div class="ygo-versus-plate"><div class="is-me"><small>HOST</small><b>${esc(d.hostName)}</b></div><span class="ygo-vs-hex" aria-hidden="true">VS</span><div class="is-op"><small>OSPITE</small><b>${esc(d.guestName)}</b></div></div><p class="ygo-arena-hint">${d.status==='waiting'?`Aspettiamo che ${esc(d.guestName)} scelga il mazzo.`:esc(status[d.status]||'Tavolo non disponibile.')}</p><div class="ygo-arena-row2">${d.status==='waiting'&&d.viewer===0?'<button type="button" class="ygo-ticket-action is-danger" data-ygo-response="cancel">Annulla invito</button>':''}${commandButton('lobby','Torna agli inviti')}</div></section>`;}
   historyView(){
     const rows=this.lobby.duels.filter(row=>row.status==='finished'&&row.result),stats=arenaStats(this.lobby.duels),records=deckRecords(this.lobby.duels);
     return`<div class="ygo-arena-ring-box"><div class="ygo-arena-ring" style="--v:${stats.rate}"><div><b>${stats.rate}%</b><small>VITTORIE</small></div></div><div class="ygo-arena-bars">${records.length?records.map(record=>{const total=record.wins+record.losses;return`<div><span>${esc(record.name)} <b>${record.wins}–${record.losses}</b></span><i style="--w:${total?Math.max(4,Math.round(record.wins/total*100)):4}%"></i></div>`;}).join(''):'<p class="ygo-arena-muted">I risultati per mazzo compaiono dopo il primo duello concluso.</p>'}<small>${rows.length} duelli · ${stats.wins} vittorie · ${stats.draws} pareggi</small></div></div>
       <div class="ygo-arena-sec">Ultimi duelli <em>${rows.length}</em></div>${rows.map(row=>historyTicket(row)).join('')||'<p class="ygo-arena-muted">Concludi un duello per registrare il primo test.</p>'}`;
   }
-  rulesView(){return`<section class="ygo-rules ygo-arena-rules"><div class="ygo-arena-sec">Come funziona il tavolo</div><p>Le nuove partite controllano turni, pescate, Evocazioni Normali/Set, tributi e cambi posizione. Effetti, timing e costi non guidati restano manuali. Il combattimento standard controlla attacchi, danni e distruzione. Catene e materiali Synchro/Xyz hanno controlli dedicati.</p><details open><summary><b>01</b>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. Le fasi avanzano in ordine. Esegui la pescata dovuta prima di continuare; a fine turno scegli le carte da scartare se ne hai più di sei. Gli effetti restano da dichiarare. I tavoli già iniziati prima di questi controlli mantengono i comandi manuali: avvia una nuova partita per usare le regole guidate.</p></details><details><summary><b>02</b>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Normal Summon e Set condividono la quota del turno. I Mostri di Livello 5–6 richiedono un tributo, dal Livello 7 ne richiedono due. Puoi offrire anche i tuoi Mostri coperti. Il cambio posizione normale è disponibile dalla propria Main Phase, una volta per turno, dopo il turno di ingresso. I comandi per effetto sono fra quelli avanzati. Puoi anche mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary><b>03</b>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Per Synchro e Xyz scegli i tuoi materiali scoperti e una casella: vengono controllati Tuner, Livelli e Rango della procedura standard. I materiali Xyz restano attaccati al mostro. Rispetta anche i requisiti specifici della carta e le frecce Link.</p></details><details><summary><b>04</b>Combattimento</summary><p>Durante la tua Battle Phase, tocca un Mostro scoperto in Attacco e scegli Attacca. Tocca un bersaglio illuminato oppure Attacco diretto se il campo avversario è vuoto. Entrambi possono rispondere: due passaggi aprono il Damage Step e scoprono il difensore; altri due applicano i danni e la distruzione standard. Le catene vanno completate prima di proseguire. Se cambiano i Mostri avversari prima del Damage Step, scegli di nuovo il bersaglio o rinuncia. Nel Damage Step, per protezioni o effetti particolari, proponi Esito manuale: serve l’accordo dell’altro giocatore. Poi applicate l’effetto con i comandi manuali.</p></details><details><summary><b>05</b>Attivazioni e catene</summary><p>Activate registra un anello numerato, anche per effetti dalla mano. Entrambi scelgono Non rispondo per iniziare la risoluzione, dall’anello maggiore al minore. Gli effetti restano manuali. Per uno Xyz scegli i materiali richiesti dal costo; sposta Magie e Trappole al Cimitero quando previsto.</p></details><p class="ygo-arena-hint"><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh! ↗</a></p></section>`;}
+  rulesView(){return`<section class="ygo-rules ygo-arena-rules"><div class="ygo-arena-sec">Come funziona il tavolo</div><details open><summary><b>AUTO</b>Duello automatico TCG</summary><p>Scegli Automatico quando inviti un compagno. Il motore gestisce effetti, costi, evocazioni, materiali, combattimento e timing TCG. Tocca le carte illuminate per le mosse consentite; scegli i bersagli e conferma le selezioni richieste. Per leggere una carta tienila premuta. La banlist e la disponibilità delle carte sono controllate dal server. Entrambi confermano la mano iniziale per cominciare.</p><p><a href="/assets/licenses/yugioh-auto.html" target="_blank" rel="noopener noreferrer">Versioni, licenze e codice sorgente</a></p></details><h3>Modalità manuale guidata</h3><p>Le nuove partite controllano turni, pescate, Evocazioni Normali/Set, tributi e cambi posizione. Effetti, timing e costi non guidati restano manuali. Il combattimento standard controlla attacchi, danni e distruzione. Catene e materiali Synchro/Xyz hanno controlli dedicati.</p><details open><summary><b>01</b>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. Le fasi avanzano in ordine. Esegui la pescata dovuta prima di continuare; a fine turno scegli le carte da scartare se ne hai più di sei. Gli effetti restano da dichiarare. I tavoli già iniziati prima di questi controlli mantengono i comandi manuali: avvia una nuova partita per usare le regole guidate.</p></details><details><summary><b>02</b>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Normal Summon e Set condividono la quota del turno. I Mostri di Livello 5–6 richiedono un tributo, dal Livello 7 ne richiedono due. Puoi offrire anche i tuoi Mostri coperti. Il cambio posizione normale è disponibile dalla propria Main Phase, una volta per turno, dopo il turno di ingresso. I comandi per effetto sono fra quelli avanzati. Puoi anche mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary><b>03</b>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Per Synchro e Xyz scegli i tuoi materiali scoperti e una casella: vengono controllati Tuner, Livelli e Rango della procedura standard. I materiali Xyz restano attaccati al mostro. Rispetta anche i requisiti specifici della carta e le frecce Link.</p></details><details><summary><b>04</b>Combattimento</summary><p>Durante la tua Battle Phase, tocca un Mostro scoperto in Attacco e scegli Attacca. Tocca un bersaglio illuminato oppure Attacco diretto se il campo avversario è vuoto. Entrambi possono rispondere: due passaggi aprono il Damage Step e scoprono il difensore; altri due applicano i danni e la distruzione standard. Le catene vanno completate prima di proseguire. Se cambiano i Mostri avversari prima del Damage Step, scegli di nuovo il bersaglio o rinuncia. Nel Damage Step, per protezioni o effetti particolari, proponi Esito manuale: serve l’accordo dell’altro giocatore. Poi applicate l’effetto con i comandi manuali.</p></details><details><summary><b>05</b>Attivazioni e catene</summary><p>Activate registra un anello numerato, anche per effetti dalla mano. Entrambi scelgono Non rispondo per iniziare la risoluzione, dall’anello maggiore al minore. Gli effetti restano manuali. Per uno Xyz scegli i materiali richiesti dal costo; sposta Magie e Trappole al Cimitero quando previsto.</p></details><p class="ygo-arena-hint"><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh! ↗</a></p></section>`;}
   bind(root){
     this.syncOrientation();
     const arena=root.querySelector('.ygo-arena');
@@ -298,7 +321,7 @@ export class YugiohMultiplayer {
     const chainLinks=element.querySelector('.ygo-chain-links');if(chainLinks)chainLinks.scrollLeft=chainLinks.scrollWidth;
     const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect(),anchor=this.dropMenu.anchor;const left=anchor?(anchor.right+6+box.width<=innerWidth-8?anchor.right+6:anchor.left-box.width-6):this.dropMenu.x,top=anchor?anchor.top:this.dropMenu.y;drop.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(top,innerHeight-box.height-8))+'px';drop.querySelector('button')?.focus({preventScroll:true});}
     element.addEventListener('input',event=>this.updateDraft(event.target));
-    element.addEventListener('change',event=>{this.updateDraft(event.target);const form=event.target.closest('[data-ygo-summon],[data-ygo-xyz-cost],[data-ygo-tribute],[data-ygo-discard]');if(form)this.updateRulesDraft(form);if(['deckId','opponentSlug'].includes(event.target.name))this.render();});
+    element.addEventListener('change',event=>{this.updateDraft(event.target);const form=event.target.closest('[data-ygo-summon],[data-ygo-xyz-cost],[data-ygo-tribute],[data-ygo-discard]');if(form)this.updateRulesDraft(form);if(['deckId','opponentSlug','mode'].includes(event.target.name))this.render();});
     element.addEventListener('submit',event=>{event.preventDefault();if(this.allowed())void this.submit(event.target);});
     element.addEventListener('click',event=>{const button=event.target.closest('button');if(button&&!button.disabled&&this.allowed())void this.click(button,event);});
     element.addEventListener('keydown',event=>{if(event.key==='Escape'){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.cardGestures.cancel();this.inspectionGeneration++;this.selected=null;this.inspectedCard=null;this.pile=null;this.menu=false;this.placing=null;this.render();}});
@@ -313,9 +336,15 @@ export class YugiohMultiplayer {
     if(field==='firstPlayer'){this.inviteCoin=value==='coin';if(this.inviteCoin)value=Math.random()<.5?'0':'1';}
     const control=form.querySelector(`[name="${field}"]`);if(!control)return;control.value=value;this.updateDraft(control);if(this.inviteRequestId&&form.matches('[data-ygo-invite]'))this.inviteRequestId=null;this.render();
   }
-  updateDraft(field){if(field?.dataset?.ygoLpCustom!==undefined){const lp=field.closest('form')?.querySelector('[name="lp"]');if(lp&&Number(field.value)>0){lp.value=field.value;this.inviteDraft.lp=field.value;}return;}if(!this.allowed()||!field.name)return;const draft=field.closest('[data-ygo-practice]')?this.practiceDraft:field.closest('[data-ygo-invite]')?this.inviteDraft:field.closest('[data-ygo-accept]')?this.acceptDraft:field.closest('[data-ygo-finish]')?this.finishDraft:null;if(draft&&Object.hasOwn(draft,field.name)){draft[field.name]=field.value;if(draft===this.practiceDraft)this.error='';}}
+  updateDraft(field){if(field?.dataset?.ygoAutoCounter!==undefined){const option=this.autoPrompt()?.options.find(option=>option.id===field.dataset.ygoAutoCounter);const value=Number(field.value);if(option&&Number.isInteger(value)&&value>=0&&value<=option.available)this.autoCounts[option.id]=value;return;}if(field?.dataset?.ygoLpCustom!==undefined){const lp=field.closest('form')?.querySelector('[name="lp"]');if(lp&&Number(field.value)>0){lp.value=field.value;this.inviteDraft.lp=field.value;}return;}if(!this.allowed()||!field.name)return;const draft=field.closest('[data-ygo-practice]')?this.practiceDraft:field.closest('[data-ygo-invite]')?this.inviteDraft:field.closest('[data-ygo-accept]')?this.acceptDraft:field.closest('[data-ygo-finish]')?this.finishDraft:null;if(draft&&Object.hasOwn(draft,field.name)){draft[field.name]=field.value;if(draft===this.practiceDraft)this.error='';}}
   async submit(form){
     if(this.pending||!this.ready||!this.allowed())return;const data=new FormData(form),selected=this.selectedCard();
+    if(form.matches('[data-ygo-auto-search]')){
+      const prompt=this.autoPrompt();if(!prompt||prompt.kind!=='announce-card')return;
+      const response=await this.perform({op:'search',duelId:this.duel.id,promptId:prompt.id,query:String(data.get('query')||'')});
+      if(response&&response.promptId===this.autoPrompt()?.id&&response.version===this.duel.version){this.autoSearchResults=response.cards||[];this.render();}return;
+    }
+    if(this.isAuto()&&this.session)return;
     if(form.matches('[data-ygo-tribute],[data-ygo-discard]')){
       const draft=this.rulesDialog;if(!draft||draft.version!==this.duel?.version||draft.duelId!==this.duel?.id)return;
       this.updateRulesDraft(form);
@@ -347,7 +376,7 @@ export class YugiohMultiplayer {
       else{this.placing={zones:['monsters','extraMonsters'],position:draft.position,faceUp:true,summon};this.render();}return;
     }
     if(form.matches('[data-ygo-practice]')){await this.startPractice(data.get('deckId'));return;}
-    if(form.matches('[data-ygo-invite]')){this.inviteRequestId||=crypto.randomUUID();const result=await this.perform({op:'invite',requestId:this.inviteRequestId,opponentSlug:data.get('opponentSlug'),deckId:data.get('deckId'),lp:Number(data.get('lp')),firstPlayer:Number(data.get('firstPlayer'))});if(result){this.inviteRequestId=null;this.options.onToast(result.notification?.push==='sent'?'Invito inviato · notifica spedita':'Invito inviato al compagno del team');}}
+    if(form.matches('[data-ygo-invite]')){this.inviteRequestId||=crypto.randomUUID();const result=await this.perform({op:'invite',mode:data.get('mode')||this.inviteDraft.mode,requestId:this.inviteRequestId,opponentSlug:data.get('opponentSlug'),deckId:data.get('deckId'),lp:Number(data.get('lp')),firstPlayer:Number(data.get('firstPlayer'))});if(result){this.inviteRequestId=null;this.options.onToast(result.notification?.push==='sent'?'Invito inviato · notifica spedita':'Invito inviato al compagno del team');}}
     if(form.matches('[data-ygo-accept]'))await this.perform({op:'accept',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),deckId:data.get('deckId'),lp:Number(data.get('lp'))});
     if(form.matches('[data-ygo-move]')&&selected?.player===this.viewer)await this.act({type:'move',player:this.viewer,cardId:selected.card.id,to:data.get('to'),placement:data.get('placement')||'top',faceUp:data.get('faceUp')!=='false',position:data.get('position')||'attack'});
     if(form.matches('[data-ygo-lp]'))await this.act({type:'lp',player:this.viewer,delta:Number(data.get('delta'))});
@@ -356,6 +385,7 @@ export class YugiohMultiplayer {
     if(form.matches('[data-ygo-finish]')&&await this.options.confirm('Concludere il duello e condividere questo risultato con l’avversario?'))await this.act({type:'finish',winner:data.get('winner')==='draw'?'draw':Number(data.get('winner')),notes:data.get('notes')});
   }
   async place(player,to,slot){
+    if(this.isAuto()){const option=autoPlaceOption(this.autoPrompt(),player,to,slot);if(option)await this.chooseAutoOption(option.id);return;}
     if(this.dropMenu||this.rulesDialog)return;
     const selected=this.selectedCard();if(this.pending||!selected||player!==this.viewer||selected.player!==player||!this.canControl(player)||this.session.phase==='setup'||!canMoveCardToZone(selected.card,to)){this.error='Scegli una tua carta adatta a questa zona.';this.render();return;}
     const placing=this.placing||{position:'attack',faceUp:true},cardId=selected.card.id;
@@ -371,6 +401,19 @@ export class YugiohMultiplayer {
     if(command==='close-rules'){this.rulesDialog=null;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(command==='close-drop-menu'){this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(this.session&&this.orientation.isPortraitBlocked()&&!['orientation','lobby','practice-exit'].includes(command))return;
+    if(command==='auto-close-reveals'){this.autoDismissedReveal=(this.session.auto?.revealedCards||[]).map(card=>card.revealId).join(':');this.render();return;}
+    if(data.ygoAutoRevealIndex!==undefined){
+      const card=this.session?.auto?.revealedCards?.[Number(data.ygoAutoRevealIndex)];if(!card)return;
+      const player=card.controller===0||card.controller===1?card.controller:this.viewer;
+      this.dropMenu=null;this.pile=null;this.menu=false;this.selected={player,cardId:card.id};this.inspectedCard={card,zone:'hand',player,version:this.duel.version};this.render();return;
+    }
+    if(data.ygoAutoOption!==undefined){await this.chooseAutoOption(data.ygoAutoOption);return;}
+    if(command==='auto-confirm'){await this.respondAuto({optionIds:this.autoSelected});return;}
+    if(command==='auto-counters'){await this.respondAuto({counts:this.autoCounts});return;}
+    if(command==='auto-finish'){await this.respondAuto({optionId:'finish'});return;}
+    if(command==='auto-cancel'){await this.respondAuto({optionId:'cancel'});return;}
+    if(command==='auto-expand'||command==='auto-collapse'){this.autoExpanded=command==='auto-expand';this.render();return;}
+    if(command==='auto-surrender'){if(await this.options.confirm('Vuoi arrenderti e assegnare la vittoria al compagno?'))await this.act({type:'surrender'});return;}
     if(command==='cancel-attack-selection'){this.attackSelection=null;this.render();return;}
     if(command==='attack-direct'){await this.chooseAttackTarget(null);return;}
     if(command==='battle-replay-select'){this.beginAttack(this.session.battle?.attackerId,{replay:true});return;}
@@ -405,7 +448,7 @@ export class YugiohMultiplayer {
     if(['summon','defend'].includes(command)&&selected?.zone==='extra'&&getSummonKind(selected.card)){this.openSummonDraft(selected.card.id,{position:command==='defend'?'defense':'attack'});return;}
     if(['summon','defend','set-monster','play-spell','set-spell','place-field','move-position'].includes(command)&&selected?.player===this.viewer){const monster=isMonster(selected.card)||['summon','defend','set-monster'].includes(command);this.placing={zones:['summon','defend','set-monster'].includes(command)?['monsters','extraMonsters']:undefined,to:command==='place-field'?'field':['play-spell','set-spell'].includes(command)?'spells':command==='move-position'?undefined:monster?undefined:'spells',position:['defend','set-monster'].includes(command)?'defense':'attack',faceUp:!['set-monster','set-spell'].includes(command),activate:command==='play-spell'};this.menu=false;this.render();return;}
     if(command==='to-graveyard'||command==='banish'||command==='return-hand'){if(selected?.player===this.viewer)await this.act({type:'move',player:this.viewer,cardId:selected.card.id,to:command==='to-graveyard'?'graveyard':command==='banish'?'banished':'hand',faceUp:true});return;}
-    const action=data.ygoAction;if(!action||!this.session||this.pending)return;
+    const action=data.ygoAction;if(!action||!this.session||this.pending)return;if(this.isAuto()&&action!=='ready')return;
     if((action==='nextTurn'||action==='nextPhase'&&this.session.phase==='end')&&getTurnState(this.session)&&this.session.activePlayer===this.viewer&&['main1','battle','main2','end'].includes(this.session.phase)&&!this.session.chain.length&&this.session.players[this.viewer].hand.length>6){
       this.rulesDialog={kind:'discard',cardIds:[],version:this.duel.version,duelId:this.duel.id};this.menu=false;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;
     }

@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "verifiedAt": "2026-11-17",
+  "package": {
+    "name": "ocgcore-wasm",
+    "version": "0.1.6",
+    "publishedAt": "2026-10-19T18:08:51.072Z",
+    "registry": "https://registry.npmjs.org/ocgcore-wasm",
+    "tarball": "https://registry.npmjs.org/ocgcore-wasm/-/ocgcore-wasm-0.1.6.tgz",
+    "integrity": "sha512-fU1LAv3Y48ak1ppkPShN7Qq60rmRN1ZaLOpN1KJiDnPIjl+xgKOUnRbTaEPCHY6ws3fQmtsIm2B1SQjKmUe55Q==",
+    "sha1": "ed9184b1d39726fd80a7bb4c7f98f944e2d0048a"
+  },
+  "npmProvenance": {
+    "attestationUrl": "https://registry.npmjs.org/-/npm/v1/attestations/ocgcore-wasm@0.1.6",
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "subject": "pkg:npm/ocgcore-wasm@0.1.6",
+    "subjectSha512": "7d4d4b02fdd8e3c6a4d69a643d284ded0abad2b99137565a2cea4dd4a2620e73c88e5fb180a3949d16d36843c21d8eb0b377d09adb089b60754908ca9947b9e5",
+    "sourceDependency": "git+https://github.com/n1xx1/ocgcore-wasm@refs/heads/release",
+    "gitCommit": "3b7629197de6db83995c7eb8e9073b71919adcda",
+    "workflow": ".github/workflows/build.yaml",
+    "invocationUrl": "https://github.com/n1xx1/ocgcore-wasm/actions/runs/39291751201/attempts/1"
+  },
+  "sources": [
+    {
+      "component": "TypeScript wrapper and WebAssembly build integration",
+      "repository": "https://github.com/n1xx1/ocgcore-wasm",
+      "commit": "3b7629197de6db83995c7eb8e9073b71919adcda",
+      "sourceUrl": "https://github.com/n1xx1/ocgcore-wasm/tree/3b7629197de6db83995c7eb8e9073b71919adcda",
+      "archiveUrl": "https://codeload.github.com/n1xx1/ocgcore-wasm/tar.gz/3b7629197de6db83995c7eb8e9073b71919adcda",
+      "license": "MIT",
+      "licenseFile": "/assets/licenses/yugioh-auto-wrapper-MIT.txt"
+    },
+    {
+      "component": "Yu-Gi-Oh duel core",
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "baa3881d0bae48e9994f915f5c931be53c1ba8ef",
+      "sourceUrl": "https://github.com/edo9300/ygopro-core/tree/baa3881d0bae48e9994f915f5c931be53c1ba8ef",
+      "archiveUrl": "https://codeload.github.com/edo9300/ygopro-core/tar.gz/baa3881d0bae48e9994f915f5c931be53c1ba8ef",
+      "pinnedBy": "ocgcore-wasm cpp/ygo gitlink at 3b7629197de6db83995c7eb8e9073b71919adcda",
+      "gitTreeEvidenceUrl": "https://api.github.com/repos/n1xx1/ocgcore-wasm/git/trees/3b7629197de6db83995c7eb8e9073b71919adcda?recursive=1",
+      "submoduleEvidenceUrl": "https://github.com/n1xx1/ocgcore-wasm/blob/3b7629197de6db83995c7eb8e9073b71919adcda/.gitmodules",
+      "license": "AGPL-3.0-or-later",
+      "licenseFile": "/assets/licenses/yugioh-auto-AGPL-3.0.txt"
+    }
+  ],
+  "cardResources": {
+    "version": "ignis-14f3b8905ff9-babel-6e21009855ed",
+    "scripts": {
+      "repository": "https://github.com/ProjectIgnis/CardScripts",
+      "commit": "14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
+      "archiveUrl": "https://codeload.github.com/ProjectIgnis/CardScripts/tar.gz/14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
+      "archiveSha256": "f360904e788f69b987168cffeb595ea704d1b348faf7a0fc1b6bd00cf4c149ce"
+    },
+    "cards": {
+      "repository": "https://github.com/ProjectIgnis/BabelCDB",
+      "commit": "6e21009855ed5f3b5966a24545bd0db393d44697",
+      "archiveUrl": "https://codeload.github.com/ProjectIgnis/BabelCDB/tar.gz/6e21009855ed5f3b5966a24545bd0db393d44697",
+      "archiveSha256": "f789bf7f4ba46e13e1ca0a46ff777883c2d16f411b5ffb5f7547e93dd06ca7ab"
+    }
+  },
+  "tcgBanlist": {
+    "effectiveDate": "2026-10-19",
+    "officialUrl": "https://www.yugioh-card.com/en/limited/list_2026-10-19/",
+    "repository": "https://github.com/ProjectIgnis/LFLists",
+    "commit": "38d6ca4752a224f4157ee982f3d765d7ec0c9425",
+    "sourceUrl": "https://raw.githubusercontent.com/ProjectIgnis/LFLists/38d6ca4752a224f4157ee982f3d765d7ec0c9425/0TCG.lflist.conf",
+    "sourceSha256": "24a78cae14a067b41b1aa669011ae725e4a7c0bacfbcdf6aba5bf9dfcced128c"
+  }
+}

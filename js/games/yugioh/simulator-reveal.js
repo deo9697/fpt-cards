@@ -24,7 +24,8 @@ export function createActivationReveals({onHide=()=>{},environment=globalThis,du
   function clear(){hide();duelId=null;version=-1;previous=[];}
   function observe(duel){
     if(disposed||!duel?.id)return false;
-    const links=duel.state?.chain||[],keys=links.map(key);
+    const chain=duel.state?.chain||[],activation=duel.state?.mode==='auto'?duel.state.auto?.lastActivation:null;
+    const links=activation&&!chain.some(link=>link.activationId===activation.activationId)?[...chain,activation]:chain,keys=links.map(key);
     if(duelId!==duel.id){clear();duelId=duel.id;version=duel.version;previous=keys;return false;}
     if(duel.version<=version)return false;
     version=duel.version;

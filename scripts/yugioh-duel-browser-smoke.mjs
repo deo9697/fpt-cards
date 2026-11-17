@@ -344,6 +344,7 @@ async function run(){
   }
   await host.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Invito non disponibile');
   await guest.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Lobby ospite non disponibile');
+  await host.fill('[data-ygo-invite] [name=mode]','manual');
   await host.fill('[data-ygo-invite] [name=opponentSlug]','duel-guest');
   await host.fill('[data-ygo-invite] [name=deckId]',hostDeckId);
   await host.fill('[data-ygo-invite] [name=lp]',8000);
@@ -602,6 +603,7 @@ async function run(){
   }
   async function clearBattleField(){
     for(const[seat,viewer]of[[host,0],[guest,1]]){
+      await both('window.__sim.duel.version>='+rows.get(duelId).version,'Sincronizza il campo prima della pulizia');
       const ids=rows.get(duelId).state.players[viewer].monsters.concat(rows.get(duelId).state.players[viewer].extraMonsters).map(card=>card.id);
       for(const cardId of ids)await seat.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:viewer,cardId,to:'graveyard',faceUp:true})+')');
     }
@@ -676,6 +678,7 @@ async function run(){
     await startAttack(cancelAttacker,{zone:'monsters',slot:3});await host.tap('.ygo-battle-controls [data-ygo-action="battleCancel"]');await both('!window.__sim.session.battle','Annulla combattimento condiviso');assert.deepEqual(rows.get(duelId).state.players.map(player=>player.lp),beforeCancel);
     assert.equal(rows.get(duelId).state.players[0].monsters.find(card=>card.id===cancelAttacker).attackedTurn,rows.get(duelId).state.turn,'Annullare dopo la dichiarazione permette un altro attacco');
     const manualAttacker=await fixtureMonster(host,0,'90000001',1);await manualBattleAgreement(manualAttacker,{zone:'monsters',slot:3});await host.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:0,cardId:manualAttacker,to:'graveyard',faceUp:true})+')');
+    await both('window.__sim.duel.version>='+rows.get(duelId).version,'Sincronizza la pulizia prima delle mosse ospite');
     for(const cardId of rows.get(duelId).state.players[1].monsters.concat(rows.get(duelId).state.players[1].extraMonsters).map(card=>card.id))await guest.evaluate('window.__sim.act('+JSON.stringify({type:'move',player:1,cardId,to:'graveyard',faceUp:true})+')');
     const direct=await fixtureMonster(host,0,'15025844',4);await startAttack(direct,null);await passBattleStage('Risposta ad attacco diretto');await passBattleStage('Danno diretto');await both('!window.__sim.session.battle&&window.__sim.session.players[1].lp===6700','Attacco diretto sottrae ATK800');await host.screenshot('battle-direct-phone',false);
     if(process.argv.includes('--battle-only')){

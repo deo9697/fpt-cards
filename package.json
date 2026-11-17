@@ -97,11 +97,14 @@
     "test:market-exact-variant-pricing": "node scripts/market-exact-variant-pricing-smoke.mjs",
     "catalog:add-set": "node scripts/catalog-add-set.mjs",
     "test:catalog-set-fill": "node scripts/catalog-set-fill-smoke.mjs",
-    "test:push": "node scripts/push-webhook-api-smoke.mjs && node scripts/push-notifications-2-smoke.mjs && node scripts/push-notifications-2-sql-smoke.mjs && node scripts/push-notifications-2-browser-smoke.mjs"
+    "test:push": "node scripts/push-webhook-api-smoke.mjs && node scripts/push-notifications-2-smoke.mjs && node scripts/push-notifications-2-sql-smoke.mjs && node scripts/push-notifications-2-browser-smoke.mjs",
+    "build:yugioh-auto-resources": "node scripts/build-yugioh-auto-resources.mjs",
+    "test:yugioh-auto": "node scripts/yugioh-auto-prompts-smoke.mjs && node scripts/yugioh-auto-deck-rules-smoke.mjs && node scripts/yugioh-auto-core-smoke.mjs && node scripts/yugioh-auto-advanced-smoke.mjs && node scripts/yugioh-auto-service-smoke.mjs && node scripts/yugioh-auto-ui-smoke.mjs && node scripts/yugioh-auto-packaging-smoke.mjs && node scripts/yugioh-auto-browser-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "cropperjs": "1.6.2",
+    "ocgcore-wasm": "0.1.6",
     "web-push": "^3.6.7",
     "web-vitals": "6.2.3"
   },

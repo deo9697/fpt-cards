@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "version": "ignis-14f3b8905ff9-babel-6e21009855ed",
+  "sources": [
+    {
+      "kind": "scripts",
+      "repository": "https://github.com/ProjectIgnis/CardScripts",
+      "commit": "14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
+      "url": "https://codeload.github.com/ProjectIgnis/CardScripts/tar.gz/14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
+      "bytes": 8408437,
+      "sha256": "f360904e788f69b987168cffeb595ea704d1b348faf7a0fc1b6bd00cf4c149ce"
+    },
+    {
+      "kind": "cards",
+      "repository": "https://github.com/ProjectIgnis/BabelCDB",
+      "commit": "6e21009855ed5f3b5966a24545bd0db393d44697",
+      "url": "https://codeload.github.com/ProjectIgnis/BabelCDB/tar.gz/6e21009855ed5f3b5966a24545bd0db393d44697",
+      "bytes": 2862805,
+      "sha256": "f789bf7f4ba46e13e1ca0a46ff777883c2d16f411b5ffb5f7547e93dd06ca7ab"
+    }
+  ],
+  "databases": [
+    {
+      "file": "cards.cdb",
+      "bytes": 7987200,
+      "sha256": "cbc868862e257745a97e7139d791ae0a96c7a7c10ac4370bc67b200de60506b2",
+      "cards": 14794
+    },
+    {
+      "file": "prerelease-betb-en.cdb",
+      "bytes": 25600,
+      "sha256": "618d03694a5c7184ad441dbcd503d805d8600f234c76adfc7bb1c93cbee5ac74",
+      "cards": 16
+    },
+    {
+      "file": "prerelease-dbgv.cdb",
+      "bytes": 53248,
+      "sha256": "f407ca39493cf4b42e3b92a86c5ff409ddd720e6e9abab15fdd0b009e9217054",
+      "cards": 33
+    },
+    {
+      "file": "prerelease-imph.cdb",
+      "bytes": 114688,
+      "sha256": "a781656ba5a445cdfab4e05d492b9505ac7f24b2c05f92b5f6835c31c530fc07",
+      "cards": 85
+    },
+    {
+      "file": "prerelease-mvb1.cdb",
+      "bytes": 11264,
+      "sha256": "0e6418d0f42e137b7bfc7657a63ac2858bf7a22f5464fdbece9cec8e9a22a18b",
+      "cards": 6
+    },
+    {
+      "file": "prerelease-others.cdb",
+      "bytes": 38912,
+      "sha256": "d02438df54521f8a505e2b554bbaf004275bcb970dec3165f64364c369349d24",
+      "cards": 26
+    },
+    {
+      "file": "prerelease-paso.cdb",
+      "bytes": 16384,
+      "sha256": "cd354bd456ce1f978a961097e472b8e67dd2e15a0adaf3e625611a0a5824ddbd",
+      "cards": 11
+    },
+    {
+      "file": "prerelease-rv02.cdb",
+      "bytes": 32768,
+      "sha256": "6525fe49d27b36ab49a8709046cba13fc6bd7badc8eeadab68c2cd3a5d61737e",
+      "cards": 19
+    },
+    {
+      "file": "prerelease-yac1.cdb",
+      "bytes": 31744,
+      "sha256": "5f64b70057ce6baee350097ddc4ba9302c3e1588a47a2f26f2daa18d8a209c3a",
+      "cards": 25
+    },
+    {
+      "file": "release-betb.cdb",
+      "bytes": 99328,
+      "sha256": "939a33357d6d43e0c392a33df4e31034152a7bec09696041239cded0d8d8e3ae",
+      "cards": 86
+    }
+  ],
+  "counts": {
+    "cards": 15101,
+    "scripts": 13783
+  },
+  "artifacts": [
+    {
+      "file": "cards.json.gz",
+      "bytes": 1654883,
+      "sha256": "47502711e7a78d26456e020b87bfd5fb33869a81f4739560e2849a24d235d559",
+      "decodedBytes": 11255441,
+      "decodedSha256": "ae1b31b7e009d7689340ed8c9720a91b526c7fb8b5c90966a3f299f253644012"
+    },
+    {
+      "file": "scripts.json.gz",
+      "bytes": 5243851,
+      "sha256": "3c8cb036cf7d8b08e1e65a98d4bf5ea92315a26570c0dc30689ddfd13a7fca42",
+      "decodedBytes": 34090017,
+      "decodedSha256": "d7f879b48de80b7d0784158ab567e1c2ed433c87f6327bc33458412f245c1abd"
+    }
+  ]
+}

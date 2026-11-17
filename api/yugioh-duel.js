@@ -84,14 +84,14 @@ export function createDatabase(env, authorization) {
       },
       async list(teamId, slug) {
         // Polling the lobby reads summaries, never every finished hand/deck.
-        const columns = 'id,team_id,host_slug,guest_slug,status,version,ready,first_player,created_at,updated_at,expires_at,host_deck_name:host_deck->>name,host_state_deck_name:state->players->0->>deckName,guest_state_deck_name:state->players->1->>deckName,result:state->result';
+        const columns = 'id,team_id,host_slug,guest_slug,status,version,ready,first_player,created_at,updated_at,expires_at,state_mode:state->>mode,host_simulator_mode:host_deck->>simulatorMode,host_deck_name:host_deck->>name,host_state_deck_name:state->players->0->>deckName,guest_state_deck_name:state->players->1->>deckName,host_auto_deck_name:state->initialDecks->0->>name,guest_auto_deck_name:state->initialDecks->1->>name,result:state->result';
         return unwrap(await admin.from('yugioh_duels').select(columns).eq('team_id', teamId).or(`host_slug.eq.${slug},guest_slug.eq.${slug}`).order('updated_at', { ascending:false }).limit(100)) || [];
       },
       async meta(id) {
         return unwrap(await admin.from('yugioh_duels').select('id,team_id,host_slug,guest_slug,status,version,ready,expires_at,created_at,updated_at,first_player').eq('id', id).maybeSingle());
       },
       async get(id) { return unwrap(await admin.from('yugioh_duels').select('*').eq('id', id).maybeSingle()); },
-      async deck(id, ownerSlug) {
+      async deck(id, ownerSlug, { mode = 'manual' } = {}) {
         const row = unwrap(await admin.from('decks').select('id,owner_slug,game,name').eq('id', id).eq('owner_slug', ownerSlug).eq('game', 'yugioh').maybeSingle());
         if (!row) return null;
         const cards = unwrap(await admin.from('deck_cards').select('catalog_card_id,card_name,image_url,section,quantity,printing_id,position,ban_tcg').eq('deck_id', id).order('position')) || [];
@@ -99,7 +99,9 @@ export function createDatabase(env, authorization) {
         let metadata = [];
         if (codes.length) metadata = unwrap(await admin.from('card_printings').select('id,catalog_card_id,game_metadata').eq('game', 'yugioh').in('catalog_card_id', codes).limit(1000)) || [];
         const printingFor = card => metadata.find(item => item.id === card.printing_id && String(item.catalog_card_id) === String(card.catalog_card_id)) || metadata.find(item => String(item.catalog_card_id) === String(card.catalog_card_id));
-        const publicMetadata = await lookupYugiohMetadata(cards.filter(card => needsYugiohMetadata(printingFor(card)?.game_metadata)).map(card => card.catalog_card_id));
+        // Automatic effects and game data come from the pinned local database;
+        // an optional public catalogue request must never gate that engine.
+        const publicMetadata = mode === 'auto' ? new Map() : await lookupYugiohMetadata(cards.filter(card => needsYugiohMetadata(printingFor(card)?.game_metadata)).map(card => card.catalog_card_id));
         return { id:row.id, ownerSlug:row.owner_slug, game:row.game, name:row.name, cards:cards.map(card => {
           const info = resolveYugiohMetadata(printingFor(card)?.game_metadata,publicMetadata.get(String(card.catalog_card_id)));
           return { catalogCardId:card.catalog_card_id, cardName:card.card_name, imageUrl:card.image_url, printingId:card.printing_id || '', section:card.section, quantity:card.quantity, banTcg:card.ban_tcg || '', ...info };
@@ -134,7 +136,7 @@ export async function sendInvitePush(database, invitation, env, push = webpush) 
   if (!subscriptions.length) return { push:'disabled' };
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return { push:'unavailable' };
   push.setVapidDetails(env.VAPID_SUBJECT || 'mailto:admin@fptcards.it', env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
-  const message = JSON.stringify({ title:'Sfida Yu-Gi-Oh!', body:`${invitation.senderName} ti invita a un duello manuale privato del team.`, tag:`yugioh-duel-${invitation.id}`, url:`/#/simulator?game=yugioh&duel=${encodeURIComponent(invitation.id)}` });
+  const message = JSON.stringify({ title:'Sfida Yu-Gi-Oh!', body:`${invitation.senderName} ti invita a un duello ${invitation.mode === 'auto' ? 'automatico' : 'manuale'} privato del team.`, tag:`yugioh-duel-${invitation.id}`, url:`/#/simulator?game=yugioh&duel=${encodeURIComponent(invitation.id)}` });
   const expired = [];
   let sent = 0;
   await Promise.all(subscriptions.map(async subscription => {
@@ -147,7 +149,7 @@ export async function sendInvitePush(database, invitation, env, push = webpush) 
   return { push:sent ? 'sent' : 'failed', subscriptionsAccepted:sent };
 }
 
-export function createDuelHandler({ env = process.env, databaseFactory = createDatabase, notify = sendInvitePush } = {}) {
+export function createDuelHandler({ env = process.env, databaseFactory = createDatabase, notify = sendInvitePush, autoRuntime } = {}) {
   return async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -176,7 +178,7 @@ export function createDuelHandler({ env = process.env, databaseFactory = createD
       }
       // Restrict slug syntax before composing the participant filter in PostgREST.
       if (!actor?.slug || !/^[a-z0-9_-]{1,100}$/i.test(actor.slug)) throw new DuelError(401, 'unauthorized', 'Profilo del team non valido.');
-      const service = createDuelService({ store:database.store, notify:invitation => notify(database, invitation, env) });
+      const service = createDuelService({ store:database.store, notify:invitation => notify(database, invitation, env), ...(autoRuntime ? { autoRuntime } : {}) });
       return res.status(200).json(await service.run(actor, body));
     } catch (error) {
       if (error instanceof DuelError) return res.status(error.status).json({ code:error.code, message:error.message, ...(error.duel ? { duel:error.duel } : {}) });

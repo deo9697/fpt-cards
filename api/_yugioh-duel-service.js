@@ -1,9 +1,11 @@
 import { createSession, applyAction, validateSimulatorDeck } from '../js/games/yugioh/simulator-engine.js';
+import { runAutoOperation, projectAutoStateSafe } from './_yugioh-auto-executor.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const terminal = new Set(['finished', 'declined', 'cancelled']);
 const copy = value => JSON.parse(JSON.stringify(value));
 const validLp = value => Number.isInteger(value) && value >= 1 && value <= 999999;
+const duelMode = row => row.state?.mode === 'auto' || row.state_mode === 'auto' || row.host_deck?.simulatorMode === 'auto' || row.host_simulator_mode === 'auto' ? 'auto' : 'manual';
 export class DuelError extends Error {
   constructor(status, code, message, duel = undefined) { super(message); this.status = status; this.code = code; this.duel = duel; }
 }
@@ -15,6 +17,9 @@ function hiddenCard(player, zone, index, card = {}) {
 }
 export function redactState(state, viewer) {
   if (!state) return null;
+  // Automatic states contain the seed, initial decks and response transcript.
+  // Project the persisted public view before any generic clone or traversal.
+  if (state.mode === 'auto') return projectAutoStateSafe(state, viewer);
   const result = copy(state);
   for (const [index, player] of result.players.entries()) {
     player.deck = player.deck.map((card, cardIndex) => hiddenCard(index, 'deck', cardIndex));
@@ -33,8 +38,12 @@ export function redactState(state, viewer) {
 
 // This service owns the state machine. The database adapter uses compare-and-swap;
 // a client never uploads a game state, deck list, identity or hidden card data.
-export function createDuelService({ store, notify = async () => ({ push:'unavailable' }), now = () => new Date() }) {
+export function createDuelService({ store, notify = async () => ({ push:'unavailable' }), now = () => new Date(), autoRuntime = { run:runAutoOperation, project:projectAutoStateSafe } }) {
   const at = () => now().toISOString();
+  async function automatic(operation, payload) {
+    try { return await autoRuntime.run(operation, payload); }
+    catch (error) { fail(Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : 503, error.code || 'auto_unavailable', error.message || 'Il motore automatico non è disponibile. La partita è conservata.'); }
+  }
   async function participant(row, actor) {
     if (!row || row.team_id !== actor.teamId || ![row.host_slug, row.guest_slug].includes(actor.slug)) fail(404, 'not_found', 'Partita non disponibile per il tuo profilo.');
     const members = await store.members(actor.teamId);
@@ -45,16 +54,17 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
   }
   function projection(row, actor, people, includeState = true) {
     const viewer = people?.viewer ?? (row.host_slug === actor.slug ? 0 : 1);
+    const mode = duelMode(row);
     return {
-      id:row.id, status:row.status, version:row.version, viewer,
+      id:row.id, status:row.status, version:row.version, viewer, mode,
       hostSlug:row.host_slug, guestSlug:row.guest_slug,
       hostName:people?.host?.name || row.host_slug, guestName:people?.guest?.name || row.guest_slug,
       ready:Array.isArray(row.ready) ? row.ready.map(Boolean) : [false, false],
       firstPlayer:row.first_player, createdAt:row.created_at, updatedAt:row.updated_at, expiresAt:row.expires_at,
-      hostDeckName:row.host_state_deck_name || row.state?.players?.[0]?.deckName || row.host_deck_name || row.host_deck?.name || '',
-      guestDeckName:row.guest_state_deck_name || row.state?.players?.[1]?.deckName || '',
+      hostDeckName:row.host_state_deck_name || row.host_auto_deck_name || row.state?.initialDecks?.[0]?.name || row.state?.players?.[0]?.deckName || row.host_deck_name || row.host_deck?.name || '',
+      guestDeckName:row.guest_state_deck_name || row.guest_auto_deck_name || row.state?.initialDecks?.[1]?.name || row.state?.players?.[1]?.deckName || '',
       result:row.result || row.state?.result ? copy(row.result || row.state.result) : null,
-      ...(includeState ? { state:redactState(row.state, viewer) } : {})
+      ...(includeState ? { state:row.state?.mode === 'auto' ? autoRuntime.project(row.state, viewer) : redactState(row.state, viewer) } : {})
     };
   }
   async function existing(id, actor) {
@@ -66,9 +76,15 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
   function checkExpiry(row) {
     if (new Date(row.expires_at).getTime() <= now().getTime() && !terminal.has(row.status)) fail(410, 'expired', 'La partita è scaduta. Puoi inviare un nuovo invito.');
   }
-  async function deck(id, actor) {
-    const selected = await store.deck(needUuid(id, 'Mazzo'), actor.slug);
+  async function deck(id, actor, mode = 'manual') {
+    const selected = await store.deck(needUuid(id, 'Mazzo'), actor.slug, { mode });
     if (!selected || selected.ownerSlug !== actor.slug || selected.game !== 'yugioh') fail(404, 'deck_not_found', 'Scegli un tuo mazzo Yu-Gi-Oh! salvato.');
+    if (mode === 'auto') {
+      // Only the pinned card database and TCG list decide automatic legality.
+      // Saved display metadata may describe an old printing or an old banlist.
+      await automatic('validate', { deck:selected });
+      return selected;
+    }
     const result = validateSimulatorDeck(selected);
     if (!result.valid) fail(400, 'invalid_deck', result.errors.join(' '));
     return selected;
@@ -134,14 +150,16 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
           return { duel:projection(duplicate, actor, people), replayed:true, notification:{ queued:true, push:'already_requested' } };
         }
         if (!validLp(payload.lp ?? 8000) || ![0, 1].includes(payload.firstPlayer)) fail(400, 'invalid_setup', 'Controlla i Life Points e il primo giocatore.');
+        if (payload.mode !== undefined && !['manual', 'auto'].includes(payload.mode)) fail(400, 'invalid_mode', 'Scegli la modalità manuale o automatica.');
         const members = await store.members(actor.teamId);
         const host = members.find(member => member.slug === actor.slug), guest = members.find(member => member.slug === payload.opponentSlug);
         if (!host || !guest || host.slug === guest.slug) fail(400, 'invalid_opponent', 'Scegli un altro membro del tuo team.');
         const open = await store.list(actor.teamId, actor.slug);
         if (open.some(row => row.status === 'waiting' && row.host_slug === actor.slug && row.guest_slug === guest.slug && new Date(row.expires_at) > now())) fail(409, 'already_invited', 'Hai già un invito in attesa per questo membro.');
         if (await store.recentCount(actor.slug, new Date(now().getTime() - 60000).toISOString()) >= 5) fail(429, 'rate_limit', 'Hai inviato diversi inviti. Attendi un minuto.');
-        const selected = await deck(payload.deckId, actor);
-        const row = { id:requestId, team_id:actor.teamId, host_slug:host.slug, guest_slug:guest.slug, status:'waiting', version:1, host_deck:selected, host_lp:payload.lp ?? 8000, first_player:payload.firstPlayer, state:null, previous_state:null, ready:[false, false], last_action_id:requestId, last_action_by:actor.slug, created_at:at(), updated_at:at(), expires_at:new Date(now().getTime() + 86400000).toISOString() };
+        const mode = payload.mode || 'manual';
+        const selected = await deck(payload.deckId, actor, mode);
+        const row = { id:requestId, team_id:actor.teamId, host_slug:host.slug, guest_slug:guest.slug, status:'waiting', version:1, host_deck:{ ...selected, simulatorMode:mode }, host_lp:payload.lp ?? 8000, first_player:payload.firstPlayer, state:null, previous_state:null, ready:[false, false], last_action_id:requestId, last_action_by:actor.slug, created_at:at(), updated_at:at(), expires_at:new Date(now().getTime() + 86400000).toISOString() };
         const saved = await store.insert(row);
         if (!saved) {
           const current = await store.get(requestId);
@@ -149,10 +167,10 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
           fail(409, 'invite_conflict', 'L’invito è già stato creato. Aggiorna il tavolo.');
         }
         let delivery;
-        try { delivery = await notify({ id:row.id, recipient:guest.slug, senderName:host.name }); } catch { delivery = { push:'failed' }; }
+        try { delivery = await notify({ id:row.id, recipient:guest.slug, senderName:host.name, mode }); } catch { delivery = { push:'failed' }; }
         return { duel:projection(saved, actor, { host, guest }), notification:{ queued:true, ...delivery } };
       }
-      if (!['state','inspect','accept','decline','cancel','action'].includes(op)) fail(400, 'invalid_operation', 'Operazione non disponibile.');
+      if (!['state','inspect','search','accept','decline','cancel','action'].includes(op)) fail(400, 'invalid_operation', 'Operazione non disponibile.');
       if (op === 'state' && payload.knownVersion !== undefined) {
         if (!Number.isSafeInteger(payload.knownVersion) || payload.knownVersion < 1) fail(400, 'invalid_version', 'Versione del tavolo non valida.');
         const meta = await store.meta(needUuid(payload.duelId, 'Partita'));
@@ -166,21 +184,30 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
       const view = () => projection(row, actor, people);
       if (op === 'state') return { duel:view() };
       if (op === 'inspect') {
+        if (duelMode(row) === 'auto') fail(403, 'auto_private_zone', 'Nel duello automatico le zone coperte sono gestite dal motore.');
         if (!row.state || payload.zone !== 'deck') fail(400, 'invalid_zone', 'Zona non disponibile.');
         if (!['playing', 'finished'].includes(row.status)) fail(409, 'not_started', 'Attendi che entrambi i giocatori confermino la mano iniziale.');
         if (payload.player !== undefined && payload.player !== people.viewer) fail(403, 'opponent_zone', 'Le zone coperte dell’avversario restano private.');
         return { duel:view(), zone:payload.zone, version:row.version, cards:copy(row.state.players[people.viewer][payload.zone]) };
       }
+      if (op === 'search') {
+        if (duelMode(row) !== 'auto' || !row.state || row.status !== 'playing') fail(409, 'not_auto_playing', 'La dichiarazione di carta non è disponibile.');
+        if (typeof payload.promptId !== 'string' || payload.promptId.length > 160 || typeof payload.query !== 'string' || payload.query.length > 100) fail(400, 'invalid_search', 'Ricerca carta non valida.');
+        const cards = await automatic('search', { state:row.state, viewer:people.viewer, promptId:payload.promptId, query:payload.query });
+        return { duelId:row.id, version:row.version, promptId:payload.promptId, cards:Array.isArray(cards) ? cards.slice(0, 30) : [] };
+      }
       if (expected(row, payload, actor, people)) return { duel:view(), replayed:true };
       if (op === 'accept') {
         if (people.viewer !== 1 || row.status !== 'waiting') fail(403, 'cannot_accept', 'Questo invito non è disponibile per l’accettazione.');
         if (!validLp(payload.lp ?? 8000)) fail(400, 'invalid_lp', 'Controlla i Life Points iniziali.');
-        const selected = await deck(payload.deckId, actor);
-        const state = createSession({ decks:[row.host_deck, selected], firstPlayer:row.first_player, lp:[row.host_lp, payload.lp ?? 8000], names:[people.host.name, people.guest.name] });
+        const selected = await deck(payload.deckId, actor, duelMode(row));
+        const setup = { decks:[row.host_deck, selected], firstPlayer:row.first_player, lp:[row.host_lp, payload.lp ?? 8000], names:[people.host.name, people.guest.name] };
+        const state = duelMode(row) === 'auto' ? await automatic('create', setup) : createSession(setup);
         state.id = row.id;
         return cas(row, { status:'setup', state, host_deck:null, ready:[false, false], previous_state:null }, actor, people, payload.requestId);
       }
       if (op === 'decline' || op === 'cancel') {
+        if (op === 'cancel' && duelMode(row) === 'auto' && row.status === 'playing') fail(403, 'cannot_close', 'Per abbandonare un duello automatico in corso usa la resa.');
         if (terminal.has(row.status) || (op === 'decline' && (people.viewer !== 1 || row.status !== 'waiting')) || (op === 'cancel' && row.status === 'waiting' && people.viewer !== 0)) fail(403, 'cannot_close', 'Non puoi chiudere questo invito.');
         return cas(row, { status:op === 'decline' ? 'declined' : 'cancelled', host_deck:null, previous_state:null }, actor, people, payload.requestId);
       }
@@ -189,8 +216,27 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
         if (payload.action.player !== undefined && payload.action.player !== people.viewer) fail(403, 'opponent_action', 'Puoi confermare soltanto la tua mano.');
         if (row.status !== 'setup') fail(400, 'already_started', 'La partita è già iniziata.');
         const ready = Array.isArray(row.ready) ? [...row.ready] : [false, false]; ready[people.viewer] = true;
-        const state = ready.every(Boolean) ? applyAction(row.state, { type:'start' }) : row.state;
+        const state = ready.every(Boolean) && duelMode(row) !== 'auto' ? applyAction(row.state, { type:'start' }) : row.state;
         return cas(row, { ready, state, status:ready.every(Boolean) ? 'playing' : 'setup', previous_state:null }, actor, people, payload.requestId);
+      }
+      if (duelMode(row) === 'auto') {
+        if (row.status !== 'playing') fail(409, 'not_started', 'Attendi che entrambi i giocatori confermino la mano iniziale.');
+        const action = payload.action;
+        if (!action || typeof action !== 'object' || Array.isArray(action)) fail(400, 'invalid_action', 'Azione non valida.');
+        if (action.player !== undefined && action.player !== people.viewer) fail(403, 'opponent_action', 'Puoi rispondere soltanto per il tuo giocatore.');
+        let state;
+        if (action.type === 'surrender') {
+          state = copy(row.state);
+          state.result = { winner:1 - people.viewer, notes:'Resa del giocatore.', at:at() };
+          for (const publicView of state.publicViews) {
+            publicView.result = copy(state.result); publicView.status = 'finished';
+            if (publicView.auto) { publicView.auto.prompt = null; publicView.auto.waitingFor = null; publicView.auto.waitingPlayer = null; publicView.auto.actor = null; }
+          }
+        } else if (action.type === 'autoRespond') {
+          if (typeof action.promptId !== 'string' || action.promptId.length > 160 || !action.choice || typeof action.choice !== 'object' || Array.isArray(action.choice)) fail(400, 'invalid_choice', 'Scelta non valida.');
+          state = await automatic('apply', { state:row.state, viewer:people.viewer, promptId:action.promptId, choice:action.choice });
+        } else fail(400, 'auto_action_only', 'Questo tavolo accetta soltanto le scelte richieste dal motore automatico.');
+        return cas(row, { state, status:state.result ? 'finished' : 'playing', previous_state:null }, actor, people, payload.requestId);
       }
       if (row.status === 'setup' && row.ready?.[people.viewer]) fail(409, 'already_ready', 'Hai già confermato la mano iniziale. Attendi l’avversario.');
       const action = actionForViewer(payload.action, row.state, people.viewer);
