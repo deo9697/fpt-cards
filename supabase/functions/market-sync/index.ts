@@ -146,7 +146,10 @@ class CardmarketPriceGuideProvider extends PriceProvider {
   async loadPrices(targets:any[]=[]){
     if(!this.priceGuideUrl)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRICE_GUIDE_URL');
     validateOfficialCardmarketUrl(this.priceGuideUrl);
-    const wantedProductIds=new Set((targets||[]).filter((row:any)=>isAuthorizedCardmarketMapping(row)).flatMap(mappingProductIds));
+    // 2026-11-17: anche le versioni candidate delle carte in coda (AMBIGUOUS):
+    // senza i loro prezzi il motore a indizi non può decidere né suggerire.
+    // Stesso listino scaricato, solo qualche centinaio di righe in più in memoria.
+    const wantedProductIds=new Set((targets||[]).filter((row:any)=>isAuthorizedCardmarketMapping(row)||isQueuedMultiVersionMapping(row)).flatMap(mappingProductIds));
     this.prices=new Map();
     if(!wantedProductIds.size){console.log(JSON.stringify({event:'market_sync_feed_skipped',egress_id:this.egressId,market_sync_mode:'daily_full',market_sync_feed_bytes:0,market_sync_storage_bytes_read:0,market_sync_cache_hit:0,market_sync_cache_miss:0,market_sync_targets:0,market_sync_feed_skipped:true}));this.sourceUpdatedAt=new Date().toISOString();this.loaded=true;return {priceRows:0,retainedPriceRows:0,mode:'prices_only'};}
     const priceResponse=await this.request(this.priceGuideUrl);
@@ -204,6 +207,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
 }
 function normalizeMarketRarity(value:any):string|null{const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 function isAuthorizedCardmarketMapping(mapping:any):boolean{if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
+function isQueuedMultiVersionMapping(mapping:any):boolean{const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status!=='manual'&&status===CARDMARKET_RESOLUTION_STATES.AMBIGUOUS&&mappingProductIds(mapping).length>1;}
 function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return ['unresolved','ambiguous'].includes(mapping?.resolution_status)||String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 // --- Market Variant Registry: SHADOW MODE ----------------------------------

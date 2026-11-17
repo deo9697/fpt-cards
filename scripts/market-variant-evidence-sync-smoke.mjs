@@ -21,7 +21,7 @@ const families = [
   { id: 'v-en', catalog_card_id: 'verified', set_code: 'VRFY-EN001', rarity: 'Ultra Rare' }, { id: 'v-en2', catalog_card_id: 'verified', set_code: 'VRFY-EN001', rarity: 'Secret Rare' },
 ];
 const context = vm.createContext({
-  URLSearchParams, URL, Response, console, setTimeout, clearTimeout, AbortSignal,
+  URLSearchParams, URL, Response, console, setTimeout, clearTimeout, AbortSignal, TextDecoder, TextEncoder, ReadableStream, AbortController,
   Deno: { env: { get: key => key === 'SUPABASE_URL' ? 'https://example.supabase.co' : 'test' }, serve: () => {} },
   fetch: async (url, options = {}) => {
     const parsed = new URL(url), path = decodeURIComponent(parsed.pathname + parsed.search);
@@ -99,4 +99,19 @@ assert.equal(row('fresh').cardmarket_product_id, '904550');
 assert.equal(rpcCalls.length, 0, 'un suggerimento non autorizza nulla');
 assert.equal(lone2.provider_metadata.resolverStatus, 'AMBIGUOUS');
 console.log('PASS suggerimento: scritto come ambiguous/0,5, resta in coda, mai sopra una riga risolta');
+// Regression (found in prod 2026-11-17): loadPrices kept only AUTHORIZED mappings'
+// prices, so queued cards had no prices and the engine could never decide them.
+const guideRows = [...Array.from({ length: 1000 }, (_, i) => ({ idProduct: 1000000 + i, trend: 1 })), { idProduct: 904602, trend: 1.79 }, { idProduct: 904603, trend: 28 }, { idProduct: 244291, trend: 9.05 }, { idProduct: 777, trend: 5 }];
+const Provider = vm.runInContext('CardmarketPriceGuideProvider', context);
+const cm = new Provider({ priceGuideUrl: 'https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_3.json', fetchImpl: async () => new Response(JSON.stringify({ version: 1, createdAt: '2026-11-17', priceGuides: guideRows })) });
+cm.request = async () => new Response(JSON.stringify({ version: 1, createdAt: '2026-11-17', priceGuides: guideRows }));
+const queuedForPrices = target('q', 'mamo-a', 'MAMO-EN018', 'Ultra Rare', ['904602', '904603'], 'AMBIGUOUS');
+const authorizedForPrices = target('a', 'stbl', 'STBL-IT038', 'Ultra Rare', ['244291'], 'PROVIDER_AGGREGATE');
+const unresolvedSingle = { ...target('u', 'x', 'X-1', 'Rare', ['777'], 'UNRESOLVED') };
+await cm.loadPrices([queuedForPrices, authorizedForPrices, unresolvedSingle]);
+assert.equal(cm.prices.has('904602') && cm.prices.has('904603'), true, 'prezzi delle versioni candidate di una carta in coda');
+assert.equal(cm.prices.has('244291'), true, 'prezzi delle carte autorizzate come prima');
+assert.equal(cm.prices.has('777'), false, 'nessun prezzo per mapping non autorizzati e non ambigui');
+assert.equal(context.isQueuedMultiVersionMapping({ ...queuedForPrices, resolution_status: 'manual' }), false, 'una conferma manuale non è in coda');
+console.log('PASS loadPrices: tiene anche i prezzi delle versioni delle carte in coda (stesso listino)');
 console.log('market-variant-evidence-sync-smoke: OK');
