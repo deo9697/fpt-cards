@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {createAutoState,applyAutoInput,projectAutoState,AUTO_RULES_PROFILE} from '../api/_yugioh-auto-core.js';
 import {loadAutoResources} from '../api/_yugioh-auto-resources.js';
-import {OcgType} from 'ocgcore-wasm';
+import {OcgType,OcgPosition} from 'ocgcore-wasm';
 
 const resources=await loadAutoResources();
 const SEED='123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0';
@@ -46,6 +46,7 @@ assert.equal(AUTO_RULES_PROFILE.format,'tcg');
 assert.ok(ownPlayer(state,0).hand.some(card=>card.code===RAIGEKI));assert.ok(ownPlayer(state,0).hand.some(card=>card.code===REBORN));
 assert.equal(ownPlayer(state,0).deck.length,35);
 assert.ok(state.publicViews[0].players[1].hand.every(card=>card.hidden&&!card.code&&!card.catalogCardId));
+assert.ok(state.publicViews.every(view=>view.players.every(player=>['hand','deck','extra','graveyard','banished'].every(zone=>player[zone].every(card=>card.position==='attack')))),'off-field cards must stay portrait despite core Defense position bits');
 assert.equal(state.publicViews[1].auto.prompt,null);
 for(const viewer of [0,1]){
   const publicState=projectAutoState(state,viewer);
@@ -69,6 +70,7 @@ let sawRaigeki=false;
 state=await until(state,idleFor(0),(prompt,current)=>{
   if(current.publicViews[0].chain.some(link=>link.card.code===RAIGEKI)){
     sawRaigeki=true;assert.equal(current.publicViews[0].chain[0].number,1);assert.deepEqual(current.publicViews[0].chain,current.publicViews[1].chain);
+    for(const view of current.publicViews){const spell=view.players[0].spells.find(card=>card.code===RAIGEKI);assert.ok(spell?.faceUp,'activated Raigeki is face-up');assert.ok(spell.corePosition&OcgPosition.DEFENSE,'fixture exercises the engine’s non-monster Defense bits');assert.equal(spell.position,'attack','face-up Spell artwork must remain portrait in its Spell/Trap Zone');}
   }
   return defaultChoice(prompt);
 });
@@ -85,6 +87,7 @@ state=await until(state,idleFor(0),(prompt)=>{
 });
 assert.ok(sawTarget,'Monster Reborn must ask for a legal graveyard target');assert.ok(sawPosition,'Monster Reborn must ask for summon position');
 assert.ok(ownPlayer(state,0).monsters.some(card=>card.code===target&&card.position==='defense'));
+assert.ok(state.publicViews.every(view=>view.players[0].monsters.some(card=>card.code===target&&card.position==='defense'&&(card.corePosition&OcgPosition.FACEUP_DEFENSE))),'real Monster Defense must remain horizontal for both viewers');
 assert.equal(ownPlayer(state,1).graveyard.some(card=>card.code===target),false);
 assert.ok(ownPlayer(state,0).graveyard.some(card=>card.code===REBORN));
 
@@ -96,12 +99,13 @@ state=await summon(state,1);
 state=await command(state,option=>option.action==='spell-set'&&option.card.code===JUDGMENT);
 state=await until(state,idleFor(1));
 assert.ok(state.publicViews[0].players[1].spells.every(card=>card.hidden&&!card.code));
+for(const view of state.publicViews){const trap=view.players[1].spells[0];assert.ok(trap.corePosition&OcgPosition.FACEDOWN_DEFENSE,'core Set Spell/Trap Defense bits are preserved');assert.equal(trap.corePosition&OcgPosition.FACEUP,0);assert.equal(trap.position,'attack','Set Spell/Trap artwork must stay portrait for both viewers');assert.equal(trap.faceUp,false);}
 state=await endTurn(state,0);
 state=await command(state,option=>option.action==='activate'&&option.card.code===RAIGEKI);
 let sawTwo=false,responded=false;
 state=await until(state,idleFor(0),(prompt,current)=>{
   const response=prompt.kind==='chain'&&prompt.player===1&&prompt.options.find(option=>option.card?.code===JUDGMENT);
-  if(response){responded=true;return {optionId:response.id};}
+  if(response){responded=true;for(const view of current.publicViews){const spell=view.players[0].spells.find(card=>card.code===RAIGEKI);assert.ok(spell?.faceUp);assert.ok(spell.corePosition&OcgPosition.DEFENSE);assert.equal(spell.position,'attack','public activated Raigeki stays portrait during the opposing response window');}return {optionId:response.id};}
   if(current.publicViews[0].chain.length===2){sawTwo=true;assert.deepEqual(current.publicViews[0].chain,current.publicViews[1].chain);assert.deepEqual(current.publicViews[0].chain.map(link=>link.number),[1,2]);}
   return defaultChoice(prompt);
 });
@@ -117,6 +121,10 @@ const reversed=await createAutoState({...setup,firstPlayer:1});
 assert.equal(reversed.publicViews[0].activePlayer,1);assert.equal(reversed.publicViews[0].auto.prompt,null);assert.equal(reversed.publicViews[1].auto.prompt.player,1);
 const reversedSummon=await summon(reversed,1);assert.equal(ownPlayer(reversedSummon,1).monsters[0].controller,1);
 assert.ok(reversedSummon.publicViews[0].players[1].monsters[0].faceUp);
+const setMonster=await until(await command(initial,option=>option.action==='monster-set'),idleFor(0));
+assert.equal(setMonster.publicViews[0].players[0].monsters[0].position,'defense','own Set Monster remains horizontal');
+assert.equal(setMonster.publicViews[1].players[0].monsters[0].position,'defense','concealed opposing Set Monster remains horizontal');
+assert.equal(setMonster.publicViews[1].players[0].monsters[0].hidden,true);
 await assert.rejects(()=>createAutoState({...setup,decks:[{main:[...normal.slice(0,39),999999999]},{main:normal}]}),/non presente/);
 await assert.rejects(()=>createAutoState({...setup,decks:[{main:normal.slice(0,39)},{main:normal}]}),/40/);
 console.log('Yu-Gi-Oh! actual WASM core smoke passed: deterministic replay/privacy, real TCG turns/draws/summons, Raigeki, Monster Reborn target+Defense, Solemn Judgment chain/cost/negation, reversed starting player.');

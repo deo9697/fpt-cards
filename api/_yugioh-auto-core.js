@@ -45,8 +45,13 @@ function cardMetadata(code, resources, query = {}) {
   const types = Object.values(OcgType).filter(bit => type & bit).map(bit => ocgTypeString.get(bit)).filter(Boolean).map(value => value === 'xyz' ? 'XYZ' : value[0].toUpperCase() + value.slice(1));
   return { catalogCardId:String(code), code, cardName:card.name || `Carta ${code}`, name:card.name || `Carta ${code}`, imageUrl:`https://images.ygoprodeck.com/images/cards/${code}.jpg`, type:types.join(' '), text:card.desc || card.description || '', race:ocgRaceString.get(card.race || 0n) || '', atk:query.attack ?? card.attack ?? 0, def:query.defense ?? card.defense ?? 0, baseAtk:query.baseAttack ?? card.attack ?? 0, baseDef:query.baseDefense ?? card.defense ?? 0, level:query.level ?? card.level ?? 0, rank:query.rank ?? ((type & OcgType.XYZ) ? card.level : 0), isTuner:!!(type & OcgType.TUNER), linkRating:query.link?.rating ?? ((type & OcgType.LINK) ? card.level : 0), linkMarkers:query.link?.marker ?? card.link_marker ?? 0, leftScale:query.leftScale ?? card.lscale ?? 0, rightScale:query.rightScale ?? card.rscale ?? 0, token:!!(type & OcgType.TOKEN) };
 }
-function concealedCard(controller, zone, sequence, position, slot,location) {
-  return { id:`hidden-${controller}-${zone}-${sequence}`, hidden:true, catalogCardId:'', cardName:'Carta coperta', imageUrl:'', controller,...(location===undefined?{}:{location,sequence}),faceUp:false, position:(position & OcgPosition.DEFENSE) ? 'defense' : 'attack', slot, counters:0, materials:[] };
+// Core uses the Defense position bits for cards outside the Monster Zones too.
+// Those bits carry engine state; only a field monster is drawn horizontally.
+function visualPosition(zone,position,type=OcgType.MONSTER) {
+  return ['monsters','extraMonsters'].includes(zone)&&(type&OcgType.MONSTER)&&(position&OcgPosition.DEFENSE)?'defense':'attack';
+}
+function concealedCard(controller, zone, sequence, position, slot,location,type) {
+  return { id:`hidden-${controller}-${zone}-${sequence}`, hidden:true, catalogCardId:'', cardName:'Carta coperta', imageUrl:'', controller,...(location===undefined?{}:{location,sequence}),corePosition:position,faceUp:false, position:visualPosition(zone,position,type), slot, counters:0, materials:[] };
 }
 function coreBoundary(core,duel) {
   const module=core[OcgCoreInternal]?.module;
@@ -98,10 +103,10 @@ function queryPlayers(core, duel, state, resources, viewer, lp) {
         const slot = zone === 'extraMonsters' ? (seat === 0 ? sequence - 5 : 6 - sequence) : zone === 'field' ? 0 : ['monsters','spells'].includes(zone) ? sequence : null;
         const position = query.position ?? OcgPosition.FACEDOWN_DEFENSE;
         const visible = location !== OcgLocation.DECK && (seat === viewer || !!query.isPublic || (location !== OcgLocation.HAND && faceUp(position)));
-        if (!visible) { player[zone].push(concealedCard(seat,zone,sequence,position,slot,location)); return; }
+        if (!visible) { player[zone].push(concealedCard(seat,zone,sequence,position,slot,location,query.type)); return; }
         const code = query.code || 0;
         const materials = (query.overlayCards || []).map((materialCode, index) => ({...cardMetadata(materialCode,resources),id:`${pointerId(seat,location,sequence)}-material-${index}`,faceUp:true,position:'attack',slot:null,counters:0,materials:[]}));
-        player[zone].push({ ...cardMetadata(code,resources,query), id:pointerId(seat,location,sequence), controller:seat, location, sequence, corePosition:position, originSection:location === OcgLocation.EXTRA ? 'extra' : 'main', faceUp:faceUp(position), position:(position & OcgPosition.DEFENSE) ? 'defense' : 'attack', slot, atkModifier:0, defModifier:0, counters:Object.values(query.counters || {}).reduce((sum,value) => sum + value,0), counterTypes:query.counters || {}, materials });
+        player[zone].push({ ...cardMetadata(code,resources,query), id:pointerId(seat,location,sequence), controller:seat, location, sequence, corePosition:position, originSection:location === OcgLocation.EXTRA ? 'extra' : 'main', faceUp:faceUp(position), position:visualPosition(zone,position,query.type??resources.cards.get(code)?.type), slot, atkModifier:0, defModifier:0, counters:Object.values(query.counters || {}).reduce((sum,value) => sum + value,0), counterTypes:query.counters || {}, materials });
       });
     }
     player.side = deck.side.map((code,index) => seat === viewer ? {...cardMetadata(code,resources),id:`auto-side-${seat}-${index}`,faceUp:false,position:'attack',slot:null,materials:[],counters:0} : concealedCard(seat,'side',index,0,null));
