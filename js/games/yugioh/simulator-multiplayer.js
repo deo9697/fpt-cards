@@ -440,7 +440,20 @@ export class YugiohMultiplayer {
     if(command==='cover-hand'){this.revealHand=!this.revealHand;this.selected=null;this.inspectedCard=null;this.render();return;}
     if(command==='metadata'){await this.fetchMetadata();return;}
     if(command==='inspect-deck'){await this.inspectDeck();return;}
-    if(data.ygoPile){this.attackSelection=null;const player=Number(data.player),zone=data.ygoPile;if(!this.session?.players[player]||!['deck','extra','side','graveyard','banished'].includes(zone)||(zone==='deck'||zone==='side')&&player!==this.viewer)return;this.selected=null;this.inspectedCard=null;this.menu=false;this.placing=null;this.inspectionGeneration++;this.pile={player,zone};this.render();return;}
+    if(data.ygoMaterials&&this.isAuto()){
+      const player=Number(data.player),p=this.session?.players[player],parent=p&&[...p.monsters,...p.extraMonsters].find(card=>card.id===data.ygoMaterials);
+      if(!parent?.materials?.length)return;
+      this.selected=null;this.inspectedCard=null;this.menu=false;this.placing=null;this.inspectionGeneration++;
+      this.pile={player,zone:'monsters',cards:parent.materials,title:'Materiali Xyz'};this.render();return;
+    }
+    if(data.ygoPile){
+      this.attackSelection=null;const player=Number(data.player),zone=data.ygoPile,p=this.session?.players[player];
+      if(!p||!['deck','extra','side','graveyard','banished'].includes(zone)||zone==='side'&&player!==this.viewer)return;
+      const publicTop=zone==='deck'&&this.isAuto()?p.deck.filter(card=>!card.hidden&&card.faceUp):null;
+      if(zone==='deck'&&player!==this.viewer&&!publicTop?.length)return;
+      this.selected=null;this.inspectedCard=null;this.menu=false;this.placing=null;this.inspectionGeneration++;
+      this.pile={player,zone,...(publicTop?{cards:publicTop,title:publicTop.length?'Cima pubblica del mazzo':'Mazzo coperto'}:{})};this.render();return;
+    }
     if(['summon','set-monster','special-summon'].includes(command)&&selected?.player===this.viewer){
       const id=selected.card.id,normal=selected.zone==='hand'&&!/ritual/i.test(selected.card.type)&&!getSummonKind(selected.card)&&!/(fusion|link)/i.test(selected.card.type);
       this.selectCard(this.viewer,id,{quick:true});await this.applyDropAction(command==='set-monster'?'set':command==='summon'&&normal?'normal':'special');return;

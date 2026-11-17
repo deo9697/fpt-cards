@@ -97,6 +97,54 @@ eq(multi(minimumSum, ['card-0', 'card-1']), {type: R.SELECT_SUM, indicies: [0, 1
 bad(minimumSum, {optionIds: ['card-0']});
 bad(minimumSum, {optionIds: ['card-0', 'card-1', 'card-2']});
 
+// Synthetic reference vectors mirror SelectSum/select_sum_check1 from the exact
+// shipped core, not an independent stricter mathematical interpretation:
+// https://github.com/edo9300/ygopro-core/blob/baa3881d0bae48e9994f915f5c931be53c1ba8ef/playerop.cpp
+// Greater deliberately permits {1,10}+{1,10} for target 8. Exact rejects a
+// trailing zero after the sum is exhausted, and every exact target-zero set.
+function coreSumReference(values, target, greater) {
+  if (greater) {
+    let minimumTotal = 0, maximumTotal = 0, minimum = 0x7fffffff;
+    for (const value of values) {
+      const first = value & 0xffff, second = value >> 16;
+      const contribution = second && second < first ? second : first;
+      minimumTotal += contribution; maximumTotal += Math.max(first, second);
+      minimum = Math.min(minimum, contribution);
+    }
+    return maximumTotal >= target && minimumTotal - minimum < target;
+  }
+  const check = (index, remaining) => {
+    if (!remaining || index === values.length) return false;
+    const first = values[index] & 0xffff, second = values[index] >> 16;
+    if (index === values.length - 1) return remaining === first || remaining === second;
+    return (remaining > first && check(index + 1, remaining - first))
+      || (second > 0 && remaining > second && check(index + 1, remaining - second));
+  };
+  return check(0, target);
+}
+const boundsOnly = {...minimumSum, amount: 8, selects: [card(101, {amount: 1 | (10 << 16)}), card(102, {amount: 1 | (10 << 16)})]};
+eq(multi(boundsOnly, ['card-0', 'card-1']), {type: R.SELECT_SUM, indicies: [0, 1]});
+bad({...sum, amount: 0, selects_must: [], min: 1, max: 1, selects: [card(101, {amount: 0})]}, {optionIds: ['card-0']});
+eq(multi({...minimumSum, amount: 0}, []), {type: R.SELECT_SUM, indicies: []});
+bad({...sum, amount: 2, selects_must: [], min: 2, max: 2, selects: [card(101, {amount: 2}), card(102, {amount: 0})]}, {optionIds: ['card-0', 'card-1']});
+eq(multi({...sum, amount: 2, selects_must: [], min: 2, max: 2, selects: [card(101, {amount: 0}), card(102, {amount: 2})]}, ['card-0', 'card-1']), {type: R.SELECT_SUM, indicies: [0, 1]});
+const contributionCases = [0, 1, 2, 1 | (3 << 16), 0 | (2 << 16), 0xffff0001];
+let referenceCases = 0;
+for (let length = 0; length <= 3; length++) for (let packed = 0; packed < contributionCases.length ** length; packed++) {
+  let cursor = packed;
+  const values = Array.from({length}, () => {const value = contributionCases[cursor % contributionCases.length]; cursor = Math.floor(cursor / contributionCases.length); return value;});
+  for (const greater of [false, true]) for (let target = 0; target <= 5; target++) for (const mandatoryCount of new Set([0, Math.min(1, length)])) {
+    const message = {type: M.SELECT_SUM, player: 0, select_max: greater ? 1 : 0, amount: target, min: 0, max: greater ? 0 : 3,
+      selects_must: values.slice(0, mandatoryCount).map((amount, index) => card(101, {amount, sequence: index})),
+      selects: values.slice(mandatoryCount).map((amount, index) => card(102, {amount, sequence: index + mandatoryCount}))};
+    const choice = {optionIds: message.selects.map((_, index) => `card-${index}`)};
+    let accepted;
+    try {resolveChoice(message, choice, context); accepted = true;} catch (error) {assert.equal(error.code, 'AUTO_INVALID_CHOICE'); accepted = false;}
+    eq(accepted, coreSumReference(values, target, greater)); referenceCases++;
+  }
+}
+assert(referenceCases > 6000);
+
 const counter = {type: M.SELECT_COUNTER, player: 0, count: 3, cards: [card(101, {count: 2}), card(102, {count: 5})]};
 eq(resolveChoice(counter, {counts: {'counter-0': 1, 'counter-1': 2}}, context), {type: R.SELECT_COUNTER, counters: [1, 2]});
 for (const counts of [{'counter-0': -1, 'counter-1': 4}, {'counter-0': 3}, {'counter-1': 2}, {'counter-1': 2.5}, {'counter-9': 3}]) bad(counter, {counts});
@@ -119,6 +167,13 @@ bad(attribute, {value: 6}); bad(attribute, {optionId: 'attribute-16'});
 const announce = {type: M.ANNOUNCE_CARD, player: 0, opcodes: [2n, OP.ISATTRIBUTE]};
 eq(prompt(announce).options, []);
 eq(searchPromptCards(announce, 'test', context), [{code: 101, name: 'Test WATER'}]);
+// Synthetic opcode vectors follow the pinned core's stack semantics. IS*
+// leaves the intersected bitmask, not a normalized Boolean; literals are i64.
+eq(searchPromptCards({...announce, opcodes: [2n, OP.ISATTRIBUTE, 1n, OP.BAND]}, 'test', context), []);
+eq(searchPromptCards({...announce, opcodes: [2n, OP.ISATTRIBUTE, 1n, OP.SUB]}, 'water', context), [{code: 101, name: 'Test WATER'}]);
+eq(searchPromptCards({...announce, opcodes: [1n, OP.GETSETCARD]}, 'test', context), []);
+eq(searchPromptCards({...announce, opcodes: [0xffffffffffffffffn, 2n, OP.DIV, OP.NOT]}, 'water', context), [{code: 101, name: 'Test WATER'}]);
+eq(searchPromptCards({...announce, opcodes: [1n, 0n, OP.DIV, OP.NOT]}, 'test', context), []);
 eq(resolveChoice(announce, {value: 101}, context), {type: R.ANNOUNCE_CARD, card: 101});
 eq(pick(announce, 'card-101'), {type: R.ANNOUNCE_CARD, card: 101});
 bad(announce, {value: 102}); bad(announce, {value: 103}); bad(announce, {value: 104}); bad(announce, {value: 999999});

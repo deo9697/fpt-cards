@@ -51,3 +51,18 @@ export function autoBattleMessage(session) {
   };
   return `${battle.stage==='damage'?'Damage Step':'Attacco'} · ${label(battle.attacker)} → ${battle.target?label(battle.target):'Attacco diretto'}`;
 }
+
+export function autoCardContextView(session,card){
+  const labels=[],zones=['hand','monsters','spells','field','extraMonsters','graveyard','banished','extra','deck'];
+  const describe=pointer=>{
+    const player=session.players[pointer?.controller];
+    if(!player)return '';
+    const found=zones.flatMap(zone=>player[zone]||[]).find(target=>!target.hidden&&target.controller===pointer.controller&&target.location===pointer.location&&target.sequence===pointer.sequence);
+    return found?`${player.name}: ${found.cardName}`:'';
+  };
+  if([0,1].includes(card.owner)&&[0,1].includes(card.controller)&&card.owner!==card.controller)labels.push(`Proprietario: ${session.players[card.owner].name}`);
+  const equipped=describe(card.equippedTo);if(equipped)labels.push(`Equipaggiata a ${equipped}`);
+  const targets=(card.targets||[]).map(describe).filter(Boolean);if(targets.length)labels.push(`Bersagli: ${targets.join(' · ')}`);
+  if(card.materials?.length)labels.push(`Materiali Xyz: ${card.materials.map(material=>material.cardName).join(' · ')}`);
+  return labels.length?`<p class="ygo-public-card-context">${labels.map(esc).join('<br>')}</p>`:'';
+}

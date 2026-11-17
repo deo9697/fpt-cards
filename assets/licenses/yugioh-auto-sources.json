@@ -44,7 +44,7 @@
     }
   ],
   "cardResources": {
-    "version": "ignis-14f3b8905ff9-babel-6e21009855ed",
+    "version": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2",
     "scripts": {
       "repository": "https://github.com/ProjectIgnis/CardScripts",
       "commit": "14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
@@ -56,7 +56,20 @@
       "commit": "6e21009855ed5f3b5966a24545bd0db393d44697",
       "archiveUrl": "https://codeload.github.com/ProjectIgnis/BabelCDB/tar.gz/6e21009855ed5f3b5966a24545bd0db393d44697",
       "archiveSha256": "f789bf7f4ba46e13e1ca0a46ff777883c2d16f411b5ffb5f7547e93dd06ca7ab"
-    }
+    },
+    "baseVersion": "ignis-14f3b8905ff9-babel-6e21009855ed",
+    "retainedProfiles": [
+      "ignis-14f3b8905ff9-babel-6e21009855ed"
+    ],
+    "scriptOverrides": [
+      {
+        "file": "tcg-overrides.json.gz",
+        "target": "c88264978.lua",
+        "source": "pre-errata/c88264978.lua",
+        "sha256": "4b80f8bff91f319d19be490aaa7ac9cc33f86baca07f2bc8688d103eee72d414",
+        "reason": "Current errata matches the published TCG text; pinned upstream archive stores this script outside official/."
+      }
+    ]
   },
   "tcgBanlist": {
     "effectiveDate": "2026-10-19",

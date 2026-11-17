@@ -18,7 +18,7 @@ const decks = [host, guest].map((owner, player) => ({
   cards:Array.from({ length:14 }, (_, index) => ({ section:'main', catalogCardId:String(10000000 + index), cardName:`Fixture ${index}`, quantity:index === 13 ? 1 : 3, type:'Effect Monster', level:4, atk:1800, def:1000 }))
 }));
 const rows = new Map(), notifications = [], calls = [], deckModes = [];
-let clock = new Date('2026-11-17T09:00:00Z'), forceConflict = false;
+let clock = new Date('2026-11-17T09:00:00Z'), forceConflict = false, openingResult = null, fullReads = 0;
 const store = {
   members:async teamId => members.filter(actor => actor.teamId === teamId).map(({ slug, name }) => ({ slug, name })),
   pushMembers:async () => [guest.slug],
@@ -28,7 +28,7 @@ const store = {
     host_deck_name:row.host_deck?.name, host_auto_deck_name:row.state?.initialDecks?.[0]?.name,
     guest_auto_deck_name:row.state?.initialDecks?.[1]?.name, result:clone(row.state?.result)
   })),
-  get:async key => clone(rows.get(key) || null),
+  get:async key => { fullReads++; return clone(rows.get(key) || null); },
   meta:async key => { const row = rows.get(key); return row ? Object.fromEntries(['id','team_id','host_slug','guest_slug','status','version','ready','expires_at'].map(field => [field, clone(row[field])])) : null; },
   deck:async (key, slug, options) => { deckModes.push(options?.mode); return clone(decks.find(deck => deck.id === key && deck.ownerSlug === slug) || null); },
   recentCount:async () => 0,
@@ -60,12 +60,16 @@ const autoRuntime = {
       if (payload.deck.cards.some(card => card.catalogCardId === '999999999')) throw engineError(400, 'unsupported_card');
       return { valid:true, deckName:payload.deck.name };
     }
-    if (operation === 'create') return {
-      mode:'auto', seed:'PRIVATE_SEED', initialDecks:payload.decks.map(deck => ({ id:deck.id, name:deck.name, main:['PRIVATE_INITIAL_CARD'] })),
-      names:payload.names, lp:payload.lp, firstPlayer:payload.firstPlayer,
-      inputs:[{ secret:'PRIVATE_RESPONSE_TRANSCRIPT' }], pendingMessage:{ secret:'PRIVATE_ENGINE_PROMPT' }, pendingPromptId:'prompt-0',
-      inputSequence:0, publicViews:[publicView(0), publicView(1)], result:null
-    };
+    if (operation === 'create') {
+      const created = {
+        mode:'auto', seed:'PRIVATE_SEED', initialDecks:payload.decks.map(deck => ({ id:deck.id, name:deck.name, main:['PRIVATE_INITIAL_CARD'] })),
+        names:payload.names, lp:payload.lp, firstPlayer:payload.firstPlayer,
+        inputs:[{ secret:'PRIVATE_RESPONSE_TRANSCRIPT' }], pendingMessage:{ secret:'PRIVATE_ENGINE_PROMPT' }, pendingPromptId:'prompt-0',
+        inputSequence:0, publicViews:[publicView(0), publicView(1)], result:clone(openingResult)
+      };
+      if (created.result) for (const view of created.publicViews) { view.result = clone(created.result); view.status = 'finished'; view.auto.prompt = null; view.auto.waitingFor = null; view.auto.waitingPlayer = null; view.auto.actor = null; }
+      return created;
+    }
     const { state, viewer, promptId } = payload;
     if (state.publicViews?.[viewer]?.auto?.prompt?.id !== promptId) throw engineError(409, 'stale_prompt');
     if (operation === 'search') return Array.from({ length:45 }, (_, index) => ({ code:100 + index, name:`Public card ${index}` }));
@@ -161,7 +165,9 @@ assert.equal(rows.get(duelId).state.result, null); assert.equal(rows.get(duelId)
 assert.equal((await run(host, valid)).replayed, true); assert.equal(calls.length, callsAfterApply);
 const opponentView = (await run(guest, { op:'state', duelId })).duel;
 assert.equal(opponentView.state.auto.prompt.id, 'prompt-1'); privateDataAbsent(opponentView);
+const readsBeforeUnchanged = fullReads;
 assert.equal((await run(host, { op:'state', duelId, knownVersion:rows.get(duelId).version })).unchanged, true);
+assert.equal(fullReads,readsBeforeUnchanged,'Normal unchanged polling must not fetch the full automatic replay');
 await rejects(third, { op:'state', duelId, knownVersion:rows.get(duelId).version }, 404, 'not_found');
 console.log('PASS engine-only inputs, prompt ownership, state-forgery rejection, no-write errors and request replay');
 
@@ -188,12 +194,82 @@ const lethalId = id(21);
 await setup(lethalId); await start(lethalId);
 const lethal = await run(host, command(lethalId, { type:'autoRespond', promptId:'prompt-0', choice:{ id:'finish' }, winner:0 }));
 assert.equal(lethal.duel.status, 'finished'); assert.equal(lethal.duel.result.winner, 1); privateDataAbsent(lethal);
+
+const openingId = id(23);
+openingResult = { winner:0, notes:'Authoritative opening win' };
+const openingWin = await setup(openingId); openingResult = null;
+assert.equal(openingWin.duel.status,'finished'); assert.equal(openingWin.duel.result.winner,0);
+assert.deepEqual(openingWin.duel.ready,[false,false],'An opening engine result must not wait for readiness');
+privateDataAbsent(openingWin);
+await rejects(host,command(openingId,{ type:'ready' }),409,'not_playing');
+await rejects(host,command(openingId,{ type:'surrender' }),409,'not_playing');
+// Simulate old persisted lifecycle labels while retaining the exact terminal
+// engine snapshot. Every repair must preserve the authoritative winner/state.
+for (const [status,type] of [['setup','ready'],['playing','surrender'],['setup','cancel'],['playing','cancel'],['setup','surrender']]) {
+  const row = rows.get(openingId); row.status = status; row.version++;
+  const stateBefore = clone(row.state), beforeCalls = calls.length;
+  const rawBeforeRead = clone(row);
+  assert.equal((await run(host,{ op:'state',duelId:openingId })).duel.status,'finished');
+  const summary = (await run(host,{ op:'lobby' })).duels.find(duel => duel.id === openingId);
+  assert.equal(summary.status,'finished'); assert.equal(summary.result.winner,0);
+  assert.deepEqual(rows.get(openingId),rawBeforeRead,'Legacy terminal projections must not turn a read into a database write');
+  if (type === 'ready') await rejects(host,command(openingId,{ type:'ready',player:1 }),403,'opponent_action');
+  const payload = type === 'cancel' ? { op:'cancel',duelId:openingId,expectedVersion:row.version,requestId:id(++request) } : command(openingId,{ type,winner:1 });
+  const repaired = await run(host,payload);
+  assert.equal(repaired.duel.status,'finished'); assert.equal(repaired.duel.result.winner,0);
+  assert.deepEqual(rows.get(openingId).state,stateBefore); assert.equal(calls.length,beforeCalls,'Repairing a terminal row must not call or replay the engine');
+  assert.equal((await run(host,payload)).replayed,true); privateDataAbsent(repaired);
+}
+console.log('PASS opening terminal accept and legacy ready/cancel/surrender lifecycle repairs preserve the engine winner');
+
+// A genuine Exodia opening passes through the service accept path, rather than
+// assigning a fake result. These local saved-deck fixtures use real TCG codes.
+{
+  const [{createAutoState},{loadAutoResources},{validateAutoDeck,AUTO_TCG_LIMITS}] = await Promise.all([import('../api/_yugioh-auto-core.js'),import('../api/_yugioh-auto-resources.js'),import('../api/_yugioh-auto-deck-rules.js')]);
+  const resources = await loadAutoResources(), seed = 'a1435612789abcde'.repeat(4), pieces = [33396948,7902349,70903634,44519536,8124921];
+  const main = [...resources.cards.values()].filter(card => card.ot > 0 && card.ot <= 3 && (card.ot & 2) && card.type === 17 && card.level <= 4 && !pieces.includes(card.code) && (AUTO_TCG_LIMITS[card.code] ?? 3) === 3).slice(0,40).map(card => card.code);
+  const reference = await createAutoState({ decks:[{ main },{ main }],seed });
+  const winningMain = [...main]; reference.publicViews[0].players[0].hand.forEach((card,index) => { winningMain[main.indexOf(card.code)] = pieces[index]; });
+  const saved = (owner,index,codes) => ({ id:id(index),ownerSlug:owner.slug,game:'yugioh',name:`Real ${owner.name} opening deck`,cards:codes.map(code => ({ section:'main',catalogCardId:String(code),cardName:resources.cards.get(code).name,quantity:1 })) });
+  const actualDecks = [saved(host,30,winningMain),saved(guest,31,main)]; decks.push(...actualDecks);
+  const actualRuntime = { project:projectAutoStateSafe,async run(operation,payload) {
+    if (operation === 'validate') { validateAutoDeck(payload.deck,resources); return { valid:true }; }
+    if (operation === 'create') return createAutoState({ ...payload,seed });
+    assert.fail(`A finished Exodia opening must not call ${operation}`);
+  } };
+  const actualService = createDuelService({ store,autoRuntime:actualRuntime,now:() => clock });
+  const realId = id(32);
+  await actualService.run(host,{ ...invite(realId),deckId:actualDecks[0].id });
+  const acceptedExodia = await actualService.run(guest,{ op:'accept',duelId:realId,expectedVersion:1,requestId:id(++request),deckId:actualDecks[1].id });
+  assert.equal(acceptedExodia.duel.status,'finished'); assert.equal(acceptedExodia.duel.result.winner,0); assert.equal(acceptedExodia.duel.state.auto.prompt,null);
+  assert.equal(rows.get(realId).state.publicViews[0].players[0].hand.length,5); assert.deepEqual(rows.get(realId).ready,[false,false]);
+  assert(acceptedExodia.duel.state.players[0].hand.every(card => card.hidden && !card.code)); privateDataAbsent(acceptedExodia);
+  const terminalSnapshot = clone(rows.get(realId));
+  await assert.rejects(() => actualService.run(host,command(realId,{ type:'surrender',winner:1 })),error => error instanceof DuelError && error.status === 409 && error.code === 'not_playing');
+  assert.deepEqual(rows.get(realId),terminalSnapshot);
+}
+console.log('PASS real pinned-core Exodia opening is accepted directly as finished and cannot be surrendered over');
+
 members = members.filter(member => member.slug !== guest.slug);
 await rejects(host, { op:'state', duelId:lethalId, knownVersion:rows.get(lethalId).version }, 403, 'membership_changed');
 members.push(guest);
-const expiredId = id(22); await setup(expiredId); clock = new Date(clock.getTime() + 86400001);
+const expiredId = id(22); await setup(expiredId);
+const legacyExpired = rows.get(openingId); legacyExpired.status = 'playing'; legacyExpired.version++;
+const legacyExpiredSnapshot = clone(legacyExpired);
+clock = new Date(clock.getTime() + 86400001);
+const legacyRead = await run(host,{ op:'state',duelId:openingId });
+assert.equal(legacyRead.duel.status,'finished'); assert.equal(legacyRead.duel.result.winner,0); privateDataAbsent(legacyRead);
+const readsBeforeExpiredMeta = fullReads;
+const legacyKnownRead = await run(host,{ op:'state',duelId:openingId,knownVersion:legacyExpired.version });
+assert.equal(fullReads,readsBeforeExpiredMeta + 1,'Only an expired legacy active label needs a full-state fallback');
+assert.equal(legacyKnownRead.duel.status,'finished'); assert.equal(legacyKnownRead.duel.result.winner,0); privateDataAbsent(legacyKnownRead);
+const legacyHistory = (await run(host,{ op:'lobby' })).duels.find(duel => duel.id === openingId);
+assert.equal(legacyHistory.status,'finished'); assert.equal(legacyHistory.result.winner,0);
+assert.deepEqual(rows.get(openingId),legacyExpiredSnapshot,'Reading an expired legacy winner must not modify its winner, status or version');
+await rejects(third,{ op:'state',duelId:openingId,knownVersion:legacyExpired.version },404,'not_found');
+await rejects(host,{ op:'state',duelId:expiredId },410,'expired');
 await rejects(host, { op:'state', duelId:expiredId, knownVersion:rows.get(expiredId).version }, 410, 'expired');
-console.log('PASS engine terminal result, current membership checks and expiry on unchanged-state polling');
+console.log('PASS engine terminal result, membership, expired legacy winner history and genuine active-duel expiry');
 
 // A lightweight HTTP fixture confirms the injected runtime and JSON summary
 // adapter without touching a Supabase project or loading a native game engine.
@@ -228,4 +304,4 @@ try {
   assert(!selects[0].includes('state,'), 'Lobby must not fetch complete automatic replay data');
 } finally { globalThis.fetch = originalFetch; }
 console.log('PASS authenticated no-store HTTP, auto-mode summary columns and metadata-independent auto deck hydration');
-console.log('yugioh-auto-service-smoke: OK (synthetic runtime, no external account or database)');
+console.log('yugioh-auto-service-smoke: OK (in-memory store plus real Exodia core, no external account or database)');

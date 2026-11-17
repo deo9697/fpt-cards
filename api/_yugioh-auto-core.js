@@ -13,7 +13,7 @@ const DUEL_FLAGS = OcgDuelMode.MODE_MR5 | OcgDuelMode.TCG_SEGOC_NONPUBLIC | OcgD
 const MAX_INPUTS = 4096;
 const MAX_STEPS = 100000;
 const REPLAY_MS = 15000;
-const QUERY = OcgQueryFlags.CODE | OcgQueryFlags.POSITION | OcgQueryFlags.TYPE | OcgQueryFlags.LEVEL | OcgQueryFlags.RANK | OcgQueryFlags.ATTACK | OcgQueryFlags.DEFENSE | OcgQueryFlags.BASE_ATTACK | OcgQueryFlags.BASE_DEFENSE | OcgQueryFlags.COUNTERS | OcgQueryFlags.OVERLAY_CARD | OcgQueryFlags.IS_PUBLIC | OcgQueryFlags.IS_HIDDEN | OcgQueryFlags.LINK | OcgQueryFlags.LSCALE | OcgQueryFlags.RSCALE;
+const QUERY = OcgQueryFlags.CODE | OcgQueryFlags.POSITION | OcgQueryFlags.TYPE | OcgQueryFlags.LEVEL | OcgQueryFlags.RANK | OcgQueryFlags.ATTACK | OcgQueryFlags.DEFENSE | OcgQueryFlags.BASE_ATTACK | OcgQueryFlags.BASE_DEFENSE | OcgQueryFlags.COUNTERS | OcgQueryFlags.OVERLAY_CARD | OcgQueryFlags.OWNER | OcgQueryFlags.EQUIP_CARD | OcgQueryFlags.TARGET_CARD | OcgQueryFlags.IS_PUBLIC | OcgQueryFlags.IS_HIDDEN | OcgQueryFlags.LINK | OcgQueryFlags.LSCALE | OcgQueryFlags.RSCALE;
 const ZONES = ['deck','hand','extra','side','monsters','spells','field','extraMonsters','graveyard','banished'];
 const json = value => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
 const copy = value => JSON.parse(json(value));
@@ -81,6 +81,9 @@ function queryLocation(core,duel,controller,location) {
       else if(scalar[flag]&&size===8) current[scalar[flag]]=[256,512,1024,2048].includes(flag)?data.getInt32(body,true):data.getUint32(body,true);
       else if(flag===OcgQueryFlags.IS_PUBLIC&&size===5) current.isPublic=!!data.getUint8(body);
       else if(flag===OcgQueryFlags.IS_HIDDEN&&size===5) current.isHidden=!!data.getUint8(body);
+      else if(flag===OcgQueryFlags.OWNER&&size===5) current.owner=data.getUint8(body);
+      else if(flag===OcgQueryFlags.EQUIP_CARD&&size===14){const location=data.getUint8(body+1);current.equippedTo=location?{controller:data.getUint8(body),location,sequence:data.getUint32(body+2,true)}:null;}
+      else if(flag===OcgQueryFlags.TARGET_CARD&&size>=8){const count=data.getUint32(body,true);if(body+4+count*10!==end)failure('engine_query_invalid','Bersagli non validi.',503);current.targets=Array.from({length:count},(_,index)=>{const start=body+4+index*10;return{controller:data.getUint8(start),location:data.getUint8(start+1),sequence:data.getUint32(start+2,true)};});}
       else if(flag===OcgQueryFlags.LINK&&size===12) current.link={rating:data.getUint32(body,true),marker:data.getUint32(body+4,true)};
       else if(flag===OcgQueryFlags.OVERLAY_CARD&&size>=8){const count=data.getUint32(body,true);if(body+4+count*4>end)failure('engine_query_invalid','Materiali non validi.',503);current.overlayCards=Array.from({length:count},(_,index)=>data.getUint32(body+4+index*4,true));}
       else if(flag===OcgQueryFlags.COUNTERS&&size>=8){const count=data.getUint32(body,true);if(body+4+count*4>end)failure('engine_query_invalid','Segnalini non validi.',503);current.counters={};for(let index=0;index<count;index++)current.counters[data.getUint16(body+4+index*4,true)]=data.getUint16(body+6+index*4,true);}
@@ -89,8 +92,8 @@ function queryLocation(core,duel,controller,location) {
     return cards;
   } finally {module.stackRestore(stack);}
 }
-function queryPlayers(core, duel, state, resources, viewer, lp) {
-  return state.initialDecks.map((deck, seat) => {
+function queryPlayers(core, duel, state, resources, viewer, lp, deckReversed = false) {
+  const players=state.initialDecks.map((deck, seat) => {
     const controller = seat ^ state.firstPlayer;
     const player = { name:state.names[seat], deckName:deck.name, deckId:seat === viewer ? deck.id : '', lp:lp[seat] };
     for (const zone of ZONES) player[zone] = [];
@@ -102,26 +105,40 @@ function queryPlayers(core, duel, state, resources, viewer, lp) {
         const zone = location === OcgLocation.MZONE && sequence >= 5 ? 'extraMonsters' : location === OcgLocation.SZONE && sequence === 5 ? 'field' : defaultZone;
         const slot = zone === 'extraMonsters' ? (seat === 0 ? sequence - 5 : 6 - sequence) : zone === 'field' ? 0 : ['monsters','spells'].includes(zone) ? sequence : null;
         const position = query.position ?? OcgPosition.FACEDOWN_DEFENSE;
-        const visible = location !== OcgLocation.DECK && (seat === viewer || !!query.isPublic || (location !== OcgLocation.HAND && faceUp(position)));
-        if (!visible) { player[zone].push(concealedCard(seat,zone,sequence,position,slot,location,query.type)); return; }
-        const code = query.code || 0;
+        // A reversed deck exposes its current top card, never the rest of its
+        // contents. A genuinely face-up top card is public without reversal too.
+        const publicDeckTop = location === OcgLocation.DECK && sequence === entries.length - 1 && (deckReversed || faceUp(position));
+        const visible = publicDeckTop || (location !== OcgLocation.DECK && (seat === viewer || !!query.isPublic || (location !== OcgLocation.HAND && faceUp(position))));
         const materials = (query.overlayCards || []).map((materialCode, index) => ({...cardMetadata(materialCode,resources),id:`${pointerId(seat,location,sequence)}-material-${index}`,faceUp:true,position:'attack',slot:null,counters:0,materials:[]}));
-        player[zone].push({ ...cardMetadata(code,resources,query), id:pointerId(seat,location,sequence), controller:seat, location, sequence, corePosition:position, originSection:location === OcgLocation.EXTRA ? 'extra' : 'main', faceUp:faceUp(position), position:visualPosition(zone,position,query.type??resources.cards.get(code)?.type), slot, atkModifier:0, defModifier:0, counters:Object.values(query.counters || {}).reduce((sum,value) => sum + value,0), counterTypes:query.counters || {}, materials });
+        if (!visible) { const hidden=concealedCard(seat,zone,sequence,position,slot,location,query.type);if(location===OcgLocation.MZONE)hidden.materials=materials;player[zone].push(hidden);return; }
+        const code = query.code || 0;
+        player[zone].push({ ...cardMetadata(code,resources,query), id:pointerId(seat,location,sequence), controller:seat, owner:playerIndex(query.owner)?query.owner^state.firstPlayer:seat, location, sequence, corePosition:position, originSection:location === OcgLocation.EXTRA ? 'extra' : 'main', faceUp:publicDeckTop || faceUp(position), position:visualPosition(zone,position,query.type??resources.cards.get(code)?.type), slot, atkModifier:0, defModifier:0, counters:Object.values(query.counters || {}).reduce((sum,value) => sum + value,0), counterTypes:query.counters || {}, materials, _equippedTo:query.equippedTo, _targets:query.targets || [] });
       });
     }
-    player.side = deck.side.map((code,index) => seat === viewer ? {...cardMetadata(code,resources),id:`auto-side-${seat}-${index}`,faceUp:false,position:'attack',slot:null,materials:[],counters:0} : concealedCard(seat,'side',index,0,null));
+    player.side = deck.side.map((code,index) => seat === viewer ? {...cardMetadata(code,resources),id:`auto-side-${seat}-${index}`,owner:seat,faceUp:false,position:'attack',slot:null,materials:[],counters:0} : concealedCard(seat,'side',index,0,null));
     return player;
   });
+  // Relationships reveal only coordinates of visible cards. Recompute each
+  // snapshot so detached links and targets moved into hidden zones disappear.
+  const visible=new Set(players.flatMap(player=>ZONES.flatMap(zone=>player[zone].filter(card=>!card.hidden&&playerIndex(card.controller)&&Number.isInteger(card.location)&&Number.isInteger(card.sequence)).map(card=>pointerId(card.controller,card.location,card.sequence)))));
+  const pointer=raw=>{if(!raw||!playerIndex(raw.controller))return null;const ref={controller:raw.controller^state.firstPlayer,location:raw.location,sequence:raw.sequence};return visible.has(pointerId(ref.controller,ref.location,ref.sequence))?ref:null;};
+  for(const player of players)for(const zone of ZONES)for(const card of player[zone])if(!card.hidden){card.equippedTo=pointer(card._equippedTo);card.targets=(card._targets||[]).map(pointer).filter(Boolean);delete card._equippedTo;delete card._targets;}
+  return players;
 }
 function promptVisibility(core,duel,state,knownReveals) {
   const locations=new Map();
   return (card,viewer)=>{
     if(card.controller===viewer)return true;
     if(!playerIndex(card.controller)||!Number.isInteger(card.location)||!Number.isInteger(card.sequence))return false;
-    const key=`${card.controller}-${card.location}`;
-    if(!locations.has(key))locations.set(key,queryLocation(core,duel,card.controller^state.firstPlayer,card.location));
+    const overlay=Object.hasOwn(card,'overlay_sequence'),location=card.location&~OcgLocation.OVERLAY;
+    if(overlay&&(location!==OcgLocation.MZONE||!Number.isSafeInteger(card.overlay_sequence)||card.overlay_sequence<0))return false;
+    const key=`${card.controller}-${location}`;
+    if(!locations.has(key))locations.set(key,queryLocation(core,duel,card.controller^state.firstPlayer,location));
     const query=locations.get(key)[card.sequence];
     if(!query)return false;
+    // Materials remain public when their Xyz Monster is turned face-down.
+    // Authorize only the exact indexed material, never the parent's identity.
+    if(overlay)return query.overlayCards?.[card.overlay_sequence]===card.code;
     if(knownReveals?.[viewer]?.get(pointerId(card.controller,card.location,card.sequence))===query.code)return true;
     if(query.isPublic)return true;
     return [OcgLocation.MZONE,OcgLocation.SZONE,OcgLocation.GRAVE,OcgLocation.REMOVED,OcgLocation.EXTRA].includes(card.location)&&faceUp(query.position||0);
@@ -162,7 +179,7 @@ function setResponse(core, duel, response) {
 
 async function replay(state) {
   const started = performance.now();
-  const resources = await loadAutoResources();
+  const resources = await loadAutoResources(state.resourceVersion);
   if (state.resourceVersion && state.resourceVersion !== resources.version) failure('resource_version_changed','La versione delle carte della partita non è più disponibile.',409);
   if (state.engineVersion !== AUTO_ENGINE_VERSION) failure('engine_version_changed','Questa partita usa una versione diversa del motore.',409);
   if (!Array.isArray(state.inputs) || state.inputs.length > MAX_INPUTS) failure('replay_limit','La partita ha raggiunto il limite di azioni.',409);
@@ -181,7 +198,7 @@ async function replay(state) {
     core.startDuel(duel);
     let sequence = 0, steps = 0, pending = null;
     const lp = [...state.lp];
-    const events = {turn:0,phase:'draw',activePlayer:state.firstPlayer,chain:[],log:[],result:null,lastActivation:null,battle:null,revealedCards:[[],[]],knownReveals:[new Map(),new Map()]};
+    const events = {turn:0,phase:'draw',activePlayer:state.firstPlayer,chain:[],log:[],result:null,lastActivation:null,battle:null,deckReversed:false,revealedCards:[[],[]],knownReveals:[new Map(),new Map()]};
     const log = (type,player,text) => { events.log.push({at:state.createdAt,turn:events.turn,type,player,text}); if(events.log.length > 150) events.log.shift(); };
     while (++steps <= MAX_STEPS) {
       if (performance.now() - started > REPLAY_MS) failure('engine_timeout','Il motore ha impiegato troppo tempo. Riprova.',503);
@@ -201,6 +218,17 @@ async function replay(state) {
           case Msg.TOSS_DICE:log('random',message.player,`Risultato dadi: ${message.results.join(', ')}`);break;
           case Msg.TOSS_COIN:log('random',message.player,`Risultato monete: ${message.results.map(result=>result?'testa':'croce').join(', ')}`);break;
           case Msg.DRAW: log('draw',message.player,`Pesca ${message.drawn.length} carta/e`); break;
+          case Msg.REVERSE_DECK: events.deckReversed = !events.deckReversed; break;
+          case Msg.DECK_TOP: {
+            // This engine event is public. Its count is an offset from the top
+            // while an operation is in progress; the field query supplies the
+            // actual final top slot when the next input boundary is reached.
+            if (message.code > 0 && playerIndex(message.player) && (events.deckReversed || faceUp(message.position))) {
+              const card = {...cardMetadata(message.code,resources),controller:message.player,location:OcgLocation.DECK,id:`deck-top-${sequence}-${message.player}-${message.count}`,faceUp:true,source:'deck-top',revealId:`deck-top-${hash([sequence,message]).slice(0,20)}`};
+              for (const viewer of [0,1]) events.revealedCards[viewer] = [...events.revealedCards[viewer],card].slice(-60);
+            }
+            break;
+          }
           case Msg.MOVE:moveRevealKnowledge(events.knownReveals,message);break;
           case Msg.SHUFFLE_DECK:case Msg.SHUFFLE_HAND:case Msg.SHUFFLE_EXTRA:{
             const location=message.type===Msg.SHUFFLE_DECK?OcgLocation.DECK:message.type===Msg.SHUFFLE_HAND?OcgLocation.HAND:OcgLocation.EXTRA;
@@ -256,7 +284,7 @@ async function replay(state) {
       if (sequence === state.inputs.length) {
         state.pendingMessage=copy(pending); state.pendingPromptId=id;
         const publicBase = {mode:'auto',format:'tcg',status:events.result?'finished':'playing',turn:events.turn,phase:events.phase,activePlayer:events.activePlayer,chain:events.chain,battle:events.battle,log:events.log,result:events.result,startingPlayer:state.firstPlayer,firstPlayer:state.firstPlayer};
-        state.publicViews=[0,1].map(viewer=>({...copy(publicBase),players:queryPlayers(core,duel,state,resources,viewer,lp),auto:{engineVersion:state.engineVersion,resourceVersion:resources.version,rulesProfile:AUTO_RULES_PROFILE,inputSequence:sequence,prompt:pending.player===viewer?copy(prompt):null,waitingFor:pending.player,waitingPlayer:pending.player,actor:pending.player,lastActivation:copy(events.lastActivation),revealedCards:copy(events.revealedCards[viewer])}}));
+        state.publicViews=[0,1].map(viewer=>({...copy(publicBase),players:queryPlayers(core,duel,state,resources,viewer,lp,events.deckReversed),auto:{engineVersion:state.engineVersion,resourceVersion:resources.version,rulesProfile:AUTO_RULES_PROFILE,inputSequence:sequence,prompt:pending.player===viewer?copy(prompt):null,waitingFor:pending.player,waitingPlayer:pending.player,actor:pending.player,lastActivation:copy(events.lastActivation),revealedCards:copy(events.revealedCards[viewer])}}));
         break;
       }
       const input=state.inputs[sequence];
@@ -268,7 +296,7 @@ async function replay(state) {
     if (steps > MAX_STEPS) failure('engine_step_limit','Il motore ha superato il limite di elaborazione.',503);
     if (!pending) {
       const publicBase={mode:'auto',format:'tcg',status:'finished',turn:events.turn,phase:events.phase,activePlayer:events.activePlayer,chain:events.chain,battle:events.battle,log:events.log,result:events.result,startingPlayer:state.firstPlayer,firstPlayer:state.firstPlayer};
-      state.publicViews=[0,1].map(viewer=>({...copy(publicBase),players:queryPlayers(core,duel,state,resources,viewer,lp),auto:{engineVersion:state.engineVersion,resourceVersion:resources.version,rulesProfile:AUTO_RULES_PROFILE,inputSequence:sequence,prompt:null,waitingFor:null,waitingPlayer:null,actor:null,lastActivation:copy(events.lastActivation),revealedCards:copy(events.revealedCards[viewer])}}));
+      state.publicViews=[0,1].map(viewer=>({...copy(publicBase),players:queryPlayers(core,duel,state,resources,viewer,lp,events.deckReversed),auto:{engineVersion:state.engineVersion,resourceVersion:resources.version,rulesProfile:AUTO_RULES_PROFILE,inputSequence:sequence,prompt:null,waitingFor:null,waitingPlayer:null,actor:null,lastActivation:copy(events.lastActivation),revealedCards:copy(events.revealedCards[viewer])}}));
       delete state.pendingMessage; delete state.pendingPromptId;
     }
     state.resourceVersion=resources.version; state.inputSequence=sequence; state.result=events.result;
@@ -276,11 +304,11 @@ async function replay(state) {
   } finally { if (duel) core.destroyDuel(duel); }
 }
 
-export async function createAutoState({decks,names=['Giocatore 1','Giocatore 2'],lp=[8000,8000],firstPlayer=0,seed}={}) {
+export async function createAutoState({decks,names=['Giocatore 1','Giocatore 2'],lp=[8000,8000],firstPlayer=0,seed,resourceVersion}={}) {
   if (!Array.isArray(decks) || decks.length !== 2 || !playerIndex(firstPlayer)) failure('invalid_setup','Servono due mazzi e il primo giocatore.');
   if (typeof lp === 'number') lp=[lp,lp];
   if (!Array.isArray(lp) || lp.length !== 2 || !lp.every(value=>Number.isInteger(value)&&value>=1&&value<=999999)) failure('invalid_lp','Life Points iniziali non validi.');
-  const resources=await loadAutoResources();
+  const resources=await loadAutoResources(resourceVersion);
   const initialDecks=decks.map(deck=>validateAutoDeck(deck,resources));
   const state={mode:'auto',engineVersion:AUTO_ENGINE_VERSION,resourceVersion:resources.version,seed:canonicalSeed(seed),initialDecks,names:[0,1].map(index=>String(names?.[index]||`Giocatore ${index+1}`).slice(0,100)),lp:[...lp],firstPlayer,inputs:[],inputSequence:0,createdAt:new Date().toISOString()};
   return replay(state);
@@ -301,7 +329,7 @@ export async function applyAutoInput(state,{viewer,promptId,choice}={}) {
   if (!prompt || prompt.id !== promptId || state.pendingPromptId !== promptId) failure('stale_prompt','La richiesta è cambiata o spetta all’altro giocatore.',409);
   if (state.inputs.length >= MAX_INPUTS) failure('replay_limit','La partita ha raggiunto il limite di azioni.',409);
   if (!choice || typeof choice !== 'object' || Array.isArray(choice) || json(choice).length > 16000) failure('invalid_choice','Scelta non valida.');
-  const resources=await loadAutoResources();
+  const resources=await loadAutoResources(state.resourceVersion);
   resolveChoice(state.pendingMessage,choice,{resources,cards:resources.cards,strings:resources.strings});
   const next=copy(state);
   next.inputs.push({viewer,promptId,choice:copy(choice)});
@@ -310,6 +338,6 @@ export async function applyAutoInput(state,{viewer,promptId,choice}={}) {
 
 export async function searchAutoCards(state,{viewer,promptId,query}={}) {
   if (!state || !playerIndex(viewer) || state.pendingMessage?.player !== viewer || state.pendingPromptId !== promptId || state.pendingMessage?.type !== Msg.ANNOUNCE_CARD) failure('stale_prompt','La dichiarazione di carta non è disponibile.',409);
-  const resources=await loadAutoResources();
+  const resources=await loadAutoResources(state.resourceVersion);
   return searchPromptCards(state.pendingMessage,String(query||'').slice(0,100),{resources,cards:resources.cards,limit:30});
 }

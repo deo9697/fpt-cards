@@ -1,6 +1,26 @@
 {
   "schema": 1,
   "version": "ignis-14f3b8905ff9-babel-6e21009855ed",
+  "activeVersion": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2",
+  "profiles": {
+    "ignis-14f3b8905ff9-babel-6e21009855ed": {
+      "overrides": []
+    },
+    "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2": {
+      "overrides": [
+        "tcg-overrides.json.gz"
+      ]
+    }
+  },
+  "scriptOverrides": [
+    {
+      "file": "tcg-overrides.json.gz",
+      "target": "c88264978.lua",
+      "source": "pre-errata/c88264978.lua",
+      "sha256": "4b80f8bff91f319d19be490aaa7ac9cc33f86baca07f2bc8688d103eee72d414",
+      "reason": "Current errata matches the published TCG text; pinned upstream archive stores this script outside official/."
+    }
+  ],
   "sources": [
     {
       "kind": "scripts",
@@ -99,6 +119,13 @@
       "sha256": "3c8cb036cf7d8b08e1e65a98d4bf5ea92315a26570c0dc30689ddfd13a7fca42",
       "decodedBytes": 34090017,
       "decodedSha256": "d7f879b48de80b7d0784158ab567e1c2ed433c87f6327bc33458412f245c1abd"
+    },
+    {
+      "file": "tcg-overrides.json.gz",
+      "bytes": 1168,
+      "sha256": "5e79ecc3ae146285739cd71526c7c0b893ff3bd8fa03c08b18c44a0d3c502ece",
+      "decodedBytes": 2752,
+      "decodedSha256": "65424b4042fbad2258133907d72f53663c785543c88ba8e7d43aa1775bc5e99a"
     }
   ]
 }

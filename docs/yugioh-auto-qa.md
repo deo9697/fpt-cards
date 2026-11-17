@@ -14,8 +14,10 @@ Nuovi inviti dall’Arena: scegli Automatico · Regole TCG oppure Manuale guidat
 
 ## Verifiche
 
-`npm run test:yugioh-auto`: protocollo, mazzi TCG, veri effetti/catene e replay, servizio privato con CAS, UI e due browser mobile con servizio e worker reali. `npm run test:yugioh-simulator`: regressioni dei tavoli manuali, orientamento, touch, Testa mazzo, combattimento e percorso One Piece.
+`npm run test:yugioh-auto`: protocollo, mazzi TCG, inizializzazione dell’intero catalogo TCG, scenari reali di meccaniche/eventi/decisioni, effetti/catene e replay, servizio privato con CAS, UI e due browser mobile con servizio e worker reali. `npm run test:yugioh-simulator`: regressioni dei tavoli manuali, orientamento, touch, Testa mazzo, combattimento e percorso One Piece. La [matrice di verifica](yugioh-auto-mechanics-matrix.md) distingue casi reali, prove sintetiche e limiti della copertura.
 
 `npm run build:yugioh-auto-resources` richiede Node con `node:sqlite` e accesso ai repository pubblici fissati. Produce gli stessi archivi e checksum; non è necessario durante l’avvio del duello o il deploy. Le risorse del motore restano lato server e non entrano nel precache della PWA.
 
 La funzione Vercel include esplicitamente il worker, i moduli del motore, i dati compressi e il pacchetto WASM. L’arena collega gli avvisi e i sorgenti attraverso `assets/licenses/yugioh-auto.html`.
+
+Il profilo risorse `-tcg-r2` include la revisione corretta di Red-Eyes Darkness Metal Dragon, che lo snapshot upstream conserva nella cartella `pre-errata`. Viene inclusa soltanto quella sorgente esatta, conforme al testo TCG corrente, senza importare in blocco script storici. Gli archivi di base e il profilo precedente rimangono immutati: i replay delle partite aperte prima del rilascio mantengono versione e identificativi delle richieste.

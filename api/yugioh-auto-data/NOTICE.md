@@ -17,3 +17,7 @@ The upstream repository does not include an explicit software license for its da
 ## Engine
 
 The runtime wrapper and its underlying duel engine are separate dependencies. The wrapper's package license does not override the upstream core or card-script licenses. See the application's dependency notices and source links.
+
+## TCG resource profiles
+
+New duels use ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2. The previous ignis-14f3b8905ff9-babel-6e21009855ed profile and its unchanged base archives remain available for existing games. The new profile adds one unmodified current-errata script from the same pinned archive: pre-errata/c88264978.lua, loaded as c88264978.lua. This explicit exception matches the current TCG card text; other historical/pre-errata scripts are not imported. Source SHA-256: 4b80f8bff91f319d19be490aaa7ac9cc33f86baca07f2bc8688d103eee72d414.

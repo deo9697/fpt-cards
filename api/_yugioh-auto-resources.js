@@ -5,23 +5,24 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
 
-export const AUTO_RESOURCE_VERSION='ignis-14f3b8905ff9-babel-6e21009855ed';
+export const LEGACY_AUTO_RESOURCE_VERSION='ignis-14f3b8905ff9-babel-6e21009855ed';
+export const AUTO_RESOURCE_VERSION=`${LEGACY_AUTO_RESOURCE_VERSION}-tcg-r2`;
 const directory=new URL('./yugioh-auto-data/',import.meta.url);
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
-let pending;
-async function checkedAsset(manifest,name){
+const pending=new Map();
+async function checkedAsset(manifest,name,version=manifest.version){
   const entry=manifest.artifacts.find(item=>item.file===name);if(!entry||!Number.isSafeInteger(entry.bytes)||entry.bytes<1||entry.bytes>20000000||!/^[a-f0-9]{64}$/.test(entry.sha256)||!/^[a-f0-9]{64}$/.test(entry.decodedSha256))throw new Error('Automatic resource manifest is invalid.');
   const compressed=await readFile(new URL(name,directory));
   if(compressed.length!==entry.bytes||digest(compressed)!==entry.sha256)throw new Error(`Automatic resource integrity failure: ${name}`);
   const raw=gunzipSync(compressed,{maxOutputLength:90000000});
   if(raw.length!==entry.decodedBytes||digest(raw)!==entry.decodedSha256)throw new Error(`Automatic decoded resource integrity failure: ${name}`);
   const payload=JSON.parse(raw.toString('utf8'));
-  if(payload.schema!==1||payload.version!==AUTO_RESOURCE_VERSION)throw new Error('Automatic resource versions do not match.');
+  if(payload.schema!==1||payload.version!==version)throw new Error('Automatic resource versions do not match.');
   return payload;
 }
-async function readResources(){
+async function readResources(version){
   const manifest=JSON.parse(await readFile(new URL('manifest.json',directory),'utf8'));
-  if(manifest.schema!==1||manifest.version!==AUTO_RESOURCE_VERSION||!Array.isArray(manifest.artifacts))throw new Error('Automatic resources are unavailable or incompatible.');
+  if(manifest.schema!==1||manifest.version!==LEGACY_AUTO_RESOURCE_VERSION||manifest.activeVersion!==AUTO_RESOURCE_VERSION||!manifest.profiles?.[version]||!Array.isArray(manifest.artifacts))throw new Error('Automatic resources are unavailable or incompatible.');
   const [cardPayload,scriptPayload]=await Promise.all([checkedAsset(manifest,'cards.json.gz'),checkedAsset(manifest,'scripts.json.gz')]);
   if(!Array.isArray(cardPayload.cards)||!Array.isArray(scriptPayload.scripts))throw new Error('Automatic resource payload is invalid.');
   const cards=new Map(),strings=new Map(),scripts=new Map();
@@ -39,6 +40,17 @@ async function readResources(){
   // Prefer released scripts if an upstream pre-release variant shares a name.
   for(const directory of ['official/','pre-release/'])for(const[name,script]of [...scripts])if(name.startsWith(directory)&&!scripts.has(name.slice(directory.length)))scripts.set(name.slice(directory.length),script);
   if(cards.size!==manifest.counts.cards||scriptPayload.scripts.length!==manifest.counts.scripts)throw new Error('Automatic resource counts do not match the manifest.');
-  return Object.freeze({cards,scripts,strings,version:AUTO_RESOURCE_VERSION});
+  const overrides=manifest.profiles[version].overrides;
+  if(!Array.isArray(overrides)||overrides.some(name=>name!=='tcg-overrides.json.gz'))throw new Error('Automatic resource profile is invalid.');
+  for(const name of overrides){
+    const extra=await checkedAsset(manifest,name,version);
+    if(!Array.isArray(extra.scripts)||extra.scripts.length!==1)throw new Error('Automatic script overrides are invalid.');
+    for(const[key,script]of extra.scripts){if(key!=='c88264978.lua'||typeof script!=='string'||scripts.has(key))throw new Error('Automatic script override is incompatible.');scripts.set(key,script);}
+  }
+  return Object.freeze({cards,scripts,strings,version});
 }
-export async function loadAutoResources(){return pending??=readResources();}
+export async function loadAutoResources(version=AUTO_RESOURCE_VERSION){
+  if(![AUTO_RESOURCE_VERSION,LEGACY_AUTO_RESOURCE_VERSION].includes(version))throw Object.assign(new Error('La versione delle carte della partita non è più disponibile.'),{status:409,code:'resource_version_changed'});
+  if(!pending.has(version))pending.set(version,readResources(version));
+  return pending.get(version);
+}

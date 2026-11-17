@@ -169,5 +169,24 @@ try {
   // Client commands must not send obsolete manual mutations in automatic mode.
   const beforeManual = calls.length; await host.act({type: 'move', player: 0, cardId: 'card-own', to: 'graveyard'});
   eq(calls.length, beforeManual);
+
+  // A reversed deck reveals only the current top, including to the opponent.
+  present(idle,state=>{state.players[1].deck=[viewCard({id:'hidden-below',hidden:true,cardName:'Private lower card',location:1,controller:1,sequence:0}),viewCard({id:'public-top',cardName:'Public top',text:'Public top description',controller:1,location:1,sequence:1,faceUp:true})];});
+  ok(host.view().includes('alt="Public top"'));ok(!host.view().includes('Private lower card'));
+  await tap(host,{ygoPile:'deck',player:'1'});eq(host.pile.cards.map(card=>card.id),['public-top']);ok(host.view().includes('Cima pubblica del mazzo'));
+  host.showCardDescription({player:1,cardId:'public-top'});ok(host.view().includes('Public top description'));
+  present(idle,state=>{state.players[1].deck=[viewCard({id:'hidden-top',hidden:true,controller:1,location:1})];});
+  eq(host.pile,null);eq(host.selected,null);await tap(host,{ygoPile:'deck',player:'1'});eq(host.pile,null);
+
+  // Equip/continuous relationships remain readable with control changes and
+  // never render names from a target that the viewer cannot see.
+  present(idle,state=>{state.players[0].spells=[viewCard({id:'equip',cardName:'Equip fixture',owner:1,controller:0,location:8,equippedTo:{controller:1,location:4,sequence:0},targets:[{controller:1,location:4,sequence:1}]})];state.players[1].monsters=[viewCard({id:'visible-target',cardName:'Public equipped monster',controller:1,location:4,sequence:0}),viewCard({id:'covered-target',cardName:'Secret target identity',hidden:true,controller:1,location:4,sequence:1})];});
+  host.showCardDescription({player:0,cardId:'equip'});ok(host.view().includes('Proprietario: Guest'));ok(host.view().includes('Equipaggiata a Guest: Public equipped monster'));ok(!host.view().includes('Secret target identity'));
+
+  // Setting an Xyz monster hides that monster, not its public attached cards.
+  present(idle,state=>{state.players[1].monsters=[viewCard({id:'covered-xyz',hidden:true,cardName:'Hidden Xyz identity',controller:1,location:4,materials:[viewCard({id:'public-material',cardName:'Public overlay',text:'Public overlay description'})]})];});
+  ok(host.view().includes('data-ygo-materials="covered-xyz"'));ok(!host.view().includes('Hidden Xyz identity'));
+  const beforePeek=calls.length;await tap(host,{ygoMaterials:'covered-xyz',player:'1'});eq(host.pile.cards.map(card=>card.cardName),['Public overlay']);
+  host.showCardDescription({player:1,cardId:'public-material'});ok(host.view().includes('Public overlay description'));ok(!host.view().includes('Hidden Xyz identity'));eq(calls.length,beforePeek);
   console.log(`Yu-Gi-Oh automatic UI smoke: ${assertions} assertions passed.`);
 } finally { for (const controller of controllers) controller.reset(); }

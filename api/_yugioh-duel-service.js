@@ -6,6 +6,7 @@ const terminal = new Set(['finished', 'declined', 'cancelled']);
 const copy = value => JSON.parse(JSON.stringify(value));
 const validLp = value => Number.isInteger(value) && value >= 1 && value <= 999999;
 const duelMode = row => row.state?.mode === 'auto' || row.state_mode === 'auto' || row.host_deck?.simulatorMode === 'auto' || row.host_simulator_mode === 'auto' ? 'auto' : 'manual';
+const hasAutoResult = row => duelMode(row) === 'auto' && Boolean(row.result || row.state?.result);
 export class DuelError extends Error {
   constructor(status, code, message, duel = undefined) { super(message); this.status = status; this.code = code; this.duel = duel; }
 }
@@ -55,15 +56,17 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
   function projection(row, actor, people, includeState = true) {
     const viewer = people?.viewer ?? (row.host_slug === actor.slug ? 0 : 1);
     const mode = duelMode(row);
+    const result = row.result || row.state?.result;
+    const status = mode === 'auto' && result ? 'finished' : row.status;
     return {
-      id:row.id, status:row.status, version:row.version, viewer, mode,
+      id:row.id, status, version:row.version, viewer, mode,
       hostSlug:row.host_slug, guestSlug:row.guest_slug,
       hostName:people?.host?.name || row.host_slug, guestName:people?.guest?.name || row.guest_slug,
       ready:Array.isArray(row.ready) ? row.ready.map(Boolean) : [false, false],
       firstPlayer:row.first_player, createdAt:row.created_at, updatedAt:row.updated_at, expiresAt:row.expires_at,
       hostDeckName:row.host_state_deck_name || row.host_auto_deck_name || row.state?.initialDecks?.[0]?.name || row.state?.players?.[0]?.deckName || row.host_deck_name || row.host_deck?.name || '',
       guestDeckName:row.guest_state_deck_name || row.guest_auto_deck_name || row.state?.initialDecks?.[1]?.name || row.state?.players?.[1]?.deckName || '',
-      result:row.result || row.state?.result ? copy(row.result || row.state.result) : null,
+      result:result ? copy(result) : null,
       ...(includeState ? { state:row.state?.mode === 'auto' ? autoRuntime.project(row.state, viewer) : redactState(row.state, viewer) } : {})
     };
   }
@@ -74,7 +77,7 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     return { row, people };
   }
   function checkExpiry(row) {
-    if (new Date(row.expires_at).getTime() <= now().getTime() && !terminal.has(row.status)) fail(410, 'expired', 'La partita è scaduta. Puoi inviare un nuovo invito.');
+    if (new Date(row.expires_at).getTime() <= now().getTime() && !terminal.has(row.status) && !hasAutoResult(row)) fail(410, 'expired', 'La partita è scaduta. Puoi inviare un nuovo invito.');
   }
   async function deck(id, actor, mode = 'manual') {
     const selected = await store.deck(needUuid(id, 'Mazzo'), actor.slug, { mode });
@@ -139,7 +142,7 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
         const pushMembers = new Set(await store.pushMembers(members.map(member => member.slug)));
         const rows = await store.list(actor.teamId, actor.slug);
         const visible = rows.filter(row => members.some(member => member.slug === row.host_slug) && members.some(member => member.slug === row.guest_slug));
-        return { members:members.map(member => ({ slug:member.slug, name:member.name, pushEnabled:pushMembers.has(member.slug) })), duels:visible.filter(row => row.status === 'finished' || (!terminal.has(row.status) && new Date(row.expires_at) > now())).map(row => projection(row, actor, { host:members.find(m => m.slug === row.host_slug), guest:members.find(m => m.slug === row.guest_slug) }, false)), serverTime:at() };
+        return { members:members.map(member => ({ slug:member.slug, name:member.name, pushEnabled:pushMembers.has(member.slug) })), duels:visible.filter(row => row.status === 'finished' || hasAutoResult(row) || (!terminal.has(row.status) && new Date(row.expires_at) > now())).map(row => projection(row, actor, { host:members.find(m => m.slug === row.host_slug), guest:members.find(m => m.slug === row.guest_slug) }, false)), serverTime:at() };
       }
       if (op === 'invite') {
         const requestId = needUuid(payload.requestId, 'Richiesta');
@@ -177,6 +180,13 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
         // The version is never an access credential. Check both participants'
         // current team membership and expiry before returning even a no-op.
         await participant(meta, actor);
+        // A legacy lifecycle label can outlive an automatic opening win. Only
+        // this rare expired label needs the full state to distinguish that
+        // terminal result from a genuinely expired active duel.
+        if (['setup','playing'].includes(meta.status) && new Date(meta.expires_at).getTime() <= now().getTime()) {
+          const current = await existing(payload.duelId, actor);
+          return { duel:projection(current.row, actor, current.people) };
+        }
         checkExpiry(meta);
         if (meta.version === payload.knownVersion) return { unchanged:true, duelId:meta.id, version:meta.version };
       }
@@ -197,6 +207,13 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
         return { duelId:row.id, version:row.version, promptId:payload.promptId, cards:Array.isArray(cards) ? cards.slice(0, 30) : [] };
       }
       if (expected(row, payload, actor, people)) return { duel:view(), replayed:true };
+      // Older rows may still say setup/playing after an immediate engine win.
+      // Repair only the lifecycle label: no confirmation, cancellation or
+      // concession may replace a result the authoritative engine already gave.
+      if (duelMode(row) === 'auto' && row.state?.result && ['setup','playing'].includes(row.status) && ['action','cancel'].includes(op)) {
+        if (payload.action?.type === 'ready' && payload.action.player !== undefined && payload.action.player !== people.viewer) fail(403, 'opponent_action', 'Puoi confermare soltanto la tua mano.');
+        return cas(row, { status:'finished', previous_state:null }, actor, people, payload.requestId);
+      }
       if (op === 'accept') {
         if (people.viewer !== 1 || row.status !== 'waiting') fail(403, 'cannot_accept', 'Questo invito non è disponibile per l’accettazione.');
         if (!validLp(payload.lp ?? 8000)) fail(400, 'invalid_lp', 'Controlla i Life Points iniziali.');
@@ -204,7 +221,7 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
         const setup = { decks:[row.host_deck, selected], firstPlayer:row.first_player, lp:[row.host_lp, payload.lp ?? 8000], names:[people.host.name, people.guest.name] };
         const state = duelMode(row) === 'auto' ? await automatic('create', setup) : createSession(setup);
         state.id = row.id;
-        return cas(row, { status:'setup', state, host_deck:null, ready:[false, false], previous_state:null }, actor, people, payload.requestId);
+        return cas(row, { status:state.mode === 'auto' && state.result ? 'finished' : 'setup', state, host_deck:null, ready:[false, false], previous_state:null }, actor, people, payload.requestId);
       }
       if (op === 'decline' || op === 'cancel') {
         if (op === 'cancel' && duelMode(row) === 'auto' && row.status === 'playing') fail(403, 'cannot_close', 'Per abbandonare un duello automatico in corso usa la resa.');

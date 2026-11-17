@@ -98,6 +98,11 @@ export function normalizePrompt(message, context = {}) {
   if (own(context, 'viewer') && context.viewer !== message.player) return null;
   if (message.player !== 0 && message.player !== 1) capability('Giocatore della richiesta non valido.');
   context = {...context, actor: message.player};
+  // SortDecktop/SortDeckbottom disclose the listed identities to the choosing
+  // player in the SORT message itself, without a separate CONFIRM. This private
+  // prompt is the permission to inspect those cards; generic target selection
+  // still uses the conservative board/reveal visibility check.
+  if (message.type === M.SORT_CARD || message.type === M.SORT_CHAIN) context.isCardVisible = () => true;
   const id = String(context.id ?? `prompt-${context.sequence ?? 0}`);
   const prompt = {id, promptId: id, player: message.player, kind: '', title: '', options: [], min: 1, max: 1, cancelable: false};
   const cards = (rows, prefix, label, extra = () => ({})) => list(rows).map((card, index) => {
@@ -206,8 +211,8 @@ export function normalizePrompt(message, context = {}) {
 }
 
 function sumValues(amount) {
-  const low = amount & 0xffff, high = amount >>> 16;
-  return [...new Set([low, ...(high ? [high] : [])])];
+  const low = amount & 0xffff, high = amount >> 16;
+  return [...new Set([low, ...(high > 0 ? [high] : [])])];
 }
 
 function selectedIds(choice, multiple = false) {
@@ -231,15 +236,23 @@ function enforceCount(indices, min, max) { if (indices.length < min || indices.l
 
 function validSum(message, indices) {
   const cards = [...list(message.selects_must), ...indices.map(index => message.selects[index])];
-  if (!cards.length) return false;
   if (message.select_max) {
-    let low = 0, high = 0, minimum = Infinity;
+    // Match SelectSum in the pinned core, not a stricter subset-sum rule:
+    // each card contributes min(low16, nonzero signed high16) to the minimum,
+    // and max(low16, signed high16) to the upper bound. For alternatives such
+    // as {1,10}+{1,10}, target 8 is intentionally accepted by this core.
+    // INT_MAX also preserves its empty-selection behavior when target is zero.
+    let low = 0, high = 0, minimum = 0x7fffffff;
     for (const card of cards) {
-      const values = sumValues(card.amount), small = Math.min(...values);
-      low += small; high += Math.max(...values); minimum = Math.min(minimum, small);
+      const first = card.amount & 0xffff, second = card.amount >> 16;
+      const small = second && second < first ? second : first;
+      low += small; high += Math.max(first, second); minimum = Math.min(minimum, small);
     }
     return high >= message.amount && low - minimum < message.amount;
   }
+  // select_sum_check1 rejects an exhausted total at entry, even for a final
+  // zero-valued card. Reaching the target before the last card is rejected too.
+  if (!cards.length || message.amount === 0) return false;
   enforceCount(indices, message.min, message.max);
   // A bounded dynamic program handles alternate levels without exponential
   // recursion. Mandatory materials contribute, but never enter response indices.
@@ -387,7 +400,7 @@ function matchesAnnouncement(card, opcodes) {
         case OP.ADD: binary((a, b) => a + b); break;
         case OP.SUB: binary((a, b) => a - b); break;
         case OP.MUL: binary((a, b) => a * b); break;
-        case OP.DIV: binary((a, b) => b ? a / b : 0n); break;
+        case OP.DIV: binary((a, b) => { if (!b) throw new RangeError('Invalid opcode divisor'); return a / b; }); break;
         case OP.AND: binary((a, b) => a && b ? 1n : 0n); break;
         case OP.OR: binary((a, b) => a || b ? 1n : 0n); break;
         case OP.NEG: unary(a => -a); break;
@@ -400,17 +413,17 @@ function matchesAnnouncement(card, opcodes) {
         case OP.RSHIFT: binary((a, b) => a >> (b & 63n)); break;
         case OP.ALLOW_ALIASES: aliases = true; break;
         case OP.ALLOW_TOKENS: tokens = true; break;
-        case OP.ISCODE: unary(a => a === BigInt(card.code) ? 1n : 0n); break;
+        case OP.ISCODE: unary(a => BigInt.asUintN(32, a) === BigInt(card.code) ? 1n : 0n); break;
         case OP.ISSETCARD: unary(a => list(card.setcodes).some(code => (code & 0xfff) === (Number(a) & 0xfff) && (code & 0xf000 & Number(a)) === (Number(a) & 0xf000)) ? 1n : 0n); break;
-        case OP.ISTYPE: unary(a => BigInt(card.type) & a ? 1n : 0n); break;
-        case OP.ISRACE: unary(a => BigInt(card.race) & a ? 1n : 0n); break;
-        case OP.ISATTRIBUTE: unary(a => BigInt(card.attribute) & a ? 1n : 0n); break;
+        case OP.ISTYPE: unary(a => BigInt(card.type) & a); break;
+        case OP.ISRACE: unary(a => BigInt(card.race) & a); break;
+        case OP.ISATTRIBUTE: unary(a => BigInt(card.attribute) & a); break;
         case OP.GETCODE: stack.push(BigInt(card.code)); break;
-        case OP.GETSETCARD: break;
+        case OP.GETSETCARD: stack.push(BigInt.asIntN(64, op)); break;
         case OP.GETTYPE: stack.push(BigInt(card.type)); break;
         case OP.GETRACE: stack.push(BigInt(card.race)); break;
         case OP.GETATTRIBUTE: stack.push(BigInt(card.attribute)); break;
-        default: stack.push(op);
+        default: stack.push(BigInt.asIntN(64, op));
       }
     }
   } catch { return false; }
