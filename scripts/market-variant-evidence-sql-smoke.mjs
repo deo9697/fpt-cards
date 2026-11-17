@@ -7,6 +7,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const db = new PGlite();
 const migration = readFileSync(new URL('../supabase/migrations/20261117130000_market_variant_evidence.sql', import.meta.url), 'utf8');
+const adminMigration = readFileSync(new URL('../supabase/migrations/20261117180000_market_confirm_admin_versions.sql', import.meta.url), 'utf8');
 const manualFn = readFileSync(new URL('./fixtures/set-market-mapping-manual.prod-2026-11-17.sql', import.meta.url), 'utf8');
 
 await db.exec(`
@@ -14,7 +15,7 @@ await db.exec(`
   do $$ begin create role anon; exception when duplicate_object then null; end $$;
   do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
   do $$ begin create role service_role; exception when duplicate_object then null; end $$;
-  create table team_members (slug text primary key, team text);
+  create table team_members (slug text primary key, team text, role text default 'member');
   create table sessions (token text primary key, slug text);
   create function session_member(p_token text) returns text language sql as $$ select slug from sessions where token = p_token $$;
   create function member_team(p_slug text) returns text language sql as $$ select team from team_members where slug = p_slug $$;
@@ -28,8 +29,8 @@ await db.exec(`
     cardmarket_product_id text, cardmarket_expansion_id text, candidate_product_ids jsonb not null default '[]', mapping_source text, mapping_confidence numeric,
     mapping_status text not null default 'unresolved', mapping_notes text, verified boolean not null default false, verified_at timestamptz, verified_by text,
     resolution_reason text, created_at timestamptz default now(), updated_at timestamptz default now());
-  insert into team_members values ('daniele','fpt'), ('ospite','beta');
-  insert into sessions values ('tok-dan','daniele'), ('tok-guest','ospite');
+  insert into team_members values ('daniele','fpt','admin'), ('ospite','beta','member'), ('nello','fpt','member');
+  insert into sessions values ('tok-dan','daniele'), ('tok-guest','ospite'), ('tok-nello','nello');
   insert into card_printings values
     ('00000000-0000-0000-0000-000000000001','yugioh','Cyberse Contract Witch','MAMO-EN018','Magnificent Monsters','Ultra Rare',''),
     ('00000000-0000-0000-0000-000000000002','yugioh','Favorite HERO','MAMO-EN005','Magnificent Monsters','Ultra Rare',''),
@@ -44,6 +45,8 @@ await db.exec(`
 await db.exec(manualFn);
 await db.exec(migration);
 await db.exec(migration); // rieseguibile
+await db.exec(adminMigration);
+await db.exec(adminMigration);
 console.log('PASS migrazione applicata due volte senza errori');
 
 const queue = async () => (await db.query(`select public.list_market_confirm_queue('tok-dan','yugioh') q`)).rows[0].q.items;
@@ -73,9 +76,18 @@ assert(!(await queue()).some(item => item.printing_id === '00000000-0000-0000-00
 console.log('PASS conferma singola: mapping manuale, variante verificata con le versioni, carta fuori dalla coda');
 
 await assert.rejects(db.query(`select public.confirm_market_variant_choice('tok-dan','00000000-0000-0000-0000-000000000002','999999')`), /non è tra le versioni/);
-await assert.rejects(db.query(`select public.confirm_market_variant_choice('tok-guest','00000000-0000-0000-0000-000000000002','904550')`), /riservata al team/);
+await assert.rejects(db.query(`select public.confirm_market_variant_choice('tok-guest','00000000-0000-0000-0000-000000000002','904550')`), /riservata agli admin/);
+await assert.rejects(db.query(`select public.confirm_market_variant_choice('tok-nello','00000000-0000-0000-0000-000000000002','904550')`), /riservata agli admin/, 'un membro del team F.P.T non admin non conferma');
+assert.deepEqual((await db.query(`select public.list_market_confirm_queue('tok-nello','yugioh') q`)).rows[0].q.items, [], 'la coda di conferma è vuota per chi non è admin');
 await assert.rejects(db.query(`select public.confirm_market_variant_choice('scaduto','00000000-0000-0000-0000-000000000002','904550')`), /Sessione scaduta/);
-console.log('PASS conferma singola: rifiuta prodotto estraneo, team ospite e sessione scaduta');
+console.log('PASS conferma singola: solo admin (ospite e membro non admin rifiutati), coda vuota per i non admin, prodotto estraneo e sessione scaduta rifiutati');
+
+// Dettagli delle versioni (scritti da market-sync) restituiti alla coda.
+await db.exec(`update ygo_market_variants set candidate_details='[{"productId":"904550","version":1,"price":1.97,"rarity":"Ultra Rare","among":null}]' where printing_id='00000000-0000-0000-0000-000000000002'`);
+const withVersions = (await queue()).find(item => item.printing_id === '00000000-0000-0000-0000-000000000002');
+assert.equal(withVersions.versions[0].rarity, 'Ultra Rare');
+assert.equal(withVersions.versions[0].price, 1.97);
+console.log('PASS coda: restituisce prezzo e rarità stimata di ogni versione');
 
 // Autorizzazione da parte del motore: solo AMBIGUOUS, solo prodotti candidati.
 await db.query(`select public.market_authorize_evidence_variant('00000000-0000-0000-0000-000000000002','123','x')`);

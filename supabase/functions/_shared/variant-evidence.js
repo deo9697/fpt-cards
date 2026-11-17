@@ -148,3 +148,48 @@ export function summarizeEvidence(decisions = []) {
   for (const row of decisions) counts[row.decision] = (counts[row.decision] || 0) + 1;
   return counts;
 }
+
+// Cosa mostrare all'admin per OGNI versione Cardmarket di una carta in coda:
+// prezzo e rarità stimata. Cardmarket non dice la rarità, quindi la stima
+// viene dalla scala di rarità del set (catalogo, tutte le lingue) e
+// dall'ordine dei prezzi:
+//   - scala completa + prezzi ben distinti → ogni versione ha la sua rarità;
+//   - una versione nettamente più economica → è la rarità più bassa del set,
+//     le altre "una tra" le rarità restanti;
+//   - altrimenti solo il prezzo.
+// decision (opzionale): la versione scelta dal motore riceve la rarità posseduta.
+// → [{productId, version, price, rarity, among}] in ordine di idProduct (V.1…).
+export function describeVersions({ target, families = new Map(), priceOf = () => null, decision = null, tierRatio = 1.5, tierGapEur = 0.2, baseRatio = 1.5, baseGapEur = 0.2 } = {}) {
+  const ids = sortedProductIds(target?.candidateProductIds);
+  const rarity = String(target?.rarity || '').trim();
+  const ladder = [...new Set((families.get(familyKey(target?.catalogCardId, target?.setCode)) || []).map(r => String(r).trim()).filter(Boolean))];
+  const rows = ids.map((productId, index) => {
+    const price = priceOf(productId);
+    return { productId, version: index + 1, price: Number.isFinite(price) && price > 0 ? Math.round(price * 100) / 100 : null, rarity: null, among: null };
+  });
+  const priced = rows.every(row => row.price != null);
+  const byPrice = priced ? [...rows].sort((a, b) => a.price - b.price) : null;
+  const known = ladder.length && ladder.every(r => RARITY_VALUE_TIER[r] != null);
+  if (byPrice && known && ladder.length === rows.length) {
+    const ordered = [...ladder].sort((a, b) => RARITY_VALUE_TIER[a] - RARITY_VALUE_TIER[b]);
+    if (new Set(ordered.map(r => RARITY_VALUE_TIER[r])).size === ordered.length && clearlyApart(byPrice.map(row => row.price), tierRatio, tierGapEur)) {
+      byPrice.forEach((row, rank) => { row.rarity = ordered[rank]; });
+    }
+  }
+  // La versione nettamente più economica è la rarità più bassa del set (unica),
+  // qualunque sia quella posseduta: le altre sono "una tra" le rarità restanti.
+  const lowest = known ? [...ladder].sort((x, y) => RARITY_VALUE_TIER[x] - RARITY_VALUE_TIER[y])[0] : null;
+  if (byPrice && !rows.some(row => row.rarity) && lowest && ladder.every(r => r === lowest || RARITY_VALUE_TIER[r] > RARITY_VALUE_TIER[lowest])) {
+    const [cheapest, next] = byPrice;
+    if (next && next.price >= cheapest.price * baseRatio && next.price - cheapest.price >= baseGapEur) {
+      cheapest.rarity = lowest;
+      const others = ladder.filter(r => r !== lowest);
+      for (const row of rows) if (row !== cheapest && others.length) row.among = others;
+    }
+  }
+  if (decision?.productId && rarity) {
+    const chosen = rows.find(row => row.productId === String(decision.productId));
+    if (chosen && !chosen.rarity) chosen.rarity = rarity;
+  }
+  return rows;
+}

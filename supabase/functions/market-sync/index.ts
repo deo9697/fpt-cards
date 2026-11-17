@@ -10,7 +10,7 @@
 // Unico import relativo: _shared/ viene incluso dal deploy via CLI (come
 // catalog-new-sets con _shared/konami.ts). Logica pura, testata in Node.
 import { inferVariantsByPriceOrder, resolveBySetTemplates, buildRarityFamilies, guidePrice } from '../_shared/variant-price-order.js';
-import { decideVariantsByEvidence, evidenceNote, summarizeEvidence } from '../_shared/variant-evidence.js';
+import { decideVariantsByEvidence, evidenceNote, summarizeEvidence, describeVersions } from '../_shared/variant-evidence.js';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
 const CARDMARKET_RESOLVER_VERSION=11;
 const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
@@ -401,6 +401,9 @@ async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any
   const byPrice=inferVariantsByPriceOrder({targets:pool.map(toInput),families,priceOf});
   const decisions=decideVariantsByEvidence({targets:missing.map(toInput),families,priceOf,templateAssignments:byTemplate,priceOrderAssignments:byPrice.assignments,confirmations});
   const byId=new Map(missing.map((target:any)=>[String(target.printing_id),target]));
+  // Per la coda di conferma (admin): prezzo e rarità stimata di OGNI versione.
+  const decisionById=new Map(decisions.map((row:any)=>[row.printingId,row]));
+  const detailsOf=(target:any)=>describeVersions({target:toInput(target),families,priceOf,decision:decisionById.get(String(target.printing_id))});
   const rows:any[]=[],authorize:any[]=[];
   for(const decision of decisions){
     const target:any=byId.get(decision.printingId),current=existing.get(decision.printingId);
@@ -413,10 +416,15 @@ async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any
       mapping_source:viaTemplate?MARKET_VARIANT_SOURCE.SET_TEMPLATE:MARKET_VARIANT_SOURCE.RESOLVER,mapping_confidence:auto?1:0.5,
       mapping_status:auto?MARKET_VARIANT_STATUS.RESOLVED:MARKET_VARIANT_STATUS.AMBIGUOUS,verified:false,
       resolution_reason:viaTemplate?'verified_set_variant_template':auto?'evidence_auto':'evidence_suggestion',
-      mapping_notes:evidenceNote(decision)});
+      mapping_notes:evidenceNote(decision),candidate_details:detailsOf(target)});
     if(auto&&!isAuthorizedCardmarketMapping(target))authorize.push({target,decision});
   }
   if(rows.length)await upsertYgoMarketVariantsShadow(rows);
+  // Le altre carte senza variante esatta: solo i dettagli delle versioni (colonna
+  // singola: l'upsert non tocca stato, prodotto o confidenza di righe esistenti).
+  const written=new Set(rows.map((row:any)=>row.printing_id));
+  const detailsOnly=missing.filter((target:any)=>!written.has(String(target.printing_id))).map((target:any)=>({printing_id:String(target.printing_id),candidate_details:detailsOf(target)}));
+  if(detailsOnly.length)await upsertYgoMarketVariantsShadow(detailsOnly);
   // Le carte in coda decise in automatico tornano autorizzate: prezzo esatto da subito.
   let authorized=0;
   for(const {target,decision} of authorize){
@@ -427,7 +435,7 @@ async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any
       authorized++;
     }catch(error:any){console.error('[market-sync] autorizzazione variante automatica fallita',{printingId:decision.printingId,error:String(error?.message||error)});}
   }
-  return {candidates:missing.length,written:rows.length,byTemplate:byTemplate.length,evidence:summarizeEvidence(decisions),authorizedFromQueue:authorized,confirmationsUsed:confirmations.length,skipped:byPrice.skipped};
+  return {candidates:missing.length,written:rows.length,versionDetails:detailsOnly.length+rows.length,byTemplate:byTemplate.length,evidence:summarizeEvidence(decisions),authorizedFromQueue:authorized,confirmationsUsed:confirmations.length,skipped:byPrice.skipped};
 }
 // Conferme carta per carta (confirm_market_variant_choice): l'unica base da
 // cui il motore impara la posizione di una rarità in un set. Le conferme in

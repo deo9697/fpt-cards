@@ -16,7 +16,7 @@ const { MarketWatchController, mapConfirmQueuePayload, bulkConfirmCandidate, map
 const candidates = ids => ({ candidates: ids.map(productId => ({ productId, cardName: 'Cyberse Contract Witch', expansion: 'Magnificent Monsters', rarity: '' })) });
 const payload = { items: [
   { printing_id: 'single', card_name: 'Una sola versione', resolver_status: 'PROVIDER_AGGREGATE', mapping_evidence: { providerProductId: '500', providerCardName: 'X', providerExpansion: 'Set' } },
-  { printing_id: 'suggested', card_name: 'Cyberse Contract Witch', resolver_status: 'AMBIGUOUS', mapping_evidence: candidates(['904603', '904602', '904604']), suggested_product_id: '904602', suggestion_note: 'rarità base, versione più economica' },
+  { printing_id: 'suggested', card_name: 'Cyberse Contract Witch', resolver_status: 'AMBIGUOUS', mapping_evidence: candidates(['904603', '904602', '904604']), suggested_product_id: '904602', suggestion_note: 'rarità base, versione più economica', rarity: 'Ultra Rare', set_code: 'MAMO-EN018', versions: [{ productId: '904602', version: 1, price: 1.79, rarity: 'Ultra Rare', among: null }, { productId: '904603', version: 2, price: 28.03, rarity: null, among: ['Starlight Rare', 'Grand Master Rare'] }] },
   { printing_id: 'unknown', card_name: 'Senza indizi', resolver_status: 'AMBIGUOUS', mapping_evidence: candidates(['10', '11']) },
 ] };
 const items = mapConfirmQueuePayload(payload);
@@ -34,6 +34,11 @@ assert.match(html, /Suggerita<\/em>/);
 assert.match(html, /Suggerita: <b>rarità base, versione più economica<\/b>/);
 assert.match(html, /· V\.1<\/small>/); assert.match(html, /· V\.2<\/small>/);
 assert(!/is-suggested/.test(mappingConfirmBlock(items[2])), 'nessun badge senza suggerimento');
+const plain = html.replace(/ /g, ' ');
+assert(plain.includes('Cerca la versione <b>Ultra Rare</b> · MAMO-EN018'), 'manca "cosa cercare"');
+assert(plain.includes('<b>1,79 €</b><em class="is-match">Ultra Rare <small>stima</small></em>'), 'V.1: prezzo e rarità stimata');
+assert(plain.includes('<b>28,03 €</b><em>una tra Starlight Rare, Grand Master Rare</em>'), 'V.2: prezzo e rarità possibili');
+console.log('PASS ogni versione mostra prezzo e rarità stimata, e cosa cercare');
 console.log('PASS lista candidati: suggerita in cima con badge e motivo, numeri di versione V.n');
 
 // Controller: bulk confirms 2 of 3, single confirmation uses the teaching RPC.
@@ -48,7 +53,8 @@ const api = {
   confirmMarketVariantChoice: async (printingId, productId) => { single.push({ printingId, productId }); },
 };
 const toasts = [];
-const controller = new MarketWatchController({ api, getGame: () => 'yugioh', getDecks: () => [], onRender: () => {}, onToast: message => toasts.push(message), onNavigate: () => {} });
+let admin = true;
+const controller = new MarketWatchController({ api, getGame: () => 'yugioh', getDecks: () => [], isAdmin: () => admin, onRender: () => {}, onToast: message => toasts.push(message), onNavigate: () => {} });
 await controller.load();
 await controller.loadConfirmQueue();
 assert.deepEqual(controller.suggestedQueue().map(item => item.printingId).sort(), ['single', 'suggested']);
@@ -70,4 +76,15 @@ await controller.confirmAllAggregate();
 assert.equal(calls.length, before);
 assert.match(toasts.at(-1), /Nessun suggerimento pronto/);
 console.log('PASS nessun suggerimento: messaggio chiaro, nessuna conferma alla cieca');
+// Solo admin (dev): niente scheda Conferma né conferma in blocco per gli altri.
+const boardArgs = { items: [], marketDecks: [], hasSnapshots: false, confirmQueue: controller.confirmQueue, aggregatePending: [], anomalyQueue: [] };
+payload.items = [{ printing_id: 'x', card_name: 'X', resolver_status: 'AMBIGUOUS', mapping_evidence: { candidates: [{ productId: '1' }, { productId: '2' }] }, suggested_product_id: '1' }];
+await controller.loadConfirmQueue();
+boardArgs.confirmQueue = controller.confirmQueue;
+assert.match(controller.renderBoardSection(boardArgs), /data-market-tab="confirm"/);
+assert.match(controller.renderBoardSection(boardArgs), /data-market-confirm-all-aggregate/);
+admin = false;
+assert.doesNotMatch(controller.renderBoardSection(boardArgs), /data-market-tab="confirm"/, 'scheda Conferma nascosta ai non admin');
+assert.doesNotMatch(controller.renderBoardSection(boardArgs), /data-market-confirm-all-aggregate/, 'conferma in blocco nascosta ai non admin');
+console.log('PASS solo admin: scheda Conferma e conferma in blocco visibili solo agli admin');
 console.log('market-watch-suggested-confirm-smoke: OK');

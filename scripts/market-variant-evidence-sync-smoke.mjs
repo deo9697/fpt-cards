@@ -81,8 +81,14 @@ assert.equal(row('stbl-agg').cardmarket_product_id, '244291');
 assert.equal(authorizedAggregate.provider_metadata.resolverStatus, 'PROVIDER_AGGREGATE');
 console.log('PASS aggregato già autorizzato (STBL Ultra): due indizi → variante esatta, nessuna autorizzazione extra');
 
-assert.equal(row('mamo-suggest'), undefined, 'Starlight non è la rarità base e la posizione non è stata confermata → nessun indizio');
-console.log('PASS nessun indizio → nessuna scrittura');
+const details = row('mamo-suggest');
+assert.deepEqual(Object.keys(details).sort(), ['candidate_details', 'printing_id'], 'senza decisione: solo i dettagli delle versioni, nessuno stato/prodotto toccato');
+assert.equal(details.candidate_details.length, 4);
+assert.equal(details.candidate_details[0].rarity, 'Ultra Rare', 'V.1 = rarità base (la più economica)');
+assert.deepEqual(details.candidate_details[1].among, ['Starlight Rare', 'Grand Master Rare']);
+assert.equal(row('mamo-queue').candidate_details[0].price, 1.79, 'anche le righe decise portano prezzi e rarità delle versioni');
+assert(!upserts.some(r => r.printing_id === 'already-verified'), 'nemmeno i dettagli toccano una variante verificata');
+console.log('PASS nessun indizio → nessuna decisione, ma prezzo e rarità stimata di ogni versione per la coda admin');
 
 // A suggestion never overwrites a resolved row.
 upserts.length = 0; rpcCalls.length = 0;
@@ -91,7 +97,7 @@ existingVariants = [{ printing_id: 'mamo-b-ultra', mapping_status: 'resolved', m
 const lone = target('mamo-b-ultra', 'unknown-card', 'MAMO-EN098', 'Ultra Rare', ['904550', '904551', '904552', '904553'], 'PROVIDER_AGGREGATE');
 const lone2 = target('fresh', 'unknown-card', 'MAMO-EN099', 'Ultra Rare', ['904550', '904551', '904552', '904553'], 'AMBIGUOUS');
 await context.inferMissingExactVariants(provider, [lone, lone2]);
-assert(!row('mamo-b-ultra'), 'un suggerimento non sovrascrive una riga già risolta');
+assert.deepEqual(Object.keys(row('mamo-b-ultra')).sort(), ['candidate_details', 'printing_id'], 'un suggerimento non sovrascrive una riga già risolta: solo i dettagli delle versioni');
 assert.equal(row('fresh').mapping_status, 'ambiguous');
 assert.equal(row('fresh').mapping_confidence, 0.5);
 assert.equal(row('fresh').resolution_reason, 'evidence_suggestion');
