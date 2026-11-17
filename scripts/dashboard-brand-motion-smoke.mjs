@@ -36,17 +36,29 @@ try {
   await delay(500);
   await evaluate(`window.__consoleErrors = []; window.addEventListener('error', e => window.__consoleErrors.push(String(e.message)));`);
 
+  // Home "Vetrina compatta" (2026-11-17): la bandiera neon a tutta larghezza
+  // è sostituita dal logo ufficiale dentro l'unico riquadro d'apertura, con
+  // saluto, livello e la carta di maggior valore (intera, una volta sola).
   await evaluate(`(async()=>{
-    const {dashboardView}=await import('/js/dashboard.js');
+    const {dashboardView,bindDashboardCarousel}=await import('/js/dashboard.js');
     document.head.insertAdjacentHTML('afterbegin','<base href="/">'); document.body.dataset.game='yugioh';
-    const markup=dashboardView({currentUser:null,loans:[]},'yugioh');
+    const top=n=>({printingId:'p'+n,catalogCardId:'card-'+n,cardName:'Carta '+n,imageUrl:'/icon-192.png?'+n,price:90-n*10,price7:80-n*10,quantity:1});
+    const market={portfolioValue:2186.25,overview:{value:2186.25,change7:{eur:17.2,base:2169,cards:30},top:[top(1),top(2),top(3),top(4)]}};
+    const profile={level:5,progress:80,currentXp:220,nextXp:275,title:'Tonno',avatarHtml:'<i class="mini-avatar">DD</i>',cardCount:32,winRate:58,matches:12,missions:[]};
+    const markup=dashboardView({currentUser:'daniele',loans:[]},'yugioh',market,profile);
     document.querySelector('#app').innerHTML='<div style="padding:16px;max-width:1100px;margin:auto"><div class="xp-bar large"><i style="--progress:64"></i></div>'+markup+'</div>';
+    bindDashboardCarousel(document);
   })()`);
-  await delay(400);
+  await delay(600);
   for (const width of [390,1280]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<600});
-    const check=await evaluate(`(()=>{const banner=document.querySelector('.duel-game-logo'),img=banner.querySelector('img'),fill=document.querySelector('.xp-bar>i');return{overflow:document.documentElement.scrollWidth>innerWidth,logo:img.getAttribute('src'),loaded:img.complete&&img.naturalWidth>0,banner:banner.getBoundingClientRect().width,parent:banner.parentElement.getBoundingClientRect().width,liquid:getComputedStyle(fill,'::before').animationName,flag:getComputedStyle(banner).animationName,tubes:banner.querySelectorAll('.game-neon-tubes .tube').length,tag:banner.querySelector('.game-neon-tag')?.textContent||''}})()`);
-    if(check.overflow||!check.loaded||!check.logo.endsWith('yugioh-tcg.png')||check.banner<check.parent-16||check.liquid!=='fpt-fluid-wave'||check.flag!=='game-neon-sway'||check.tubes!==2||!check.tag.includes('duello'))throw Error(JSON.stringify(check));
+    await delay(150);
+    const check=await evaluate(`(()=>{const hero=document.querySelector('.hv-hero'),logo=hero.querySelector('.hv-logo'),card=hero.querySelector('.hv-card .hv-card-img'),fill=document.querySelector('.xp-bar>i'),stats=[...document.querySelectorAll('.hv-stats button')];
+      return{overflow:document.documentElement.scrollWidth>innerWidth,logo:logo.getAttribute('src'),logoLoaded:logo.complete&&logo.naturalWidth>0,cardLoaded:card.complete&&card.naturalWidth>0,
+        heroes:document.querySelectorAll('.hv-hero').length,flags:document.querySelectorAll('.duel-game-logo,.game-neon').length,
+        topCardTimes:[...document.querySelectorAll('img.hv-card-img')].filter(img=>img.getAttribute('src').endsWith('?1')).length,strip:document.querySelectorAll('.hv-tile').length,
+        stats:stats.length,statsInside:stats.every(b=>b.getBoundingClientRect().right<=innerWidth+0.5),greeting:hero.querySelector('h2').textContent,liquid:getComputedStyle(fill,'::before').animationName}})()`);
+    if(check.overflow||!check.logoLoaded||!check.logo.endsWith('yugioh-tcg.png')||!check.cardLoaded||check.heroes!==1||check.flags!==0||check.topCardTimes!==1||check.strip!==3||check.stats!==3||!check.statsInside||!check.greeting.includes('Daniele')||check.liquid!=='fpt-fluid-wave')throw Error(width+' '+JSON.stringify(check));
   }
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   const capture=await send('Page.captureScreenshot',{format:'png'});
@@ -55,9 +67,8 @@ try {
   console.log('Screenshot: '+screenshot);
   await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   const reduced=await evaluate(`getComputedStyle(document.querySelector('.xp-bar>i'),'::before').animationName`);
-  const flagReduced=await evaluate(`getComputedStyle(document.querySelector('.game-neon')).animationName`);
-  if(reduced!=='none'||flagReduced!=='none')throw Error('Reduced motion not respected');
-  console.log('PASS official TCG logo, full-width neon game sign (2 tubes, swaying), fluid XP, mobile/desktop overflow, reduced motion');
+  if(reduced!=='none')throw Error('Reduced motion not respected '+reduced);
+  console.log('PASS Home Vetrina: logo ufficiale nel riquadro d\'apertura (nessuna bandiera), carta più preziosa una volta sola, 3 pezzi forti, 3 numeri dentro lo schermo, XP fluido, nessun overflow mobile/desktop, reduced motion');
 } finally {
   try { socket?.close(); } catch {}
   chrome.kill();

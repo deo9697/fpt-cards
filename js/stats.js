@@ -273,6 +273,7 @@ export class StatsController {
       if (timelineRows) { this.timeline = normalizeTimeline(timelineRows); this.timelineError = ''; }
       if (this.opponentMode === 'team') { this.boardRows = []; } // il tabellone verrà ricaricato al prossimo accesso alla tab
       if (isNewOpponentDeck) { this.teamDecksLoaded = false; this.teamDecksAll = []; } // il mazzo appena creato per il compagno deve comparire nel prossimo dialog
+      this.refreshBody(); // il modal si ridisegna da solo: la pagina sotto (tile, mazzi, ultimi match) va aggiornata qui
     } catch (error) { this.onToast?.(error.message || 'Registrazione match non riuscita'); }
     finally { this.busy = false; this.refreshModal(); }
   }
@@ -406,7 +407,7 @@ export class StatsController {
     const visible = matches.slice(0, this.mineMatchesExpanded ? 20 : 4);
     return `<section class="stats-section foil-frame">
       <div class="stats-section-head"><h2>${icon('flash')} Ultimi match</h2>${matches.length > 4 ? `<button type="button" data-mine-matches-toggle>${this.mineMatchesExpanded ? 'Mostra meno' : 'Vedi tutti'} ${icon('arrow')}</button>` : ''}</div>
-      ${visible.length ? `<div class="stats-recent-list">${visible.map(match => `<button type="button" class="stats-recent-row" data-stats-match-open="${esc(match.id)}">
+      ${visible.length ? `<div class="stats-recent-list">${visible.map(match => `<button type="button" class="stats-recent-row is-${esc(match.result)}" data-stats-match-open="${esc(match.id)}">
         <small class="stats-recent-date">${esc(formatDate(match.playedAt))}</small>
         <span class="stats-recent-matchup"><strong>${esc(match.deckName)}</strong> <i>vs</i> <strong>${esc(match.opponentDeck || match.opponentLabel || 'Avversario esterno')}</strong>${match.opponentLabel && match.opponentDeck ? `<small>(${esc(match.opponentLabel)})</small>` : ''}</span>
         <span class="stats-recent-outcome"><span class="badge-result ${match.result}">${RESULT_LABEL[match.result]}</span>${matchDieBadge(match.wentFirst)}</span>
@@ -441,14 +442,7 @@ export class StatsController {
       const draws = found.draws ? `<small>${found.draws}P</small>` : '';
       return `<td class="${found.wins > found.losses ? 'h2h-ahead' : found.wins < found.losses ? 'h2h-behind' : 'h2h-even'}"><b class="win">${found.wins}</b>-<b class="loss">${found.losses}</b>${draws}</td>`;
     };
-    // Tabellone (variante B approvata 2026-11-17): podio, classifica e rivalità
-    // prima della tabella testa a testa, che resta sotto per il dettaglio.
-    const ranked = members.map(m => { const t = totalsBySlug.get(m.slug), played = t.wins + t.losses + t.draws; return { ...m, ...t, played, rate:played ? Math.round(t.wins / played * 100) : 0 }; });
-    const podium = [ranked[1], ranked[0], ranked[2]].map((m, i) => m ? `<div class="stats-pod stats-pod-${['second','first','third'][i]}"><i class="stats-pod-hex">${initials(m.name)}</i><strong>${esc(m.name.split(' ')[0])}</strong><small>${m.rate}% · ${m.wins}V</small><span class="stats-pod-step">${[2,1,3][i]}</span></div>` : '<div></div>').join('');
-    const me = this.state.currentUser, rivalRow = this.boardRows.filter(r => r.memberSlug === me).sort((a, b) => (b.wins + b.losses + b.draws) - (a.wins + a.losses + a.draws))[0];
-    const rival = rivalRow ? `<div class="stats-section-head"><h2>Rivalità</h2></div><div class="stats-rivalry"><div><b class="is-me">${rivalRow.wins}</b><small>${esc((rivalRow.memberName || 'Tu').split(' ')[0])}</small></div><i class="stats-vs">VS</i><div><b class="is-rival">${rivalRow.losses}</b><small>${esc(rivalRow.opponentName.split(' ')[0])}</small></div></div>` : '';
-    const ranking = `<div class="stats-podium">${podium}</div><div class="stats-ranking">${ranked.map((m, i) => `<div class="stats-rank ${m.slug === me ? 'is-me' : ''}"><em>${String(i + 1).padStart(2, '0')}</em><i class="stats-pod-hex">${initials(m.name)}</i><span>${esc(m.name)}${m.slug === me ? ' <small>TU</small>' : ''}</span><b>${m.wins}–${m.losses}</b></div>`).join('')}</div>${rival}<div class="stats-section-head"><h2>Testa a testa</h2></div>`;
-    return `${periodChips}${ranking}<div class="h2h-scroll foil-frame"><table class="h2h-table">
+    return `${periodChips}<div class="h2h-scroll foil-frame"><table class="h2h-table">
       <thead><tr><th class="h2h-corner"></th>${members.map(m => `<th><i class="mini-avatar member-${esc(m.slug)}">${initials(m.name)}</i></th>`).join('')}</tr></thead>
       <tbody>${members.map(rowMember => `<tr>
         <th class="h2h-row-head"><i class="mini-avatar member-${esc(rowMember.slug)}">${initials(rowMember.name)}</i><span><strong>${esc(rowMember.name)}</strong><small>${esc(titleForHeadToHead(totalsBySlug.get(rowMember.slug).wins))}</small></span></th>

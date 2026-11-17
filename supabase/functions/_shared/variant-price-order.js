@@ -31,7 +31,7 @@ export const RARITY_VALUE_TIER = Object.freeze({
   'Duel Terminal Ultra Parallel Rare': 5,
   'Platinum Secret Rare': 6, 'Ghost/Gold Rare': 6,
   'Ghost Rare': 7, "Collector's Rare": 7,
-  'Starlight Rare': 8, 'Quarter Century Secret Rare': 8,
+  'Starlight Rare': 8, 'Quarter Century Secret Rare': 8, 'Grand Master Rare': 8,
 });
 
 export function setPrefixOf(setCode) {

@@ -288,7 +288,7 @@ function loadAppControllers() {
   appControllersLoading ??= Promise.all([import('./js/decks.js'), import('./js/market-watch.js'), import('./js/stats.js')])
     .then(([{ DeckController }, { MarketWatchController }, { StatsController }]) => {
       decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,cardLevelsByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:(message,tone)=>toast(message,tone),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
-      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:(message,tone)=>toast(message,tone),onNavigate:target=>navigate(target)});
+      marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,isAdmin:()=>state.role==='admin',getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:(message,tone)=>toast(message,tone),onNavigate:target=>navigate(target)});
       stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:(message,tone)=>toast(message,tone)});
       // Ridisegna solo dove servono i controller (Dashboard e le loro pagine):
       // mai sulla Raccolta, su Fast Scan o mentre si scrive, per non perdere
@@ -592,7 +592,7 @@ function missionRowView(mission) {
   </div>`;
 }
 
-function activeCosmetics() { return stats?.cosmetics || { activeTitle:'', activeAvatar:'', unlocked:[] }; }
+function activeCosmetics() { const c = stats?.cosmetics || {}; return { activeTitle:'', activeAvatar:'', ...c, unlocked:Array.isArray(c.unlocked) ? c.unlocked : [] }; }
 // L'avatar equipaggiato sostituisce il cerchio con le iniziali solo dove
 // mostriamo l'identità del membro CORRENTE (pannello profilo, header) — le
 // liste che mostrano altri membri del team restano con le iniziali, non è
@@ -736,6 +736,7 @@ function dashboardProfile() {
     portfolio: marketWatch?.summary?.portfolioValue || null,
     cardCount,
     winRate: record.matches ? Math.round((record.wins / record.matches) * 100) : null,
+    matches: record.matches,
     missions: (stats?.missions || []).map(mission => ({ ...mission, ...(DAILY_MISSIONS_META[mission.id] || { icon: 'star', label: mission.id }) }))
   };
 }
@@ -793,7 +794,7 @@ function notificationStatusCopy() {
 }
 function pushOnboardingView() {
   if (!shouldOfferPush() || !['home','loans'].includes(page)) return '';
-  return `<section class="surface push-onboarding" aria-labelledby="push-onboarding-title"><img src="assets/notification-icon.png" alt="" width="64" height="64"><div><h2 id="push-onboarding-title">Attiva le notifiche</h2><p>Prestiti, richieste e movimenti di prezzo direttamente sul telefono.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva notifiche ▸</button>' : ''}<button class="btn ghost" id="defer-notifications">Più tardi</button></div></div></section>`;
+  return `<section class="surface push-onboarding push-strip" aria-labelledby="push-onboarding-title"><img src="assets/notification-icon.png" alt="" width="32" height="32"><div><h2 id="push-onboarding-title">Attiva le notifiche</h2><p>Prestiti e prezzi sul telefono.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva</button>' : ''}<button class="btn ghost" id="defer-notifications">Più tardi</button></div></div></section>`;
 }
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();

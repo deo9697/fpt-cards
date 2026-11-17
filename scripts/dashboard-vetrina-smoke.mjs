@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 globalThis.window ??= { addEventListener: () => {}, FPT_CONFIG: undefined };
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { mapDashboardOverview } = await import('../js/market-watch.js');
-const { dashboardView } = await import('../js/dashboard.js');
+const { featuredPanel } = await import('../js/dashboard.js');
 const test = (name, fn) => { fn(); console.log(`PASS ${name}`); };
 const state = { currentUser: 'daniele', loans: [] };
 
@@ -43,7 +43,7 @@ test('mapDashboardOverview: numeri veri, null preservati, payload incompleto →
 });
 
 test('Vetrina: carta più preziosa, scaffale, valore a parità di carte, movers in euro, segnali', () => {
-  const html = dashboardView(state, 'yugioh', { overview: mapDashboardOverview(payload), portfolioValue: 2190.5, featuredHistory: new Map() });
+  const html = featuredPanel({ overview: mapDashboardOverview(payload), portfolioValue: 2190.5, featuredHistory: new Map() });
   assert.match(html, /market-millennium market-vetrina/);
   assert.match(html, /La tua carta più preziosa/);
   assert.match(html, /mv-hero-name">Pot of Sloth</);
@@ -68,7 +68,7 @@ test('Vetrina: carta più preziosa, scaffale, valore a parità di carte, movers 
 
 test('Vetrina: carta stimata segnalata, settimana senza movimenti, primo giorno senza confronto', () => {
   const quiet = mapDashboardOverview({ ...payload, top: [payload.top[2]], movers: [], change7: null, change30: null, signals: {} });
-  const html = dashboardView(state, 'yugioh', { overview: quiet });
+  const html = featuredPanel({ overview: quiet });
   assert.match(html, /Prezzo stimato/);
   assert.match(html, /Settimana tranquilla/);
   assert.match(html, /Variazione dalla prossima settimana/);
@@ -77,7 +77,7 @@ test('Vetrina: carta stimata segnalata, settimana senza movimenti, primo giorno 
 });
 
 test('senza overview resta il carosello Millennium di prima', () => {
-  const html = dashboardView(state, 'yugioh', { overview: null, featuredMovers: [], trendsLoading: false });
+  const html = featuredPanel({ overview: null, featuredMovers: [], trendsLoading: false });
   assert.doesNotMatch(html, /market-vetrina/);
   assert.match(html, /market-millennium/);
 });

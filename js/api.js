@@ -174,6 +174,16 @@ export const api = {
   async setMarketMappingManual(printingId, providerProductId, { productName = '', expansion = '', rarity = '' } = {}) {
     ensure(); return unwrap(await client.rpc('set_market_mapping_manual', { p_token:token(),p_printing_id:printingId,p_provider_product_id:String(providerProductId),p_product_name:productName,p_expansion:expansion,p_rarity:rarity }));
   },
+  // Conferma di UNA carta dalla coda (2026-11-17): oltre a fissare il mapping
+  // registra la scelta come variante verificata, da cui market-sync impara la
+  // posizione della rarità nel set. Finché la migrazione 20261117130000 non è
+  // applicata la RPC non esiste: si ripiega sulla conferma di sempre.
+  async confirmMarketVariantChoice(printingId, providerProductId, { productName = '', expansion = '', rarity = '' } = {}) {
+    ensure();
+    const { data, error } = await client.rpc('confirm_market_variant_choice', { p_token:token(),p_printing_id:printingId,p_provider_product_id:String(providerProductId),p_product_name:productName,p_expansion:expansion,p_rarity:rarity });
+    if (error && (error.code === 'PGRST202' || /confirm_market_variant_choice/.test(error.message || ''))) return this.setMarketMappingManual(printingId, providerProductId, { productName, expansion, rarity });
+    return unwrap({ data, error });
+  },
   async setMarketWatchItem(printingId, enabled) {
     ensure(); return unwrap(await client.rpc('set_market_watch_item', { p_token:token(),p_printing_id:printingId,p_enabled:Boolean(enabled) }));
   },

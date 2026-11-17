@@ -42,7 +42,7 @@ const emptySummary=()=>({portfolioValue:{current:0,complete:false},confirmCount:
 //   - confirmQueue: l'UNICO posto con mappingEvidence/candidates, caricato
 //     lazy solo quando si apre la tab "Conferma" o si preme "Conferma tutti".
 export class MarketWatchController {
-  constructor({api,getGame,getDecks,getMember,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,getMember,onRender,onToast,onNavigate});
+  constructor({api,getGame,getDecks,getMember,isAdmin=()=>false,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,getMember,isAdmin,onRender,onToast,onNavigate});
     this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
     this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
     this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];this.overview=null;
@@ -241,6 +241,12 @@ export class MarketWatchController {
   }
   rarityMismatchQueue(){return this.confirmQueue.filter(needsMappingReview);}
   aggregatePendingQueue(){return this.confirmQueue.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
+  // 2026-11-17: "Conferma tutte" confermava sempre il PRIMO prodotto di ogni
+  // carta (prezzi sbagliati sulle rarità alte). Ora si confermano in blocco
+  // solo le carte con un suggerimento del motore a indizi (sulla versione
+  // suggerita) e quelle con un UNICO prodotto Cardmarket, che non sono
+  // ambigue. Le conferme in blocco non insegnano nulla al motore.
+  suggestedQueue(){return this.confirmQueue.filter(item=>bulkConfirmCandidate(item));}
   // Snapshot che si sono spostati oltre soglia rispetto al precedente noto
   // (trg_flag_price_anomaly, supabase-market-watch-price-anomaly-detection.sql)
   // — già esclusi dalle view attive/derivate lato DB, qui solo per la coda
@@ -355,12 +361,12 @@ export class MarketWatchController {
   // la pagina. refreshBoardSection() ricostruisce solo questo blocco.
   renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue}){
     return `<div class="market-board-tools">
-        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.summary.confirmCount||confirmQueue.length?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
+        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.isAdmin()&&(this.summary.confirmCount||confirmQueue.length)?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
         <div class="market-board-controls">
           ${this.tab!=='deck'&&this.tab!=='confirm'&&this.tab!=='anomaly'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
           <label class="market-sort"><span class="sr-only">Ordina</span><select data-market-sort aria-label="Ordina"><option value="value" ${this.sort==='value'?'selected':''}>Valore</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo</option><option value="change" ${this.sort==='change'?'selected':''}>Var. 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label>
         </div>
-        ${this.summary.aggregatePendingCount||aggregatePending.length?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:`Conferma ${this.confirmQueueLoaded?aggregatePending.length:this.summary.aggregatePendingCount} prezzi aggregate`}</button>`:''}
+        ${this.isAdmin()&&(this.confirmQueueLoaded?this.suggestedQueue().length:this.summary.aggregatePendingCount)?`<button type="button" class="btn secondary small market-confirm-all" data-market-confirm-all-aggregate ${this.bulkConfirmBusy?'disabled':''}>${this.bulkConfirmBusy?`Confermo ${this.bulkConfirmProgress.done}/${this.bulkConfirmProgress.total}…`:this.confirmQueueLoaded?`Conferma i ${this.suggestedQueue().length} suggeriti`:'Conferma i suggeriti'}</button>`:''}
       </div>
         <div class="market-board-content" data-market-board-content>${this.boardContent({items,marketDecks,hasSnapshots,confirmQueue,anomalyQueue})}</div>`;
   }
@@ -412,7 +418,7 @@ export class MarketWatchController {
           <span class="market-detail-hero-sub">${priceTypeLabel(primaryProvider?.[1]?.type)}${primaryProvider?` · ${providerName(primaryProvider[0])}`:''} · ${formatTimestamp(item.latestAt)}</span>
         </div>
       </div>
-      ${aggregate?aggregateNotice(item):needsMappingReview(item)?mappingIssueNotice(item):''}
+      ${aggregate?aggregateNotice(item):needsMappingReview(item)?mappingIssueNotice(item,this.isAdmin()):''}
       <section class="market-chart">
         <div class="market-chart-head"><h3>Storico prezzo</h3>${aggregate?'':`<div class="market-range-tabs" role="group" aria-label="Intervallo storico">${RANGES.map(range=>`<button type="button" class="${this.historyRange===range.days?'active':''}" data-market-range="${range.days}">${range.label}</button>`).join('')}</div>`}</div>
         ${aggregate?'<p class="market-detail-empty">Trend escluso: il prezzo non è specifico della printing.</p>':this.historyLoading?'<div class="loading-spinner"></div>':richPriceChart(stats)}
@@ -521,20 +527,21 @@ export class MarketWatchController {
   async unwatch(printingId){try{await this.api.setMarketWatchItem(printingId,false);await this.load();const stillListed=this.allLoadedItems().some(row=>row.printingId===printingId);if(!stillListed)this.selected='';this.onToast('Printing rimossa dalla Watchlist');}catch(error){this.onToast(error.message||'Operazione non riuscita');}this.onRender();}
   async confirmMapping(printingId,productId,meta={}){
     if(!productId)return;
-    try{await this.api.setMarketMappingManual(printingId,productId,meta);await this.load();this.confirmQueue=[];this.confirmQueueLoaded=false;void this.loadConfirmQueue();this.onToast('Printing confermata — il prossimo aggiornamento userà questo prezzo reale');}
+    try{await (this.api.confirmMarketVariantChoice||this.api.setMarketMappingManual).call(this.api,printingId,productId,meta);await this.load();this.confirmQueue=[];this.confirmQueueLoaded=false;void this.loadConfirmQueue();this.onToast('Printing confermata — il prossimo aggiornamento userà questo prezzo reale');}
     catch(error){this.onToast(error.message||'Conferma non riuscita');}
     this.onRender();
   }
   async confirmAllAggregate(){
     if(!this.confirmQueueLoaded)await this.loadConfirmQueue();
-    const pending=this.aggregatePendingQueue();
-    if(!pending.length||this.bulkConfirmBusy)return;
+    const pending=this.suggestedQueue();
+    if(this.bulkConfirmBusy)return;
+    if(!pending.length){this.onToast('Nessun suggerimento pronto: conferma le carte una per una, il sistema impara dal set');this.onRender();return;}
     this.bulkConfirmBusy=true;this.bulkConfirmProgress={done:0,total:pending.length};this.onRender();
     let confirmed=0,failed=0;
     for(let i=0;i<pending.length;i+=5){
       const batch=pending.slice(i,i+5);
       await Promise.all(batch.map(async item=>{
-        const candidate=mappingCandidates(item)[0];
+        const candidate=bulkConfirmCandidate(item);
         try{await this.api.setMarketMappingManual(item.printingId,candidate.productId,{productName:candidate.cardName||item.cardName,expansion:candidate.expansion||'',rarity:candidate.rarity||''});confirmed++;}
         catch{failed++;}
         finally{this.bulkConfirmProgress.done++;}
@@ -544,7 +551,7 @@ export class MarketWatchController {
     this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;
     this.confirmQueue=[];this.confirmQueueLoaded=false;
     await Promise.all([this.load(),this.loadConfirmQueue()]);
-    this.onToast(failed?`Confermate ${confirmed} carte, ${failed} non riuscite — riprova più tardi`:`Confermate ${confirmed} carte con prezzo aggregato`);
+    this.onToast(failed?`Confermate ${confirmed} carte suggerite, ${failed} non riuscite — riprova più tardi`:`Confermate ${confirmed} carte sulla versione suggerita`);
     this.onRender();
   }
   async share(printingId){const item=this.findItem(printingId);if(!item)return;const url=item.cardmarketUrl||(typeof location!=='undefined'?location.href:''),text=`${item.cardName}${item.referencePrice!=null?` · ${money(item.referencePrice)}`:''}`;try{if(typeof navigator!=='undefined'&&navigator.share){await navigator.share({title:item.cardName,text,url});return;}await navigator.clipboard.writeText(url);this.onToast('Link copiato negli appunti');}catch(error){if(error?.name!=='AbortError')this.onToast('Condivisione non riuscita');}}
@@ -562,7 +569,7 @@ export function mapExtraPayload(payload={}){return {items:(payload.items||[]).ma
 export function mapSummaryPayload(payload={}){const pv=payload.portfolioValue||payload.portfolio_value||{};return {portfolioValue:{current:Number(pv.current||0),complete:Boolean(pv.complete)},confirmCount:Number(payload.confirmCount??payload.confirm_count??0),aggregatePendingCount:Number(payload.aggregatePendingCount??payload.aggregate_pending_count??0),catalogPriceFloor:Object.fromEntries(Object.entries(payload.catalogPriceFloor||payload.catalog_price_floor||{}).map(([key,value])=>[key,{referencePrice:nullableNumber(value.referencePrice??value.reference_price),isAggregate:Boolean(value.isAggregate??value.is_aggregate)}])),lastSync:payload.lastSync||payload.last_sync||null};}
 // list_market_confirm_queue: l'unico payload con mapping_evidence — righe
 // leggere per il resto (niente providers/prezzi, non servono in quella tab).
-export function mapConfirmQueuePayload(payload={}){return (payload.items||[]).map(row=>({printingId:row.printing_id||row.printingId,cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||'unresolved',mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{}}));}
+export function mapConfirmQueuePayload(payload={}){return (payload.items||[]).map(row=>({printingId:row.printing_id||row.printingId,cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||'unresolved',mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{},suggestedProductId:String(row.suggested_product_id||row.suggestedProductId||''),suggestionNote:row.suggestion_note||row.suggestionNote||'',versions:Array.isArray(row.versions)?row.versions:[]}));}
 // buildMarketDecks: catalogPriceFloor sostituisce il vecchio calcolo locale
 // "prezzo minimo tra le owned items in memoria" — con la Raccolta paginata
 // quell'array non contiene più TUTTE le printing owned, solo la pagina
@@ -688,7 +695,7 @@ function rarityMismatchNotice(item){const evidence=item.mappingEvidence||{},inte
 // li mostrasse la carta restava senza prezzo senza che nessuno se ne
 // accorgesse. Messaggio specifico per motivo, così chi legge sa cosa
 // verificare invece di un generico "qualcosa non va".
-function mappingIssueNotice(item){
+function mappingIssueNotice(item,canConfirm=true){
   if(item.mappingReason==='provider_rarity_mismatch')return rarityMismatchNotice(item);
   const reason=item.mappingReason==='multiple_provider_expansions'
     ? 'Cardmarket ha più espansioni possibili per questa carta e il sistema non può stabilire da solo quale sia quella giusta.'
@@ -696,7 +703,7 @@ function mappingIssueNotice(item){
     ? 'In raccolta questa carta esiste con più rarità diverse, e su Cardmarket non è indicata la rarità: non è possibile scegliere automaticamente quale stai confermando.'
     : 'Il prezzo non può essere assegnato automaticamente: serve una verifica manuale su Cardmarket.';
   const ownRarity=item.rarity?`<br>La tua rarità: <strong>${esc(item.rarity)}</strong>.`:'';
-  return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>Verifica manuale necessaria</strong><br>${esc(reason)}${ownRarity}</span></p>${mappingConfirmBlock(item)}`;
+  return `<p class="provider-warning aggregate-price-notice">${icon('info')} <span><strong>${canConfirm?'Verifica manuale necessaria':'Prezzo in verifica'}</strong><br>${esc(canConfirm?reason:'Un admin sta verificando quale versione Cardmarket corrisponde alla tua carta.')}${ownRarity}</span></p>${canConfirm?mappingConfirmBlock(item):''}`;
 }
 // Cardmarket only encodes rarity in a product's name when that expansion has
 // multiple print variants — plenty of real products carry none at all, which
@@ -713,13 +720,31 @@ function mappingCandidates(item){
   const evidence=item.mappingEvidence||{};
   return Array.isArray(evidence.candidates)&&evidence.candidates.length?evidence.candidates:evidence.providerProductId?[{productId:evidence.providerProductId,cardName:evidence.providerCardName||item.cardName,rarity:evidence.providerRarity||'',expansion:evidence.providerExpansion||'',productUrl:evidence.providerProductUrl||''}]:[];
 }
-function mappingConfirmBlock(item){
+// Versione da confermare in blocco: quella suggerita dal motore, oppure l'unico
+// prodotto quando la carta non è ambigua. null = va scelta a mano.
+export function bulkConfirmCandidate(item){
   const candidates=mappingCandidates(item);
+  if(item.suggestedProductId)return candidates.find(row=>String(row.productId)===item.suggestedProductId)||null;
+  return candidates.length===1&&isAggregatePrice(item)?candidates[0]:null;
+}
+// Prezzo e rarità stimata della versione (market-sync, describeVersions).
+function versionDetail(item,candidate){
+  const info=(item.versions||[]).find(row=>String(row.productId)===String(candidate.productId));
+  if(!info)return '';
+  const price=info.price!=null?`<b>${money(info.price)}</b>`:'';
+  const rarity=info.rarity?`<em class="${info.rarity===item.rarity?'is-match':''}">${esc(info.rarity)} <small>stima</small></em>`:Array.isArray(info.among)&&info.among.length?`<em>una tra ${esc(info.among.join(', '))}</em>`:'';
+  return price||rarity?`<span class="mapping-version-info">${price}${rarity}</span>`:'';
+}
+export function mappingConfirmBlock(item){
+  const suggested=item.suggestedProductId||'';
+  const candidates=[...mappingCandidates(item)].sort((a,b)=>(String(b.productId)===suggested)-(String(a.productId)===suggested));
+  // V.n = posizione in ordine di idProduct, la stessa che il motore impara per set.
+  const versionOrder=candidates.map(row=>String(row.productId)).sort((a,b)=>Number(a)-Number(b));
   if(!candidates.length){
     const searchUrl=item.cardName?`https://www.cardmarket.com/en/YuGiOh/Products/Search?searchString=${encodeURIComponent(item.cardName)}`:'';
     return `<p class="mapping-confirm-empty">Nessun candidato salvato per la conferma manuale.${searchUrl?` <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Cerca "${esc(item.cardName)}" su Cardmarket</a>.`:' Attendi il prossimo sync o verifica a mano su Cardmarket.'}</p>`;
   }
-  return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${candidates.map(candidate=>`<div class="mapping-confirm-row"><span><strong>${esc(candidate.cardName||item.cardName)}</strong><small>${esc(candidate.expansion||'—')}${confirmCandidateDetail(candidate)}</small></span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
+  return `<div class="mapping-confirm"><p>Conferma quale printing Cardmarket è quella giusta — resterà fissa e userà il prezzo reale dal prossimo aggiornamento:</p><div class="mapping-confirm-list">${item.rarity?`<p class="mapping-confirm-target">Cerca la versione <b>${esc(item.rarity)}</b>${item.setCode?` · ${esc(item.setCode)}`:''}. Prezzo e rarità qui sotto sono stime dai prezzi Cardmarket: in dubbio apri <i>Vedi</i>.</p>`:''}${suggested&&item.suggestionNote?`<p class="mapping-confirm-hint">Suggerita: <b>${esc(item.suggestionNote)}</b>. Confermandola, il sistema impara questo set.</p>`:''}${candidates.map(candidate=>`<div class="mapping-confirm-row${String(candidate.productId)===suggested?' is-suggested':''}"><span><strong>${esc(candidate.cardName||item.cardName)}${String(candidate.productId)===suggested?' <em class="mapping-confirm-badge">Suggerita</em>':''}</strong><small>${esc(candidate.expansion||'—')}${confirmCandidateDetail(candidate)} · V.${versionOrder.indexOf(String(candidate.productId))+1}</small>${versionDetail(item,candidate)}</span><div class="mapping-confirm-actions">${candidate.productUrl?`<a href="${esc(candidate.productUrl)}" target="_blank" rel="noopener noreferrer" class="mapping-confirm-view">Vedi</a>`:''}<button type="button" class="btn secondary small" data-market-confirm-mapping="${esc(item.printingId)}" data-market-confirm-product="${esc(candidate.productId)}" data-market-confirm-name="${esc(candidate.cardName||item.cardName)}" data-market-confirm-expansion="${esc(candidate.expansion||'')}" data-market-confirm-rarity="${esc(candidate.rarity||'')}">Conferma questa</button></div></div>`).join('')}</div></div>`;
 }
 export function sortItems(items,mode='value'){return [...items].sort((a,b)=>{if(mode==='name')return a.cardName.localeCompare(b.cardName,'it');if(mode==='price')return (b.referencePrice??-1)-(a.referencePrice??-1);if(mode==='change'){const av=a.referencePrice!=null&&a.price24h!=null?a.referencePrice-a.price24h:-Infinity,bv=b.referencePrice!=null&&b.price24h!=null?b.referencePrice-b.price24h:-Infinity;return bv-av;}return ((b.referencePrice??-1)*b.ownedQuantity)-((a.referencePrice??-1)*a.ownedQuantity);});}
 function historyStats(history){

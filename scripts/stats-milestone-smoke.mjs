@@ -34,6 +34,8 @@ for (const required of [
 assert(!/grant execute[^;]*to authenticated;/.test(streakSql), 'una grant authenticated-only romperebbe get_match_streak (schema custom p_token, stesso client anon-key sempre)');
 console.log('PASS migrazione SQL streak: get_match_streak presente, grant anon+authenticated');
 
+globalThis.window = { addEventListener: () => {}, FPT_CONFIG: undefined };
+globalThis.document = { querySelector: () => null, querySelectorAll: () => [], addEventListener: () => {} };
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 const { StatsController } = await import('../js/stats.js');
 
@@ -60,7 +62,12 @@ function makeApi(overrides = {}) {
       ];
     },
     registerMatch: async payload => { overrides.lastRegister = payload; return { match:{ id:'match-1' }, xpAwarded:15, totalXp:2655, level:12, levelUp:false }; },
-    matchStreak: async () => ({ result:'win', count:4 })
+    matchStreak: async () => ({ result:'win', count:4 }),
+    myCosmetics: async () => ({ activeTitle:'', activeAvatar:'', unlocked:[] }),
+    dailyMissions: async () => [],
+    matchTimeline: async () => [],
+    rivalWins: async () => [],
+    headToHead: async () => []
   };
 }
 
@@ -76,20 +83,24 @@ assert(!stats.decks.some(deck => deck.id === 'deck-op-luffy'), 'un mazzo di un a
 console.log('PASS StatsController.load: progression + stats "Io", totali corretti, mazzi filtrati per gioco corrente');
 
 const heroHtml = stats.view();
-assert(heroHtml.includes('Striscia: 4 vittorie'), 'la striscia di vittorie correnti non compare nella hero del tab Io');
-assert(heroHtml.includes('--pct:71.4'), 'il win rate complessivo nella hero non combacia con i totali (25 vittorie su 35 match = 71.4%)');
-console.log('PASS heroView(): anello win-rate e striscia mostrati per lo scope Io');
+// Il tab Io (mineOverviewView) mostra la serie e il win rate nelle 5 caselle; l'anello + 'Striscia: N' resta nella hero del tab Team.
+assert(heroHtml.includes('data-stats-streak-badge><b>4</b>'), 'la striscia di vittorie correnti non compare nelle caselle del tab Io');
+assert(heroHtml.includes('<b>71.4%</b>'), 'il win rate complessivo del tab Io non combacia con i totali (25 vittorie su 35 match = 71.4%)');
+console.log('PASS tab Io: striscia e win rate mostrati nelle caselle');
 
+// Il tab Io carica sempre lo storico completo (nessun filtro lato RPC); il
+// filtro mazzo è client-side e il periodo vale solo per Team/Tabellone.
+assert.deepEqual({ deckId:calls.lastStatsCall.deckId, period:calls.lastStatsCall.period }, { deckId:null, period:'all' }, 'il tab Io deve caricare lo storico completo');
 stats.setDeckFilter('deck-ryzeal');
-await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(calls.lastStatsCall.deckId, 'deck-ryzeal', 'il filtro mazzo deve passare deckId alla RPC get_stats');
-stats.setPeriodFilter('7d');
-await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(calls.lastStatsCall.period, '7d', 'il filtro periodo deve passare period alla RPC');
-console.log('PASS filtri mazzo/periodo propagati alla RPC get_stats');
+assert.equal(stats.deckFilter, 'deck-ryzeal', 'il filtro mazzo è applicato client-side');
+stats.setDeckFilter('all');
 
 stats.setScope('team');
 await new Promise(resolve => setTimeout(resolve, 0));
+stats.setPeriodFilter('7d');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(calls.lastTeamStatsCall.period, '7d', 'il filtro periodo del tab Team deve passare period alla RPC');
+console.log('PASS filtri: Io storico completo, mazzo client-side, periodo Team propagato alla RPC');
 assert.equal(stats.teamRows.length, 2);
 assert.equal(stats.visibleRows.length, 2, 'senza filtro membro, la vista team mostra tutte le righe');
 stats.setMemberFilter('daniele');
@@ -111,7 +122,7 @@ assert.equal(calls.lastRegister.deckId, 'deck-ryzeal');
 assert.equal(calls.lastRegister.result, 'win');
 assert.equal(stats.lastResult.xpAwarded, 15);
 assert.equal(stats.progression.totalXp, 2655, 'la progressione in memoria si aggiorna subito dalla risposta di register_match, senza richiesta extra');
-const feedbackHtml = stats.view();
+const feedbackHtml = stats.matchModalView(); // il modal si disegna a parte (refreshModal), non dentro view()
 assert(feedbackHtml.includes('+15 XP'));
 assert(!feedbackHtml.includes('Limite giornaliero'), 'un match non cappato non deve mostrare il messaggio di limite giornaliero');
 console.log('PASS registrazione match: payload corretto, feedback XP mostrato, progression aggiornata senza fetch aggiuntiva');
@@ -124,7 +135,7 @@ cappedStats.openMatchDialog();
 cappedStats.setMatchDeck('deck-ryzeal');
 cappedStats.setMatchResult('win');
 await cappedStats.registerMatch();
-const cappedHtml = cappedStats.view();
+const cappedHtml = cappedStats.matchModalView();
 assert(cappedHtml.includes('+0 XP'), 'un match cappato deve comunque mostrare +0 XP');
 assert(cappedHtml.includes('Limite giornaliero raggiunto'), 'un match il cui XP è stato azzerato dal cap giornaliero deve avvisare l\'utente, non mostrare solo "+0 XP" senza spiegazione');
 console.log('PASS cap giornaliero: XP azzerato dalla RPC mostra il messaggio "Limite giornaliero raggiunto"');

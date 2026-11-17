@@ -10,6 +10,7 @@
 // Unico import relativo: _shared/ viene incluso dal deploy via CLI (come
 // catalog-new-sets con _shared/konami.ts). Logica pura, testata in Node.
 import { inferVariantsByPriceOrder, resolveBySetTemplates, buildRarityFamilies, guidePrice } from '../_shared/variant-price-order.js';
+import { decideVariantsByEvidence, evidenceNote, summarizeEvidence, describeVersions } from '../_shared/variant-evidence.js';
 const RESOLUTION_STATES=new Set(['resolved','ambiguous','unresolved','manual']);
 const CARDMARKET_RESOLVER_VERSION=11;
 const CARDMARKET_RESOLUTION_STATES=Object.freeze({EXACT:'EXACT',AMBIGUOUS:'AMBIGUOUS',UNRESOLVED:'UNRESOLVED',UNSUPPORTED:'UNSUPPORTED',PROVIDER_AGGREGATE:'PROVIDER_AGGREGATE'});
@@ -145,7 +146,10 @@ class CardmarketPriceGuideProvider extends PriceProvider {
   async loadPrices(targets:any[]=[]){
     if(!this.priceGuideUrl)throw unavailable('Cardmarket Price Guide','CARDMARKET_PRICE_GUIDE_URL');
     validateOfficialCardmarketUrl(this.priceGuideUrl);
-    const wantedProductIds=new Set((targets||[]).filter((row:any)=>isAuthorizedCardmarketMapping(row)).flatMap(mappingProductIds));
+    // 2026-11-17: anche le versioni candidate delle carte in coda (AMBIGUOUS):
+    // senza i loro prezzi il motore a indizi non può decidere né suggerire.
+    // Stesso listino scaricato, solo qualche centinaio di righe in più in memoria.
+    const wantedProductIds=new Set((targets||[]).filter((row:any)=>isAuthorizedCardmarketMapping(row)||isQueuedMultiVersionMapping(row)).flatMap(mappingProductIds));
     this.prices=new Map();
     if(!wantedProductIds.size){console.log(JSON.stringify({event:'market_sync_feed_skipped',egress_id:this.egressId,market_sync_mode:'daily_full',market_sync_feed_bytes:0,market_sync_storage_bytes_read:0,market_sync_cache_hit:0,market_sync_cache_miss:0,market_sync_targets:0,market_sync_feed_skipped:true}));this.sourceUpdatedAt=new Date().toISOString();this.loaded=true;return {priceRows:0,retainedPriceRows:0,mode:'prices_only'};}
     const priceResponse=await this.request(this.priceGuideUrl);
@@ -203,6 +207,7 @@ function resolveCardmarketPrinting(printing:any,candidates:any[],options:any={})
 }
 function normalizeMarketRarity(value:any):string|null{const rarity=norm(value);return /^\d+$/.test(rarity)?'Common':SUPPORTED_RARITIES.get(rarity)||null;}
 function isAuthorizedCardmarketMapping(mapping:any):boolean{if(mapping?.resolution_status==='manual')return true;const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status==='resolved'&&[CARDMARKET_RESOLUTION_STATES.EXACT,CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE].includes(status);}
+function isQueuedMultiVersionMapping(mapping:any):boolean{const status=mapping?.resolverStatus||mapping?.resolver_status||mapping?.provider_metadata?.resolverStatus;return mapping?.resolution_status!=='manual'&&status===CARDMARKET_RESOLUTION_STATES.AMBIGUOUS&&mappingProductIds(mapping).length>1;}
 function cardmarketMappingNeedsResolver(mapping:any):boolean{if(mapping?.resolution_status==='manual')return false;return ['unresolved','ambiguous'].includes(mapping?.resolution_status)||String(mapping?.provider_metadata?.resolverVersion||'')!==String(CARDMARKET_RESOLVER_VERSION);}
 
 // --- Market Variant Registry: SHADOW MODE ----------------------------------
@@ -374,13 +379,16 @@ async function applyExactVariantPricing(targets:any[]):Promise<{targets:any[],na
 // live (mai sopra verified/manual o resolved con confidenza 1); se qualcosa
 // fallisce si prosegue col minimo, come prima.
 async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any>{
-  const aggregate=targets.filter((target:any)=>isAuthorizedCardmarketMapping(target)&&mappingProductIds(target).length>1&&target.catalog_card_id&&target.set_code);
-  if(!aggregate.length)return {candidates:0,written:0};
-  const existing=await fetchExistingYgoMarketVariants(aggregate.map((target:any)=>String(target.printing_id)));
-  const missing=aggregate.filter((target:any)=>!isLiveExactVariantEligible(existing.get(String(target.printing_id))));
+  // 2026-11-17: anche i mapping in attesa di conferma (AMBIGUOUS) entrano nel
+  // pool — prima erano esclusi e restavano bloccati in coda per sempre. La
+  // regola prezzi del set prende evidenza da tutte le carte con più prodotti.
+  const pool=targets.filter((target:any)=>mappingProductIds(target).length>1&&target.catalog_card_id&&target.set_code);
+  if(!pool.length)return {candidates:0,written:0};
+  const existing=await fetchExistingYgoMarketVariants(pool.map((target:any)=>String(target.printing_id)));
+  const missing=pool.filter((target:any)=>{const variant=existing.get(String(target.printing_id));return !variant?.verified&&!isLiveExactVariantEligible(variant);});
   if(!missing.length)return {candidates:0,written:0};
-  const [aliasMap,templates]=await Promise.all([fetchYgoRarityAliasMap(),fetchYgoMarketVariantSetTemplates()]);
-  const catalogIds=[...new Set(aggregate.map((target:any)=>String(target.catalog_card_id)))],printings:any[]=[];
+  const [aliasMap,templates,confirmations]=await Promise.all([fetchYgoRarityAliasMap(),fetchYgoMarketVariantSetTemplates(),fetchTrustedVariantConfirmations()]);
+  const catalogIds=[...new Set(pool.map((target:any)=>String(target.catalog_card_id)))],printings:any[]=[];
   for(let index=0;index<catalogIds.length;index+=150){
     const chunk=catalogIds.slice(index,index+150);
     const page=await restPages(`card_printings?select=id,catalog_card_id,set_code,rarity&game=eq.yugioh&catalog_card_id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
@@ -388,21 +396,61 @@ async function inferMissingExactVariants(provider:any,targets:any[]):Promise<any
   }
   const toInput=(target:any)=>({printingId:String(target.printing_id),setCode:target.set_code,rarity:target.rarity,catalogCardId:String(target.catalog_card_id),candidateProductIds:mappingProductIds(target)});
   const canonicalOf=(rarity:any)=>canonicalYgoRarity(rarity,aliasMap);
+  const families=buildRarityFamilies(printings),priceOf=(id:string)=>guidePrice(provider.prices?.get?.(id));
   const byTemplate=resolveBySetTemplates({targets:missing.map(toInput),templates,canonicalOf});
-  // Evidenza dalla serie completa (anche carte già esatte), assegnazioni solo alle mancanti.
-  const byPrice=inferVariantsByPriceOrder({targets:aggregate.map(toInput),families:buildRarityFamilies(printings),priceOf:(id:string)=>guidePrice(provider.prices?.get?.(id))});
-  const missingIds=new Set(missing.map((target:any)=>String(target.printing_id))),chosen=new Map<string,any>();
-  for(const row of byTemplate)chosen.set(row.printingId,row);
-  for(const row of byPrice.assignments)if(missingIds.has(row.printingId)&&!chosen.has(row.printingId))chosen.set(row.printingId,row);
+  const byPrice=inferVariantsByPriceOrder({targets:pool.map(toInput),families,priceOf});
+  const decisions=decideVariantsByEvidence({targets:missing.map(toInput),families,priceOf,templateAssignments:byTemplate,priceOrderAssignments:byPrice.assignments,confirmations});
   const byId=new Map(missing.map((target:any)=>[String(target.printing_id),target]));
-  const rows=[...chosen.values()].map((row:any)=>{const target=byId.get(row.printingId);return {
-    printing_id:row.printingId,rarity_raw:String(target?.rarity||'').slice(0,100),rarity_canonical:canonicalOf(target?.rarity),cardmarket_product_id:row.productId,
-    cardmarket_expansion_id:target?.provider_expansion_id||null,candidate_product_ids:row.candidateProductIds,
-    mapping_source:row.template?MARKET_VARIANT_SOURCE.SET_TEMPLATE:MARKET_VARIANT_SOURCE.RESOLVER,mapping_confidence:1,mapping_status:MARKET_VARIANT_STATUS.RESOLVED,verified:false,
-    resolution_reason:row.template?'verified_set_variant_template':'price_order_set_rule',
-    mapping_notes:(row.template?row.group:`Regola set ${row.group} da ${row.decisiveCards} carte con prezzi nettamente distinti`).slice(0,1000)};});
+  // Per la coda di conferma (admin): prezzo e rarità stimata di OGNI versione.
+  const decisionById=new Map(decisions.map((row:any)=>[row.printingId,row]));
+  const detailsOf=(target:any)=>describeVersions({target:toInput(target),families,priceOf,decision:decisionById.get(String(target.printing_id))});
+  const rows:any[]=[],authorize:any[]=[];
+  for(const decision of decisions){
+    const target:any=byId.get(decision.printingId),current=existing.get(decision.printingId);
+    if(!target||!decision.productId||!['auto','suggest'].includes(decision.decision))continue;
+    const auto=decision.decision==='auto',viaTemplate=Boolean(decision.signals.template);
+    // Un suggerimento non sovrascrive mai una riga già risolta (anche a confidenza <1).
+    if(!auto&&current&&!['unresolved','ambiguous','conflict'].includes(current.mapping_status))continue;
+    rows.push({printing_id:decision.printingId,rarity_raw:String(target.rarity||'').slice(0,100),rarity_canonical:canonicalOf(target.rarity),cardmarket_product_id:decision.productId,
+      cardmarket_expansion_id:target.provider_expansion_id||null,candidate_product_ids:decision.candidateProductIds,
+      mapping_source:viaTemplate?MARKET_VARIANT_SOURCE.SET_TEMPLATE:MARKET_VARIANT_SOURCE.RESOLVER,mapping_confidence:auto?1:0.5,
+      mapping_status:auto?MARKET_VARIANT_STATUS.RESOLVED:MARKET_VARIANT_STATUS.AMBIGUOUS,verified:false,
+      resolution_reason:viaTemplate?'verified_set_variant_template':auto?'evidence_auto':'evidence_suggestion',
+      mapping_notes:evidenceNote(decision),candidate_details:detailsOf(target)});
+    if(auto&&!isAuthorizedCardmarketMapping(target))authorize.push({target,decision});
+  }
   if(rows.length)await upsertYgoMarketVariantsShadow(rows);
-  return {candidates:missing.length,written:rows.length,byTemplate:byTemplate.length,byPrice:rows.length-byTemplate.length,skipped:byPrice.skipped};
+  // Le altre carte senza variante esatta: solo i dettagli delle versioni (colonna
+  // singola: l'upsert non tocca stato, prodotto o confidenza di righe esistenti).
+  const written=new Set(rows.map((row:any)=>row.printing_id));
+  const detailsOnly=missing.filter((target:any)=>!written.has(String(target.printing_id))).map((target:any)=>({printing_id:String(target.printing_id),candidate_details:detailsOf(target)}));
+  if(detailsOnly.length)await upsertYgoMarketVariantsShadow(detailsOnly);
+  // Le carte in coda decise in automatico tornano autorizzate: prezzo esatto da subito.
+  let authorized=0;
+  for(const {target,decision} of authorize){
+    try{
+      await rpc('market_authorize_evidence_variant',{p_printing_id:decision.printingId,p_product_id:decision.productId,p_note:evidenceNote(decision)});
+      target.provider_metadata={...(target.provider_metadata||{}),resolverStatus:CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE};
+      target.resolverStatus=CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE;target.resolver_status=CARDMARKET_RESOLUTION_STATES.PROVIDER_AGGREGATE;
+      authorized++;
+    }catch(error:any){console.error('[market-sync] autorizzazione variante automatica fallita',{printingId:decision.printingId,error:String(error?.message||error)});}
+  }
+  return {candidates:missing.length,written:rows.length,versionDetails:detailsOnly.length+rows.length,byTemplate:byTemplate.length,evidence:summarizeEvidence(decisions),authorizedFromQueue:authorized,confirmationsUsed:confirmations.length,skipped:byPrice.skipped};
+}
+// Conferme carta per carta (confirm_market_variant_choice): l'unica base da
+// cui il motore impara la posizione di una rarità in un set. Le conferme in
+// blocco non finiscono qui (non scrivono ygo_market_variants verified).
+async function fetchTrustedVariantConfirmations():Promise<any[]>{
+  const variants=await restPages('ygo_market_variants?select=printing_id,cardmarket_product_id,candidate_product_ids&verified=eq.true&mapping_source=eq.manual',{key:(row:any)=>row.printing_id});
+  const rows=variants.rows.filter((row:any)=>Array.isArray(row.candidate_product_ids)&&row.candidate_product_ids.length>1&&row.cardmarket_product_id);
+  if(!rows.length)return [];
+  const info=new Map<string,any>();
+  for(let index=0;index<rows.length;index+=150){
+    const chunk=rows.slice(index,index+150).map((row:any)=>String(row.printing_id));
+    const page=await restPages(`card_printings?select=id,set_code,rarity&id=in.(${chunk.map(encodeURIComponent).join(',')})`,{key:(row:any)=>row.id});
+    for(const row of page.rows)info.set(String(row.id),row);
+  }
+  return rows.map((row:any)=>({printingId:String(row.printing_id),setCode:info.get(String(row.printing_id))?.set_code,rarity:info.get(String(row.printing_id))?.rarity,candidateProductIds:row.candidate_product_ids,productId:String(row.cardmarket_product_id)})).filter((row:any)=>row.setCode&&row.rarity);
 }
 function classifyPriceComparison(legacyPrice:any,exactPrice:any):any{
   const legacy=typeof legacyPrice==='number'&&Number.isFinite(legacyPrice)?legacyPrice:null;
