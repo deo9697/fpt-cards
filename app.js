@@ -459,8 +459,8 @@ function flashMobileNav() {
 const VAULT_FAN = '<div class="vault-card"><img alt="" decoding="async"></div>'.repeat(5);
 function vaultFrame(panel) {
   return `<main class="login-shell login-vault"><div class="vault-sparks" aria-hidden="true">${'<i></i>'.repeat(10)}</div>
-    <section class="vault-stage" aria-hidden="true"><div class="vault-fan" data-vault-fan>${VAULT_FAN}</div></section>
-    <header class="vault-head"><span class="vault-badge" data-vault-badge hidden></span><h1>F.P.T CARDS</h1><p class="muted">Il tuo team. Le tue carte.</p></header>
+    <section class="vault-stage" aria-hidden="true"><div class="vault-fan" data-vault-fan>${VAULT_FAN}</div><img class="vault-seal" src="assets/notification-icon.png" alt="" width="96" height="96" decoding="async"></section>
+    <header class="vault-head"><span class="vault-badge" data-vault-badge hidden></span><h1>F.P.T CARDS</h1><p class="vault-motto">Il patto è il team</p></header>
     ${panel}
     <aside class="vault-blatta" aria-hidden="true"><p>Uè compà! Scegli u profilu e trasi.</p><div class="vault-mascot"><img src="assets/tutorial/blattaman-welcome-sm.webp" alt="" width="200" height="200" decoding="async"></div></aside>
   </main>`;
@@ -470,9 +470,9 @@ function loginView() {
   return vaultFrame(`<section class="vault-panel"><div class="surface login-card vault-form">
       <form id="login-form">${loginDraft.mode === 'username'
         ? `<label for="member">Nome utente</label><div class="member-select-wrap">${icon('team')}<input id="member" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="80" value="${esc(loginDraft.member)}" placeholder="es. mario-rossi-3f2a" aria-describedby="member-load-status"></div><p class="member-load-status" id="member-load-status">Il nome utente ti è stato mostrato quando hai creato il profilo. <button type="button" class="link-button" data-login-mode="pick">Sono del team F.P.T.</button></p>`
-        : `<label for="member">Chi sei?</label><div class="member-select-wrap">${icon('team')}<select id="member" required aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili · <button type="button" class="link-button" data-login-mode="username">Accedi con nome utente</button></p>`}`}
-      <label for="pin">PIN</label><input id="pin" class="vault-pin" type="password" inputmode="none" readonly aria-haspopup="dialog" autocomplete="off" maxlength="4" value="${esc(loginDraft.pin)}">
-      <button class="btn wide vault-submit" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : 'Entra nel team'}</button></form>
+        : `<label for="member"><span class="vault-step">01</span> Chi sei?</label><div class="vault-members" role="radiogroup" aria-label="Chi sei?">${MEMBERS.map(m => `<button type="button" role="radio" class="vault-member" data-vault-member="${esc(m.id)}" aria-checked="${m.id === loginDraft.member}"><b>${esc(initials(m.name))}</b><small>${esc(String(m.name || '').split(' ')[0])}</small></button>`).join('')}</div><div class="member-select-wrap vault-native-select">${icon('team')}<select id="member" required tabindex="-1" aria-describedby="member-load-status"><option value="" ${loginDraft.member ? '' : 'selected'} disabled>Seleziona il tuo nome</option>${MEMBERS.map(m => `<option value="${m.id}" ${m.id === loginDraft.member ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>${memberLoadError ? `<p class="member-load-status error" id="member-load-status" role="alert">${esc(memberLoadError)} · mostro gli ultimi profili disponibili.</p>` : `<p class="member-load-status" id="member-load-status">${MEMBERS.length} profili disponibili · <button type="button" class="link-button" data-login-mode="username">Accedi con nome utente</button></p>`}`}
+      <label for="pin"><span class="vault-step">02</span> PIN</label><div class="vault-pin-wrap"><input id="pin" class="vault-pin" type="password" inputmode="none" readonly aria-haspopup="dialog" autocomplete="off" maxlength="4" value="${esc(loginDraft.pin)}"><div class="vault-pin-boxes" aria-hidden="true">${[0,1,2,3].map(i => `<i class="${i < loginDraft.pin.length ? 'is-filled' : i === loginDraft.pin.length ? 'is-current' : ''}"></i>`).join('')}</div></div>
+      <button class="btn wide vault-submit" type="submit" ${loginPending ? 'disabled' : ''}>${loginPending ? 'Accesso…' : 'Entra nel team ▸'}</button></form>
     </div><p class="login-security">${icon('settings')} ${api.configured ? 'PIN protetto e sincronizzazione del team attivi' : 'Supabase non configurato'}</p></section>`);
 }
 
@@ -485,6 +485,11 @@ function loginLoadingView() {
 let loginVaultModule = null;
 const loadLoginVault = () => (loginVaultModule ||= import('./js/login-vault.js').catch(error => { loginVaultModule = null; throw error; }));
 function fillLoginShowcase() { void loadLoginVault().then(module => module.fillShowcase(api)).catch(() => {}); }
+// Login FPT (variante A approvata 2026-11-17): le 4 caselle seguono il campo PIN.
+function syncVaultPinBoxes() {
+  const length = (document.querySelector('#pin')?.value || '').length;
+  document.querySelectorAll('.vault-pin-boxes i').forEach((box, index) => { box.classList.toggle('is-filled', index < length); box.classList.toggle('is-current', index === length); });
+}
 function openLoginPinPad() {
   const input = document.querySelector('#pin');
   if (!input) return;
@@ -753,7 +758,7 @@ function trackedCards() {
 
 function cardsView() {
   const cards = trackedCards();
-  return `<section class="page-stack"><header class="page-header split"><div><span class="eyebrow">Catalogo operativo</span><h1>Carte</h1><p>Cerca tra le carte già passate dal team oppure aggiungine una a un nuovo prestito.</p></div><button class="btn" data-page="new">${icon('plus')} Cerca nel catalogo</button></header>
+  return `<section class="page-stack cards-archive"><header class="page-header split"><div><span class="eyebrow">// Archivio del team</span><h1>Carte</h1><p>Cerca tra le carte già passate dal team oppure aggiungine una a un nuovo prestito.</p></div><button class="btn cards-archive-cta" data-page="new">${icon('plus')} Cerca nel catalogo</button></header>
     <section class="surface"><div class="filter-search">${icon('search')}<input type="search" data-collection-query placeholder="Cerca nell’archivio del team…" value="${esc(collectionFilters.query)}"></div>${cards.length ? `<div class="collection-grid compact">${cards.filter(collectionMatchesQuery).map(collectionCard).join('')}</div>` : emptyArchive()}</section></section>`;
 }
 
@@ -788,7 +793,7 @@ function notificationStatusCopy() {
 }
 function pushOnboardingView() {
   if (!shouldOfferPush() || !['home','loans'].includes(page)) return '';
-  return `<section class="surface push-onboarding" aria-labelledby="push-onboarding-title"><img src="icon-192.png" alt="F.P.T. Cards" width="64" height="64"><div><h2 id="push-onboarding-title">Attiva le notifiche di F.P.T. Cards</h2><p>Ricevi avvisi quando un membro richiede una carta, accetta un prestito oppure ti invia una comunicazione.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva notifiche</button>' : ''}<button class="btn ghost" id="defer-notifications">Non ora</button></div></div></section>`;
+  return `<section class="surface push-onboarding" aria-labelledby="push-onboarding-title"><img src="assets/notification-icon.png" alt="" width="64" height="64"><div><h2 id="push-onboarding-title">Attiva le notifiche</h2><p>Prestiti, richieste e movimenti di prezzo direttamente sul telefono.</p>${pushStatus() === 'install' ? `<p>${esc(notificationStatusCopy())}</p>` : ''}<div class="actions">${pushSupported() ? '<button class="btn gold" id="onboard-notifications">Attiva notifiche ▸</button>' : ''}<button class="btn ghost" id="defer-notifications">Più tardi</button></div></div></section>`;
 }
 function settingsView() {
   const supported = pushSupported(), configured = supported && pushConfigured();
@@ -1624,7 +1629,12 @@ function bind() {
     render(true);
     document.querySelector('#member')?.focus();
   }));
-  document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; });
+  document.querySelector('#pin')?.addEventListener('input', event => { loginDraft.pin = event.target.value.replace(/\D/g, '').slice(0, 4); event.target.value = loginDraft.pin; syncVaultPinBoxes(); });
+  document.querySelectorAll('[data-vault-member]').forEach(button => button.addEventListener('click', () => {
+    const select = document.querySelector('#member'); if (!select) return;
+    select.value = button.dataset.vaultMember; select.dispatchEvent(new Event('change', { bubbles:true }));
+    document.querySelectorAll('[data-vault-member]').forEach(item => item.setAttribute('aria-checked', String(item === button)));
+  }));
   const pinField = document.querySelector('#pin.vault-pin');
   pinField?.addEventListener('click', openLoginPinPad);
   pinField?.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key) || /^[0-9]$/.test(event.key)) { event.preventDefault(); openLoginPinPad(); } });

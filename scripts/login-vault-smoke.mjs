@@ -90,7 +90,7 @@ try {
 
   for (const [width, height, mobile] of [[360, 780, true], [390, 844, true], [1280, 800, false]]) {
     await viewport(width, height, mobile); await delay(150);
-    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,select:document.querySelector('#member').getBoundingClientRect().width,form:document.querySelector('.vault-form').getBoundingClientRect()})`);
+    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,select:(document.querySelector('.vault-members')||document.querySelector('#member')).getBoundingClientRect().width,form:document.querySelector('.vault-form').getBoundingClientRect()})`);
     assert(layout.scroll === layout.client && layout.select > 250, `Layout login non valido a ${width}px: ` + JSON.stringify(layout));
     if (width === 1280) { await delay(600); await shot('login-1280'); }
   }

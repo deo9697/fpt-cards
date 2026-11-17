@@ -23,7 +23,9 @@ export function dashboardView(state, game = 'yugioh', market = {}, profile = nul
   return `<section class="dashboard duel-dashboard page-stack mm-dashboard">
     ${gameFlag(game)}
 
-    ${profile ? `<div class="mm-top">${duelistPanel(profile)}${missionsPanel(profile.missions)}</div>` : ''}
+    ${profile ? `<div class="mm-top">${duelistPanel({ ...profile, loanCount: personal.filter(loan => !['returned','completed','rejected'].includes(loan.status)).length })}${missionsPanel(profile.missions)}</div>` : ''}
+
+    ${commandStrip(attention.length)}
 
     <div class="duel-dashboard-main">
       ${featuredPanel(market)}
@@ -85,12 +87,28 @@ function duelistPanel(p) {
     '</button>'+
     '<strong class="mm-duelist-title">'+esc(p.title)+'</strong>'+
     '<small class="mm-duelist-xp">'+xpLine+'</small>'+
+    // Home "Comando" (variante A approvata 2026-11-17): XP a 10 segmenti.
+    '<span class="mm-xp-segments" aria-hidden="true">'+Array.from({ length:10 }, (_, i) => '<i class="'+(maxLevel || i < Math.floor(pct / 10) ? 'on' : '')+'"></i>').join('')+'</span>'+
     '<span class="mm-divider" aria-hidden="true"></span>'+
-    '<div class="mm-duelist-stats">'+
+    '<div class="mm-duelist-stats mm-duelist-stats-4">'+
       '<button type="button" data-page="collection"><b>'+wholeNumber(p.cardCount)+'</b><small>Carte</small></button>'+
+      '<button type="button" data-page="market"><b>'+(p.portfolio ? compactMoney(p.portfolio) : '—')+'</b><small>Valore</small></button>'+
+      '<button type="button" data-page="loans"><b>'+wholeNumber(p.loanCount || 0)+'</b><small>Prestiti</small></button>'+
       '<button type="button" data-page="stats"><b>'+winRate+'</b><small>Vittorie</small></button>'+
     '</div>'+
   '</section>';
+}
+
+function compactMoney(value) {
+  const n = Number(value) || 0;
+  return n >= 10000 ? new Intl.NumberFormat('it-IT', { maximumFractionDigits:1 }).format(n / 1000) + 'k €' : new Intl.NumberFormat('it-IT', { maximumFractionDigits:0 }).format(n) + ' €';
+}
+
+// "Da gestire" (solo se ci sono azioni) + 4 comandi esagonali.
+function commandStrip(attentionCount) {
+  const actions = [['fastscan','scan','Scan'],['new','plus','Prestito'],['decks','deck','Mazzo'],['simulator','trophy','Duello']];
+  return (attentionCount ? '<button type="button" class="mm-alert" data-page="loans"><b>'+attentionCount+'</b><span><strong>Da gestire</strong><small>'+(attentionCount === 1 ? 'Un prestito aspetta te' : attentionCount+' prestiti aspettano te')+'</small></span><em aria-hidden="true">&#8250;</em></button>' : '')+
+    '<nav class="mm-commands" aria-label="Azioni rapide">'+actions.map(([page, ic, label]) => '<button type="button" data-page="'+page+'"><i>'+icon(ic)+'</i><small>'+label+'</small></button>').join('')+'</nav>';
 }
 
 function missionsPanel(missions = []) {

@@ -845,7 +845,7 @@ async function run() {
   for (const width of [390, 360]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height:844, deviceScaleFactor:1, mobile:false, screenWidth:width, screenHeight:844 });
     await delay(100);
-    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,select:document.querySelector('#member').getBoundingClientRect().width})`);
+    const layout = await evaluate(`({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,select:(document.querySelector('.vault-members')||document.querySelector('#member')).getBoundingClientRect().width})`);
     assert(layout.client === width && layout.scroll === width && layout.select > 250, `Layout login non valido a ${width}px`);
     console.log(`PASS viewport ${width}px`);
   }
