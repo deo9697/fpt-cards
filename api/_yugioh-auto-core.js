@@ -236,7 +236,9 @@ async function replay(state) {
           case Msg.WIN: events.result={winner:playerIndex(message.player)?message.player:'draw',notes:playerIndex(message.player)?`${state.names[message.player]} vince il duello.`:'Il duello termina in pareggio.',at:state.createdAt}; break;
         }
       }
-      if (errors.length) failure('engine_script_error',`Il motore ha rilevato un errore Lua: ${errors[0]}`,503);
+      // Script diagnostics can mention an unrevealed opponent card. Keep that
+      // private even when processing fails before the next public projection.
+      if (errors.length) failure('engine_script_error','Non è stato possibile completare l’effetto. La mossa non è stata salvata.',503);
       if (status === OcgProcessResult.END || events.result) {
         if (sequence !== state.inputs.length) failure('stale_prompt','La partita è già conclusa.',409);
         pending=null; break;
