@@ -4346,3 +4346,25 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
 .mapping-version-info em { font:800 .58rem var(--fpt-mono); font-style:normal; letter-spacing:.04em; color:#c8bfdc; white-space:normal; }
 .mapping-version-info em small { display:inline; margin:0; color:#8a80a8; font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; }
 .mapping-version-info em.is-match { color:var(--fpt-ok); }
+
+/* ===== Sfondo app "Arena + Sigillo" (scelto 2026-11-17) =====
+   Livello fisso in index.html, fuori da #app. Su tutte le pagine (Home,
+   Market Watch, Raccolta, Mazzi, Prestiti, Statistiche…); i pannelli DENTRO
+   la pagina diventano un po' trasparenti, topbar/dock/finestre restano pieni. */
+.fpt-backdrop { position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; background:#07060d; contain:strict; }
+.fpt-backdrop-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:50% 40%; filter:saturate(1.1) brightness(.72); }
+.fpt-backdrop-veil { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 38%,#07060d33 0,#07060d99 55%,#07060de0 100%),linear-gradient(180deg,#07060d77,transparent 30%,#07060dcc 88%),repeating-linear-gradient(0deg,#ffffff05 0 1px,transparent 1px 3px); }
+.fpt-backdrop-glow { position:absolute; left:50%; top:38%; width:min(70vw,620px); aspect-ratio:1; border-radius:50%; background:radial-gradient(closest-side,#e8b84f26,transparent); transform:translate(-50%,-50%); animation:fpt-bg-pulse 6s ease-in-out infinite; }
+.fpt-backdrop-seal { position:absolute; left:50%; top:38%; width:max(150vw,900px); max-width:1400px; aspect-ratio:1; opacity:.42; mix-blend-mode:screen; transform:translate(-50%,-50%); animation:fpt-bg-turn 120s linear infinite; will-change:transform; }
+@media (min-width:900px) { .fpt-backdrop-seal { width:min(95vw,1100px); } }
+.fpt-backdrop-seal.inner { width:min(95vw,640px); opacity:.32; animation-duration:80s; animation-direction:reverse; }
+.fpt-ghost-card { position:absolute; bottom:-14vh; width:var(--w,56px); aspect-ratio:59/86; border:1px solid #c8a8ff66; border-radius:4px; background:linear-gradient(160deg,#9b5cff1f,#ff4fd80d); box-shadow:0 0 14px #9b5cff33; opacity:0; animation:fpt-bg-float 26s linear infinite; will-change:transform,opacity; }
+.fpt-ghost-card::after { content:''; position:absolute; inset:18% 22%; border:1px solid #e8b84f44; clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+@keyframes fpt-bg-turn { to { transform:translate(-50%,-50%) rotate(360deg); } }
+@keyframes fpt-bg-pulse { 50% { opacity:.45; transform:translate(-50%,-50%) scale(1.08); } }
+@keyframes fpt-bg-float { 0% { transform:translateY(0) rotate(var(--r)); opacity:0; } 12% { opacity:.5; } 88% { opacity:.35; } 100% { transform:translateY(-118vh) rotate(calc(var(--r) + 40deg)); opacity:0; } }
+@media (prefers-reduced-motion:reduce) { .fpt-backdrop * { animation:none !important; } .fpt-ghost-card { opacity:.3; } }
+/* il vecchio motivo a rombi del body sparisce sotto l'immagine */
+body::before, body::after { display:none; }
+.page-stage { --fpt-panel:rgba(14,11,24,.8); --fpt-panel-2:rgba(21,16,37,.82); }
+.page-stage :is(.surface,.card,.summary-card,.attention-card) { background-color:rgba(16,19,27,.8); }
