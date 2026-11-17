@@ -756,26 +756,19 @@ function trackedCards() {
   return [...records.values()];
 }
 
-// Carte · variante B "Griglia" (scelta 2026-11-17): archivio delle carte
-// passate nei prestiti, in griglia, con badge rosa se sono fuori e filtri
-// In prestito / Tutte / Rientrate. Senza prestiti attivi parte da "Tutte".
-const CARD_LOAN_CLOSED = ['returned','completed','rejected'];
-let cardsArchiveFilter = '';
 function cardsView() {
-  const cards = trackedCards().map(card => ({ ...card, active: card.loans.filter(l => !CARD_LOAN_CLOSED.includes(l.status)).length }));
-  const filter = cardsArchiveFilter || (cards.some(card => card.active) ? 'loan' : 'all');
-  const shown = cards.filter(collectionMatchesQuery).filter(card => filter === 'all' || (filter === 'loan' ? card.active : !card.active));
-  const tabs = [['loan','In prestito'],['all','Tutte'],['back','Rientrate']].map(([id, label]) => `<button type="button" class="${filter === id ? 'active' : ''}" data-cards-filter="${id}" aria-pressed="${filter === id}">${label}</button>`).join('');
-  return `<section class="page-stack cards-archive"><header class="page-header split"><div><span class="eyebrow">// Archivio del team</span><h1>Carte</h1><p>Cerca tra le carte già passate dal team oppure aggiungine una a un nuovo prestito.</p></div><button class="btn cards-archive-cta" data-page="new">${icon('search')} Cerca nel catalogo</button></header>
-    <section class="surface"><div class="filter-search">${icon('search')}<input type="search" data-collection-query placeholder="Cerca nell’archivio del team…" value="${esc(collectionFilters.query)}"></div>${cards.length ? `<div class="cards-archive-tabs" role="group" aria-label="Filtra le carte">${tabs}</div>${shown.length ? `<div class="cards-archive-grid">${shown.map(archiveTile).join('')}</div>` : `<p class="cards-archive-empty">Nessuna carta in questo filtro.</p>`}` : emptyArchive()}</section></section>`;
-}
-
-function archiveTile(card) {
-  const owner = [...card.owners].map(id => member(id)?.name).filter(Boolean)[0] || '';
-  return `<button class="cards-archive-tile${card.active ? ' is-out' : ''}" data-card-key="${esc(card.key)}" aria-label="${esc(card.name)}${card.active ? ` · ${card.active} in prestito` : ''}"><span class="cards-archive-art">${card.image ? `<img src="${esc(card.image)}" alt="" loading="lazy">` : icon('card')}</span>${card.active ? `<span class="cards-archive-badge">${card.active}</span>` : ''}<strong>${esc(card.name)}</strong><small>${esc(owner.split(' ')[0] || '—')}</small></button>`;
+  const cards = trackedCards();
+  return `<section class="page-stack cards-archive"><header class="page-header split"><div><span class="eyebrow">// Archivio del team</span><h1>Carte</h1><p>Cerca tra le carte già passate dal team oppure aggiungine una a un nuovo prestito.</p></div><button class="btn cards-archive-cta" data-page="new">${icon('plus')} Cerca nel catalogo</button></header>
+    <section class="surface"><div class="filter-search">${icon('search')}<input type="search" data-collection-query placeholder="Cerca nell’archivio del team…" value="${esc(collectionFilters.query)}"></div>${cards.length ? `<div class="collection-grid compact">${cards.filter(collectionMatchesQuery).map(collectionCard).join('')}</div>` : emptyArchive()}</section></section>`;
 }
 
 function collectionMatchesQuery(card) { return card.name.toLowerCase().includes(collectionFilters.query.trim().toLowerCase()); }
+
+function collectionCard(card) {
+  const active = card.loans.filter(l => l.status !== 'returned').length;
+  const ownerNames = [...card.owners].map(id => member(id)?.name).filter(Boolean);
+  return `<button class="collection-card" data-card-key="${esc(card.key)}"><span class="collection-art">${card.image ? `<img src="${esc(card.image)}" alt="${esc(card.name)}" loading="lazy">` : icon('card')}</span><span class="collection-info"><strong>${esc(card.name)}</strong><small>${card.externalId ? `ID ${esc(card.externalId)}` : 'Inserimento manuale'}</small><span class="rarity-badge">${card.loans.length} ${card.loans.length === 1 ? 'movimento' : 'movimenti'}</span><span class="owner-line">${ownerNames.slice(0,2).map(name => esc(name.split(' ')[0])).join(', ') || 'Proprietario non disponibile'}</span></span><span class="availability ${active ? 'busy' : 'ok'}"><b>${active}</b><small>attivi</small></span></button>`;
+}
 
 function emptyArchive() {
   return `<div class="empty-state">${icon('collection')}<h2>Nessuna carta da mostrare</h2><p>Registra un prestito dal catalogo: la carta apparirà qui con i dati realmente disponibili.</p><button class="btn" data-page="new">Nuovo prestito</button></div>`;
@@ -1749,7 +1742,6 @@ function bind() {
   document.querySelector('#collection-request-form')?.addEventListener('submit', submitCollectionLoanRequest);
   document.querySelector('#retry-collection')?.addEventListener('click', retryCollection);
   document.querySelectorAll('[data-card-key]').forEach(button => button.addEventListener('click', () => { selectedCardKey = button.dataset.cardKey; render(); }));
-  document.querySelectorAll('[data-cards-filter]').forEach(button => button.addEventListener('click', () => { cardsArchiveFilter = button.dataset.cardsFilter; renderRoute(); }));
   document.querySelectorAll('[data-close-detail]').forEach(element => element.addEventListener('click', event => { if (event.target !== element && !event.target.closest('.detail-close')) return; event.preventDefault(); event.stopPropagation(); selectedCardKey = ''; render(); }));
   document.querySelectorAll('[data-member-shortcut]').forEach(b => b.addEventListener('click', () => { loanFilters.member = b.dataset.memberShortcut; page = 'loans'; render(); }));
   bindLoanTerminal();
