@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 globalThis.window ??= { addEventListener: () => {}, FPT_CONFIG: undefined };
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-const { normalizeDeckForImage, computeDeckImageLayout, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } = await import('../js/deck-image-export.js');
+const { normalizeDeckForImage, computeDeckImageLayout, sectionTotalQuantity, DECK_IMAGE_WIDTH, DECK_IMAGE_HEIGHT } = await import('../js/deck-image-export.js');
 
 function ygoDeck(cards, overrides = {}) {
   return { name: 'V1.1 Test', game: 'yugioh', format: 'TCG Avanzato', deckTheme: 'arcane-purple', signatureCardId: null, cards, ...overrides };
@@ -99,21 +99,22 @@ function assertNoOverflow(layout, label) {
     { catalogCardId: 'don-1', cardName: 'DON!!', section: 'don', quantity: 10, imageUrl: '' }
   ] };
   const model = normalizeDeckForImage(deck);
-  assert.equal(model.sections.map(s => s.key).join(','), 'leader,main', 'le sezioni reali dell\'adapter One Piece sono leader/main (niente DON!!), mai main/extra/side');
+  // d569744 (richiesta del team): il Leader è la PRIMA carta del Main, non
+  // una sezione a parte; DON!! non compare mai (05db744).
+  assert.equal(model.sections.map(s => s.key).join(','), 'main', 'One Piece: una sola sezione Main con il Leader in testa (niente DON!!, mai extra/side)');
+  const mainModel = model.sections[0];
+  assert.equal(mainModel.cards[0].isLeader, true, 'il Leader deve essere la prima carta del Main');
+  assert.equal(mainModel.cards[0].cardName, 'Leader');
+  assert.equal(mainModel.cards.length, 51, 'Leader + 50 carte del Main');
+  assert.equal(sectionTotalQuantity(mainModel.cards), 50, 'il conteggio del Main resta 50: il Leader non conta');
 
-  const readable = computeDeckImageLayout(model, { layoutMode: 'readable' });
-  assertNoOverflow(readable, 'One Piece readable');
-  assert.equal(readable.sections[0].key, 'leader', 'in Readable il Leader resta una sezione compatta come le altre: nessuna riordinazione speciale');
-
-  const poster = computeDeckImageLayout(model, { layoutMode: 'poster' });
-  assertNoOverflow(poster, 'One Piece poster');
-  assert.equal(poster.sections[0].key, 'leader', 'in Poster il Leader va sempre per primo (enfasi visiva in cima)');
-  const leaderCardPoster = poster.sections[0].cards[0];
-  const leaderCardReadable = readable.sections.find(s => s.key === 'leader').cards[0];
-  assert(leaderCardPoster.w > leaderCardReadable.w, `il Leader deve avere una cornice dedicata più grande in Poster Mode rispetto a Readable: poster=${leaderCardPoster.w} readable=${leaderCardReadable.w}`);
-  const mainSectionPoster = poster.sections.find(s => s.key === 'main');
-  assert.equal(mainSectionPoster.cards.length, 50, 'tutte le 50 carte del Main devono comparire');
-  console.log(`PASS One Piece: Leader/Main/DON riusati dall'adapter, 50 carte nel Main, Leader più grande in Poster (${leaderCardPoster.w.toFixed(1)}px) che in Readable (${leaderCardReadable.w.toFixed(1)}px), nessun overflow`);
+  for (const layoutMode of ['readable', 'poster']) {
+    const layout = computeDeckImageLayout(model, { layoutMode });
+    assertNoOverflow(layout, `One Piece ${layoutMode}`);
+    assert.equal(layout.sections[0].key, 'main');
+    assert.equal(layout.sections[0].cards.length, 51, `${layoutMode}: tutte le carte (Leader + 50) devono comparire`);
+  }
+  console.log('PASS One Piece: Leader primo nel Main, 50 carte contate, niente DON!!, nessun overflow in Readable e Poster');
 }
 
 // --- One Piece: artwork mancanti — il layout non dipende mai dagli URL ----

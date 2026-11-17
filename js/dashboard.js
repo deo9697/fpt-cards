@@ -23,9 +23,11 @@ export function dashboardView(state, game = 'yugioh', market = {}, profile = nul
   return `<section class="dashboard duel-dashboard page-stack mm-dashboard">
     ${gameFlag(game)}
 
-    ${profile ? `<div class="mm-top">${duelistPanel({ ...profile, loanCount: personal.filter(loan => !['returned','completed','rejected'].includes(loan.status)).length })}${missionsPanel(profile.missions)}</div>` : ''}
+    ${profile ? welcomeHero(profile, me, market, { loans: personal.filter(loan => !['returned','completed','rejected'].includes(loan.status)).length, attention: attention.length }) : ''}
 
-    ${commandStrip(attention.length)}
+    ${todoPanel(attention, me)}
+
+    ${profile && (profile.missions || []).length ? `<div class="mm-top">${missionsPanel(profile.missions)}</div>` : ''}
 
     <div class="duel-dashboard-main">
       ${featuredPanel(market)}
@@ -70,45 +72,54 @@ function mmHeading(title, action = '') {
   return '<div class="mm-heading"><span aria-hidden="true"></span><h2>'+esc(title)+'</h2><span aria-hidden="true"></span>'+action+'</div>';
 }
 
-const RING = 2 * Math.PI * 60, SEAL = 2 * Math.PI * 25;
+const SEAL = 2 * Math.PI * 25;
 // useGrouping 'always': in it-IT i numeri a 4 cifre non avrebbero il
 // separatore delle migliaia ("2314" invece di "2.314").
 const wholeNumber = value => new Intl.NumberFormat('it-IT', { useGrouping:'always' }).format(Math.round(Number(value) || 0));
-function duelistPanel(p) {
-  const pct = Math.max(0, Math.min(100, Number(p.progress) || 0));
-  const maxLevel = !p.nextXp;
-  const xpLine = maxLevel ? 'Livello massimo raggiunto' : wholeNumber(p.currentXp)+' / '+wholeNumber(p.nextXp)+' XP · '+wholeNumber(p.nextXp - p.currentXp)+' al prossimo livello';
-  const winRate = p.winRate == null ? '—' : p.winRate+'%';
-  return '<section class="surface duel-panel mm-panel mm-duelist">'+MILLENNIUM_CORNERS+
-    '<button type="button" class="mm-duelist-ring" data-dashboard-progression aria-label="Livello '+p.level+': apri la progressione">'+
-      '<svg class="mm-ring-svg" viewBox="0 0 132 132" aria-hidden="true"><circle class="track" cx="66" cy="66" r="60"/><circle class="fill" cx="66" cy="66" r="60" stroke-dasharray="'+(pct / 100 * RING).toFixed(1)+' '+RING.toFixed(1)+'"/><circle class="inner" cx="66" cy="66" r="50"/></svg>'+
-      p.avatarHtml+
-      '<span class="mm-duelist-level">LV '+p.level+'</span>'+
-    '</button>'+
-    '<strong class="mm-duelist-title">'+esc(p.title)+'</strong>'+
-    '<small class="mm-duelist-xp">'+xpLine+'</small>'+
-    // Home "Comando" (variante A approvata 2026-11-17): XP a 10 segmenti.
-    '<span class="mm-xp-segments" aria-hidden="true">'+Array.from({ length:10 }, (_, i) => '<i class="'+(maxLevel || i < Math.floor(pct / 10) ? 'on' : '')+'"></i>').join('')+'</span>'+
-    '<span class="mm-divider" aria-hidden="true"></span>'+
-    '<div class="mm-duelist-stats mm-duelist-stats-4">'+
-      '<button type="button" data-page="collection"><b>'+wholeNumber(p.cardCount)+'</b><small>Carte</small></button>'+
-      '<button type="button" data-page="market"><b>'+(p.portfolio ? compactMoney(p.portfolio) : '—')+'</b><small>Valore</small></button>'+
-      '<button type="button" data-page="loans"><b>'+wholeNumber(p.loanCount || 0)+'</b><small>Prestiti</small></button>'+
-      '<button type="button" data-page="stats"><b>'+winRate+'</b><small>Vittorie</small></button>'+
-    '</div>'+
-  '</section>';
-}
-
 function compactMoney(value) {
   const n = Number(value) || 0;
   return n >= 10000 ? new Intl.NumberFormat('it-IT', { maximumFractionDigits:1 }).format(n / 1000) + 'k €' : new Intl.NumberFormat('it-IT', { maximumFractionDigits:0 }).format(n) + ' €';
 }
 
-// "Da gestire" (solo se ci sono azioni) + 4 comandi esagonali.
-function commandStrip(attentionCount) {
-  const actions = [['fastscan','scan','Scan'],['new','plus','Prestito'],['decks','deck','Mazzo'],['simulator','trophy','Duello']];
-  return (attentionCount ? '<button type="button" class="mm-alert" data-page="loans"><b>'+attentionCount+'</b><span><strong>Da gestire</strong><small>'+(attentionCount === 1 ? 'Un prestito aspetta te' : attentionCount+' prestiti aspettano te')+'</small></span><em aria-hidden="true">&#8250;</em></button>' : '')+
-    '<nav class="mm-commands" aria-label="Azioni rapide">'+actions.map(([page, ic, label]) => '<button type="button" data-page="'+page+'"><i>'+icon(ic)+'</i><small>'+label+'</small></button>').join('')+'</nav>';
+// Home "Vetrina" (variante B scelta 2026-11-17): apre con la carta di
+// maggior valore della raccolta (se Market Watch l'ha già calcolata,
+// altrimenti con l'avatar), il saluto in oro gotico e una fila di chip con
+// i numeri del giorno. Solo dati già caricati, nessuna query nuova.
+function welcomeHero(p, me, market, counts) {
+  const top = market?.overview?.top?.[0] || null;
+  const value = Number(market?.portfolioValue) > 0 ? market.portfolioValue : Number(market?.overview?.value) > 0 ? market.overview.value : p.portfolio;
+  const week = market?.overview ? changeOf(market.overview.change7) : null;
+  const firstName = String(me?.name || '').split(' ')[0] || 'duellante';
+  const art = top ? '<span class="hv-bg" aria-hidden="true">'+artwork(top)+'</span><button type="button" class="hv-card" data-page="market" aria-label="La tua carta più preziosa: '+esc(top.cardName)+'">'+artwork(top, 'eager')+'</button>'
+    : '<span class="hv-avatar" aria-hidden="true">'+p.avatarHtml+'</span>';
+  const chips = [
+    week ? ['<b class="'+trendClass(week.eur)+'">'+signedMoney(week.eur)+'</b>', '7 giorni', 'market'] : null,
+    ['<b>'+wholeNumber(counts.loans)+'</b>', 'prestiti', 'loans'],
+    counts.attention ? ['<b class="hv-pink">'+counts.attention+'</b>', 'da gestire', 'loans'] : null,
+    ['<b>'+(p.winRate == null ? '—' : p.winRate+'%')+'</b>', 'vittorie', 'stats'],
+    ['<b>'+wholeNumber(p.cardCount)+'</b>', 'carte', 'collection']
+  ].filter(Boolean);
+  return '<section class="hv-hero'+(top ? '' : ' no-card')+'">'+art+
+    '<div class="hv-copy"><span class="hv-kick">'+(top ? '// La perla della tua raccolta' : '// Bentornato nel team')+'</span>'+
+      '<h2>Bentornato,<br>'+esc(firstName)+'</h2>'+
+      '<div class="hv-meta"><button type="button" data-dashboard-progression aria-label="Livello '+p.level+': apri la progressione">LV <b>'+p.level+'</b></button><span>'+esc(p.title)+'</span>'+(value ? '<span>valore <b class="hv-gold">'+compactMoney(value)+'</b></span>' : '')+'</div>'+
+      (top ? '<small class="hv-card-name">'+esc(top.cardName)+' · '+marketMoney(top.price)+'</small>' : '')+
+    '</div></section>'+
+    '<nav class="hv-chips" aria-label="I numeri di oggi">'+chips.map(([b, label, page]) => '<button type="button" data-page="'+page+'">'+b+'<small>'+label+'</small></button>').join('')+'</nav>';
+}
+
+// "Da fare oggi": i prestiti che aspettano una tua azione, come biglietti.
+function todoPanel(attention, me) {
+  if (!attention.length) return '';
+  const row = loan => {
+    const incoming = loan.owner === me?.id;
+    const other = member(incoming ? loan.borrower : loan.owner)?.name?.split(' ')[0] || 'Il team';
+    const [title, hint, chip] = loan.status === 'return_pending' ? [other+' restituisce '+loan.cardName, 'Conferma il rientro', 'Conferma']
+      : incoming ? [other+' vuole '+loan.cardName, 'Accetta o rifiuta il prestito', 'Valuta']
+      : ['Ritira '+loan.cardName, 'Da '+other, 'Apri'];
+    return '<button type="button" class="hv-ticket" data-page="loans"><span class="hv-ticket-art">'+(loan.image ? '<img src="'+esc(loan.image)+'" alt="" loading="lazy">' : icon('card'))+'</span><span><strong>'+esc(title)+'</strong><small>'+esc(hint)+'</small></span><em>'+chip+'</em></button>';
+  };
+  return '<section class="hv-todo" aria-label="Da fare oggi">'+mmHeading('Da fare oggi')+attention.slice(0, 4).map(row).join('')+'</section>';
 }
 
 function missionsPanel(missions = []) {
