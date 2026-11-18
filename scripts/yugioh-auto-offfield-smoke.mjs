@@ -6,6 +6,7 @@ import { createAutoState,applyAutoInput,projectAutoState } from '../api/_yugioh-
 import { loadAutoResources } from '../api/_yugioh-auto-resources.js';
 import { AUTO_TCG_LIMITS } from '../api/_yugioh-auto-deck-rules.js';
 import { OcgType } from 'ocgcore-wasm';
+import { cardView } from '../js/games/yugioh/simulator-arena.js';
 
 const resources = await loadAutoResources(), seed = 'c1435612789abcde'.repeat(4);
 const C = { GOLD:75500286,REX:80280944,DARK:56713174,MATRIX:20318029,VEILER:97268402,BREAKER:71413901,ZEPHYROS:14785765,DEALINGS:74117290,GRAPHA:34230233,BROWW:79126789,SANGAN:26202165,JERRY:23635815,LEVIATHAN:69610924,CLOWN:67696066,COWBOY:12014404,DOUBLE:43422537,ALEX:43096270,HOLE:53129443,DESIRES:35261759 };
@@ -16,6 +17,10 @@ const own = (state,player) => state.publicViews[player].players[player];
 const field = (state,player) => own(state,player).monsters.concat(own(state,player).extraMonsters);
 const idle = player => state => promptOf(state)?.kind === 'idle' && promptOf(state).player === player;
 const has = (state,action,code,location) => promptOf(state).options.some(option => option.action === action && option.card?.code === code && (location === undefined || option.card.location === location));
+function handMarkup(state, viewer, owner, card) {
+  const session=projectAutoState(state,viewer);
+  return cardView({viewer,session,duel:{status:'playing'},revealHand:true,isAuto:()=>true,autoPrompt:()=>session.auto.prompt},card,owner,{hand:true});
+}
 async function choose(state,choice) { const prompt = promptOf(state); assert(prompt,'Expected an engine prompt'); return applyAutoInput(state,{ viewer:prompt.player,promptId:prompt.id,choice }); }
 function defaultChoice(prompt) {
   if (prompt.kind === 'chain') return { optionId:prompt.options.find(option => option.id === 'pass')?.id || prompt.options[0].id };
@@ -117,7 +122,17 @@ await check('Effect Veiler hand Quick Effect pays cost, targets publicly and neg
   const beforeSummon=clone(state); let veiler=false,twoLinks=false;
   state=await play(state,'summon',C.BREAKER,(prompt,current)=>{
     if(current.publicViews[0].chain.length===2)twoLinks=true;
-    if(prompt.kind==='chain' && prompt.player===0){const option=prompt.options.find(item=>item.card?.code===C.VEILER);if(option){veiler=true;assert.equal(option.card.location,2);return {optionId:option.id};}}
+    if(prompt.kind==='chain' && prompt.player===0){
+      const option=prompt.options.find(item=>item.card?.code===C.VEILER);
+      if(option){
+        veiler=true;assert.equal(option.card.location,2);
+        const hand=own(current,0).hand,card=hand.find(card=>card.code===C.VEILER);
+        assert.match(handMarkup(current,0,0,card),/has-hand-activation.*effetto attivabile/);
+        for(const other of hand.filter(other=>other.id!==card.id))assert.doesNotMatch(handMarkup(current,0,0,other),/has-hand-activation/);
+        for(const hidden of current.publicViews[1].players[0].hand)assert.doesNotMatch(handMarkup(current,1,0,hidden),/has-hand-activation|Effect Veiler/);
+        return {optionId:option.id};
+      }
+    }
     if(prompt.kind==='select'){const breaker=prompt.options.find(item=>item.card?.code===C.BREAKER);if(breaker)return {optionIds:[breaker.id]};}
     return defaultChoice(prompt);
   });
@@ -125,6 +140,7 @@ await check('Effect Veiler hand Quick Effect pays cost, targets publicly and neg
   const negated=field(state,1).find(card=>card.code===C.BREAKER); assert.equal(negated.counters,0); assert.equal(negated.atk,1600);
   const unspent=await end(await play(beforeSummon,'summon',C.BREAKER),0);
   assert(own(unspent,0).hand.some(card=>card.code===C.VEILER)); assert(!has(unspent,'activate',C.VEILER),'Veiler is unavailable in its controller\'s own Main Phase');
+  assert.doesNotMatch(handMarkup(unspent,0,0,own(unspent,0).hand.find(card=>card.code===C.VEILER)),/has-hand-activation/);
 });
 
 await check('Zephyros GY ignition returns a face-up card as cost and its once-per-Duel use survives another turn',async()=>{

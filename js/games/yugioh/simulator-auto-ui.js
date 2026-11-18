@@ -12,6 +12,11 @@ export function autoOptionsForCard(prompt, card) {
       && (!Object.hasOwn(source, 'overlay_sequence') || source.overlay_sequence === card.overlay_sequence);
   });
 }
+export function isAutoActivationOption(prompt, option) {
+  return option.action === 'activate'
+    || (prompt.kind === 'chain' && option.id.startsWith('chain-'))
+    || (prompt.kind === 'yes-no' && option.id === 'yes' && Boolean(option.card));
+}
 export function autoPromptAttributes(controller) {
   const prompt = controller.autoPrompt?.() || controller.session?.auto?.prompt;
   return `data-ygo-auto-prompt="${esc(prompt?.id || '')}" data-ygo-auto-version="${esc(controller.duel?.version ?? '')}" data-ygo-auto-duel="${esc(controller.duel?.id || '')}"`;

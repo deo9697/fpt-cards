@@ -2,7 +2,7 @@
 
 Audit locale del 17 novembre 2026, esteso il 18 novembre a effetti fuori campo e Testa mazzo, profilo **TCG Advanced / Master Rule 2020**. Questa matrice distingue meccaniche eseguite realmente, controlli del protocollo e casi ancora non esercitati. Non costituisce una certificazione di tutte le singole carte o delle loro combinazioni.
 
-Il gioco è deciso da `ocgcore-wasm@0.1.6` con `MODE_MR5`, `TCG_SEGOC_NONPUBLIC` e `TCG_SEGOC_FIRSTTRIGGER`, usando gli script Lua fissati nel manifest. Profilo risorse corrente: `ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2`; banlist `tcg-2026-10-19`, verificata il 17 novembre. Il catalogo comprende anche voci non ammesse al TCG: il validatore impedisce di usarle nei mazzi automatici.
+Il gioco è deciso da `ocgcore-wasm@0.1.6` con `MODE_MR5`, `TCG_SEGOC_NONPUBLIC` e `TCG_SEGOC_FIRSTTRIGGER`, usando gli script Lua fissati nel manifest. Il profilo `ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r3` applica tre correzioni mirate agli effetti. La banlist è `tcg-2026-10-19`, verificata il 17 novembre. Il validatore esclude le voci fuori dal formato TCG.
 
 ## Metodo
 
@@ -28,6 +28,8 @@ Tutte le righe seguenti hanno superato le rispettive prove locali.
 | Flip e posizione | Un mostro settato non può essere scoperto nello stesso turno; Flip Summon nel turno seguente; nessun secondo cambio posizione nel turno; quota ripristinata | Mechanics |
 | Posizione di Evocazione Speciale | Monster Reborn consente Difesa e la conserva per entrambi i partecipanti; un Link resta in Attacco e non offre cambi in Difesa | Core, Advanced, Mechanics |
 | Ritual | Black Illusion Ritual richiede Relinquished, consuma un vero mostro dalla mano e manda il Rito al Cimitero; senza il Ritual Monster non è attivabile | Mechanics |
+| Materiali alternativi con Spirit Elimination | Dogmatikamacabre evoca White Relic con un tributo dalla mano. Spore può bandire Lonefire Blossom da una Zona Mostri Main occupata, prendere il suo posto e salire al Livello 4 | `yugioh-auto-effect-conditions-smoke.mjs` |
+| Famiglie LV | Dopo due Level Up!, Level Down!? riconosce Horus LV8, lo rimette nel Deck ed evoca Horus LV6 dal Cimitero | Effect conditions |
 | Fusion | Polymerization seleziona i materiali nominati dalla mano e li manda al Cimitero; con un materiale sbagliato non è attivabile | Advanced, Mechanics |
 | Contact Fusion / nome modificato | Proto-Cyber Dragon assume il nome richiesto sul terreno; con Cyber Phoenix permette Chimeratech Fortress Dragon, senza Polymerization, con 2000 ATK da due materiali reali | Mechanics |
 | Synchro | Tuner e Livelli corretti permettono l'evocazione; due non-Tuner con somma corretta e Tuner con somma sbagliata vengono rifiutati | Advanced, Mechanics |

@@ -4,9 +4,11 @@
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
+import {applyTcgR3ScriptFixes} from './_yugioh-auto-script-fixes.js';
 
 export const LEGACY_AUTO_RESOURCE_VERSION='ignis-14f3b8905ff9-babel-6e21009855ed';
-export const AUTO_RESOURCE_VERSION=`${LEGACY_AUTO_RESOURCE_VERSION}-tcg-r2`;
+export const ERRATA_AUTO_RESOURCE_VERSION=`${LEGACY_AUTO_RESOURCE_VERSION}-tcg-r2`;
+export const AUTO_RESOURCE_VERSION=`${LEGACY_AUTO_RESOURCE_VERSION}-tcg-r3`;
 const directory=new URL('./yugioh-auto-data/',import.meta.url);
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const pending=new Map();
@@ -43,14 +45,15 @@ async function readResources(version){
   const overrides=manifest.profiles[version].overrides;
   if(!Array.isArray(overrides)||overrides.some(name=>name!=='tcg-overrides.json.gz'))throw new Error('Automatic resource profile is invalid.');
   for(const name of overrides){
-    const extra=await checkedAsset(manifest,name,version);
+    const extra=await checkedAsset(manifest,name,ERRATA_AUTO_RESOURCE_VERSION);
     if(!Array.isArray(extra.scripts)||extra.scripts.length!==1)throw new Error('Automatic script overrides are invalid.');
     for(const[key,script]of extra.scripts){if(key!=='c88264978.lua'||typeof script!=='string'||scripts.has(key))throw new Error('Automatic script override is incompatible.');scripts.set(key,script);}
   }
+  if(version===AUTO_RESOURCE_VERSION)applyTcgR3ScriptFixes(scripts);
   return Object.freeze({cards,scripts,strings,version});
 }
 export async function loadAutoResources(version=AUTO_RESOURCE_VERSION){
-  if(![AUTO_RESOURCE_VERSION,LEGACY_AUTO_RESOURCE_VERSION].includes(version))throw Object.assign(new Error('La versione delle carte della partita non è più disponibile.'),{status:409,code:'resource_version_changed'});
+  if(![AUTO_RESOURCE_VERSION,ERRATA_AUTO_RESOURCE_VERSION,LEGACY_AUTO_RESOURCE_VERSION].includes(version))throw Object.assign(new Error('La versione delle carte della partita non è più disponibile.'),{status:409,code:'resource_version_changed'});
   if(!pending.has(version))pending.set(version,readResources(version));
   return pending.get(version);
 }

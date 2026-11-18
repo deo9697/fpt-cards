@@ -20,4 +20,6 @@ The runtime wrapper and its underlying duel engine are separate dependencies. Th
 
 ## TCG resource profiles
 
-New duels use ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2. The previous ignis-14f3b8905ff9-babel-6e21009855ed profile and its unchanged base archives remain available for existing games. The new profile adds one unmodified current-errata script from the same pinned archive: pre-errata/c88264978.lua, loaded as c88264978.lua. This explicit exception matches the current TCG card text; other historical/pre-errata scripts are not imported. Source SHA-256: 4b80f8bff91f319d19be490aaa7ac9cc33f86baca07f2bc8688d103eee72d414.
+New duels use ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r3. The ignis-14f3b8905ff9-babel-6e21009855ed and ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2 profiles and their unchanged archives remain available for existing games. The errata profile adds one unmodified script from the same pinned archive: pre-errata/c88264978.lua, loaded as c88264978.lua. Source SHA-256: 4b80f8bff91f319d19be490aaa7ac9cc33f86baca07f2bc8688d103eee72d414.
+
+The active profile applies FPT compatibility patches to the pinned Project Ignis scripts for Dogmatikamacabre, Spore and the three Horus the Black Flame Dragon LV cards. See `api/_yugioh-auto-script-fixes.js` for the corresponding changes.

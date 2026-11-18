@@ -44,7 +44,7 @@
     }
   ],
   "cardResources": {
-    "version": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2",
+    "version": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r3",
     "scripts": {
       "repository": "https://github.com/ProjectIgnis/CardScripts",
       "commit": "14f3b8905ff95a8f869fd6891aec4d6b580db1e1",
@@ -59,8 +59,13 @@
     },
     "baseVersion": "ignis-14f3b8905ff9-babel-6e21009855ed",
     "retainedProfiles": [
-      "ignis-14f3b8905ff9-babel-6e21009855ed"
+      "ignis-14f3b8905ff9-babel-6e21009855ed",
+      "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2"
     ],
+    "compatibilityPatches": {
+      "sourcePath": "api/_yugioh-auto-script-fixes.js",
+      "upstreamScripts": ["official/c60921537.lua", "official/c11747708.lua", "official/c75830094.lua", "official/c11224103.lua", "official/c48229808.lua"]
+    },
     "scriptOverrides": [
       {
         "file": "tcg-overrides.json.gz",

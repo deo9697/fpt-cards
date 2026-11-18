@@ -1,12 +1,17 @@
 {
   "schema": 1,
   "version": "ignis-14f3b8905ff9-babel-6e21009855ed",
-  "activeVersion": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2",
+  "activeVersion": "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r3",
   "profiles": {
     "ignis-14f3b8905ff9-babel-6e21009855ed": {
       "overrides": []
     },
     "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2": {
+      "overrides": [
+        "tcg-overrides.json.gz"
+      ]
+    },
+    "ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r3": {
       "overrides": [
         "tcg-overrides.json.gz"
       ]

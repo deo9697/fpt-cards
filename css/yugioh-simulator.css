@@ -563,6 +563,8 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 /* Automatic duels keep the same mat. Only engine-issued choices are playable. */
 .ygo-arena.is-auto { position:relative; }
 .ygo-arena.is-auto .ygo-card.has-auto-action { outline:1px solid var(--duel-gold);box-shadow:0 0 9px #e8c26b66; }
+.ygo-arena.is-auto .ygo-hand.is-self .ygo-card.has-hand-activation:enabled { outline:1px solid #a6eaff;outline-offset:0;box-shadow:0 0 5px #76d6f78c,0 -1px 2px #d4f7ff66; }
+.ygo-arena.is-auto .ygo-hand.is-self .ygo-card.has-hand-activation:disabled { outline:none;box-shadow:none; }
 .ygo-arena.is-auto .ygo-phase-panel ol span { display:block;padding:6px 3px;text-align:center;font-size:.65rem;color:#9cbbc9; }
 .ygo-arena.is-auto .ygo-phase-panel .is-current span { background:#bda05e33;color:#ffe4a3; }
 .ygo-auto-prompt { position:fixed;z-index:15;right:max(12px,env(safe-area-inset-right,0px));bottom:max(28px,env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:7px;width:min(350px,43vw);max-height:calc(100dvh - 90px);padding:11px;border:1px solid #96763e;background:linear-gradient(150deg,#182533fa,#0b121efc);box-shadow:0 6px 28px #000b; }
@@ -609,6 +611,12 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
   .ygo-auto-prompt.is-compact button { min-height:40px;padding:4px 2px;font-size:.55rem; }
   .ygo-auto-prompt.is-waiting { width:180px;padding:7px; }
   .ygo-auto-prompt.is-compact small { font-size:.58rem; }
+}
+@media (max-width:1100px) and (max-height:600px) and (orientation:landscape) {
+  .ygo-arena.is-auto:has(.ygo-hand.is-self .has-hand-activation) .ygo-auto-prompt:not(.is-compact,.is-waiting) {
+    bottom:calc(var(--hand-h) + 12px + env(safe-area-inset-bottom,0px));
+    max-height:calc(100dvh - var(--hand-h) - 50px - env(safe-area-inset-bottom,0px) - env(safe-area-inset-top,0px));
+  }
 }
 
 /* Scelta carte per effetto (2026-11-18): pannello orizzontale in basso, scorrimento

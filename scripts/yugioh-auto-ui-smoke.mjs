@@ -43,6 +43,7 @@ const idle = {type: M.SELECT_IDLECMD, player: 0, summons: [rawCard()], special_s
 try {
   present(idle, state => { state.players[0].hand = [viewCard()]; state.players[0].extra = [viewCard({id: 'extra-own', location: 64})]; });
   ok(host.view().includes('ygo-arena is-auto')); ok(host.view().includes('has-auto-action'));
+  ok(!host.view().includes('has-hand-activation'), 'A Normal Summon or Extra Deck summon alone is not activation');
   ok(guest.view().includes('Attesa avversario')); eq(guest.autoPrompt(), null);
   ok(!host.view().includes('draggable="true"'));
   for (const manual of ['setPhase', 'nextPhase', 'nextTurn', 'draw', 'shuffle', 'lp', 'stats', 'counter', 'activate']) ok(!host.view().includes(`data-ygo-action="${manual}"`), `No manual ${manual} control in automatic arena`);
@@ -53,6 +54,18 @@ try {
   eq(host.dropMenu.actions.map(action => action.id), ['summons-0']);
   await tap(host, {ygoDropAction: 'summons-0'}); eq(reply, {type: R.SELECT_IDLECMD, action: 0, index: 0});
   const beforeForged = calls.length; await choose(host, 'forged-command'); eq(calls.length, beforeForged);
+
+  // Mark the offered copy by its position in hand, including duplicate passcodes.
+  const hand = [viewCard(), viewCard({id:'copy-in-hand',sequence:1})];
+  const effectYn = {...rawCard({sequence:1}),type:M.SELECT_EFFECTYN,player:0,description:0n};
+  present(effectYn, state => { state.players[0].hand = hand; });
+  const offered = host.view().match(/<button[^>]+has-hand-activation[^>]+>/g);
+  eq(offered?.length,1); ok(offered[0].includes('data-ygo-card="copy-in-hand"')); ok(!guest.view().includes('has-hand-activation'));
+  await tap(host,{ygoCard:'copy-in-hand',player:'0'}); eq(host.dropMenu.actions.map(action=>action.id),['yes']);
+  host.revealHand = false; ok(!host.view().includes('has-hand-activation')); host.revealHand = true;
+  host.pending = true; ok(!host.view().includes('has-hand-activation')); host.pending = false;
+  present({type:M.SELECT_CARD,player:0,min:1,max:1,can_cancel:false,selects:[rawCard({sequence:1})]}, state => { state.players[0].hand = hand; });
+  ok(!host.view().includes('has-hand-activation'), 'Selecting a card in hand for another effect is not activating it');
 
   // Extra Deck cards use their own public core coordinates in the small menu.
   present(idle, state => {state.players[0].extra = [viewCard({id: 'extra-own', location: 64})];});

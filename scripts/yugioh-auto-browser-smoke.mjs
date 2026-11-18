@@ -17,11 +17,12 @@ const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
 const seed='123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0';
 const teamId='11111111-1111-4111-8111-111111111111',ids=['a0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002'];
 const people=[{slug:'duel-host',name:'Alice · Test TCG'},{slug:'duel-guest',name:'Bob · Test TCG'}];
-const resources=await loadAutoResources(),raigeki=12580477,judgment=41420027;
+const resources=await loadAutoResources(),raigeki=12580477,judgment=41420027,breaker=71413901,veiler=97268402;
 const normal=[...resources.cards.values()].filter(card=>(card.ot&2)&&card.type===17&&card.level<=4&&card.attack>0).slice(0,40).map(card=>card.code);
 const initial=await createAutoState({decks:[{main:normal},{main:normal}],seed});
 function arranged(seat,codes){const deck=[...normal];initial.publicViews[seat].players[seat].hand.slice(0,codes.length).forEach((card,index)=>deck[normal.indexOf(card.code)]=codes[index]);return deck;}
-const deckCodes=[arranged(0,[raigeki]),arranged(1,[judgment,raigeki])];
+const guestOpening=initial.publicViews[1].players[1].hand;
+const deckCodes=[arranged(0,[raigeki,breaker]),arranged(1,[judgment,raigeki,guestOpening[2].code,guestOpening[3].code,veiler])];
 const decks=people.map((person,seat)=>({id:ids[seat],ownerSlug:person.slug,game:'yugioh',persisted:true,name:`TCG automatico · ${seat+1}`,cards:deckCodes[seat].map(code=>{const card=resources.cards.get(code);return{catalogCardId:String(code),cardName:card.name,section:'main',quantity:1,type:card.type&1?'Normal Monster':card.type&2?'Spell Card':'Trap Card',atk:card.attack,def:card.defense,level:card.level,imageUrl:`/previewcard/${code}.jpg`,text:card.desc};})}));
 const rows=new Map(),requests=[],notifications=[];
 const store={members:async id=>id===teamId?clone(people):[],pushMembers:async()=>['duel-guest'],list:async(id,slug)=>clone([...rows.values()].filter(row=>row.team_id===id&&[row.host_slug,row.guest_slug].includes(slug))),get:async id=>clone(rows.get(id)||null),meta:async id=>{const row=rows.get(id);if(!row)return null;const{state,host_deck,previous_state,...metadata}=row;return clone(metadata);},deck:async(id,slug)=>clone(decks.find(deck=>deck.id===id&&deck.ownerSlug===slug)||null),recentCount:async()=>0,insert:async row=>{if(rows.has(row.id))return null;rows.set(row.id,clone(row));return clone(row);},update:async(id,version,patch)=>{const row=rows.get(id);if(!row||row.version!==version)return null;const next={...row,...clone(patch)};rows.set(id,next);return clone(next);}};
@@ -76,13 +77,38 @@ async function run(){
   assert.equal(rows.get(duelId).state.mode,'auto');assert.equal(notifications.length,1);await host.screenshot('phone-844-start');
   for(const seat of seats){const state=await seat.evaluate('window.__sim.session');for(const key of ['seed','inputs','initialDecks','pendingMessage','publicViews'])assert.ok(!(key in state),`${key} leaked`);assert.ok(state.players[1-state.players.findIndex(player=>player.name.startsWith(seat===host?'Alice':'Bob'))].hand.every(card=>card.hidden));assert.equal(await seat.evaluate('document.querySelectorAll("[data-ygo-action=lp],[data-ygo-action=drawEffect],[data-ygo-action=stats]").length'),0);}
   const prompt=async()=>{for(let seat=0;seat<2;seat++){const p=await seats[seat].evaluate('window.__sim.session?.auto?.prompt');if(p)return{seat,p};}throw Error('No actor prompt');};
+  const handActivation=code=>`(()=>{
+    const sim=window.__sim, card=sim.session.players[sim.viewer].hand.find(card=>card.code===${code});
+    const node=card&&document.querySelector('[data-ygo-card="'+card.id+'"][data-player="'+sim.viewer+'"]');
+    if(!node)return null;
+    const rect=node.getBoundingClientRect(),style=getComputedStyle(node);
+    const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+    return{highlighted:node.classList.contains('has-hand-activation'),outline:style.outlineColor,reachable:hit?.closest('.ygo-card')===node};
+  })()`;
   async function option(seat,id){const page=seats[seat],version=await page.evaluate('window.__sim.duel.version');if(!await page.evaluate(`Boolean(document.querySelector('[data-ygo-auto-option="${id}"]'))`))await page.tap('[data-ygo-command="auto-expand"]');await page.tap(`[data-ygo-auto-option="${id}"]`);if(await page.evaluate('Boolean(document.querySelector("[data-ygo-command=auto-confirm]:not([disabled])"))'))await page.tap('[data-ygo-command="auto-confirm"]');await both(`window.__sim.duel.version>${version}`,`choice ${id}`);}
   async function settle(expectedSeat,respond){for(let step=0;step<70;step++){const{seat,p}=await prompt();if(p.kind==='idle'&&seat===expectedSeat)return;assert.notEqual(p.kind,'idle','unexpected idle actor');const id=await respond?.(seat,p)||p.options.find(row=>row.id==='pass')?.id||p.options.find(row=>row.id==='no')?.id||p.options[0]?.id;assert.ok(id,JSON.stringify(p));await option(seat,id);}throw Error('prompt loop');}
   async function command(seat,predicate,viaCard=false){const p=await seats[seat].evaluate('window.__sim.session.auto.prompt'),selected=p.options.find(predicate);assert.ok(selected,JSON.stringify(p));if(viaCard){const card=await seats[seat].evaluate(`window.__sim.session.players[${seat}].hand.find(card=>card.controller===${selected.card.controller}&&card.location===${selected.card.location}&&card.sequence===${selected.card.sequence})`);await seats[seat].tap(`[data-ygo-card="${card.id}"][data-player="${seat}"]`);await seats[seat].wait('Boolean(document.querySelector(".ygo-drop-menu"))','compact legal card actions');assert.ok(await seats[seat].evaluate(`Boolean(document.querySelector('.ygo-drop-menu [data-ygo-drop-action="${selected.id}"]'))`));const version=await seats[seat].evaluate('window.__sim.duel.version');await seats[seat].tap(`.ygo-drop-menu [data-ygo-drop-action="${selected.id}"]`);await both(`window.__sim.duel.version>${version}`,'card command');}else await option(seat,selected.id);}
   const held=await host.evaluate('window.__sim.session.players[0].hand.find(card=>card.type.includes("Monster")).id'),beforeHold=await host.evaluate('JSON.stringify(window.__sim.session)');await host.hold(`[data-ygo-card="${held}"][data-player="0"]`);await host.wait('Boolean(document.querySelector(".ygo-card-dialog"))','stationary hold card description');assert.equal(await host.evaluate('JSON.stringify(window.__sim.session)'),beforeHold,'reading must not play a card');assert.equal(await host.evaluate('document.querySelectorAll(".ygo-card-dialog form").length'),0,'automatic description must be read-only');await host.screenshot('phone-844-description');await host.tap('.ygo-card-dialog [data-ygo-command="deselect"]');
-  await command(0,row=>row.action==='summon',true);await settle(0);await both('window.__sim.session.players[0].monsters.length===1','normal summon');
+  const narrow={width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}};
+  await guest.cdp.call('Emulation.setDeviceMetricsOverride',narrow);
+  await command(0,row=>row.action==='summon'&&row.card?.code===breaker,true);
+  let checkedHandResponse=false;
+  await settle(0,async(seat,p)=>{
+    if(checkedHandResponse||seat!==1||p.kind!=='chain'||!p.options.some(row=>row.card?.code===veiler))return null;
+    assert.deepEqual(await guest.evaluate(handActivation(veiler)),{highlighted:true,outline:'rgb(166, 234, 255)',reachable:true});
+    assert.equal(await host.evaluate('document.querySelectorAll(".ygo-hand.is-opponent .has-hand-activation").length'),0);
+    await guest.screenshot('phone-740-hand-response');
+    checkedHandResponse=true;
+    return 'pass';
+  });
+  assert.ok(checkedHandResponse,'Effect Veiler must be offered from the hand on the opponent turn');
+  assert.equal((await guest.evaluate(handActivation(veiler))).highlighted,false);
+  await both('window.__sim.session.players[0].monsters.length===1','normal summon');
   await command(0,row=>row.id==='to_ep');await settle(1);await command(1,row=>row.action==='summon',true);await settle(1);
+  assert.equal((await guest.evaluate(handActivation(judgment))).highlighted,false,'A trap which can only be set must not get the activation border');
+  assert.equal((await guest.evaluate(handActivation(veiler))).highlighted,false,'Veiler is unavailable during the owner’s Main Phase');
   await command(1,row=>row.action==='spell-set'&&row.card.code===judgment,true);await settle(1);await command(1,row=>row.id==='to_ep');await settle(0);
+  assert.deepEqual(await host.evaluate(handActivation(raigeki)),{highlighted:true,outline:'rgb(166, 234, 255)',reachable:true});
   await command(0,row=>row.action==='activate'&&row.card.code===raigeki,true);
   let answered=false;await settle(0,async(seat,p)=>{const response=p.kind==='chain'&&seat===1&&p.options.find(row=>row.card?.code===judgment);if(response){answered=true;await guest.screenshot('phone-chain-1-response');return response.id;}return null;});
   assert.ok(answered,'counter-trap response');await both('window.__sim.session.players[1].lp===4000&&window.__sim.session.players[1].monsters.length===1','automatic counter cost/negation');

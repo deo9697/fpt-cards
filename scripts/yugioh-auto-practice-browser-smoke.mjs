@@ -108,6 +108,8 @@ async function run(){
   await screenshot('phone-844-composer');await fill('[data-ygo-practice] [name="deckId"]',deckId);await tap('[data-ygo-practice] button[type="submit"]');
   await wait('window.__sim.practice&&window.__sim.session?.mode==="auto"&&window.__sim.duel?.status==="playing"&&!window.__sim.pending','real automatic practice start');await settle();
   let session=await evaluate('window.__sim.session');assert.equal(await evaluate('window.__sim.duel.practice'),true);assert.equal(session.activePlayer,0);assert(session.players[1].hand.every(card=>card.hidden));
+  const activeHandCards=await evaluate('Array.from(document.querySelectorAll(".ygo-hand.is-self .has-hand-activation"),node=>node.dataset.ygoCard)');
+  assert.deepEqual(activeHandCards,[session.players[0].hand.find(card=>card.code===C.FOOLISH).id],'Testa mazzo highlights the legal hand Spell');
   for(const key of ['seed','initialDecks','inputs','pendingMessage','publicViews'])assert(!(key in session),key+' leaked');
   assert.equal(await evaluate('document.querySelectorAll("[data-ygo-action=lp],[data-ygo-action=move],[data-ygo-action=drawEffect]").length'),0);
   await command(row=>row.action==='summon'&&row.card?.code===C.ALEX);await settle();
