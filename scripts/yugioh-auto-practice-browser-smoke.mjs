@@ -112,7 +112,16 @@ async function run(){
   assert.deepEqual(activeHandCards,[session.players[0].hand.find(card=>card.code===C.FOOLISH).id],'Testa mazzo highlights the legal hand Spell');
   for(const key of ['seed','initialDecks','inputs','pendingMessage','publicViews'])assert(!(key in session),key+' leaked');
   assert.equal(await evaluate('document.querySelectorAll("[data-ygo-action=lp],[data-ygo-action=move],[data-ygo-action=drawEffect]").length'),0);
-  await command(row=>row.action==='summon'&&row.card?.code===C.ALEX);await settle();
+  // Movimenti delle carte (2026-11-18, stile B): durante l'evocazione una carta deve volare dalla mano al campo.
+  // L'osservatore ferma le animazioni al primo fantasma per fotografarle, poi le riprende.
+  await evaluate('(()=>{window.__motion={ghosts:0,runes:0,dots:0};new MutationObserver(list=>{for(const row of list)for(const node of row.addedNodes){if(!node.classList)continue;if(node.classList.contains("ygo-motion-ghost")){window.__motion.ghosts++;if(!window.__motion.frozen){window.__motion.frozen=true;setTimeout(()=>{for(const a of document.getAnimations())a.pause();window.__motion.paused=true;},180);}}if(node.classList.contains("ygo-motion-runes"))window.__motion.runes++;if(node.classList.contains("ygo-motion-dot"))window.__motion.dots++;}}).observe(document.body,{childList:true,subtree:true});})()');
+  await command(row=>row.action==='summon'&&row.card?.code===C.ALEX);
+  const settling=settle();
+  for(let step=0;step<120&&!await evaluate('Boolean(window.__motion.paused)');step++)await delay(25);
+  if(await evaluate('Boolean(window.__motion.paused)')){await screenshot('phone-motion-summon');await evaluate('(()=>{for(const a of document.getAnimations())a.play();})()');}
+  await settling;
+  const motion=await evaluate('window.__motion');assert(motion.ghosts>=1,'evocazione senza carta in volo: '+JSON.stringify(motion));assert(motion.runes>=1,'evocazione senza cerchio di rune');
+  console.log('PASS movimenti delle carte: la carta evocata vola dalla mano al campo con il cerchio di rune',JSON.stringify(motion));
   await command(row=>row.action==='activate'&&row.card?.code===C.FOOLISH);
   for(let step=0;step<40;step++){const prompt=await evaluate('window.__sim.session.auto.prompt');if(prompt.kind==='idle')break;const target=prompt.options.find(row=>row.card?.code===C.ZEPHYROS);await option(target?.id||prompt.options.find(row=>row.id==='pass')?.id||prompt.options.find(row=>row.id==='no')?.id||prompt.options[0].id);}
   await wait('window.__sim.session.players[0].graveyard.some(card=>card.code==='+C.ZEPHYROS+')','Foolish Burial sends real Zephyros to GY');

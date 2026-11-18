@@ -13,6 +13,7 @@ import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket,
 import { autoIsMulti, autoIsPick, autoIsSinglePick, autoIsSinglePlace, autoSelectionComplete, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
 import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
+import { createCardMotion } from './simulator-card-motion.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Foglio di stile degli effetti: lo carica app.js col simulatore; qui ci si
@@ -326,10 +327,11 @@ export class YugiohMultiplayer {
   queueDuelFx(events){if(!Array.isArray(events)||!events.length)return;const summon=events.some(event=>event.kind==='summon');const kept=summon?events.filter(event=>event.kind!=='phase'||['your-turn','opponent-turn'].includes(event.name)):events;this.fxQueue=[...(this.fxQueue||[]),...kept].slice(-3);}
   // Un tocco ovunque salta l'effetto in corso e la carta attivata: il tocco
   // arriva comunque al controllo premuto (ascolto passivo, in cattura).
-  skipDuelFx(){if(!this.fxRunning&&!this.activationReveals.get())return;this.fxQueue=[];this.fx?.cancel();this.activationReveals.hide?.();}
+  ensureFxSkip(){if(this.fxSkipListener||typeof document==='undefined')return;this.fxSkipListener=()=>this.skipDuelFx();document.addEventListener('pointerdown',this.fxSkipListener,{capture:true,passive:true});}
+  skipDuelFx(){this.cardMotion?.skip();if(!this.fxRunning&&!this.activationReveals.get())return;this.fxQueue=[];this.fx?.cancel();this.activationReveals.hide?.();}
   async playDuelFx(){
     if(this.fxRunning||!this.fxQueue?.length||typeof document==='undefined')return;
-    if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage,{speed:2.2});if(!this.fxSkipListener){this.fxSkipListener=()=>this.skipDuelFx();document.addEventListener('pointerdown',this.fxSkipListener,{capture:true,passive:true});}}
+    if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage,{speed:2.2});this.ensureFxSkip();}
     this.fxRunning=true;
     try{
       // Bug 2026-11-18: senza il foglio di stile l'effetto compariva "nudo" sopra
@@ -339,7 +341,7 @@ export class YugiohMultiplayer {
       while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}
     }finally{this.fxRunning=false;}
   }
-  disposeDuelFx(){if(this.fxSkipListener){globalThis.document?.removeEventListener?.('pointerdown',this.fxSkipListener,{capture:true});this.fxSkipListener=null;}this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
+  disposeDuelFx(){this.cardMotion?.dispose();this.cardMotion=null;if(this.fxSkipListener){globalThis.document?.removeEventListener?.('pointerdown',this.fxSkipListener,{capture:true});this.fxSkipListener=null;}this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
@@ -348,6 +350,8 @@ export class YugiohMultiplayer {
     this.duel=duel;this.viewer=duel.viewer;this.session=['setup','playing','finished'].includes(duel.status)?duel.state||null:null;
     // Effetti visivi (simulator-fx.js): solo presentazione di ciò che il motore ha già deciso.
     if(changed&&!newTable&&this.session?.players&&duel.status==='playing')this.queueDuelFx(duelFxEvents(previousSession,this.session,this.viewer));
+    // Movimenti delle carte (simulator-card-motion.js): partenze misurate ora, sul campo ancora vecchio.
+    if(changed&&!newTable&&this.session?.players&&duel.status==='playing'&&typeof document!=='undefined'){this.cardMotion||=createCardMotion({speed:1});this.cardMotion.prepare(previousSession,this.session,{mode:this.isAuto()?'auto':'manual',root:document});this.ensureFxSkip();}
     this.practice=duel.practice===true||Boolean(this.practiceTable);
     if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
     if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
@@ -462,7 +466,7 @@ export class YugiohMultiplayer {
     this.syncOrientation();
     // Un ridisegno che riscrive il body stacca il livello degli effetti: lo riattacca.
     if(this.fxStage&&!this.fxStage.isConnected&&typeof document!=='undefined')document.body.appendChild(this.fxStage);
-    if(root.querySelector('.ygo-arena'))this.playDuelFx();
+    if(root.querySelector('.ygo-arena')){void this.cardMotion?.play(document);this.playDuelFx();}
     const arena=root.querySelector('.ygo-arena');
     this.autoArena=arena?.classList.contains('is-auto')?arena:null;
     if(this.pending)this.syncAutoBusy();

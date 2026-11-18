@@ -703,3 +703,10 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-banish-count.can-activate { position:relative;border-color:#c9a6ff!important;color:#efe4ff!important;box-shadow:0 0 12px #9b5cff88; }
 .ygo-banish-count.can-activate::after { content:'';position:absolute;inset:-3px;border-radius:inherit;border:1px solid #c9a6ff;pointer-events:none; }
 @media (prefers-reduced-motion:no-preference){ .ygo-banish-count.can-activate::after { animation:ygo-material-pulse 1.1s ease-in-out infinite; } }
+
+/* Movimenti delle carte, stile B «Rito gotico» (2026-11-18): fantasmi e particelle
+   nel livello fisso .ygo-motion-layer (fuori dall'HTML ridisegnato). */
+.ygo-motion-ghost { position:absolute;left:0;top:0;border-radius:4px;overflow:hidden;box-shadow:0 6px 18px #000c,0 0 10px #e8b85c55;will-change:transform,opacity;backface-visibility:hidden; }
+.ygo-motion-ghost img { display:block;width:100%;height:100%;object-fit:cover; }
+.ygo-motion-dot { position:absolute;left:0;top:0;border-radius:50%;will-change:transform,opacity; }
+.ygo-motion-runes { position:absolute;left:0;top:0;border-radius:50%;border:2px dashed;will-change:transform,opacity; }

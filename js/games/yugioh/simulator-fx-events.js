@@ -40,7 +40,12 @@ export function duelFxEvents(previous, next, viewer) {
     for (const card of boardCards(player)) {
       const id = String(card.id);
       if (wasOnBoard.has(id)) continue;
-      const type = summonTypeOf(card, wasInHand.has(id));
+      // Tavolo automatico: gli id dipendono dalla posizione, quindi «dalla mano»
+      // si riconosce anche dal codice uscito dalla mano (o da una mano coperta che cala).
+      const code = card.code ?? card.catalogCardId, beforeHand = before?.hand || [], afterHand = player.hand || [];
+      const leftHand = code != null && beforeHand.filter(item => !item.hidden && (item.code ?? item.catalogCardId) === code).length > afterHand.filter(item => !item.hidden && (item.code ?? item.catalogCardId) === code).length;
+      const hiddenHandShrank = beforeHand.filter(item => item.hidden).length > afterHand.filter(item => item.hidden).length;
+      const type = summonTypeOf(card, wasInHand.has(id) || leftHand || (card.hidden !== true && hiddenHandShrank && !wasInHand.size));
       const hidden = type === 'set' || card.hidden === true;
       summons.push({
         kind: 'summon', type, player: index,

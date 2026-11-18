@@ -41,3 +41,12 @@ events = duelFxEvents(state(), state({ players: [player('Daniele', { monsters: [
 assert.equal(events.length, 2, 'al massimo 2 evocazioni per aggiornamento');
 console.log('PASS coperte senza immagine né nome, spostamenti ignorati, massimo 2 evocazioni per aggiornamento');
 console.log('yugioh-fx-events-smoke: OK');
+
+// 2026-11-18: tavolo automatico, id che dipendono dalla posizione: dalla mano = Normale.
+{
+  const autoBefore = state({ players: [player('Daniele', { hand: [{ id: 'p0-2-0', code: 111, cardName: 'A', type: 'Normal Monster', faceUp: true }] }), player('Nello')] });
+  const autoAfter = state({ players: [player('Daniele', { monsters: [{ id: 'p0-4-0', code: 111, cardName: 'A', type: 'Normal Monster', faceUp: true, materials: [] }] }), player('Nello')] });
+  const [event] = duelFxEvents(autoBefore, autoAfter, 0);
+  assert.equal(event.type, 'normal', 'automatico: il codice uscito dalla mano rende la Normal Summon');
+  console.log('PASS tavolo automatico: Evocazione Normale riconosciuta dal codice');
+}
