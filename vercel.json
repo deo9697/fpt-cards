@@ -28,6 +28,7 @@
   ],
   "functions": {
     "api/yugioh-duel.js": {
+      "regions": ["cdg1"],
       "maxDuration": 60,
       "includeFiles": "{api/_yugioh-auto-*.js,api/yugioh-auto-data/**,node_modules/ocgcore-wasm/package.json,node_modules/ocgcore-wasm/dist/**}"
     }

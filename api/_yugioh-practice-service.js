@@ -22,8 +22,14 @@ export function createPracticeService({store,practices,autoRuntime={run:runAutoO
     catch(error){fail(Number.isInteger(error.status)&&error.status>=400&&error.status<=599?error.status:503,error.code||'practice_engine',error.message||'Il motore della prova non è disponibile. La sessione è conservata.');}
   }
   async function save(row,patch,actor,requestId){
-    const saved=await practices.update(row.id,row.version,actor.teamId,actor.slug,{...patch,version:row.version+1,last_action_id:requestId,updated_at:at()});
-    if(saved)return{duel:view(saved)};
+    const write={...patch,version:row.version+1,last_action_id:requestId,updated_at:at()};
+    const saved=await practices.update(row.id,row.version,actor.teamId,actor.slug,write);
+    if(saved){
+      // The database acknowledges only CAS metadata. The trigger verifies
+      // membership/version and adjusts updated_at; it does not rewrite state.
+      if(saved.id!==(write.id||row.id)||saved.version!==write.version||typeof saved.updated_at!=='string')fail(503,'practice_ack','La prova è stata salvata. Ricarica il campo per continuare.');
+      return{duel:view({...row,...write,id:saved.id,version:saved.version,updated_at:saved.updated_at})};
+    }
     const current=owned(await practices.get(actor.teamId,actor.slug),actor);
     if(current&&(current.last_action_id===requestId||current.start_request_id===requestId))return{duel:view(current),replayed:true};
     fail(409,'stale_version','La prova è stata aggiornata in un’altra finestra. Controlla il campo e riprova.',current?view(current):undefined);
@@ -32,10 +38,15 @@ export function createPracticeService({store,practices,autoRuntime={run:runAutoO
     if(!actor?.slug||!UUID.test(actor.teamId||''))fail(401,'unauthorized','Accedi con il tuo profilo del team.');
     if(!payload||typeof payload!=='object'||Array.isArray(payload))fail(400,'invalid_request','Richiesta non valida.');
     if(!['practiceStart','practiceState','practiceAction','practiceSearch'].includes(payload.op))fail(400,'invalid_operation','Operazione non disponibile nella prova.');
-    const members=await store.members(actor.teamId),member=members.find(member=>member.slug===actor.slug);
+    // Both reads use the authenticated scope. Still check current membership on
+    // every request, before handling state or a read error from the private row.
+    const [membership,current]=await Promise.allSettled([store.members(actor.teamId),practices?practices.get(actor.teamId,actor.slug):Promise.resolve(null)]);
+    if(membership.status==='rejected')throw membership.reason;
+    const member=membership.value.find(member=>member.slug===actor.slug);
     if(!member)fail(403,'not_member','Il tuo profilo non appartiene al team.');
     if(!practices)fail(503,'practice_not_configured','La prova automatica non è ancora configurata.');
-    const row=owned(await practices.get(actor.teamId,actor.slug),actor);
+    if(current.status==='rejected')throw current.reason;
+    const row=owned(current.value,actor);
     if(payload.op==='practiceStart'){
       const requestId=needId(payload.requestId);
       if(row?.start_request_ids?.includes(requestId)||row?.start_request_id===requestId||row?.last_action_id===requestId)return{duel:view(row),replayed:true};

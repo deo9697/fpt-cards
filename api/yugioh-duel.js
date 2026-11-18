@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 import { createDuelService, DuelError } from './_yugioh-duel-service.js';
 import { createPracticeService } from './_yugioh-practice-service.js';
+import { runAutoOperation, projectAutoStateSafe } from './_yugioh-auto-executor.js';
+import { createRequestTimings, timeDatabase } from './_yugioh-timing.js';
 import { createPracticeStore } from './_yugioh-practice-store.js';
 
 const unwrap = result => { if (result.error) throw result.error; return result.data; };
@@ -98,6 +100,7 @@ export function createDatabase(env, authorization) {
         const row = unwrap(await admin.from('decks').select('id,owner_slug,game,name').eq('id', id).eq('owner_slug', ownerSlug).eq('game', 'yugioh').maybeSingle());
         if (!row) return null;
         const cards = unwrap(await admin.from('deck_cards').select('catalog_card_id,card_name,image_url,section,quantity,printing_id,position,ban_tcg').eq('deck_id', id).order('position')) || [];
+        if(mode==='auto')return{id:row.id,ownerSlug:row.owner_slug,game:row.game,name:row.name,cards:cards.map(card=>({catalogCardId:card.catalog_card_id,cardName:card.card_name,imageUrl:card.image_url,printingId:card.printing_id||'',section:card.section,quantity:card.quantity,banTcg:card.ban_tcg||''}))};
         const codes = [...new Set(cards.map(card => card.catalog_card_id))];
         let metadata = [];
         if (codes.length) metadata = unwrap(await admin.from('card_printings').select('id,catalog_card_id,game_metadata').eq('game', 'yugioh').in('catalog_card_id', codes).limit(1000)) || [];
@@ -154,10 +157,12 @@ export async function sendInvitePush(database, invitation, env, push = webpush) 
 
 export function createDuelHandler({ env = process.env, databaseFactory = createDatabase, notify = sendInvitePush, autoRuntime } = {}) {
   return async function handler(req, res) {
+    const timings=createRequestTimings();
+    const respond=(status,body)=>{res.setHeader('Server-Timing',timings.header());return res.status(status).json(body);};
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ code:'method_not_allowed', message:'Metodo non consentito.' }); }
-    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ code:'not_configured', message:'Il simulatore multiplayer non è ancora configurato.' });
+    if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return respond(405,{ code:'method_not_allowed', message:'Metodo non consentito.' }); }
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return respond(503,{ code:'not_configured', message:'Il simulatore multiplayer non è ancora configurato.' });
     try {
       const origin = req.headers?.origin;
       const host = req.headers?.['x-forwarded-host'] || req.headers?.host;
@@ -172,24 +177,26 @@ export function createDuelHandler({ env = process.env, databaseFactory = createD
       if (body.token !== undefined && body.token !== null && (typeof body.token !== 'string' || body.token.length > 256)) throw new DuelError(401, 'unauthorized', 'Accedi con il tuo profilo del team.');
       const authorization = req.headers?.authorization;
       if (authorization && (typeof authorization !== 'string' || !/^Bearer [A-Za-z0-9_.-]+$/.test(authorization) || authorization.length > 8000)) throw new DuelError(401, 'unauthorized', 'Sessione non valida.');
-      const database = databaseFactory(env, authorization);
+      const database = timeDatabase(databaseFactory(env, authorization),timings);
       let actor;
-      try { actor = await database.authenticate(body.token); }
+      try { actor = await timings.measure('auth',()=>database.authenticate(body.token)); }
       catch (error) {
         if (['PGRST202', '42883', '42P01'].includes(error?.code)) throw new DuelError(503, 'not_configured', 'Il simulatore multiplayer non è ancora configurato.');
         throw new DuelError(401, 'unauthorized', 'Accedi con il tuo profilo del team.');
       }
       // Restrict slug syntax before composing the participant filter in PostgREST.
       if (!actor?.slug || !/^[a-z0-9_-]{1,100}$/i.test(actor.slug)) throw new DuelError(401, 'unauthorized', 'Profilo del team non valido.');
+      const engine=autoRuntime||{run:runAutoOperation,project:projectAutoStateSafe};
+      const measuredRuntime={project:(...args)=>engine.project(...args),run:(...args)=>timings.measure('engine',()=>engine.run(...args))};
       if (['practiceStart','practiceState','practiceAction','practiceSearch'].includes(body.op)) {
-        const service = createPracticeService({ store:database.store, practices:database.practices, ...(autoRuntime ? { autoRuntime } : {}) });
-        return res.status(200).json(await service.run(actor, body));
+        const service = createPracticeService({ store:database.store, practices:database.practices, autoRuntime:measuredRuntime });
+        return respond(200,await service.run(actor, body));
       }
-      const service = createDuelService({ store:database.store, notify:invitation => notify(database, invitation, env), ...(autoRuntime ? { autoRuntime } : {}) });
-      return res.status(200).json(await service.run(actor, body));
+      const service = createDuelService({ store:database.store, notify:invitation => notify(database, invitation, env), autoRuntime:measuredRuntime });
+      return respond(200,await service.run(actor, body));
     } catch (error) {
-      if (error instanceof DuelError) return res.status(error.status).json({ code:error.code, message:error.message, ...(error.duel ? { duel:error.duel } : {}) });
-      return res.status(503).json({ code:'service_unavailable', message:'Il tavolo non è disponibile al momento. Riprova tra poco.' });
+      if (error instanceof DuelError) return respond(error.status,{ code:error.code, message:error.message, ...(error.duel ? { duel:error.duel } : {}) });
+      return respond(503,{ code:'service_unavailable', message:'Il tavolo non è disponibile al momento. Riprova tra poco.' });
     }
   };
 }

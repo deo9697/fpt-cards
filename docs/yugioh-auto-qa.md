@@ -24,6 +24,8 @@ Gli effetti fuori dal terreno hanno scenari reali dedicati: Mezuki con bersaglio
 
 ## Verifiche
 
+L'ottimizzazione del worker, dei round trip e del render mobile è documentata in [yugioh-performance-qa.md](yugioh-performance-qa.md), con misure prima/dopo e limiti della prova.
+
 `npm run test:yugioh-auto`: protocollo, mazzi TCG, inizializzazione dell’intero catalogo TCG, scenari reali di meccaniche/eventi/decisioni, effetti/catene e replay, servizio privato con CAS, UI e due browser mobile con servizio e worker reali. `npm run test:yugioh-simulator`: regressioni dei tavoli manuali, orientamento, touch, Testa mazzo, combattimento e percorso One Piece. La [matrice di verifica](yugioh-auto-mechanics-matrix.md) distingue casi reali, prove sintetiche e limiti della copertura.
 
 `npm run build:yugioh-auto-resources` richiede Node con `node:sqlite` e accesso ai repository pubblici fissati. Produce gli stessi archivi e checksum; non è necessario durante l’avvio del duello o il deploy. Le risorse del motore restano lato server e non entrano nel precache della PWA.

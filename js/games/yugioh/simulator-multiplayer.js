@@ -21,7 +21,7 @@ export class YugiohMultiplayer {
     this.options=options; this.context={...options.getContext()}; this.scope=scope(this.context);
     this.ready=false;this.loading=false;this.disposed=false;this.pending=false;this.connected=true;
     this.lobby={members:[],duels:[]};this.duel=null;this.session=null;this.viewer=null;this.error='';
-    this.timer=null;this.polling=false;this.lastLobby=0;this.navigationGeneration=0;this.inspectionGeneration=0;
+    this.timer=null;this.polling=false;this.lastLobby=0;this.navigationGeneration=0;this.inspectionGeneration=0;this.autoArena=null;
     this.requested='';this.tab='table';this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.revealHand=true;
     this.metadata=new Map();this.metadataLoading=new Set();this.inviteRequestId=null;
     this.inviteDraft={opponentSlug:'',deckId:'',lp:8000,firstPlayer:'0',mode:'auto'};this.acceptDraft={deckId:'',lp:8000};this.finishDraft={winner:'0',notes:''};
@@ -62,9 +62,25 @@ export class YugiohMultiplayer {
     if(prompt.kind!=='counter')await this.respondAuto({optionId:id});
   }
   render(){if(this.allowed())this.options.onRender();}
-  reset(){this.activationReveals.dispose();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
+  syncAutoBusy(){
+    const arena=this.autoArena;
+    if(!this.pending||!this.isAuto()||!arena||arena.isConnected===false||!this.autoFrameCurrent(arena))return false;
+    arena.setAttribute('aria-busy','true');
+    const connection=arena.querySelector('.ygo-online');if(connection)connection.textContent='Sync...';
+    const feedback=arena.querySelector('.ygo-arena-status');if(feedback)feedback.textContent='Sincronizzazione della mossa…';
+    // Keep the battlefield and its decoded artwork mounted while the engine
+    // handles this choice. Exiting or rotating the arena remains available.
+    for(const control of arena.querySelectorAll('button,input,select,textarea')){
+      if(['orientation','lobby','practice-exit','menu','close-menu'].includes(control.dataset.ygoCommand))continue;
+      control.disabled=true;
+    }
+    if(!this.dropMenu)for(const node of arena.querySelectorAll('.ygo-drop-menu,.ygo-drop-backdrop'))node.remove();
+    if(!this.pile&&!this.selected&&!this.inspectedCard)for(const node of arena.querySelectorAll('.ygo-zone-dialog,.ygo-card-dialog,.ygo-overlay'))node.remove();
+    return true;
+  }
+  reset(){this.autoArena=null;this.activationReveals.dispose();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
   close(){this.reset();}
-  suspend(){this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
+  suspend(){this.autoArena=null;this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
   async initialize(){
     if(this.loading||this.ready||!this.allowed())return;
     const generation=this.navigationGeneration;this.loading=true;this.error='';
@@ -92,7 +108,7 @@ export class YugiohMultiplayer {
     }catch(error){if(this.allowed()&&generation===this.navigationGeneration){if([401,403,404,410].includes(error.status)){this.clearTable();if([401,403].includes(error.status))this.ready=false;}this.error=error.message||'Connessione interrotta. Riprovo automaticamente.';this.connected=false;changed=true;}}
     finally{this.polling=false;if(changed)this.render();this.schedule();}
   }
-  clearTable(){this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();this.duel=null;this.session=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.practice=false;this.practiceTable=null;}
+  clearTable(){this.autoArena=null;this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();this.duel=null;this.session=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.menu=false;this.practice=false;this.practiceTable=null;}
   gestureRevision(){return`${this.navigationGeneration}:${this.duel?.id}:${this.duel?.version}:${globalThis.innerWidth||0}x${globalThis.innerHeight||0}`;}
   beginCardDrag(player,cardId){this.dragBackup={selected:this.selected,inspectedCard:this.inspectedCard,revision:this.gestureRevision()};this.selected={player,cardId};const inspected=this.pile&&(this.pile.cards||this.session.players[this.pile.player][this.pile.zone]).find(card=>card.id===cardId);this.inspectedCard=inspected&&!inspected.hidden?{card:inspected,zone:this.pile.zone,player:this.pile.player,version:this.duel.version}:null;}
   cancelCardDrag(){const previous=this.dragBackup;this.dragBackup=null;if(previous?.revision===this.gestureRevision()){this.selected=previous.selected;this.inspectedCard=previous.inspectedCard;}}
@@ -251,7 +267,8 @@ export class YugiohMultiplayer {
   }
   async perform(payload){
     if(!this.ready||!this.allowed()||this.pending)return null;
-    const generation=this.navigationGeneration;this.pending=true;this.error='';this.render();
+    const generation=this.navigationGeneration;this.pending=true;this.error='';
+    if(payload.action?.type!=='autoRespond'||!this.syncAutoBusy())this.render();
     try{const response=await this.call(payload);if(!this.allowed()||generation!==this.navigationGeneration)return null;if(response.duel)this.receive(response.duel);this.connected=true;return response;}
     catch(error){if(this.allowed()&&generation===this.navigationGeneration){if(error.data?.duel)this.receive(error.data.duel);this.error=error.message||'Operazione non riuscita. Riprova.';if([401,403].includes(error.status))this.connected=false;}return null;}
     finally{this.pending=false;this.render();this.schedule();}
@@ -347,6 +364,8 @@ export class YugiohMultiplayer {
   bind(root){
     this.syncOrientation();
     const arena=root.querySelector('.ygo-arena');
+    this.autoArena=arena?.classList.contains('is-auto')?arena:null;
+    if(this.pending)this.syncAutoBusy();
     if(arena){const blocked=this.orientation.isPortraitBlocked();for(const child of arena.children)if(!child.classList.contains('ygo-orientation-gate'))child.inert=blocked;arena.querySelector('.ygo-orientation-gate')?.classList.toggle('is-required',blocked);}
     if(!this.allowed())return;const element=root.querySelector('.ygo-simulator');if(!element||element.dataset.bound)return;element.dataset.bound='true';if(!this.ready&&!this.error)void this.initialize();
     this.cardGestures.bind(element);

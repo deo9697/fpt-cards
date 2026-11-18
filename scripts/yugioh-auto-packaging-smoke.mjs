@@ -84,8 +84,9 @@ const prompt=initial.publicViews[0].auto.prompt||initial.publicViews[1].auto.pro
 assert.equal(prompt.kind,'idle');
 assert(prompt.options.some(option=>option.id==='to_ep'));
 const input={state:initial,viewer:prompt.player,promptId:prompt.id,choice:{optionId:'to_ep'}};
-const advanced=await runAutoOperation('apply',input);
-const replay=await runAutoOperation('apply',JSON.parse(JSON.stringify(input)));
+// Duplicate replays may occupy different pool workers; output must still be
+// identical, with no game or native pointer shared between them.
+const [advanced,replay]=await Promise.all([runAutoOperation('apply',input),runAutoOperation('apply',JSON.parse(JSON.stringify(input)))]);
 assert.deepEqual(advanced,replay);
 assert.equal(advanced.inputs.length,1);
 const practice=await runAutoOperation('createPractice',setup);

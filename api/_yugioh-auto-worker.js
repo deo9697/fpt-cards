@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort } from 'node:worker_threads';
 import { createAutoState, applyAutoInput, searchAutoCards } from './_yugioh-auto-core.js';
 import { loadAutoResources } from './_yugioh-auto-resources.js';
 import { validateAutoDeck } from './_yugioh-auto-deck-rules.js';
 
+// Serialized jobs share only checked immutable card/script resources. The core
+// creates/destroys a fresh native duel for each persisted replay, so no user
+// game or failed move can contaminate another job on a warm instance.
+parentPort.on('message',async ({id,operation,payload})=>{
 try {
-  const { operation, payload } = workerData;
   let value;
   if (operation === 'validate') { const deck = validateAutoDeck(payload.deck, await loadAutoResources()); value = {valid:true,deckName:deck.name}; }
   else if (operation === 'create') value = await createAutoState(payload);
@@ -13,7 +16,8 @@ try {
   else if (operation === 'apply') { const { state, ...input } = payload; value = await applyAutoInput(state, input); }
   else if (operation === 'search') { const { state, ...input } = payload; value = await searchAutoCards(state, input); }
   else throw new Error('Operazione non valida.');
-  parentPort.postMessage({ ok: true, value });
+  parentPort.postMessage({ id, ok: true, value });
 } catch (error) {
-  parentPort.postMessage({ ok: false, message: error.message, code: error.code, status: error.status });
+  parentPort.postMessage({ id, ok: false, message: error.message, code: error.code, status: error.status });
 }
+});

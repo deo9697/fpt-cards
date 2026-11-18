@@ -45,9 +45,9 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     try { return await autoRuntime.run(operation, payload); }
     catch (error) { fail(Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : 503, error.code || 'auto_unavailable', error.message || 'Il motore automatico non è disponibile. La partita è conservata.'); }
   }
-  async function participant(row, actor) {
+  async function participant(row, actor, knownMembers) {
     if (!row || row.team_id !== actor.teamId || ![row.host_slug, row.guest_slug].includes(actor.slug)) fail(404, 'not_found', 'Partita non disponibile per il tuo profilo.');
-    const members = await store.members(actor.teamId);
+    const members = knownMembers ?? await store.members(actor.teamId);
     const host = members.find(member => member.slug === row.host_slug);
     const guest = members.find(member => member.slug === row.guest_slug);
     if (!host || !guest) fail(403, 'membership_changed', 'Uno dei giocatori non fa più parte del team.');
@@ -71,8 +71,8 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
     };
   }
   async function existing(id, actor) {
-    const row = await store.get(needUuid(id, 'Partita'));
-    const people = await participant(row, actor);
+    const [row,members] = await Promise.all([store.get(needUuid(id, 'Partita')),store.members(actor.teamId)]);
+    const people = await participant(row, actor, members);
     checkExpiry(row);
     return { row, people };
   }
@@ -176,10 +176,10 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
       if (!['state','inspect','search','accept','decline','cancel','action'].includes(op)) fail(400, 'invalid_operation', 'Operazione non disponibile.');
       if (op === 'state' && payload.knownVersion !== undefined) {
         if (!Number.isSafeInteger(payload.knownVersion) || payload.knownVersion < 1) fail(400, 'invalid_version', 'Versione del tavolo non valida.');
-        const meta = await store.meta(needUuid(payload.duelId, 'Partita'));
+        const [meta,members] = await Promise.all([store.meta(needUuid(payload.duelId, 'Partita')),store.members(actor.teamId)]);
         // The version is never an access credential. Check both participants'
         // current team membership and expiry before returning even a no-op.
-        await participant(meta, actor);
+        await participant(meta, actor, members);
         // A legacy lifecycle label can outlive an automatic opening win. Only
         // this rare expired label needs the full state to distinguish that
         // terminal result from a genuinely expired active duel.

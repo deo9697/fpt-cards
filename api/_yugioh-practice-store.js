@@ -5,6 +5,6 @@ export function createPracticeStore(admin){
   return{
     async get(teamId,owner){return value(await admin.from('yugioh_practice_sessions').select('*').eq('team_id',teamId).eq('owner_slug',owner).maybeSingle());},
     async insert(row){const result=await admin.from('yugioh_practice_sessions').insert(row).select('*').maybeSingle();if(result.error?.code==='23505')return null;return value(result);},
-    async update(id,version,teamId,owner,patch){return value(await admin.from('yugioh_practice_sessions').update(patch).eq('id',id).eq('team_id',teamId).eq('owner_slug',owner).eq('version',version).select('*').maybeSingle());}
+    async update(id,version,teamId,owner,patch){return value(await admin.from('yugioh_practice_sessions').update(patch).eq('id',id).eq('team_id',teamId).eq('owner_slug',owner).eq('version',version).select('id,version,updated_at').maybeSingle());}
   };
 }
