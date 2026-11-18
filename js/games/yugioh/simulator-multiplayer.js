@@ -46,7 +46,7 @@ export class YugiohMultiplayer {
     this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];
     this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:'',mode:'auto'};this.handSeed=1;
     this.dropMenu=null;this.dragBackup=null;this.rulesDialog=null;this.attackSelection=null;
-    this.activationReveals=createActivationReveals({onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
+    this.activationReveals=createActivationReveals({durationMs:1100,onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.rulesDialog=null;this.attackSelection=null;this.placing=null;this.selected=null;this.inspectedCard=null;}this.render();}});
     this.cardGestures=createDuelCardGestures({
       canStart:element=>!this.isAuto()&&this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&!this.attackSelection&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
@@ -321,10 +321,13 @@ export class YugiohMultiplayer {
   // Il livello degli effetti vive FUORI dall'HTML che il simulatore ridisegna
   // (un ridisegno a metà animazione lo cancellerebbe): un div fisso nel body,
   // creato alla prima animazione e tolto quando si esce dal simulatore.
-  queueDuelFx(events){if(!Array.isArray(events)||!events.length)return;this.fxQueue=[...(this.fxQueue||[]),...events].slice(-4);}
+  queueDuelFx(events){if(!Array.isArray(events)||!events.length)return;const summon=events.some(event=>event.kind==='summon');const kept=summon?events.filter(event=>event.kind!=='phase'||['your-turn','opponent-turn'].includes(event.name)):events;this.fxQueue=[...(this.fxQueue||[]),...kept].slice(-3);}
+  // Un tocco ovunque salta l'effetto in corso e la carta attivata: il tocco
+  // arriva comunque al controllo premuto (ascolto passivo, in cattura).
+  skipDuelFx(){if(!this.fxRunning&&!this.activationReveals.get())return;this.fxQueue=[];this.fx?.cancel();this.activationReveals.hide?.();}
   async playDuelFx(){
     if(this.fxRunning||!this.fxQueue?.length||typeof document==='undefined')return;
-    if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage);}
+    if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage,{speed:2.2});if(!this.fxSkipListener){this.fxSkipListener=()=>this.skipDuelFx();document.addEventListener('pointerdown',this.fxSkipListener,{capture:true,passive:true});}}
     this.fxRunning=true;
     try{
       // Bug 2026-11-18: senza il foglio di stile l'effetto compariva "nudo" sopra
@@ -334,7 +337,7 @@ export class YugiohMultiplayer {
       while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}
     }finally{this.fxRunning=false;}
   }
-  disposeDuelFx(){this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
+  disposeDuelFx(){if(this.fxSkipListener){globalThis.document?.removeEventListener?.('pointerdown',this.fxSkipListener,{capture:true});this.fxSkipListener=null;}this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;

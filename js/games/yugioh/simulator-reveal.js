@@ -37,5 +37,5 @@ export function createActivationReveals({onHide=()=>{},environment=globalThis,du
     const ticket=generation;timer=setTimer(()=>{if(!disposed&&ticket===generation)hide();},durationMs);
     return true;
   }
-  return{observe,get:()=>current?{...current}:null,clear,dispose(){clear();disposed=true;}};
+  return{observe,get:()=>current?{...current}:null,hide,clear,dispose(){clear();disposed=true;}};
 }

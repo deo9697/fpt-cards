@@ -39,7 +39,10 @@ function el(doc, tag, className, attrs = {}) {
   return node;
 }
 
-export function createDuelFx(root, { doc = root?.ownerDocument || document, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+// speed (2026-11-18): accelera in modo uniforme tutta la linea temporale (CSS
+// compresi, via playbackRate) e la durata; nel simulatore gli effetti non
+// devono far aspettare il giocatore.
+export function createDuelFx(root, { doc = root?.ownerDocument || document, setTimer = setTimeout, clearTimer = clearTimeout, speed = 1 } = {}) {
   if (!root) throw new Error('createDuelFx: serve l\'elemento del campo');
   const layer = el(doc, 'div', 'dfx-layer', { 'aria-live': 'polite' });
   root.classList.add('dfx-host');
@@ -52,9 +55,10 @@ export function createDuelFx(root, { doc = root?.ownerDocument || document, setT
     finish();
     layer.replaceChildren(...nodes);
     if (label) layer.setAttribute('aria-label', label);
+    if (speed !== 1) for (const animation of layer.getAnimations?.({ subtree: true }) || []) animation.playbackRate = speed;
     return new Promise(resolve => {
       pending = resolve;
-      busyTimer = setTimer(() => finish(), time(ms));
+      busyTimer = setTimer(() => finish(), time(ms / speed));
     });
   }
   function finish(value) {
