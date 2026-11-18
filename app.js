@@ -24,6 +24,7 @@ import { reconcileYgoPrintingMappings } from './js/ygo-printing-mapping-reconcil
 import { icon } from './js/icons.js';
 import { showToast, fptConfirm, fptPinDialog, watchNoticeExits } from './js/fpt-feedback.js';
 import { dashboardView, bindDashboardCarousel } from './js/dashboard.js';
+import { xpBarMarkup, animateXpCells } from './js/xp-bar.js';
 import { stageGlitchLayers, stageTypeLabel, collectionView as inventoryCollectionView, collectionResultsView, collectionDetailView, collectionEditorView, collectionLoanRequestView, collectionPrintingOptions, editionFromFirstEditionFlag, persistedCollectionItemMatches, selectCollectionEditorPrinting, COLLECTION_PAGE_SIZE, collectionJumpTarget, priceBoxContent } from './js/collection.js';
 import { enablePushNotifications, pushSupported, pushConfigured, pushStatus, pushResetPaused, resetPushNotifications, onPushStatus, setPushAccount, reconcilePush, stopPush, testPush, shouldOfferPush, deferPush } from './js/push.js';
 import { triggerRickrollVideo, isLossStreakZoomActive, onLossStreakZoomEnd } from './js/easter-egg.js';
@@ -289,7 +290,7 @@ function loadAppControllers() {
     .then(([{ DeckController }, { MarketWatchController }, { StatsController }]) => {
       decks = new DeckController({api,getState:()=>state,searchCards,findCard,findCardById,cardTypesByIds,cardLevelsByIds,tcgBanlistStatuses,isOnline:online,onRender:()=>renderRoute(),onToast:(message,tone)=>toast(message,tone),onLoansChanged:async()=>{await Promise.all([loadCloudLoans(),loadCollection()]);saveState();},getCosmetics:()=>stats.cosmetics});
       marketWatch = new MarketWatchController({api,getGame:()=>state.game,getMember:()=>state.currentUser,isAdmin:()=>state.role==='admin',getDecks:()=>state.decks.filter(deck=>deck.game===state.game),onRender:()=>{ if (MARKET_RENDER_PAGES.has(page)) renderRoute(); },onToast:(message,tone)=>toast(message,tone),onNavigate:target=>navigate(target)});
-      stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:(message,tone)=>toast(message,tone)});
+      stats = new StatsController({api,getState:()=>state,onRender:()=>renderRoute(),onModalRender:()=>render(true),onToast:(message,tone)=>toast(message,tone),onProgress:()=>refreshXpStrip()});
       // Ridisegna solo dove servono i controller (Dashboard e le loro pagine):
       // mai sulla Raccolta, su Fast Scan o mentre si scrive, per non perdere
       // testo digitato o stato della pagina.
@@ -372,17 +373,12 @@ function dispatchPageEnterRefresh(previous, next) {
 function animateXpFill() {
   const key = state.currentUser;
   if (!key) return;
-  const fills = [...document.querySelectorAll('.xp-strip .xp-bar > i')];
-  if (!fills.length) return;
-  const target = Math.max(0, Math.min(100, Number(fills[0].style.getPropertyValue('--progress')) || 0));
+  const strip = document.querySelector('.xp-strip .xp-seal');
+  if (!strip) return;
+  const target = Number(strip.dataset.xpProgress) || 0;
   const previous = displayedXpProgress.get(key);
   displayedXpProgress.set(key, target);
-  if (previous == null || previous === target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  for (const fill of fills) {
-    if (!fill.animate) continue;
-    const next = Math.max(0, Math.min(100, Number(fill.style.getPropertyValue('--progress')) || 0));
-    fill.animate([{width:previous+'%'},{width:next+'%'}], {duration:1100,easing:'cubic-bezier(.22,.68,.16,1)'});
-  }
+  document.querySelectorAll('.xp-strip .xp-seal').forEach(root => animateXpCells(root, previous, target));
 }
 function render(force = false) {
   if (SHARE_HASH.test(location.hash)) { if (guestShare && !document.querySelector('.share-guest-shell')) renderGuestShare(); return; }
@@ -560,7 +556,7 @@ function appView() {
 function xpStripView(u) {
   const progress = progressForXp(stats?.progression?.totalXp || 0);
   const titleLabel = findCosmetic(activeCosmetics().activeTitle)?.label || titleForLevel(progress.level);
-  return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione"><span class="xp-strip-row"><span class="xp-strip-level">LV ${progress.level}</span><span class="xp-bar"><i style="--progress:${progress.progress}"></i></span><span class="xp-strip-detail">${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</span></span><span class="xp-strip-identity">${esc(u.name)} · ${esc(titleLabel)}</span></button>`;
+  return `<button type="button" class="xp-strip" data-open-progression aria-label="Progressione">${xpBarMarkup(progress, { size:'compact' })}<span class="xp-strip-identity">${esc(u.name)} · ${esc(titleLabel)}</span></button>`;
 }
 
 function progressionDrawerView() {
@@ -569,7 +565,7 @@ function progressionDrawerView() {
   return `<div class="detail-backdrop" data-close-progression><aside class="card-detail progression-drawer" role="dialog" aria-modal="true" aria-label="Progressione">
     <button class="detail-close" data-close-progression aria-label="Chiudi">×</button>
     <span class="eyebrow">Progression</span><h2>LV ${progress.level}</h2>
-    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP · ${Math.max(0, (progress.nextLevelXp || 0) - progress.currentLevelXp)} XP al prossimo livello</small></div>
+    <div class="xp-bar-block">${xpBarMarkup(progress, { size:'large' })}</div>
     ${dailyMissionsView(stats?.missions || [])}
     <p class="progression-title">Titolo attuale: <b>${esc(title)}</b></p>
   </aside></div>`;
@@ -615,7 +611,7 @@ function avatarPanelView(u) {
     <span class="fpt-sheet-tab" aria-hidden="true">PROFILO</span>
     <button class="detail-close" data-close-avatar aria-label="Chiudi">×</button>
     <button type="button" class="profile-header profile-idcard" data-open-customize aria-label="Personalizza il profilo"><span class="profile-idcard-label" aria-hidden="true">DUELIST ID</span><span class="profile-hex">${profileAvatarMarkup(u, cosmetics, 'large')}</span><div class="profile-header-copy"><h2>${esc(u.name)}</h2><small><span class="profile-tag title">${esc(titleLabel)}</span><span class="profile-tag level">LV ${progress.level}</span></small></div><b class="profile-header-chevron" aria-hidden="true">›</b></button>
-    <div class="xp-bar-block"><div class="xp-bar large"><i style="--progress:${progress.progress}"></i></div><small><span><b>${progress.currentLevelXp}</b> / ${progress.nextLevelXp || progress.currentLevelXp} XP</span><span>${progress.nextLevelXp ? `${toNext} al LV ${progress.level + 1}` : 'Livello massimo'}</span></small></div>
+    <div class="xp-bar-block">${xpBarMarkup(progress, { size:'large' })}</div>
     <div class="profile-hud"><div><small>Livello</small><b class="gold">${progress.level}</b></div><div><small>XP totale</small><b class="violet">${progression.totalXp || 0}</b></div><div><small>Titoli</small><b>${unlockedTitles.length}</b></div></div>
     <div class="profile-selects">
       <label>Titolo equipaggiato<select data-equip-title ${cosmeticActionPending ? 'disabled' : ''}>${unlockedTitles.map(item => `<option value="${esc(item.id)}" ${cosmetics.activeTitle === item.id ? 'selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>

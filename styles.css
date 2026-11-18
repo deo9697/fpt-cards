@@ -4368,3 +4368,31 @@ body:has(.detail-backdrop) #deck-search-layer { display:none; }
 body::before, body::after { display:none; }
 .page-stage { --fpt-panel:rgba(14,11,24,.8); --fpt-panel-2:rgba(21,16,37,.82); }
 .page-stage :is(.surface,.card,.summary-card,.attention-card) { background-color:rgba(16,19,27,.8); }
+
+/* ===== Barra XP "Sigilli" (variante B scelta 2026-11-18) =====
+   Sostituisce le tre barre sovrapposte (verde, liquido, segmenti): colori
+   fissi, si anima solo il riempimento. */
+.xp-seal { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:8px; min-width:0; width:100%; }
+.xp-seal-badge { position:relative; display:grid; place-items:center; width:32px; height:36px; flex:none; clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); background:#140c26; }
+.xp-seal-badge::before { content:''; position:absolute; inset:0; clip-path:inherit; background:conic-gradient(var(--fpt-gold) 0 var(--p),#2a2140 var(--p)); }
+.xp-seal-badge::after { content:''; position:absolute; inset:3px; clip-path:inherit; background:#120c22; }
+.xp-seal-badge b { position:relative; z-index:1; font:900 .76rem var(--fpt-mono); color:var(--fpt-gold); }
+.xp-seal-right { display:grid; gap:3px; min-width:0; }
+.xp-seal-cells { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:3px; }
+.xp-cell { position:relative; height:9px; overflow:hidden; background:#140d24; clip-path:polygon(4px 0,100% 0,calc(100% - 4px) 100%,0 100%); }
+.xp-cell > i { position:absolute; inset:0 auto 0 0; width:var(--f); background:linear-gradient(90deg,#9b5cff,#ff4fd8); box-shadow:0 0 6px #ff4fd8; }
+.xp-cell.is-full > i { background:linear-gradient(90deg,#c99a35,#ffe7a8); box-shadow:0 0 6px #e8b84f; }
+.xp-seal-meta { display:flex; justify-content:space-between; gap:8px; overflow:hidden; font:800 .5rem var(--fpt-mono); letter-spacing:.08em; color:#9a8fb8; text-transform:uppercase; white-space:nowrap; }
+.xp-seal-meta b { color:var(--fpt-pink); }
+.xp-seal-large { gap:12px; }
+.xp-seal-large .xp-seal-badge { width:46px; height:52px; } .xp-seal-large .xp-seal-badge b { font-size:1rem; }
+.xp-seal-large .xp-cell { height:13px; } .xp-seal-large .xp-seal-meta { font-size:.6rem; }
+/* barra in alto: niente vecchia riga, numeri sempre visibili anche sul telefono */
+.xp-strip { gap:2px; }
+.xp-strip .xp-seal { padding:2px 0; }
+@media (max-width:760px) { .xp-strip { padding:3px 8px 3px 4px; } .xp-strip .xp-seal-meta { font-size:.46rem; } }
+.stats-page .stats-player-level { min-width:0; width:min(150px,42vw); }
+.stats-page .stats-player-level .xp-seal b { display:inline; padding:0; border:0; clip-path:none; font-size:inherit; }
+.stats-page .stats-player-level .xp-seal-badge b { font-size:.76rem; }
+.stats-page .stats-player-level { width:min(124px,34vw); }
+.stats-page .stats-player-level .xp-seal-meta span + span { display:none; }

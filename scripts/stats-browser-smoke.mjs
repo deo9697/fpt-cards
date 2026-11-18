@@ -179,7 +179,7 @@ async function run() {
   assert(await evaluate(`Boolean(document.querySelector('.stats-player-card'))`), 'La player card della panoramica Io non è presente');
   console.log('PASS panoramica Io: tile win-rate aggiornata dopo il match');
 
-  await waitFor(`document.querySelector('.xp-strip-level')?.textContent.includes('LV 1')`, 'La barra XP in header non riflette il livello corrente dopo il match');
+  await waitFor(`document.querySelector('.xp-strip .xp-seal-badge b')?.textContent.trim()==='1'&&document.querySelector('.xp-strip .xp-seal-meta')?.textContent.includes('15 / 75 XP')`, 'La barra XP in header non riflette il livello corrente dopo il match');
   assert(await evaluate(`document.querySelector('.xp-strip-identity')?.textContent.includes('Daniele')`), 'Header: nome del membro non mostrato accanto alla barra XP');
   await click('[data-open-progression]');
   await waitFor(`Boolean(document.querySelector('.progression-drawer'))`, "Il drawer Progression non si apre dall'header");

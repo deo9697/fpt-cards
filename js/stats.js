@@ -1,4 +1,5 @@
 import { esc, initials, formatDate, MEMBERS } from './core.js';
+import { xpBarMarkup } from './xp-bar.js';
 import { icon } from './icons.js';
 import { progressForXp, titleForLevel, xpAmountForResult, titleForHeadToHead } from './progression.js';
 import { newlyUnlockedCosmetics, findCosmetic } from './cosmetics.js';
@@ -14,8 +15,8 @@ const SCOPES = ['mine', 'team', 'board'];
 const NEW_DECK_VALUE = '__new__';
 
 export class StatsController {
-  constructor({ api, getState, onRender, onModalRender, onToast } = {}) {
-    Object.assign(this, { api, getState, onRender, onModalRender: onModalRender || onRender, onToast });
+  constructor({ api, getState, onRender, onModalRender, onToast, onProgress } = {}) {
+    Object.assign(this, { api, getState, onRender, onModalRender: onModalRender || onRender, onToast, onProgress });
     this.scope = 'mine'; this.memberFilter = 'all'; this.deckFilter = 'all'; this.periodFilter = 'all';
     this.progression = null; this.cosmetics = null; this.missions = []; this.streak = null; this.myRows = []; this.teamRows = []; this.error = ''; this.rivalWins = {};
     this.matchModalOpen = false; this.matchForm = emptyForm(); this.opponentMode = 'external'; this.busy = false; this.lastResult = null;
@@ -257,6 +258,7 @@ export class StatsController {
         wentFirst:form.wentFirst
       });
       this.progression = { ...this.progression, totalXp:response.totalXp, level:response.level };
+      this.onProgress?.(); // la barra XP in alto vive fuori dalla pagina: va aggiornata qui
       this.lastResult = { result:form.result, wentFirst:form.wentFirst, ...response };
       // Solo una vittoria contro un compagno reale può far scattare un avatar
       // "rivalità" (vedi js/cosmetics.js) — evita una RPC in più per ogni
@@ -351,7 +353,7 @@ export class StatsController {
       <div class="stats-player-row">
         ${avatarMarkup}
         <div class="stats-player-copy"><strong>${esc(playerName)}<i class="stats-online-dot" aria-hidden="true"></i></strong><small>${esc(titleLabel)}</small></div>
-        <div class="stats-player-level"><b>LV ${level}</b><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
+        <div class="stats-player-level">${xpBarMarkup(progress, { size:'compact' })}</div>
       </div>
     </section>
     <div class="stats-tile-row">
@@ -483,7 +485,7 @@ export class StatsController {
       <span class="eyebrow">✓ Match registrato</span><h2 class="match-feedback-result ${result.result}">${RESULT_LABEL[result.result]} ${matchDieBadge(result.wentFirst)}</h2>
       <p class="match-feedback-xp foil-text">+${result.xpAwarded} XP</p>
       ${capped ? `<p class="match-feedback-cap">${icon('info')} Limite giornaliero raggiunto</p>` : ''}
-      <div class="xp-bar-block"><small>LV ${result.level}</small><div class="xp-bar"><i style="--progress:${progress.progress}"></i></div><small>${progress.currentLevelXp} / ${progress.nextLevelXp || progress.currentLevelXp} XP</small></div>
+      <div class="xp-bar-block">${xpBarMarkup(progress, { size:'large' })}</div>
       ${result.levelUp ? `<div class="level-up-banner foil-frame">${icon('star')} LEVEL UP!<b>LV ${result.level}</b><small>${esc(title)}</small></div>` : ''}
       <button class="btn wide" data-match-close>Chiudi</button>
     </aside></div>`;
