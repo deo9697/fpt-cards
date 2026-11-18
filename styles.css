@@ -4396,3 +4396,7 @@ body::before, body::after { display:none; }
 .stats-page .stats-player-level .xp-seal-badge b { font-size:.76rem; }
 .stats-page .stats-player-level { width:min(124px,34vw); }
 .stats-page .stats-player-level .xp-seal-meta span + span { display:none; }
+/* Prestazioni (2026-11-18): nelle pagine di duello il campo copre tutto e lo
+   sfondo animato sotto consumerebbe GPU per niente; niente mix-blend-mode. */
+body[data-page="simulator"] .fpt-backdrop, body[data-page="academy"] .fpt-backdrop { display:none; }
+.fpt-backdrop-seal { mix-blend-mode:normal; }
