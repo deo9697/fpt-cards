@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 
 // A duel is persisted as a pinned seed + validated inputs, never as a warm
 // process. A separate worker bounds synchronous Lua/WASM work on every request.
-const operations = new Set(['validate', 'create', 'apply', 'search']);
+const operations = new Set(['validate', 'create', 'createPractice', 'apply', 'search']);
 const publicKeys = ['id', 'status', 'firstPlayer', 'startingPlayer', 'mode', 'format', 'players', 'turn', 'phase', 'activePlayer', 'chain', 'log', 'result', 'auto', 'lastBattle', 'battle'];
 export function projectAutoStateSafe(state, viewer) {
   if (![0, 1].includes(viewer) || state?.mode !== 'auto' || !state.publicViews?.[viewer]) throw new Error('Stato automatico non disponibile.');

@@ -95,6 +95,8 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-pile-art>img { width:100%;height:100%;object-fit:contain;filter:brightness(.9); }.ygo-pile-art:has(.ygo-card-back):before,.ygo-pile-art:has(.ygo-card-back):after { content:'';position:absolute;z-index:-1;inset:2px -2px -2px 2px;border:1px solid #97744d;background:#322716; }.ygo-pile-art:has(.ygo-card-back):before { inset:4px -4px -4px 4px; }
 .ygo-pile>b { position:absolute;z-index:3;bottom:0;left:50%;transform:translateX(-50%);min-width:19px;padding:1px 4px;border:1px solid #c6bf83;background:#101c25ec;color:#f4e3a0;font:bold clamp(.43rem,.8vw,.76rem)/1.1 monospace;text-shadow:0 1px #000; }
 .ygo-arena .ygo-pile:disabled { opacity:1; }
+.ygo-arena :is(.ygo-pile,.ygo-banish-count).has-auto-action { border-color:#8bd9f4;box-shadow:inset 0 0 0 1px #8bd9f455,0 0 8px #5bb9e64d; }
+.ygo-pile.has-auto-action>small,.ygo-banish-count.has-auto-action>span { color:#c8f2ff; }
 .ygo-pile-symbol { color:#6fc1ddd2;font-size:1.5rem;text-shadow:0 0 7px #6fc1dd7a;font-style:normal; }
 .ygo-simulator button>.icon { width:14px;height:14px;vertical-align:-3px;margin-right:4px; }.ygo-pile-symbol>.icon { width:23px;height:23px; }.ygo-counter-badge>.icon { width:8px;height:8px; }.ygo-banish-count>.icon { width:9px;height:9px;flex:none; }
 .ygo-counter-badge { display:inline-flex;align-items:center;justify-content:center;gap:2px;width:max-content;max-width:34px; }
@@ -599,6 +601,12 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 @media (max-height:450px) and (orientation:landscape) {
   .ygo-auto-prompt { bottom:24px;right:max(9px,env(safe-area-inset-right,0px));max-height:calc(100dvh - 70px);padding:8px;gap:5px; }
   .ygo-auto-prompt.is-compact { max-width:285px; }
+  /* The idle launcher belongs in the phase sidebar, outside the playmat.
+     Expanded choices remain a deliberate overlay with their collapse control. */
+  .ygo-auto-prompt.is-compact { right:max(6px,env(safe-area-inset-right,0px));bottom:max(6px,env(safe-area-inset-bottom,0px));width:74px;max-width:74px;padding:3px;gap:0; }
+  .ygo-auto-prompt.is-compact>strong,.ygo-auto-prompt.is-compact>small { display:none; }
+  .ygo-auto-prompt.is-compact .ygo-auto-controls { grid-template-columns:1fr; }
+  .ygo-auto-prompt.is-compact button { min-height:40px;padding:4px 2px;font-size:.55rem; }
   .ygo-auto-prompt.is-waiting { width:180px;padding:7px; }
   .ygo-auto-prompt.is-compact small { font-size:.58rem; }
 }

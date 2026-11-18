@@ -46,6 +46,7 @@ console.log('PASS 38 practice turns continue past the empty passive deck, with a
 
 const calls=[];const instance=new YugiohMultiplayer({getContext:()=>({member:'synthetic-host',team:'synthetic-team',allowed:true}),getDecks:()=>[deck,{...deck,id:'a0000000-0000-4000-8000-000000000002',ownerSlug:'someone-else'}],getMembers:()=>[],verifyAccess:async()=>true,loadDecks:async()=>{},lookupCard:async()=>null,onRender:()=>{},onToast:()=>{},confirm:async()=>true,call:async payload=>{calls.push(payload);return{deck:JSON.parse(original)};}});
 instance.ready=true;
+instance.practiceDraft.mode='manual';
 try{
   await instance.startPractice('a0000000-0000-4000-8000-000000000002');assert.equal(calls.length,0);assert.equal(instance.practice,false);
   await instance.startPractice(deck.id);assert.equal(instance.practice,true);assert.deepEqual(calls.map(call=>call.op),['practice']);

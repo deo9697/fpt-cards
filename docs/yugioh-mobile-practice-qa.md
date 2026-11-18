@@ -1,5 +1,7 @@
 # Yu-Gi-Oh! — campo mobile, menu rapido e Testa mazzo
 
+Aggiornamento 18 novembre 2026: Testa mazzo ora propone il motore automatico TCG, con prova personale persistita e campo avversario passivo. È ancora selezionabile Manuale locale: i comportamenti manuali documentati sotto si riferiscono a quella variante. Contratti, privacy e copertura del percorso automatico sono descritti in [yugioh-auto-qa.md](yugioh-auto-qa.md).
+
 Data: 12 novembre 2026. Aggiorna le verifiche della prima arena del 10 novembre. Per catene, costi Xyz e materiali: [verifica dedicata](yugioh-chain-summon-qa.md).
 
 ## Comportamento

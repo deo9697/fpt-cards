@@ -4,6 +4,7 @@ import createCore, { OcgCoreInternal, OcgDuelMode, OcgLocation, OcgMessageType a
 import { loadAutoResources } from './_yugioh-auto-resources.js';
 import { isPromptMessage, normalizePrompt, resolveChoice, searchPromptCards } from './_yugioh-auto-prompts.js';
 import { validateAutoDeck, AUTO_TCG_BANLIST } from './_yugioh-auto-deck-rules.js';
+import { choosePassiveChoice, PASSIVE_POLICY_VERSION } from './_yugioh-auto-passive.js';
 
 // The database persists the inputs, never a native pointer or a warm-instance key.
 // Every accepted response is replayed against the same pinned Lua/core snapshot.
@@ -109,7 +110,7 @@ function queryPlayers(core, duel, state, resources, viewer, lp, deckReversed = f
         // contents. A genuinely face-up top card is public without reversal too.
         const publicDeckTop = location === OcgLocation.DECK && sequence === entries.length - 1 && (deckReversed || faceUp(position));
         const visible = publicDeckTop || (location !== OcgLocation.DECK && (seat === viewer || !!query.isPublic || (location !== OcgLocation.HAND && faceUp(position))));
-        const materials = (query.overlayCards || []).map((materialCode, index) => ({...cardMetadata(materialCode,resources),id:`${pointerId(seat,location,sequence)}-material-${index}`,faceUp:true,position:'attack',slot:null,counters:0,materials:[]}));
+        const materials = (query.overlayCards || []).map((materialCode, index) => ({...cardMetadata(materialCode,resources),id:`${pointerId(seat,location,sequence)}-material-${index}`,controller:seat,location,sequence,overlay_sequence:index,faceUp:true,position:'attack',slot:null,counters:0,materials:[]}));
         if (!visible) { const hidden=concealedCard(seat,zone,sequence,position,slot,location,query.type);if(location===OcgLocation.MZONE)hidden.materials=materials;player[zone].push(hidden);return; }
         const code = query.code || 0;
         player[zone].push({ ...cardMetadata(code,resources,query), id:pointerId(seat,location,sequence), controller:seat, owner:playerIndex(query.owner)?query.owner^state.firstPlayer:seat, location, sequence, corePosition:position, originSection:location === OcgLocation.EXTRA ? 'extra' : 'main', faceUp:publicDeckTop || faceUp(position), position:visualPosition(zone,position,query.type??resources.cards.get(code)?.type), slot, atkModifier:0, defModifier:0, counters:Object.values(query.counters || {}).reduce((sum,value) => sum + value,0), counterTypes:query.counters || {}, materials, _equippedTo:query.equippedTo, _targets:query.targets || [] });
@@ -182,6 +183,7 @@ async function replay(state) {
   const resources = await loadAutoResources(state.resourceVersion);
   if (state.resourceVersion && state.resourceVersion !== resources.version) failure('resource_version_changed','La versione delle carte della partita non è più disponibile.',409);
   if (state.engineVersion !== AUTO_ENGINE_VERSION) failure('engine_version_changed','Questa partita usa una versione diversa del motore.',409);
+  if ((state.passivePlayer!==undefined||state.passivePolicy!==undefined) && (state.passivePlayer!==1||state.passivePolicy!==PASSIVE_POLICY_VERSION)) failure('passive_policy_changed','Questa prova usa una versione diversa del campo passivo.',409);
   if (!Array.isArray(state.inputs) || state.inputs.length > MAX_INPUTS) failure('replay_limit','La partita ha raggiunto il limite di azioni.',409);
   const core = await createCore({sync:true,print:() => {},printErr:() => {}});
   let duel;
@@ -281,6 +283,11 @@ async function replay(state) {
       const id = `prompt-${hash([state.seed,state.engineVersion,resources.version,sequence,pending]).slice(0,32)}`;
       const prompt = normalizePrompt(pending,{id,sequence,resources,cards:resources.cards,strings:resources.strings,cardInfo:code=>cardMetadata(code,resources),isCardVisible:promptVisibility(core,duel,state,events.knownReveals)});
       if (!prompt) failure('unsupported_prompt','Il motore richiede una scelta non supportata.',503);
+      if (sequence === state.inputs.length && pending.player === state.passivePlayer) {
+        if (state.inputs.length >= MAX_INPUTS) failure('replay_limit','La partita ha raggiunto il limite di azioni.',409);
+        const choice=choosePassiveChoice(pending,{resources,cards:resources.cards,strings:resources.strings});
+        state.inputs.push({viewer:pending.player,promptId:id,choice});
+      }
       if (sequence === state.inputs.length) {
         state.pendingMessage=copy(pending); state.pendingPromptId=id;
         const publicBase = {mode:'auto',format:'tcg',status:events.result?'finished':'playing',turn:events.turn,phase:events.phase,activePlayer:events.activePlayer,chain:events.chain,battle:events.battle,log:events.log,result:events.result,startingPlayer:state.firstPlayer,firstPlayer:state.firstPlayer};
@@ -304,13 +311,16 @@ async function replay(state) {
   } finally { if (duel) core.destroyDuel(duel); }
 }
 
-export async function createAutoState({decks,names=['Giocatore 1','Giocatore 2'],lp=[8000,8000],firstPlayer=0,seed,resourceVersion}={}) {
+export async function createAutoState({decks,names=['Giocatore 1','Giocatore 2'],lp=[8000,8000],firstPlayer=0,seed,resourceVersion,passivePlayer,passivePolicy}={}) {
   if (!Array.isArray(decks) || decks.length !== 2 || !playerIndex(firstPlayer)) failure('invalid_setup','Servono due mazzi e il primo giocatore.');
   if (typeof lp === 'number') lp=[lp,lp];
   if (!Array.isArray(lp) || lp.length !== 2 || !lp.every(value=>Number.isInteger(value)&&value>=1&&value<=999999)) failure('invalid_lp','Life Points iniziali non validi.');
+  const passive=passivePlayer!==undefined||passivePolicy!==undefined;
+  if (passive&&(passivePlayer!==1||passivePolicy!==undefined&&passivePolicy!==PASSIVE_POLICY_VERSION)) failure('invalid_passive_setup','Configurazione del campo passivo non valida.');
   const resources=await loadAutoResources(resourceVersion);
   const initialDecks=decks.map(deck=>validateAutoDeck(deck,resources));
   const state={mode:'auto',engineVersion:AUTO_ENGINE_VERSION,resourceVersion:resources.version,seed:canonicalSeed(seed),initialDecks,names:[0,1].map(index=>String(names?.[index]||`Giocatore ${index+1}`).slice(0,100)),lp:[...lp],firstPlayer,inputs:[],inputSequence:0,createdAt:new Date().toISOString()};
+  if(passive){state.passivePlayer=1;state.passivePolicy=PASSIVE_POLICY_VERSION;}
   return replay(state);
 }
 

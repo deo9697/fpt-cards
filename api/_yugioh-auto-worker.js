@@ -9,6 +9,7 @@ try {
   let value;
   if (operation === 'validate') { const deck = validateAutoDeck(payload.deck, await loadAutoResources()); value = {valid:true,deckName:deck.name}; }
   else if (operation === 'create') value = await createAutoState(payload);
+  else if (operation === 'createPractice') value = await createAutoState({...payload,firstPlayer:0,passivePlayer:1});
   else if (operation === 'apply') { const { state, ...input } = payload; value = await applyAutoInput(state, input); }
   else if (operation === 'search') { const { state, ...input } = payload; value = await searchAutoCards(state, input); }
   else throw new Error('Operazione non valida.');

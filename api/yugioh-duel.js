@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 import { createDuelService, DuelError } from './_yugioh-duel-service.js';
+import { createPracticeService } from './_yugioh-practice-service.js';
+import { createPracticeStore } from './_yugioh-practice-store.js';
 
 const unwrap = result => { if (result.error) throw result.error; return result.data; };
 const clientOptions = { auth:{ persistSession:false, autoRefreshToken:false } };
@@ -71,6 +73,7 @@ export function createDatabase(env, authorization) {
   return {
     // This existing resolver authorizes current team membership for both games.
     async authenticate(token) { return unwrap(await identity.rpc('onepiece_duel_identity', { p_token:token || null })); },
+    practices: createPracticeStore(admin),
     store: {
       async members(teamId) {
         const rows = unwrap(await admin.from('team_members').select('slug,full_name').eq('team_id', teamId).eq('active', true));
@@ -178,6 +181,10 @@ export function createDuelHandler({ env = process.env, databaseFactory = createD
       }
       // Restrict slug syntax before composing the participant filter in PostgREST.
       if (!actor?.slug || !/^[a-z0-9_-]{1,100}$/i.test(actor.slug)) throw new DuelError(401, 'unauthorized', 'Profilo del team non valido.');
+      if (['practiceStart','practiceState','practiceAction','practiceSearch'].includes(body.op)) {
+        const service = createPracticeService({ store:database.store, practices:database.practices, ...(autoRuntime ? { autoRuntime } : {}) });
+        return res.status(200).json(await service.run(actor, body));
+      }
       const service = createDuelService({ store:database.store, notify:invitation => notify(database, invitation, env), ...(autoRuntime ? { autoRuntime } : {}) });
       return res.status(200).json(await service.run(actor, body));
     } catch (error) {

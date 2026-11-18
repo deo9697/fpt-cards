@@ -1,6 +1,6 @@
 # Matrice di verifica del simulatore automatico Yu-Gi-Oh!
 
-Audit locale del 17 novembre 2026, profilo **TCG Advanced / Master Rule 2020**. Questa matrice distingue meccaniche eseguite realmente, controlli del protocollo e casi ancora non esercitati. Non costituisce una certificazione di tutte le singole carte o delle loro combinazioni.
+Audit locale del 17 novembre 2026, esteso il 18 novembre a effetti fuori campo e Testa mazzo, profilo **TCG Advanced / Master Rule 2020**. Questa matrice distingue meccaniche eseguite realmente, controlli del protocollo e casi ancora non esercitati. Non costituisce una certificazione di tutte le singole carte o delle loro combinazioni.
 
 Il gioco è deciso da `ocgcore-wasm@0.1.6` con `MODE_MR5`, `TCG_SEGOC_NONPUBLIC` e `TCG_SEGOC_FIRSTTRIGGER`, usando gli script Lua fissati nel manifest. Profilo risorse corrente: `ignis-14f3b8905ff9-babel-6e21009855ed-tcg-r2`; banlist `tcg-2026-10-19`, verificata il 17 novembre. Il catalogo comprende anche voci non ammesse al TCG: il validatore impedisce di usarle nei mazzi automatici.
 
@@ -105,9 +105,23 @@ Le immagini e i resoconti browser sono in `artifacts/yugioh-auto/`. Questi test 
 
 ## Confine della verifica
 
+### Estensione: effetti fuori campo e prova personale
+
+| Area | Prova concreta | Test |
+|---|---|---|
+| Cimitero | Mezuki paga il banish anche se Crow rimuove il bersaglio; Plaguespreader paga il ritorno in cima e viene bandito; Wulf/Felis distinguono la causa dell'invio; Breakthrough rispetta il turno d'invio; Lost Wind si setta e poi si bandisce; Necro Gardna risponde nel turno avversario | `yugioh-auto-graveyard-smoke.mjs` |
+| Blocchi e sostituzioni | Necrovalley impedisce costi/movimenti dal Cimitero finché applicabile; Macro Cosmos sostituisce l'invio e impedisce trigger esclusivamente dal Cimitero | Graveyard |
+| Banish, mano e limiti | Giant Rex scoperto/coperto; limite condiviso Thunder Dragondark; Veiler in Chain 2 e restrizione del turno; Zephyros una volta per duello; Grapha con procedura dal Cimitero senza catena | `yugioh-auto-offfield-smoke.mjs` |
+| Materiali | Sangan staccato non conta come inviato dal terreno; Trick Clown staccato attiva il trigger e paga 1000; il selector Dugg distingue ogni materiale dal genitore Xyz anche con il giocatore 1 come primo | Offfield, `yugioh-auto-zone-visibility-smoke.mjs` |
+| Presentazione effetti fuori campo | Prompt sul proprietario corretto, fonte esatta, artwork pubblico di catena e rivelazione condiviso; materiali con coordinate e indice overlay | Zone visibility, UI |
+| Prova personale | Stesso worker/core, risposte passive persistite, isolamento dell'owner, CAS/idempotenza, ripresa/riavvio, tabella privata con RLS e divieti client | `yugioh-auto-passive-smoke.mjs`, `yugioh-auto-practice-service-smoke.mjs`, `yugioh-auto-practice-schema-smoke.mjs` |
+| Percorso su telefono | Browser → handler autenticato → servizio personale → worker reale: Foolish manda Zephyros al Cimitero, attivazione dalla galleria, costo/evocazione/danno, turno passivo, ripresa e riavvio; nessuna scrittura PvP o notifica | `yugioh-auto-practice-browser-smoke.mjs` |
+
+Le decisioni passive usano anche fixture sintetiche delle famiglie del protocollo; sono distinte dalle partite con carte reali. Il browser personale impiega identità e storage in memoria, non account o righe di produzione. Gli screenshot sono in `artifacts/yugioh-auto-practice/`.
+
 La copertura reale dimostra le principali famiglie di meccaniche del duello TCG e i relativi collegamenti con il servizio FPT. Restano non certificati individualmente i circa 15.000 passcode del catalogo, tutte le interazioni fra carte, le eccezioni di ogni archetipo e tutte le varianti storiche del protocollo. Effetti e vincoli di quelle carte sono affidati al motore e agli script inclusi; una singola combinazione non provata resta **non verificata**, non automaticamente assente o garantita.
 
-La modalità qui verificata è il duello singolo privato fra due membri con regole TCG moderne. Match con sideboarding, Tag/Rush/GOAT, avversario AI e parità grafica completa con Master Duel non sono funzionalità attestate da questa matrice.
+La modalità qui verificata è il duello singolo privato fra due membri con regole TCG moderne, con lo stesso core disponibile in Testa mazzo personale contro un campo passivo. Match con sideboarding, Tag/Rush/GOAT, avversario AI strategico e parità grafica completa con Master Duel non sono funzionalità attestate da questa matrice.
 
 L’audit ha corretto ordinamento privato delle carte, semantica degli opcode e delle somme, cima pubblica dei mazzi rovesciati, relazioni Equip/bersagli/proprietario, materiali di Xyz coperti e chiusura delle vittorie iniziali. Il profilo risorse `-tcg-r2` ripara lo script mancante di Red-Eyes Darkness Metal Dragon e conserva intatti gli archivi precedenti per i replay delle partite aperte. La ricostruzione di archivi, manifest e avvisi è stata confrontata byte per byte.
 

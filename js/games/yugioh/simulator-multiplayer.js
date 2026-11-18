@@ -26,7 +26,7 @@ export class YugiohMultiplayer {
     this.metadata=new Map();this.metadataLoading=new Set();this.inviteRequestId=null;
     this.inviteDraft={opponentSlug:'',deckId:'',lp:8000,firstPlayer:'0',mode:'auto'};this.acceptDraft={deckId:'',lp:8000};this.finishDraft={winner:'0',notes:''};
     this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];
-    this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:''};this.handSeed=1;
+    this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:'',mode:'auto'};this.handSeed=1;
     this.dropMenu=null;this.dragBackup=null;this.rulesDialog=null;this.attackSelection=null;
     this.activationReveals=createActivationReveals({onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.rulesDialog=null;this.attackSelection=null;this.placing=null;this.selected=null;this.inspectedCard=null;}this.render();}});
@@ -44,6 +44,12 @@ export class YugiohMultiplayer {
   canControl(player){return player===this.viewer&&['setup','playing'].includes(this.duel?.status);}
   isAuto(){return this.session?.mode==='auto'||this.duel?.mode==='auto';}
   autoPrompt(){return this.session?.auto?.prompt;}
+  autoFrameCurrent(element){
+    if(!this.isAuto())return true;
+    const frame=element?.dataset?.ygoAutoPrompt!==undefined?element:element?.closest?.('[data-ygo-auto-prompt]');
+    if(!frame)return true;
+    return frame.dataset.ygoAutoPrompt===(this.autoPrompt()?.id||'')&&Number(frame.dataset.ygoAutoVersion)===this.duel?.version&&(!frame.dataset.ygoAutoDuel||frame.dataset.ygoAutoDuel===this.duel?.id);
+  }
   async respondAuto(choice){const prompt=this.autoPrompt();if(!this.isAuto()||this.duel?.status!=='playing'||!prompt||this.pending)return;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;await this.act({type:'autoRespond',promptId:prompt.id,choice});}
   async chooseAutoOption(id){
     const prompt=this.autoPrompt();if(!prompt||this.pending||this.orientation.isPortraitBlocked())return;
@@ -133,7 +139,7 @@ export class YugiohMultiplayer {
     this.placing=null;this.pile=null;this.menu=false;this.render();
   }
   async applyDropAction(id){
-    if(this.isAuto()){await this.chooseAutoOption(id);return;}
+    if(this.isAuto()){const menu=this.dropMenu;if(!menu||menu.version!==this.duel?.version||menu.duelId!==this.duel?.id||menu.promptId!==this.autoPrompt()?.id)return;await this.chooseAutoOption(id);return;}
     const menu=this.dropMenu,choice=menu?.actions.find(action=>action.id===id);
     if(!choice||choice.disabled||!this.allowed()||!this.canControl(menu.player)||this.pending||menu.duelId!==this.duel?.id||menu.version!==this.duel?.version||menu.player!==this.viewer||this.orientation.isPortraitBlocked())return;
     const{activateOnly,activateAfter,positionOnly,...changes}=choice.changes;
@@ -188,36 +194,57 @@ export class YugiohMultiplayer {
     const output=form.querySelector('[data-ygo-material-summary]');
     if(output){const cards=[...this.session.players[this.viewer].monsters,...this.session.players[this.viewer].extraMonsters].filter(card=>draft.materialIds.includes(card.id));const target=this.session.players[this.viewer].extra.find(card=>card.id===draft.cardId);output.textContent=getSummonKind(target)==='xyz'?cards.length+' materiali di Livello '+(cards[0]?materialLevel(cards[0]):'?')+' · Rango '+(target.rank??target.level??'?'):cards.length+' materiali · somma Livelli '+cards.reduce((sum,card)=>sum+(materialLevel(card)||0),0);}
   }
-  call(payload){return this.practiceTable?Promise.resolve().then(()=>this.practiceTable.run(payload)):this.options.call(payload);}
+  call(payload){
+    if(this.practiceTable)return Promise.resolve().then(()=>this.practiceTable.run(payload));
+    const operation=this.practice&&this.isAuto()?{action:'practiceAction',search:'practiceSearch',state:'practiceState'}[payload.op]:null;
+    return this.options.call(operation?{...payload,op:operation}:payload);
+  }
   syncOrientation(){if(this.allowed()&&((this.session&&this.tab==='table')||this.practiceStarting))void this.orientation.enter();else this.orientation.exit();}
   openRequestedPractice(){if(this.options.requestedPractice?.()&&this.tab!=='practice'&&!this.practice)this.showPractice();}
   showPractice({render=true}={}){this.clearTable();this.tab='practice';this.error='';this.options.onPracticeMode?.(true);if(!this.practiceDraft.deckId)this.practiceDraft.deckId=this.decks[0]?.id||'';if(render)this.render();this.schedule();}
-  async startPractice(deckId){
+  acceptPracticeDuel(duel,deckId){
+    if(!duel||duel.practice!==true||duel.mode!=='auto'||duel.viewer!==0||!['playing','finished'].includes(duel.status)||duel.state?.mode!=='auto')throw new Error('Questa prova personale non è disponibile.');
+    this.practiceTable=null;this.practice=true;this.practiceDraft.mode='auto';
+    this.practiceDraft.deckId=deckId||duel.deckId||duel.state.players?.[0]?.deckId||this.practiceDraft.deckId;
+    this.tab='table';this.receive(duel);this.options.onPracticeMode?.(true);
+  }
+  async startPractice(deckId,mode=this.practiceDraft.mode){
     if(this.pending||!this.ready||!this.allowed())return;
     const deck=this.decks.find(item=>item.id===deckId);
     if(!deck){this.error='Scegli uno dei tuoi mazzi salvati.';this.render();return;}
-    const checked=validateSimulatorDeck(deck);if(!deck.dirty&&!checked.valid){this.error=checked.errors.join(' ');this.render();return;}
+    const automatic=mode!=='manual';
+    if(!automatic){const checked=validateSimulatorDeck(deck);if(!deck.dirty&&!checked.valid){this.error=checked.errors.join(' ');this.render();return;}}
     const generation=++this.navigationGeneration;this.pending=true;this.practiceStarting=true;this.error='';
     void this.orientation.enter({userGesture:true});this.render();
     try{
-      const response=await this.options.call({op:'practice',deckId});
+      const response=await this.options.call(automatic?{op:'practiceStart',deckId,requestId:crypto.randomUUID()}:{op:'practice',deckId});
       if(!this.allowed()||generation!==this.navigationGeneration)return;
+      if(automatic){this.acceptPracticeDuel(response.duel,deckId);return;}
       if(!response.deck||response.deck.id!==deckId||response.deck.ownerSlug!==this.context.member||response.deck.game!=='yugioh')throw new Error('Questo mazzo non è disponibile per il tuo profilo.');
       this.practiceTable=createPracticeTable({deck:response.deck,name:this.options.getMembers?.().find(member=>(member.slug||member.id)===this.context.member)?.name||'Il tuo test'});
-      this.practice=true;this.practiceDraft.deckId=deckId;this.tab='table';this.receive(this.practiceTable.snapshot());
+      this.practice=true;this.practiceDraft.deckId=deckId;this.practiceDraft.mode='manual';this.tab='table';this.receive(this.practiceTable.snapshot());
     }catch(error){if(this.allowed()&&generation===this.navigationGeneration)this.error=error.message||'Non è stato possibile preparare il test.';}
+    finally{this.pending=false;this.practiceStarting=false;this.render();this.syncOrientation();this.schedule();}
+  }
+  async resumePractice(){
+    if(this.pending||!this.ready||!this.allowed())return;
+    const generation=++this.navigationGeneration;this.pending=true;this.practiceStarting=true;this.error='';
+    void this.orientation.enter({userGesture:true});this.render();
+    try{const response=await this.options.call({op:'practiceState'});if(this.allowed()&&generation===this.navigationGeneration)this.acceptPracticeDuel(response.duel);}
+    catch(error){if(this.allowed()&&generation===this.navigationGeneration)this.error=error.message||'Non ci sono prove personali da riprendere.';}
     finally{this.pending=false;this.practiceStarting=false;this.render();this.syncOrientation();this.schedule();}
   }
   practiceView(){
     if(!this.practiceDraft.deckId)this.practiceDraft.deckId=this.decks[0]?.id||'';
-    const selected=this.decks.find(deck=>deck.id===this.practiceDraft.deckId),hand=sampleHand(selected,this.handSeed);
-    return`<div class="ygo-arena-sec">Campo di prova <em>solo per te</em></div><form data-ygo-practice class="ygo-composer"><select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.practiceDraft.deckId)}</select><span class="ygo-step">Scegli il mazzo</span>${deckTiles(this.decks,this.practiceDraft.deckId,'deckId')}${deckIssues(selected)}${hand.length?`<span class="ygo-step">Mano di prova</span><div class="ygo-sample-hand" data-hand-seed="${this.handSeed}">${hand.map((src,index)=>`<img src="${esc(src)}" alt="" style="--i:${index}">`).join('')}</div><button type="button" class="ygo-ticket-action is-ghost" data-ygo-redeal>↻ Rimescola e pesca 5</button>`:''}<ul class="ygo-arena-points"><li>Pescate, evocazioni e combo senza avversario.</li><li>Nessun invito e nessun risultato registrato.</li><li>Il turno avversario viene saltato: gli effetti li gestisci tu.</li></ul><button type="submit" class="ygo-primary ygo-cta" ${this.pending||!selected?'disabled':''}>${this.pending?'Preparazione…':'Apri il campo ▸'}</button></form>`;
+    const selected=this.decks.find(deck=>deck.id===this.practiceDraft.deckId),hand=sampleHand(selected,this.handSeed),automatic=this.practiceDraft.mode!=='manual';
+    return`<div class="ygo-arena-sec">Campo di prova <em>solo per te</em></div><form data-ygo-practice class="ygo-composer"><label class="ygo-arena-field"><span class="ygo-step">Modalità di prova</span><select name="mode"><option value="auto" ${automatic?'selected':''}>Automatico · Regole TCG</option><option value="manual" ${automatic?'':'selected'}>Manuale · Tavolo locale</option></select></label><select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.practiceDraft.deckId)}</select><span class="ygo-step">Scegli il mazzo</span>${deckTiles(this.decks,this.practiceDraft.deckId,'deckId')}${automatic?'<p class="ygo-arena-hint">Il motore verifica il mazzo e gestisce regole, costi ed effetti.</p>':deckIssues(selected)}${hand.length?`<span class="ygo-step">Anteprima carte</span><div class="ygo-sample-hand" data-hand-seed="${this.handSeed}">${hand.map((src,index)=>`<img src="${esc(src)}" alt="" style="--i:${index}">`).join('')}</div><button type="button" class="ygo-ticket-action is-ghost" data-ygo-redeal>Rimescola anteprima</button>`:''}<ul class="ygo-arena-points"><li>Pescate, evocazioni e combo senza un altro giocatore.</li><li>Nessun invito e nessun risultato registrato.</li><li>${automatic?'Prova personale automatica con un avversario passivo.':'Il turno avversario viene saltato: gli effetti li gestisci tu.'}</li></ul><button type="submit" class="ygo-primary ygo-cta" ${this.pending||!selected?'disabled':''}>${this.pending?'Preparazione…':'Apri il campo'}</button>${automatic?commandButton('practice-resume','Riprendi ultima prova',this.pending):''}</form>`;
   }
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
     this.activationReveals.observe(duel);
     this.duel=duel;this.viewer=duel.viewer;this.session=['setup','playing','finished'].includes(duel.status)?duel.state||null:null;
+    this.practice=duel.practice===true||Boolean(this.practiceTable);
     if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
     if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
     return changed;
@@ -230,7 +257,13 @@ export class YugiohMultiplayer {
     finally{this.pending=false;this.render();this.schedule();}
   }
   async open(id){if(this.pending||!UUID.test(id))return;this.attackSelection=null;this.activationReveals.clear();this.navigationGeneration++;this.inspectionGeneration++;this.practice=false;this.practiceTable=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.tab='table';await this.perform({op:'state',duelId:id});}
-  async act(action){if(!this.duel||!this.session||!this.allowed()||this.pending)return null;if(this.isAuto()&&!['autoRespond','surrender','ready'].includes(action.type))return null;if(this.orientation.isPortraitBlocked()){this.error='Ruota il telefono per giocare in orizzontale.';this.render();return null;}if(action.player!==undefined&&action.player!==this.viewer){this.error='Puoi modificare soltanto le tue carte.';this.render();return null;}return this.perform({op:'action',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),action});}
+  async act(action){
+    if(!this.duel||!this.session||!this.allowed()||this.pending)return null;
+    if(this.isAuto()&&(!['autoRespond','surrender','ready'].includes(action.type)||this.practice&&action.type==='ready'))return null;
+    if(this.orientation.isPortraitBlocked()){this.error='Ruota il telefono per giocare in orizzontale.';this.render();return null;}
+    if(action.player!==undefined&&action.player!==this.viewer){this.error='Puoi modificare soltanto le tue carte.';this.render();return null;}
+    return this.perform({op:'action',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),action});
+  }
   selectedCard(){
     if(!this.selected||!this.session)return null;
     if(this.inspectedCard&&this.inspectedCard.version===this.duel.version&&this.inspectedCard.player===this.selected.player&&this.inspectedCard.card.id===this.selected.cardId)return this.inspectedCard;
@@ -253,7 +286,7 @@ export class YugiohMultiplayer {
     if(!selected)this.selected=null;
     else if(quick&&this.isAuto()){
       const options=autoOptionsForCard(this.autoPrompt(),selected.card);
-      if(options.length&&this.duel.status==='playing')this.dropMenu={mode:'auto',cardId,player,to:selected.zone,actions:options.map(option=>({id:option.id,label:option.effect?`${option.label} · ${option.effect}`:option.label})),version:this.duel.version,duelId:this.duel.id,x,y,anchor,cardName:selected.card.cardName};
+      if(options.length&&this.duel.status==='playing')this.dropMenu={mode:'auto',cardId,player,to:selected.zone,actions:options.map(option=>({id:option.id,label:option.effect?`${option.label} · ${option.effect}`:option.label})),version:this.duel.version,duelId:this.duel.id,promptId:this.autoPrompt().id,x,y,anchor,cardName:selected.card.cardName};
       else{this.selected=null;this.inspectedCard=null;}
     }
     else if(quick&&!this.pending&&this.canControl(player)&&this.session.phase!=='setup'){
@@ -336,9 +369,9 @@ export class YugiohMultiplayer {
     if(field==='firstPlayer'){this.inviteCoin=value==='coin';if(this.inviteCoin)value=Math.random()<.5?'0':'1';}
     const control=form.querySelector(`[name="${field}"]`);if(!control)return;control.value=value;this.updateDraft(control);if(this.inviteRequestId&&form.matches('[data-ygo-invite]'))this.inviteRequestId=null;this.render();
   }
-  updateDraft(field){if(field?.dataset?.ygoAutoCounter!==undefined){const option=this.autoPrompt()?.options.find(option=>option.id===field.dataset.ygoAutoCounter);const value=Number(field.value);if(option&&Number.isInteger(value)&&value>=0&&value<=option.available)this.autoCounts[option.id]=value;return;}if(field?.dataset?.ygoLpCustom!==undefined){const lp=field.closest('form')?.querySelector('[name="lp"]');if(lp&&Number(field.value)>0){lp.value=field.value;this.inviteDraft.lp=field.value;}return;}if(!this.allowed()||!field.name)return;const draft=field.closest('[data-ygo-practice]')?this.practiceDraft:field.closest('[data-ygo-invite]')?this.inviteDraft:field.closest('[data-ygo-accept]')?this.acceptDraft:field.closest('[data-ygo-finish]')?this.finishDraft:null;if(draft&&Object.hasOwn(draft,field.name)){draft[field.name]=field.value;if(draft===this.practiceDraft)this.error='';}}
+  updateDraft(field){if(!this.autoFrameCurrent(field))return;if(field?.dataset?.ygoAutoCounter!==undefined){const option=this.autoPrompt()?.options.find(option=>option.id===field.dataset.ygoAutoCounter);const value=Number(field.value);if(option&&Number.isInteger(value)&&value>=0&&value<=option.available)this.autoCounts[option.id]=value;return;}if(field?.dataset?.ygoLpCustom!==undefined){const lp=field.closest('form')?.querySelector('[name="lp"]');if(lp&&Number(field.value)>0){lp.value=field.value;this.inviteDraft.lp=field.value;}return;}if(!this.allowed()||!field.name)return;const draft=field.closest('[data-ygo-practice]')?this.practiceDraft:field.closest('[data-ygo-invite]')?this.inviteDraft:field.closest('[data-ygo-accept]')?this.acceptDraft:field.closest('[data-ygo-finish]')?this.finishDraft:null;if(draft&&Object.hasOwn(draft,field.name)){draft[field.name]=field.value;if(draft===this.practiceDraft)this.error='';}}
   async submit(form){
-    if(this.pending||!this.ready||!this.allowed())return;const data=new FormData(form),selected=this.selectedCard();
+    if(this.pending||!this.ready||!this.allowed()||!this.autoFrameCurrent(form))return;const data=new FormData(form),selected=this.selectedCard();
     if(form.matches('[data-ygo-auto-search]')){
       const prompt=this.autoPrompt();if(!prompt||prompt.kind!=='announce-card')return;
       const response=await this.perform({op:'search',duelId:this.duel.id,promptId:prompt.id,query:String(data.get('query')||'')});
@@ -375,7 +408,7 @@ export class YugiohMultiplayer {
       if(draft.to){this.selected=null;this.inspectedCard=null;await this.act({type:'summon',player:this.viewer,...summon,to:draft.to,slot:draft.slot});}
       else{this.placing={zones:['monsters','extraMonsters'],position:draft.position,faceUp:true,summon};this.render();}return;
     }
-    if(form.matches('[data-ygo-practice]')){await this.startPractice(data.get('deckId'));return;}
+    if(form.matches('[data-ygo-practice]')){await this.startPractice(data.get('deckId'),data.get('mode')||this.practiceDraft.mode);return;}
     if(form.matches('[data-ygo-invite]')){this.inviteRequestId||=crypto.randomUUID();const result=await this.perform({op:'invite',mode:data.get('mode')||this.inviteDraft.mode,requestId:this.inviteRequestId,opponentSlug:data.get('opponentSlug'),deckId:data.get('deckId'),lp:Number(data.get('lp')),firstPlayer:Number(data.get('firstPlayer'))});if(result){this.inviteRequestId=null;this.options.onToast(result.notification?.push==='sent'?'Invito inviato · notifica spedita':'Invito inviato al compagno del team');}}
     if(form.matches('[data-ygo-accept]'))await this.perform({op:'accept',duelId:this.duel.id,expectedVersion:this.duel.version,requestId:crypto.randomUUID(),deckId:data.get('deckId'),lp:Number(data.get('lp'))});
     if(form.matches('[data-ygo-move]')&&selected?.player===this.viewer)await this.act({type:'move',player:this.viewer,cardId:selected.card.id,to:data.get('to'),placement:data.get('placement')||'top',faceUp:data.get('faceUp')!=='false',position:data.get('position')||'attack'});
@@ -395,6 +428,7 @@ export class YugiohMultiplayer {
   }
   async click(button,event){
     const data=button.dataset,command=data.ygoCommand,selected=this.selectedCard();
+    if(!this.autoFrameCurrent(button))return;
     if(data.ygoPick!==undefined&&!this.session){this.pickLobbyValue(button);return;}
     if(data.ygoRedeal!==undefined){this.handSeed=(this.handSeed%9973)+Math.floor(Math.random()*97)+1;this.render();return;}
     if(data.ygoDropAction){await this.applyDropAction(data.ygoDropAction);return;}
@@ -424,6 +458,8 @@ export class YugiohMultiplayer {
       return;
     }
     if(command==='orientation'){await this.orientation.enter({userGesture:true});this.render();return;}
+    if(command==='practice-resume'){await this.resumePractice();return;}
+    if(command==='practice-restart'&&this.practice&&this.isAuto()){this.menu=false;await this.startPractice(this.practiceDraft.deckId,'auto');return;}
     if(command==='practice-restart'&&this.practiceTable){this.menu=false;this.receive(this.practiceTable.restart().duel);this.render();return;}
     if(command==='practice-exit'){this.showPractice();return;}
     if(data.ygoOpen){await this.open(data.ygoOpen);return;}

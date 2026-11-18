@@ -183,6 +183,7 @@ async function run(){
     await seat.cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'portraitPrimary',angle:0}});await delay(100);
     await seat.click('[data-ygo-tab="practice"]');
     await seat.wait('Boolean(document.querySelector("[data-ygo-practice]"))','Selettore Testa mazzo assente');
+    await seat.fill('[data-ygo-practice] [name=mode]','manual');
     const saved=await seat.evaluate('Array.from(document.querySelector("[data-ygo-practice] [name=deckId]").options,option=>option.value)');
     assert(saved.includes(hostDeckId)&&saved.includes(secondHostDeckId),'Testa mazzo non propone entrambi i propri mazzi salvati');
     assert(!saved.includes(guestDeckId),'Testa mazzo propone un mazzo di un altro membro');
@@ -300,7 +301,7 @@ async function run(){
   const host=await page('duel-host'),guest=await page('duel-guest');
   if(process.argv.includes('--summon-ui-only')){
     await host.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Lobby non pronta per la verifica materiali');
-    await host.click('[data-ygo-tab="practice"]');await host.fill('[data-ygo-practice] [name=deckId]',secondHostDeckId);await host.tap('[data-ygo-practice] button[type="submit"]');
+    await host.click('[data-ygo-tab="practice"]');await host.fill('[data-ygo-practice] [name=mode]','manual');await host.fill('[data-ygo-practice] [name=deckId]',secondHostDeckId);await host.tap('[data-ygo-practice] button[type="submit"]');
     await host.wait('window.__sim.practice && window.__sim.session?.phase==="main1"','Campo locale non pronto per la verifica materiali');
     const bodyIds=await host.evaluate(`(async()=>{const sim=window.__sim,ids=[];for(const[slot,code]of[[0,'91152256'],[2,'15025844']]){const all=sim.session.players[0].hand.concat(sim.practiceTable.run({op:'inspect',zone:'deck'}).cards),card=all.find(card=>card.catalogCardId===code);ids.push(card.id);await sim.act({type:'move',player:0,cardId:card.id,to:'monsters',slot,faceUp:true});}return ids;})()`);
     const xyz=await host.evaluate('window.__sim.session.players[0].extra.find(card=>card.catalogCardId==="84013237").id');
@@ -324,7 +325,7 @@ async function run(){
   }
   if(process.argv.includes('--measure-card-size')||process.argv.includes('--baseline-card-size')){
     await host.wait('window.__fixtureReady && document.querySelector("[data-ygo-invite]")','Lobby non pronta per misurare le carte');
-    await host.click('[data-ygo-tab="practice"]');await host.fill('[data-ygo-practice] [name=deckId]',secondHostDeckId);await host.tap('[data-ygo-practice] button[type="submit"]');
+    await host.click('[data-ygo-tab="practice"]');await host.fill('[data-ygo-practice] [name=mode]','manual');await host.fill('[data-ygo-practice] [name=deckId]',secondHostDeckId);await host.tap('[data-ygo-practice] button[type="submit"]');
     await host.wait('window.__sim.practice && window.__sim.session?.phase==="main1"','Campo locale non pronto per le misure');
     await host.evaluate(`(async()=>{const sim=window.__sim,deck=sim.practiceTable.run({op:'inspect',zone:'deck'}).cards,monsters=deck.filter(card=>/monster/i.test(card.type));await sim.act({type:'move',player:0,cardId:monsters[0].id,to:'monsters',slot:0,position:'attack',faceUp:true});await sim.act({type:'move',player:0,cardId:monsters[1].id,to:'monsters',slot:1,position:'defense',faceUp:true});await sim.act({type:'move',player:0,cardId:sim.session.players[0].extra.find(card=>card.catalogCardId==='23995346').id,to:'extraMonsters',slot:0,position:'attack',faceUp:true});})()`);
     const measurements=[];
