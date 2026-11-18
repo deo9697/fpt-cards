@@ -100,6 +100,22 @@ export class YugiohMultiplayer {
     const need=prompt.min===prompt.max?`${prompt.min}`:`${prompt.min}–${prompt.max}`,count=sheet.querySelector('[data-ygo-pick-count]');if(count)count.textContent=`${this.autoSelected.length} di ${need} scelte`;
     const confirm=sheet.querySelector('[data-ygo-command="auto-confirm"]');if(confirm)confirm.disabled=this.autoSelected.length<prompt.min||this.autoSelected.length>prompt.max;
   }
+  // Tavolo manuale: pannello delle pile (simulator-arena.js pileSheet).
+  async tapPileCard(button,id){
+    const now=globalThis.performance?.now?.()??Date.now(),last=this.lastPileTap;
+    if(last?.id===id&&now-last.at<400){this.lastPileTap=null;if(this.pile?.zone==='extra'){button.closest('.ygo-pick-card')?.querySelector('[data-ygo-card]')?.click();return;}await this.takePileCard(id);return;}
+    this.lastPileTap={id,at:now};
+    button.closest('.ygo-pick-sheet')?.querySelectorAll('.ygo-pick-card').forEach(card=>card.classList.toggle('is-focused',card.dataset.pickId===id));
+    button.closest('.ygo-pick-card')?.scrollIntoView?.({behavior:'smooth',inline:'center',block:'nearest'});
+  }
+  async takePileCard(id){
+    const pile=this.pile;if(!pile||this.isAuto()||pile.player!==this.viewer||pile.zone==='extra'||this.pending)return;
+    if(!(pile.cards||this.session.players[this.viewer][pile.zone]||[]).some(card=>card.id===id))return;
+    const fromSearch=pile.zone==='deck';this.pile=null;
+    const moved=await this.act({type:'move',player:this.viewer,cardId:id,to:'hand'});
+    // Una ricerca nel mazzo si chiude sempre mescolando, come da regolamento.
+    if(moved&&fromSearch&&this.session?.players?.[this.viewer]?.deck?.length)await this.act({type:'shuffle',player:this.viewer,zone:'deck'});
+  }
   render(){if(this.allowed())this.options.onRender();}
   syncAutoBusy(){
     const arena=this.autoArena;
@@ -522,6 +538,8 @@ export class YugiohMultiplayer {
       const player=card.controller===0||card.controller===1?card.controller:this.viewer;
       this.dropMenu=null;this.pile=null;this.menu=false;this.selected={player,cardId:card.id};this.inspectedCard={card,zone:'hand',player,version:this.duel.version};this.render();return;
     }
+    if(data.ygoPilePick!==undefined){await this.tapPileCard(button,data.ygoPilePick);return;}
+    if(data.ygoPileHand!==undefined){await this.takePileCard(data.ygoPileHand);return;}
     if(data.ygoPick!==undefined){await this.tapPickCard(button,data.ygoPick);return;}
     if(data.ygoPickChoose!==undefined){await this.pickCard(data.ygoPickChoose);return;}
     if(data.ygoAutoOption!==undefined){await this.chooseAutoOption(data.ygoAutoOption);return;}

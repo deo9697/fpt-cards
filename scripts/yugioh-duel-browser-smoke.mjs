@@ -214,7 +214,7 @@ async function run(){
         await practiceMenu();await seat.click('[data-ygo-command="inspect-deck"]');
         await seat.wait('Boolean(window.__sim.pile?.cards?.length)','La ricerca locale non apre il mazzo');
         id=await seat.evaluate(`window.__sim.pile.cards.find(card=>card.catalogCardId===${JSON.stringify(code)})?.id`);assert(id,'Carta di prova assente dal mazzo locale');
-        await openDetails(seat,`.ygo-zone-cards [data-ygo-card="${id}"]`,'Ricerca locale');await seat.fill('[data-ygo-move] [name=to]','hand');await seat.submit('[data-ygo-move]');
+        await openDetails(seat,`.ygo-pile-sheet [data-ygo-pile-pick="${id}"]`,'Ricerca locale (pannello, pressione = descrizione)');await seat.fill('[data-ygo-move] [name=to]','hand');await seat.submit('[data-ygo-move]');
         await seat.wait(`window.__sim.session.players[0].hand.some(card=>card.id===${JSON.stringify(id)})`,'Ricerca → mano locale non applicata');
       }
       return id;
@@ -430,9 +430,9 @@ async function run(){
     const card=player[zone].find(card=>card.catalogCardId===code);
     if(zone!=='hand'){
       if(zone==='deck'){await openMenu(page);await page.click('[data-ygo-command="inspect-deck"]');await page.wait(`window.__sim.pile?.cards?.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca nel mazzo non mostra la carta');}
-      else{await closeCard(page);await closeMenu(page);await closePile(page);await page.click('[data-ygo-pile="'+zone+'"][data-player="'+viewer+'"]');await page.wait('Boolean(document.querySelector(".ygo-zone-cards"))','Pila pubblica di preparazione assente');}
-      await openDetails(page,`.ygo-zone-cards [data-ygo-card="${card.id}"]`,'Ricerca nel mazzo');
-      await page.fill('[data-ygo-move] [name=to]','hand');await page.submit('[data-ygo-move]');
+      else{await closeCard(page);await closeMenu(page);await closePile(page);await page.click('[data-ygo-pile="'+zone+'"][data-player="'+viewer+'"]');await page.wait('Boolean(document.querySelector(".ygo-pile-sheet"))','Pila pubblica di preparazione assente');}
+      // Pannello delle pile (2026-11-18): un tocco evidenzia, «In mano» porta la carta in mano.
+      await page.tap(`[data-ygo-pile-pick="${card.id}"]`);await page.tap(`[data-ygo-pile-hand="${card.id}"]`);
       await page.wait(`window.__sim.session.players[${viewer}].hand.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca → mano non applicata');await idle(page);
     }
     await closeMenu(page);await closePile(page);const preparedVersion=rows.get(duelId).version;await both(`window.__sim.duel.version>=${preparedVersion}`,'Preparazione carta sincronizzata');return card.id;

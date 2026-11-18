@@ -648,3 +648,13 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-phase-panel li.is-done::after { content:'✓';position:absolute;right:5px;top:50%;transform:translateY(-50%);font-size:.6em;pointer-events:none; }
 .ygo-phase-panel li.is-current { color:#1a140b;border-color:#f3d79b;background:linear-gradient(#f3d79b,#c4923d);box-shadow:0 0 14px #e8b85c66; }
 .ygo-phase-panel li.is-current>button,.ygo-phase-panel li.is-current>span { color:#1a140b; }
+
+/* Tavolo manuale: pile nel pannello orizzontale (2026-11-18). Velo leggero senza sfocatura. */
+.ygo-overlay.is-light { background:#01070c66;backdrop-filter:none; }
+.ygo-auto-prompt.ygo-pick-sheet.ygo-pile-sheet { z-index:610; }
+.ygo-pile-sheet header { align-items:center; }
+.ygo-pile-sheet header>button { flex:none; }
+.ygo-pile-card-actions { display:flex;gap:4px;justify-content:center;flex-wrap:wrap; }
+.ygo-auto-prompt.ygo-pick-sheet .ygo-pile-more { min-height:30px;padding:4px 10px;border:1px solid #5d4a2a;border-radius:999px;background:#1d1812;color:#f3e6c6;font-size:.6rem;font-weight:750;visibility:hidden; }
+.ygo-pick-card.is-focused .ygo-pile-more,.ygo-pile-more:focus-visible { visibility:visible; }
+.ygo-pile-sheet .ygo-auto-controls button { min-height:36px; }
