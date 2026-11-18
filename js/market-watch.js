@@ -44,7 +44,7 @@ const emptySummary=()=>({portfolioValue:{current:0,complete:false},confirmCount:
 export class MarketWatchController {
   constructor({api,getGame,getDecks,getMember,isAdmin=()=>false,onRender,onToast,onNavigate}={}){Object.assign(this,{api,getGame,getDecks,getMember,isAdmin,onRender,onToast,onNavigate});
     this.ownedPage=emptyOwnedPage();this.extra=emptyExtra();this.summary=emptySummary();
-    this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;
+    this.confirmQueue=[];this.confirmQueueLoaded=false;this.confirmQueueLoading=false;this.confirmScope='team';
     this.tab='owned';this.sort='value';this.query='';this.searchTimer=null;this.loading=false;this.ownedLoading=false;this.error='';this.selected='';this.selectedDeck='';this.history=new Map();this.featuredHistory=new Map();this.featuredLoading=new Set();this.featuredSync='';this.historyLoading=false;this.historyRange=30;this.loadInFlight=null;this.rowHistoryLoading=new Set();this.rowObserver=null;this.bulkConfirmBusy=false;this.bulkConfirmProgress=null;this.anomalies=[];this.overview=null;
     // extra/summary e owned_page ora partono in parallelo (P0 performance:
     // owned_page, il più lento, non deve più aspettare gli altri due prima
@@ -122,6 +122,8 @@ export class MarketWatchController {
         else this.extraSummaryError=isStatementTimeout(error)?timeoutMessage:/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');
       }
       if(current()){this.syncError();this.refreshAfterLoad();}
+      // Admin: la coda di tutto il team può avere carte anche se la sua raccolta non ne ha.
+      if(current()&&this.isAdmin()&&!this.confirmQueueLoaded)void this.loadConfirmQueue().then(()=>{if(current())this.refreshTabs();});
     })();
     // Pannelli accessori per ultimi: non devono contendersi il database con la lista.
     void request.then(()=>Promise.all([
@@ -239,14 +241,17 @@ export class MarketWatchController {
     catch(error){this.onToast?.(error?.message||'Coda di conferma non disponibile');}
     finally{this.confirmQueueLoading=false;}
   }
-  rarityMismatchQueue(){return this.confirmQueue.filter(needsMappingReview);}
-  aggregatePendingQueue(){return this.confirmQueue.filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
+  // 2026-11-18: per l'admin la coda comprende le carte di tutto il team
+  // (owners = chi le possiede); il filtro "Solo le mie" resta disponibile.
+  scopedConfirmQueue(){return this.confirmScope==='mine'?this.confirmQueue.filter(item=>item.mine):this.confirmQueue;}
+  rarityMismatchQueue(){return this.scopedConfirmQueue().filter(needsMappingReview);}
+  aggregatePendingQueue(){return this.scopedConfirmQueue().filter(item=>isAggregatePrice(item)&&mappingCandidates(item).length>0);}
   // 2026-11-17: "Conferma tutte" confermava sempre il PRIMO prodotto di ogni
   // carta (prezzi sbagliati sulle rarità alte). Ora si confermano in blocco
   // solo le carte con un suggerimento del motore a indizi (sulla versione
   // suggerita) e quelle con un UNICO prodotto Cardmarket, che non sono
   // ambigue. Le conferme in blocco non insegnano nulla al motore.
-  suggestedQueue(){return this.confirmQueue.filter(item=>bulkConfirmCandidate(item));}
+  suggestedQueue(){return this.scopedConfirmQueue().filter(item=>bulkConfirmCandidate(item));}
   // Snapshot che si sono spostati oltre soglia rispetto al precedente noto
   // (trg_flag_price_anomaly, supabase-market-watch-price-anomaly-detection.sql)
   // — già esclusi dalle view attive/derivate lato DB, qui solo per la coda
@@ -361,7 +366,7 @@ export class MarketWatchController {
   // la pagina. refreshBoardSection() ricostruisce solo questo blocco.
   renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue}){
     return `<div class="market-board-tools">
-        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.isAdmin()&&(this.summary.confirmCount||confirmQueue.length)?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
+        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.isAdmin()&&(this.summary.confirmCount||this.confirmQueue.length)?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
         <div class="market-board-controls">
           ${this.tab!=='deck'&&this.tab!=='confirm'&&this.tab!=='anomaly'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
           <label class="market-sort"><span class="sr-only">Ordina</span><select data-market-sort aria-label="Ordina"><option value="value" ${this.sort==='value'?'selected':''}>Valore</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo</option><option value="change" ${this.sort==='change'?'selected':''}>Var. 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label>
@@ -386,7 +391,11 @@ export class MarketWatchController {
     if(this.query.trim()&&!items.length&&!this.ownedLoading)return `<div class="market-tab-empty">Nessuna printing corrisponde a "${esc(this.query.trim())}".</div>`;
     return this.rows(items,[]);
   }
-  confirmRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):'<div class="market-tab-empty">Nessuna carta da confermare al momento.</div>'}</div>`;}
+  confirmRows(queue){
+    const all=this.confirmQueue.filter(needsMappingReview).length,mine=this.confirmQueue.filter(item=>item.mine&&needsMappingReview(item)).length;
+    const chip=(scope,label,count)=>`<button type="button" class="market-scope-chip ${this.confirmScope===scope?'active':''}" data-market-confirm-scope="${scope}" aria-pressed="${this.confirmScope===scope}">${label} <span>${count}</span></button>`;
+    return `<div class="market-confirm-scope" role="group" aria-label="Di chi sono le carte">${chip('team','Tutto il team',all)}${chip('mine','Solo le mie',mine)}</div><div class="market-list market-confirm-list">${queue.length?queue.map(confirmQueueRow).join(''):`<div class="market-tab-empty">${this.confirmScope==='mine'&&all?'Nessuna delle tue carte da confermare: quelle in coda sono dei compagni.':'Nessuna carta da confermare al momento.'}</div>`}</div>`;
+  }
   anomalyRows(queue){return `<div class="market-list market-confirm-list">${queue.length?queue.map(anomalyQueueRow).join(''):'<div class="market-tab-empty">Nessun prezzo insolito da confermare.</div>'}</div>`;}
   // items arriva già come "la pagina corrente" per la tab Raccolta (niente
   // più slice locale) — "Mostra altre" ora chiama loadOwnedPage() per una
@@ -462,6 +471,7 @@ export class MarketWatchController {
     root.querySelectorAll('[data-market-deck]').forEach(button=>button.addEventListener('click',()=>{history.pushState({marketDeckDetail:button.dataset.marketDeck},'',location.href);this.selectedDeck=button.dataset.marketDeck;this.onRender();}));
     root.querySelectorAll('[data-market-resolve-deck]').forEach(button=>button.addEventListener('click',()=>this.onNavigate('decks')));
     root.querySelectorAll('[data-market-confirm-mapping]').forEach(button=>button.addEventListener('click',()=>void this.confirmMapping(button.dataset.marketConfirmMapping,button.dataset.marketConfirmProduct,{productName:button.dataset.marketConfirmName||'',expansion:button.dataset.marketConfirmExpansion||'',rarity:button.dataset.marketConfirmRarity||''})));
+    root.querySelectorAll('[data-market-confirm-scope]').forEach(button=>button.addEventListener('click',()=>{if(this.confirmScope===button.dataset.marketConfirmScope)return;this.confirmScope=button.dataset.marketConfirmScope;this.refreshBoard();this.refreshTabs();}));
     root.querySelectorAll('[data-market-confirm-anomaly]').forEach(button=>button.addEventListener('click',()=>void this.confirmAnomaly(button.dataset.marketConfirmAnomaly)));
     this.observeRows(root);
   }
@@ -569,7 +579,7 @@ export function mapExtraPayload(payload={}){return {items:(payload.items||[]).ma
 export function mapSummaryPayload(payload={}){const pv=payload.portfolioValue||payload.portfolio_value||{};return {portfolioValue:{current:Number(pv.current||0),complete:Boolean(pv.complete)},confirmCount:Number(payload.confirmCount??payload.confirm_count??0),aggregatePendingCount:Number(payload.aggregatePendingCount??payload.aggregate_pending_count??0),catalogPriceFloor:Object.fromEntries(Object.entries(payload.catalogPriceFloor||payload.catalog_price_floor||{}).map(([key,value])=>[key,{referencePrice:nullableNumber(value.referencePrice??value.reference_price),isAggregate:Boolean(value.isAggregate??value.is_aggregate)}])),lastSync:payload.lastSync||payload.last_sync||null};}
 // list_market_confirm_queue: l'unico payload con mapping_evidence — righe
 // leggere per il resto (niente providers/prezzi, non servono in quella tab).
-export function mapConfirmQueuePayload(payload={}){return (payload.items||[]).map(row=>({printingId:row.printing_id||row.printingId,cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||'unresolved',mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{},suggestedProductId:String(row.suggested_product_id||row.suggestedProductId||''),suggestionNote:row.suggestion_note||row.suggestionNote||'',versions:Array.isArray(row.versions)?row.versions:[]}));}
+export function mapConfirmQueuePayload(payload={}){return (payload.items||[]).map(row=>({printingId:row.printing_id||row.printingId,cardName:row.card_name||row.cardName||'',setCode:row.set_code||row.setCode||'',setName:row.set_name||row.setName||'',rarity:row.rarity||'',imageUrl:row.image_url||row.imageUrl||'',mappingStatus:row.mapping_status||row.mappingStatus||'unresolved',resolverStatus:row.resolver_status||row.resolverStatus||'unresolved',mappingReason:row.mapping_reason||row.mappingReason||'',mappingEvidence:row.mapping_evidence||row.mappingEvidence||{},suggestedProductId:String(row.suggested_product_id||row.suggestedProductId||''),suggestionNote:row.suggestion_note||row.suggestionNote||'',versions:Array.isArray(row.versions)?row.versions:[],owners:Array.isArray(row.owners)?row.owners.map(String):[],mine:row.mine===undefined?true:Boolean(row.mine)}));}
 // buildMarketDecks: catalogPriceFloor sostituisce il vecchio calcolo locale
 // "prezzo minimo tra le owned items in memoria" — con la Raccolta paginata
 // quell'array non contiene più TUTTE le printing owned, solo la pagina
@@ -676,8 +686,9 @@ function aggregateNotice(item){const scope=item.priceScope||{},labels=[];if(scop
 // o rarità interna in conflitto senza che Cardmarket la dichiari). item.mappingStatus
 // è già 'manual' una volta confermata, quindi qui non ricompare più.
 function needsMappingReview(item){return item.mappingStatus!=='manual'&&(item.mappingReason==='provider_rarity_mismatch'||item.resolverStatus==='AMBIGUOUS');}
+function ownersLabel(owners){return owners.length>3?`${owners.slice(0,3).join(', ')} e altri ${owners.length-3}`:owners.join(', ');}
 function confirmQueueRow(item){return `<div class="market-confirm-queue-row">
-    <div class="market-confirm-queue-card">${cardArt(item.imageUrl)}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small></span></div>
+    <div class="market-confirm-queue-card">${cardArt(item.imageUrl)}<span><strong>${esc(item.cardName)}</strong><small>${esc(item.setCode||'Set non indicato')} · ${esc(item.rarity||'Rarità non indicata')}</small>${item.owners?.length?`<small class="market-confirm-owners">${icon('team')} ${esc(ownersLabel(item.owners))}</small>`:''}</span></div>
     ${mappingIssueNotice(item)}
   </div>`;}
 // Snapshot bloccati da trg_flag_price_anomaly (scostamento >5x o <0.1x dal

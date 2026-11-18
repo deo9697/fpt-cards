@@ -13,8 +13,8 @@ export function createPracticeTable({deck,name='Il tuo test'}) {
   function restart(){
     state=createSession({decks:[source,source],names:[name,'Campo di prova'],firstPlayer:0});state.id=id;
     state=applyAction(state,{type:'start'});
-    state=applyAction(state,{type:'nextPhase',player:0});
-    state=applyAction(state,{type:'nextPhase',player:0});
+    // Con le fasi automatiche il turno 1 arriva già in Main Phase 1.
+    while(['draw','standby'].includes(state.phase))state=applyAction(state,{type:'nextPhase',player:0});
     version=(version||0)+1;
   }
   function projection(){
@@ -58,7 +58,7 @@ export function createPracticeTable({deck,name='Il tuo test'}) {
           // This field is passive: exhausting its mirrored deck must not stop
           // the real player's practice. Their own draws keep the normal rules.
           if(!next.turnState.drawn){if(next.players[1].deck.length)next=applyAction(next,{type:'draw',player:1});else next.turnState.drawn=true;}
-          next=applyAction(next,{type:'nextPhase',player:1});next=applyAction(next,{type:'nextPhase',player:1});
+          while(['draw','standby'].includes(next.phase))next=applyAction(next,{type:'nextPhase',player:1});
         }
         const excess=next.players[1].hand.length-6;
         next=applyAction(next,excess>0&&next.turnState?{type:'discardEnd',player:1,cardIds:next.players[1].hand.slice(0,excess).map(card=>card.id)}:{type:'nextTurn',player:1});

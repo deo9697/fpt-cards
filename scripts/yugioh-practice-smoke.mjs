@@ -29,18 +29,17 @@ const longRun=createPracticeTable({deck,name:'Long practice tester'});let longDu
 const longAction=action=>{longDuel=longRun.run({op:'action',duelId:longDuel.id,expectedVersion:longDuel.version,action:{player:0,...action}}).duel;};
 for(let round=0;round<38;round++){
   assert.equal(longDuel.state.activePlayer,0);
-  if(longDuel.state.phase==='draw'){
-    const handSize=longDuel.state.players[0].hand.length;
-    longAction({type:'draw'});assert.equal(longDuel.state.players[0].hand.length,handSize+1);
+  // Fasi automatiche: la pescata del turno è già avvenuta (turno 1 escluso).
+  if(longDuel.state.turn>1){
+    assert.equal(longDuel.state.players[0].hand.length,6,'pescata automatica del turno');
     longAction({type:'move',cardId:longDuel.state.players[0].hand.at(-1).id,to:'deck',placement:'bottom'});
-    longAction({type:'nextPhase'});longAction({type:'nextPhase'});
   }
   assert.equal(longDuel.state.phase,'main1');longAction({type:'nextTurn'});
   assert.equal(longDuel.state.activePlayer,0);assert(longDuel.state.players[1].hand.length<=6);
   if(round>=34)assert.equal(longDuel.state.players[1].deck.length,0,'The passive mirror should have exhausted all 35 remaining cards');
 }
-assert.equal(longDuel.state.turn,77);assert.equal(longDuel.state.players[0].deck.length,35);assert.equal(longDuel.state.players[0].hand.length,5);
-longAction({type:'draw'});const afterOwnDraw=JSON.stringify(longDuel);
+assert.equal(longDuel.state.turn,77);assert.equal(longDuel.state.players[0].deck.length,34);assert.equal(longDuel.state.players[0].hand.length,6,'turno 77: pescata automatica già fatta');
+const afterOwnDraw=JSON.stringify(longDuel);
 assert.throws(()=>longAction({type:'draw'}),/pesca|già/i);assert.equal(JSON.stringify(longRun.snapshot()),afterOwnDraw,'Exhausting the mirror must not relax the real player’s once-per-turn draw');
 console.log('PASS 38 practice turns continue past the empty passive deck, with automatic passive discards and real-player draw rules preserved');
 

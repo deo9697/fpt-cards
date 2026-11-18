@@ -1,7 +1,7 @@
 import { validateYugiohDeck } from './rules.js';
 import {deriveChainState,appendChain,passChain,resolveChain} from './simulator-chain.js';
 import {getSummonKind,summonPlan} from './simulator-summoning.js';
-import {newTurnState,getTurnState,canDrawNormally,phaseError,endTurnError,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
+import {newTurnState,getTurnState,canDrawNormally,phaseError,endTurnError,validateNormalTributes,positionChangeError,phaseStopReasons,describePhaseStop} from './simulator-turn-rules.js';
 import {declareBattle,passBattle,cancelBattle,requestManualBattle,answerManualBattle,battleActivationError,maintainBattle,validateBattleState} from './simulator-battle.js';
 
 // A manual table with guided basic turns, summons and standard battles. Card
@@ -58,7 +58,7 @@ function shuffled(cards) {
   }
   return result;
 }
-export function createSession({ decks, firstPlayer = 0, names = [], lp = [8000, 8000], turnRules = true } = {}) {
+export function createSession({ decks, firstPlayer = 0, names = [], lp = [8000, 8000], turnRules = true, autoPhases = true } = {}) {
   if (!Array.isArray(decks) || decks.length !== 2) fail('Scegli un mazzo per entrambi i giocatori.');
   if (!integer(firstPlayer, 0, 1)) fail('Giocatore iniziale non valido.');
   if (!Array.isArray(lp) || lp.length !== 2 || lp.some(value => !integer(value, 1, 1000000))) fail('Life Points iniziali non validi.');
@@ -77,7 +77,7 @@ export function createSession({ decks, firstPlayer = 0, names = [], lp = [8000, 
         initialCounts:{ main:main.length + hand.length, extra:piles.extra.length, side:piles.side.length },
         deck:main, hand, extra:piles.extra, side:piles.side, monsters:[], spells:[], field:[], graveyard:[], banished:[], extraMonsters:[]
       };
-    }), ...(turnRules?{turnState:newTurnState(1)}:{}), chain:[], chainState:null, log:[{ at, turn:1, type:'create', player:null, text:'Tavolo preparato: cinque carte iniziali ciascuno. Confermate quando siete pronti.' }], result:null
+    }), ...(turnRules?{turnState:newTurnState(1,{autoPhases})}:{}), chain:[], chainState:null, log:[{ at, turn:1, type:'create', player:null, text:'Tavolo preparato: cinque carte iniziali ciascuno. Confermate quando siete pronti.' }], result:null
   };
   assertSession(session); return session;
 }
@@ -110,7 +110,7 @@ export function validateSession(session) {
   try {
     if (!session || session.version !== 1 || !text(session.id, 100) || !session.id || !Number.isFinite(Date.parse(session.createdAt)) || !Number.isFinite(Date.parse(session.updatedAt))) errors.push('Formato del tavolo non valido.');
     if (!integer(session.turn, 1, 100000) || !integer(session.firstPlayer, 0, 1) || !integer(session.activePlayer, 0, 1) || !['setup', ...PHASES].includes(session.phase)) errors.push('Turno o fase non validi.');
-    if(session.turnState!==undefined){const rules=session.turnState;if(!rules||rules.turn!==session.turn||!integer(rules.normalUsed,0,100)||!integer(rules.normalLimit,1,100)||rules.normalUsed>rules.normalLimit||typeof rules.drawn!=='boolean'||typeof rules.battleEntered!=='boolean')errors.push('Controlli del turno non validi.');}
+    if(session.turnState!==undefined){const rules=session.turnState;if(!rules||rules.turn!==session.turn||!integer(rules.normalUsed,0,100)||!integer(rules.normalLimit,1,100)||rules.normalUsed>rules.normalLimit||typeof rules.drawn!=='boolean'||typeof rules.battleEntered!=='boolean'||rules.autoPhases!==undefined&&rules.autoPhases!==true)errors.push('Controlli del turno non validi.');}
     if (!Array.isArray(session.players) || session.players.length !== 2) return { valid:false, errors:[...errors, 'Servono due giocatori.'] };
     const seen = new Set(), emz = new Set();
     for (const [index, player] of session.players.entries()) {
@@ -159,7 +159,28 @@ export function validateSession(session) {
 }
 function assertSession(session) { const checked = validateSession(session); if (!checked.valid) fail(checked.errors.join(' ')); }
 function clearBoardState(card) { card.slot = null; card.counters = 0; card.atkModifier = 0; card.defModifier = 0; card.position = 'attack'; delete card.summonedTurn; delete card.positionChangedTurn; delete card.attackedTurn;delete card.atkOverride;delete card.defOverride; }
-function advanceTurn(session){session.turn++;session.activePlayer=1-session.activePlayer;session.phase='draw';if(session.turnState)session.turnState=newTurnState(session.turn);}
+function advanceTurn(session){session.turn++;session.activePlayer=1-session.activePlayer;session.phase='draw';if(session.turnState)session.turnState=newTurnState(session.turn,{autoPhases:session.turnState.autoPhases===true});return openTurn(session);}
+// Fasi automatiche: pescata del turno e avanzamento Draw → Standby → Main 1,
+// con pausa dove una carta potrebbe essere attivata (phaseStopReasons).
+// Restituisce il testo da aggiungere al registro.
+function openTurn(session){
+  const rules=session.turnState;if(!rules?.autoPhases||session.result||session.phase!=='draw')return '';
+  const player=session.players[session.activePlayer],notes=[];
+  if(!rules.drawn){
+    if(!player.deck.length)return ' Il mazzo è vuoto: la pescata non è possibile.';
+    player.hand.push(player.deck.shift());rules.drawn=true;notes.push(`${player.name} pesca 1 carta.`);
+  }
+  return `${notes.length?' '+notes.join(' '):''}${continuePhases(session)}`;
+}
+function continuePhases(session){
+  if(!session.turnState?.autoPhases)return '';
+  while(['draw','standby'].includes(session.phase)){
+    const reasons=phaseStopReasons(session);
+    if(reasons.length)return ' '+describePhaseStop(session,reasons);
+    session.phase=session.phase==='draw'?'standby':'main1';
+  }
+  return ' Draw e Standby Phase superate: Main Phase 1.';
+}
 function releaseMaterials(player, card) {
   for (const material of card.materials) { clearBoardState(material); material.faceUp = true; player.graveyard.push(material); }
   card.materials = [];
@@ -216,7 +237,7 @@ export function applyAction(session, action) {
   const player = next.players[playerIndex]; let message = '';
   if (action.type === 'start') {
     if (next.phase !== 'setup') fail('La partita è già iniziata.');
-    next.phase = 'draw'; message = 'Duello iniziato. Il primo giocatore salta la prima pescata; azioni e risoluzioni restano manuali.';
+    next.phase = 'draw'; message = 'Duello iniziato. Il primo giocatore salta la prima pescata; azioni e risoluzioni restano manuali.'+openTurn(next);
   } else {
     if (next.phase === 'setup') fail('Attendi che entrambi i giocatori siano pronti.');
     if(next.battle&&['setPhase','nextPhase','nextTurn','discardEnd','summon'].includes(action.type))fail('Completa o annulla il combattimento prima di cambiare fase o turno.');
@@ -291,8 +312,10 @@ export function applyAction(session, action) {
         message = `${player.name} cambia posizione a ${faceUp ? card.cardName : 'una carta coperta'}${action.type==='positionEffect'?' per effetto dichiarato':''}.`; break;
       }
       case 'lp': {
-        if (!integer(action.delta, -1000000, 1000000) || !integer(player.lp + action.delta, 0, 1000000)) fail('Variazione dei Life Points non valida.');
-        player.lp += action.delta; message = `${player.name}: ${action.delta >= 0 ? '+' : ''}${action.delta} LP → ${player.lp}.`; break;
+        // Bug 2026-11-18: un danno più grande dei LP rimasti (es. −1000 con 300 LP)
+        // veniva rifiutato; ora i LP scendono a 0, come nel gioco.
+        if (!integer(action.delta, -1000000, 1000000) || player.lp + action.delta > 1000000) fail('Variazione dei Life Points non valida.');
+        player.lp = Math.max(0, player.lp + action.delta); message = `${player.name}: ${action.delta >= 0 ? '+' : ''}${action.delta} LP → ${player.lp}.${player.lp === 0 ? ' Life Points a zero: concludete il duello dal menu.' : ''}`; break;
       }
       case 'stats': {
         const { card, zone } = findCard(player, action.cardId, true);
@@ -354,15 +377,16 @@ export function applyAction(session, action) {
         if(next.chain.length)fail('Completa la catena prima di cambiare fase o turno.');
         if (playerIndex !== next.activePlayer) fail('Il cambio fase spetta al giocatore attivo.');
         const index = PHASES.indexOf(next.phase);
-        if (index === PHASES.length - 1) {const error=endTurnError(next,playerIndex);if(error)fail(error);advanceTurn(next);}
-        else {const phase=next.turnState&&next.turn===1&&next.phase==='main1'?'end':PHASES[index+1];const error=phaseError(next,playerIndex,phase);if(error)fail(error);next.phase=phase;if(next.turnState&&phase==='battle')next.turnState.battleEntered=true;}
-        message = `Turno ${next.turn}: ${next.players[next.activePlayer].name} · ${next.phase}.`; break;
+        let opened='';
+        if (index === PHASES.length - 1) {const error=endTurnError(next,playerIndex);if(error)fail(error);opened=advanceTurn(next);}
+        else {const phase=next.turnState&&next.turn===1&&next.phase==='main1'?'end':PHASES[index+1];const error=phaseError(next,playerIndex,phase);if(error)fail(error);next.phase=phase;if(next.turnState&&phase==='battle')next.turnState.battleEntered=true;if(phase==='standby'&&next.turnState?.autoPhases&&!phaseStopReasons(next).length){next.phase='main1';opened=' Standby Phase superata: nessuna carta da attivare.';}}
+        message = `Turno ${next.turn}: ${next.players[next.activePlayer].name} · ${next.phase}.${opened}`; break;
       }
       case 'nextTurn': {
         if(next.chain.length)fail('Completa la catena prima di cambiare fase o turno.');
         if (playerIndex !== next.activePlayer) fail('Il cambio turno spetta al giocatore attivo.');
         const error=endTurnError(next,playerIndex);if(error)fail(error);
-        advanceTurn(next);message = `Turno ${next.turn}: ${next.players[next.activePlayer].name}.`; break;
+        const opened=advanceTurn(next);message = `Turno ${next.turn}: ${next.players[next.activePlayer].name}.${opened}`; break;
       }
       case 'discardEnd': {
         if(!next.turnState)fail('Lo scarto guidato è disponibile nelle nuove partite.');
@@ -370,7 +394,7 @@ export function applyAction(session, action) {
         const count=player.hand.length-6,ids=action.cardIds;
         if(count<=0||!Array.isArray(ids)||ids.length!==count||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!player.hand.some(card=>card.id===id)))fail('Seleziona esattamente le carte in eccesso dalla tua mano.');
         for(const id of ids)moveCard(next,playerIndex,{cardId:id,to:'graveyard',faceUp:true});
-        advanceTurn(next);message=`${player.name} scarta ${count} carte per il limite della mano. Turno ${next.turn}: ${next.players[next.activePlayer].name}.`;break;
+        const opened=advanceTurn(next);message=`${player.name} scarta ${count} carte per il limite della mano. Turno ${next.turn}: ${next.players[next.activePlayer].name}.${opened}`;break;
       }
       case 'normalAllowance': {
         if(!next.turnState||playerIndex!==next.activePlayer||action.delta!==1||next.turnState.normalLimit>=100)fail('Dichiara una sola Evocazione Normale/Set aggiuntiva nel tuo turno.');

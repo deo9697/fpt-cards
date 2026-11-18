@@ -15,6 +15,22 @@ import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Foglio di stile degli effetti: lo carica app.js col simulatore; qui ci si
+// assicura che esista e sia applicato prima della prima animazione.
+let duelFxStyles=null;
+function ensureDuelFxStyles(){
+  if(duelFxStyles)return duelFxStyles;
+  const applied=link=>{try{return Boolean(link.sheet&&link.sheet.cssRules);}catch{return Boolean(link.sheet);}};
+  let link=[...document.querySelectorAll('link[rel="stylesheet"]')].find(item=>/yugioh-simulator-fx\.css/.test(item.getAttribute('href')||''));
+  if(link&&applied(link))return duelFxStyles=Promise.resolve(true);
+  if(!link){link=document.createElement('link');link.rel='stylesheet';link.href='css/yugioh-simulator-fx.css';link.dataset.yugiohSimulator='true';document.head.append(link);}
+  duelFxStyles=new Promise(resolve=>{
+    const done=ok=>{clearTimeout(timer);clearInterval(poll);if(!ok)duelFxStyles=null;resolve(ok);};
+    const timer=setTimeout(()=>done(applied(link)),4000),poll=setInterval(()=>{if(applied(link))done(true);},50);
+    link.addEventListener('load',()=>done(true),{once:true});link.addEventListener('error',()=>done(false),{once:true});
+  });
+  return duelFxStyles;
+}
 const scope = context => `${context?.team || ''}:${context?.member || ''}`;
 const status = {waiting:'Invito in attesa',setup:'Preparazione',playing:'Duello in corso',finished:'Duello concluso',declined:'Invito rifiutato',cancelled:'Invito annullato'};
 
@@ -265,8 +281,13 @@ export class YugiohMultiplayer {
     if(this.fxRunning||!this.fxQueue?.length||typeof document==='undefined')return;
     if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage);}
     this.fxRunning=true;
-    try{while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}}
-    finally{this.fxRunning=false;}
+    try{
+      // Bug 2026-11-18: senza il foglio di stile l'effetto compariva "nudo" sopra
+      // il campo (immagine enorme, testo semplice). Si parte solo a stile caricato;
+      // se non arriva entro 4 s gli effetti in coda si saltano.
+      if(!await ensureDuelFxStyles()){this.fxQueue=[];return;}
+      while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}
+    }finally{this.fxRunning=false;}
   }
   disposeDuelFx(){this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
   receive(duel){

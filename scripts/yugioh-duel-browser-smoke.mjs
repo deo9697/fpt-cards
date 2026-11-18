@@ -146,7 +146,7 @@ async function run(){
   }
   async function drawAndMain(seat){
     if(await seat.evaluate('window.__sim.session.phase==="draw"')){
-      if(await seat.evaluate('window.__sim.session.turn>1')){
+      if(await seat.evaluate('window.__sim.session.turn>1&&!window.__sim.session.turnState.drawn')){
         await seat.tap('.ygo-phase-controls [data-ygo-action="draw"]');
         await seat.wait('!window.__sim.pending&&window.__sim.session.turnState.drawn','La pescata normale non viene registrata');
       }
@@ -521,7 +521,7 @@ async function run(){
   }
   async function turnRuleChecks(){
     await host.cdp.call('Emulation.setDeviceMetricsOverride',{width:740,height:360,deviceScaleFactor:1,mobile:true,screenOrientation:{type:'landscapePrimary',angle:90}});
-    assert.equal(rows.get(duelId).state.turn,1);assert.equal(rows.get(duelId).state.phase,'draw');
+    assert.equal(rows.get(duelId).state.turn,1);assert.equal(rows.get(duelId).state.phase,'main1','fasi automatiche: il primo turno parte dalla Main Phase 1');
     assert(await host.evaluate('document.querySelector(".ygo-phase-controls [data-ygo-action=draw]").disabled'),'Il primo giocatore può pescare normalmente al primo turno');
     await rejectedTurnAction(0,{type:'draw'},'Prima pescata vietata');
     await drawAndMain(host);await both('window.__sim.session.phase==="main1"','Main1 primo turno');
@@ -546,11 +546,10 @@ async function run(){
     await host.evaluate('(async()=>{const sim=window.__sim,count=9-sim.session.players[0].hand.length;if(count>0)await sim.act({type:"drawEffect",count});})()');await both('window.__sim.session.players[0].hand.length>=9','Preparazione scarto End Phase');
     assert(await guest.evaluate('window.__sim.session.players[0].hand.every(card=>card.hidden&&!card.catalogCardId&&!card.imageUrl)'),'La mano da scartare è esposta all’avversario');
     await finishTurn(host,{screenshotName:'end-turn-discard-phone'});await both('window.__sim.session.turn===2&&window.__sim.session.activePlayer===1&&window.__sim.session.players[0].hand.length===6','Scarto a sei e passaggio turno');
-    assert(await guest.evaluate('document.querySelector("[data-ygo-action=setPhase][data-phase=standby]").disabled'),'Si può saltare la pescata dovuta');
-    await rejectedTurnAction(1,{type:'setPhase',phase:'standby'},'Pescata obbligatoria prima di Standby');
-    await guest.tap('.ygo-phase-controls [data-ygo-action="draw"]');await both('window.__sim.session.turnState.drawn','Pescata del secondo giocatore');
+    // Fasi automatiche (2026-11-18): la pescata del turno avviene da sola e, senza carte attivabili, si arriva in Main Phase 1.
+    await both('window.__sim.session.turnState.drawn','Pescata automatica del secondo giocatore');
     await rejectedTurnAction(1,{type:'draw'},'Doppia pescata normale vietata');
-    await guest.tap('[data-ygo-action="setPhase"][data-phase="standby"]');await both('window.__sim.session.phase==="standby"','Standby secondo turno');await drawAndMain(guest);await both('window.__sim.session.phase==="main1"','Main1 secondo turno');
+    await drawAndMain(guest);await both('window.__sim.session.phase==="main1"','Main1 secondo turno');
     const guestSet=await playHand(guest,1,'91152256','set-monster',4);
     await host.wait('window.__sim.session.players[1].monsters.some(card=>card.slot===4&&card.hidden&&!card.catalogCardId)','Normal Set privata non sincronizzata');
     assert(await host.evaluate('window.__sim.session.players[1].monsters.some(card=>card.slot===4&&card.hidden&&!card.catalogCardId)'),'La Normal Set rivela il Mostro');

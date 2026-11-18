@@ -5,7 +5,7 @@ import {redactState} from '../api/_yugioh-duel-service.js';
 import {createPracticeTable} from '../js/games/yugioh/simulator-practice.js';
 
 const deck={id:'a0000000-0000-4000-8000-000000000001',game:'yugioh',name:'Synthetic battle client',cards:Array.from({length:14},(_,i)=>({catalogCardId:`battle-client-${i}`,cardName:`Synthetic battle ${i}`,section:'main',quantity:i===13?1:3,type:'Effect Monster',level:i===13?5:4,atk:2000,def:1000}))};
-let state=createSession({decks:[deck,deck]}),version=1;
+let state=createSession({decks:[deck,deck],autoPhases:false}),version=1;
 const mutate=action=>{state=applyAction(state,action);version++;};
 mutate({type:'start'});mutate({type:'nextPhase',player:0});mutate({type:'nextPhase',player:0});mutate({type:'nextTurn',player:0});
 mutate({type:'draw',player:1});mutate({type:'nextPhase',player:1});mutate({type:'nextPhase',player:1});mutate({type:'nextTurn',player:1});
@@ -62,7 +62,7 @@ try{
   const table=createPracticeTable({deck});let duel=table.snapshot();
   const act=action=>{duel=table.run({op:'action',duelId:duel.id,expectedVersion:duel.version,action}).duel;};
   const card=duel.state.players[0].hand[0];act({type:'move',cardId:card.id,to:'monsters',slot:0,faceUp:true,position:'attack'});
-  act({type:'nextTurn'});act({type:'draw'});act({type:'nextPhase'});act({type:'nextPhase'});act({type:'setPhase',phase:'battle'});
+  act({type:'nextTurn'});act({type:'setPhase',phase:'battle'}); // fasi automatiche: pescata e Main 1 già fatte
   act({type:'declareAttack',cardId:card.id,target:null});assert.equal(duel.state.battle.passes,1);
   act({type:'battlePass'});assert.equal(duel.state.battle.stage,'damage');
   act({type:'battleManual'});assert.equal(duel.state.battle,null);assert(duel.state.lastBattle.summary.includes('manualmente'));

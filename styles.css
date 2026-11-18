@@ -4400,3 +4400,11 @@ body::before, body::after { display:none; }
    sfondo animato sotto consumerebbe GPU per niente; niente mix-blend-mode. */
 body[data-page="simulator"] .fpt-backdrop, body[data-page="academy"] .fpt-backdrop { display:none; }
 .fpt-backdrop-seal { mix-blend-mode:normal; }
+
+/* Market Watch — coda conferme di tutto il team (2026-11-18) */
+.market-confirm-scope { display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap; }
+.market-scope-chip { display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:7px 13px;border:1px solid #3a2f47;border-radius:999px;background:#16121d;color:#bdb3c6;font-weight:750;font-size:.72rem; }
+.market-scope-chip span { min-width:20px;padding:1px 6px;border-radius:10px;background:#282330;color:#d9cfe0;font-size:.6rem;text-align:center; }
+.market-scope-chip.active { border-color:#984fd0;background:linear-gradient(135deg,#54216e,#2a173c);color:#fff;box-shadow:0 0 14px #8c37bd2b; }
+.market-confirm-queue-card small.market-confirm-owners { display:flex;align-items:center;gap:5px;color:#c9a6e8; }
+.market-confirm-owners svg { width:12px;height:12px;flex:none; }

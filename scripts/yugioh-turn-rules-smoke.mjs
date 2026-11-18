@@ -10,7 +10,7 @@ const deck={id:'turn-rules-fixture',game:'yugioh',name:'Synthetic standard turns
   {catalogCardId:'link',cardName:'Public Link',section:'extra',quantity:1,type:'Link Monster',atk:1000}
 ]};
 const copy=value=>structuredClone(value),act=(state,type,fields={})=>applyAction(state,{type,player:state.activePlayer,...fields});
-const fresh=(firstPlayer=0)=>act(createSession({decks:[deck,deck],firstPlayer}),'start');
+const fresh=(firstPlayer=0)=>act(createSession({decks:[deck,deck],firstPlayer,autoPhases:false}),'start');
 const main=state=>act(act(state,'nextPhase'),'nextPhase');
 const integrity=state=>assert.deepEqual(validateSession(state),{valid:true,errors:[]});
 function rejected(state,action,pattern){const before=copy(state);assert.throws(()=>applyAction(state,action),pattern);assert.deepEqual(state,before,'Rejected commands must preserve cards, counters, phases and logs');integrity(state);}

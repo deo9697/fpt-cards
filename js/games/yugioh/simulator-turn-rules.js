@@ -4,7 +4,37 @@ const phases=['draw','standby','main1','battle','main2','end'];
 const monsterZones=['monsters','extraMonsters'];
 const typeOf=card=>String(card?.type||card?.cardType||'').toLowerCase();
 const fail=message=>{throw new Error(message);};
-export const newTurnState=turn=>({turn,normalUsed:0,normalLimit:1,drawn:turn===1,battleEntered:false});
+export const newTurnState=(turn,{autoPhases=false}={})=>({turn,normalUsed:0,normalLimit:1,drawn:turn===1,battleEntered:false,...(autoPhases?{autoPhases:true}:{})});
+// Fasi automatiche (2026-11-18, tavoli nuovi): a inizio turno pescata, Standby
+// e Main Phase 1 scorrono da sole, fermandosi in una fase solo se in campo c'è
+// qualcosa che vi si potrebbe attivare. Solo informazioni PUBBLICHE: una carta
+// coperta nella zona Magie/Trappole ferma sempre la Draw Phase (potrebbe essere
+// una Trappola o una Rapida: guardarne il tipo rivelerebbe cosa è all'avversario);
+// le carte scoperte fermano la fase se il loro testo la cita (o, in Draw Phase,
+// se hanno un Effetto Rapido).
+const phaseCue={draw:/draw phase|fase di pescata/i,standby:/standby phase|fase di standby/i};
+const quickCue=/quick effect|effetto rapido/i;
+export function phaseStopReasons(session,phase=session?.phase){
+  if(!phaseCue[phase]||!Array.isArray(session?.players))return[];
+  const reasons=[];
+  for(const[player,p]of session.players.entries()){
+    let covered=0;
+    for(const zone of ['spells','field'])for(const card of p?.[zone]||[])if(!card.faceUp)covered++;
+    if(phase==='draw'&&covered)reasons.push({player,covered});
+    for(const zone of ['monsters','extraMonsters','spells','field'])for(const card of p?.[zone]||[]){
+      if(!card.faceUp||card.hidden)continue;
+      const text=String(card.text||'');
+      if(phaseCue[phase].test(text)||phase==='draw'&&quickCue.test(text))reasons.push({player,cardName:card.cardName});
+    }
+  }
+  return reasons;
+}
+const phaseNames={draw:'Draw Phase',standby:'Standby Phase'};
+export function describePhaseStop(session,reasons,phase=session.phase){
+  const names=reasons.map(reason=>{const owner=session.players[reason.player]?.name||'Giocatore';return reason.covered?`${owner}: ${reason.covered} ${reason.covered===1?'carta coperta':'carte coperte'}`:`${reason.cardName} (${owner})`;});
+  const shown=names.slice(0,3).join(', ')+(names.length>3?` e altre ${names.length-3}`:'');
+  return `Pausa in ${phaseNames[phase]}: si può attivare una carta (${shown}).`;
+}
 export function getTurnState(session){return session?.turnState?{...session.turnState}:null;}
 export function canDrawNormally(session,player){
   if(!session?.players?.[player]||session.result||session.phase==='setup')return false;

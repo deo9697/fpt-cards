@@ -21,7 +21,7 @@ function field(state,player,code,slot=0,{zone='monsters',position='attack',faceU
   const card=find(state,player,code);return[act(state,'move',{player,cardId:card.id,to:zone,slot,position,faceUp}),card.id];
 }
 function fresh(prepare=state=>state){
-  let state=act(createSession({decks:[deck,deck],firstPlayer:1,names:['Alice','Bob']}),'start');
+  let state=act(createSession({decks:[deck,deck],firstPlayer:1,names:['Alice','Bob'],autoPhases:false}),'start');
   state=act(act(state,'nextPhase'),'nextPhase');state=prepare(state);
   state=act(state,'nextTurn');state=act(state,'draw');state=act(act(state,'nextPhase'),'nextPhase');
   return act(state,'setPhase',{phase:'battle'});
@@ -37,7 +37,7 @@ const inZone=(state,player,zone,id)=>state.players[player][zone].some(card=>card
 const byId=(state,player,id)=>ZONES.flatMap(zone=>state.players[player][zone]).find(card=>card.id===id);
 
 {
-  let first=act(createSession({decks:[deck,deck]}),'start');first=act(act(first,'nextPhase'),'nextPhase');let a;[first,a]=field(first,0,'battle-0');
+  let first=act(createSession({decks:[deck,deck],autoPhases:false}),'start');first=act(act(first,'nextPhase'),'nextPhase');let a;[first,a]=field(first,0,'battle-0');
   rejected(first,{type:'declareAttack',player:0,cardId:a,target:null},/primo|Battle|battaglia|fase/i);
   const fixture=pair();let state=fixture.state;
   rejected(state,{type:'declareAttack',player:1,cardId:fixture.b,target:{zone:'monsters',slot:0}},/turno|attivo/i);

@@ -72,7 +72,9 @@ assert.throws(() => act(state, 'counter', { cardId:firstId, delta:-3 }), /segnal
 assert.throws(() => act(state, 'stats', { cardId:state.players[0].hand[0].id, stat:'atk', delta:500 }), /non presente/);
 state = act(state, 'lp', { delta:-1500 });
 assert.equal(state.players[0].lp, 6500);
-assert.throws(() => act(state, 'lp', { delta:-7000 }), /Life Points/);
+// 2026-11-18: un danno oltre i LP rimasti li porta a 0 (prima veniva rifiutato).
+assert.equal(act(state, 'lp', { delta:-7000 }).players[0].lp, 0);
+assert.throws(() => act(state, 'lp', { delta:1000000 }), /Life Points/);
 
 // Global Extra Monster slots are shared physical positions, never per-player copies.
 const fusion = state.players[0].extra.find(card => /Fusion/.test(card.type));

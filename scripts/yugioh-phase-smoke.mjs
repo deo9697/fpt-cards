@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createSession,applyAction,validateSession} from '../js/games/yugioh/simulator-engine.js';
 
 const deck={id:'phase-fixture',game:'yugioh',name:'Synthetic phase deck',cards:Array.from({length:14},(_,index)=>({catalogCardId:`phase-${index}`,cardName:`Phase monster ${index}`,section:'main',quantity:index===13?1:3,type:'Effect Monster',level:4,atk:1000,def:1000}))};
-const table=createSession({decks:[deck,deck],names:['Alice','Bob']});
+const table=createSession({decks:[deck,deck],names:["Alice","Bob"],autoPhases:false});
 const act=(state,type,fields={})=>applyAction(state,{type,player:state.activePlayer,...fields});
 function rejected(state,action,pattern){const before=structuredClone(state);assert.throws(()=>applyAction(state,action),pattern);assert.deepEqual(state,before);}
 assert.throws(()=>applyAction(table,{type:'setPhase',player:0,phase:'main1'}),/pronti/);

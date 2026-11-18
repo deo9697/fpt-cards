@@ -94,8 +94,7 @@ const beforePhase=clone(records.get(duelId).state);
 await rejects(guest,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'battle'}},403,'not_your_turn');
 await rejects(host,{op:'action',duelId,expectedVersion:records.get(duelId).version,requestId:id(++request),action:{type:'setPhase',phase:'invalid'}},400,'invalid_action');
 assert.deepEqual(records.get(duelId).state,beforePhase);
-await action(host,{type:'setPhase',phase:'standby'});
-await action(host,{type:'setPhase',phase:'main1'});
+// Fasi automatiche (2026-11-18): il turno 1 arriva già in Main Phase 1.
 assert.equal(records.get(duelId).state.phase,'main1');
 assert.deepEqual(records.get(duelId).state.players,beforePhase.players);
 assert.equal(records.get(duelId).state.turn,beforePhase.turn);
@@ -184,11 +183,10 @@ await rejects(guest,{op:'action',duelId,expectedVersion:records.get(duelId).vers
   const ownMonster=player=>battleState().players[player].hand.concat(battleState().players[player].deck).find(card=>/Monster/.test(card.type));
   await run(host,{...invitation,requestId:battleId,firstPlayer:1});await run(guest,{op:'accept',duelId:battleId,expectedVersion:1,requestId:id(++request),deckId:decks[1].id});
   await battleAction(host,{type:'ready'});await battleAction(guest,{type:'ready'});
-  await battleAction(guest,{type:'setPhase',phase:'standby'});await battleAction(guest,{type:'setPhase',phase:'main1'});
   const attacker=ownMonster(0),defender=ownMonster(1);
   await battleAction(host,{type:'move',cardId:attacker.id,to:'monsters',slot:0,position:'attack',faceUp:true});
   await battleAction(guest,{type:'move',cardId:defender.id,to:'monsters',slot:0,position:'defense',faceUp:false});
-  await battleAction(guest,{type:'nextTurn'});await battleAction(host,{type:'draw'});await battleAction(host,{type:'setPhase',phase:'standby'});await battleAction(host,{type:'setPhase',phase:'main1'});await battleAction(host,{type:'setPhase',phase:'battle'});
+  await battleAction(guest,{type:'nextTurn'});assert.equal(battleState().phase,'main1','fasi automatiche: pescata e Main Phase 1');await battleAction(host,{type:'setPhase',phase:'battle'});
   const currentRequest=command=>({op:'action',duelId:battleId,expectedVersion:records.get(battleId).version,requestId:id(++request),action:command});
   const invalidBefore=clone(records.get(battleId));
   await rejects(guest,currentRequest({type:'declareAttack',player:0,cardId:attacker.id,target:{zone:'monsters',slot:0}}),403,'opponent_action');
