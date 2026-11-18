@@ -93,6 +93,29 @@ function queryLocation(core,duel,controller,location) {
     return cards;
   } finally {module.stackRestore(stack);}
 }
+// Bug 2026-11-18: il core non mescola il Deck all'avvio (lo fa chi crea il
+// duello prima di duelNewCard): le carte entravano nell'ordine del mazzo
+// salvato e ogni partita iniziava con la stessa mano. Mescolamento
+// Fisher-Yates DETERMINISTICO dal seme della partita: la ricostruzione da
+// seme + transcript dà sempre lo stesso ordine. Solo per gli stati creati con
+// deckShuffle === DECK_SHUFFLE_VERSION, così le partite già in corso (create
+// senza mescolamento) continuano a ricostruirsi identiche.
+export const DECK_SHUFFLE_VERSION = 'seeded-fy-v1';
+export function seededDeckOrder(codes, seedHex, controller) {
+  const order = [...codes];
+  let counter = 0, pool = Buffer.alloc(0);
+  const nextUint32 = () => {
+    if (pool.length < 4) { pool = createHash('sha256').update(String(seedHex)).update(':deck:' + controller + ':' + counter++).digest(); }
+    const value = pool.readUInt32BE(0); pool = pool.subarray(4); return value;
+  };
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const bound = index + 1, limit = Math.floor(0x100000000 / bound) * bound;
+    let value; do { value = nextUint32(); } while (value >= limit); // nessuna distorsione
+    const swap = value % bound;
+    [order[index], order[swap]] = [order[swap], order[index]];
+  }
+  return order;
+}
 function queryPlayers(core, duel, state, resources, viewer, lp, deckReversed = false) {
   const players=state.initialDecks.map((deck, seat) => {
     const controller = seat ^ state.firstPlayer;
@@ -195,7 +218,8 @@ async function replay(state) {
     for (const script of ['constant.lua','utility.lua']) if (!core.loadScript(duel,script,resources.scripts.get(script))) failure('engine_scripts_missing','Script base del motore non disponibile.',503);
     state.initialDecks.forEach((deck,seat) => {
       const controller = seat ^ state.firstPlayer;
-      for (const [zone,location] of [['main',OcgLocation.DECK],['extra',OcgLocation.EXTRA]]) for (const code of deck[zone]) core.duelNewCard(duel,{code,team:controller,duelist:0,controller,location,sequence:0,position:OcgPosition.FACEDOWN_DEFENSE});
+      const main = state.deckShuffle === DECK_SHUFFLE_VERSION ? seededDeckOrder(deck.main, state.seed, controller) : deck.main;
+      for (const [zone,location] of [['main',OcgLocation.DECK],['extra',OcgLocation.EXTRA]]) for (const code of (zone === 'main' ? main : deck[zone])) core.duelNewCard(duel,{code,team:controller,duelist:0,controller,location,sequence:0,position:OcgPosition.FACEDOWN_DEFENSE});
     });
     core.startDuel(duel);
     let sequence = 0, steps = 0, pending = null;
@@ -319,7 +343,7 @@ export async function createAutoState({decks,names=['Giocatore 1','Giocatore 2']
   if (passive&&(passivePlayer!==1||passivePolicy!==undefined&&passivePolicy!==PASSIVE_POLICY_VERSION)) failure('invalid_passive_setup','Configurazione del campo passivo non valida.');
   const resources=await loadAutoResources(resourceVersion);
   const initialDecks=decks.map(deck=>validateAutoDeck(deck,resources));
-  const state={mode:'auto',engineVersion:AUTO_ENGINE_VERSION,resourceVersion:resources.version,seed:canonicalSeed(seed),initialDecks,names:[0,1].map(index=>String(names?.[index]||`Giocatore ${index+1}`).slice(0,100)),lp:[...lp],firstPlayer,inputs:[],inputSequence:0,createdAt:new Date().toISOString()};
+  const state={mode:'auto',engineVersion:AUTO_ENGINE_VERSION,resourceVersion:resources.version,seed:canonicalSeed(seed),initialDecks,names:[0,1].map(index=>String(names?.[index]||`Giocatore ${index+1}`).slice(0,100)),lp:[...lp],firstPlayer,deckShuffle:DECK_SHUFFLE_VERSION,inputs:[],inputSequence:0,createdAt:new Date().toISOString()};
   if(passive){state.passivePlayer=1;state.passivePolicy=PASSIVE_POLICY_VERSION;}
   return replay(state);
 }
@@ -351,3 +375,6 @@ export async function searchAutoCards(state,{viewer,promptId,query}={}) {
   const resources=await loadAutoResources(state.resourceVersion);
   return searchPromptCards(state.pendingMessage,String(query||'').slice(0,100),{resources,cards:resources.cards,limit:30});
 }
+
+// Solo per i test (scripts/yugioh-auto-shuffle-smoke.mjs): ricostruzione da seme + transcript.
+export { replay as replayAutoStateForTest };
