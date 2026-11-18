@@ -1,4 +1,4 @@
-const CACHE = 'fpt-cards-v308';
+const CACHE = 'fpt-cards-v309';
 const PADDLE_CACHE = 'fpt-cards-paddle-v1';
 // Cache separata e a versione stabile per gli asset grandi che cambiano di
 // rado (immagini, font, video). Prima erano nello stesso elenco del guscio
@@ -13,7 +13,7 @@ FILES.push('./css/onepiece-simulator.css', './css/onepiece-battlefield.css', './
 FILES.push('./css/yugioh-simulator.css', './css/yugioh-simulator-fx.css', './js/games/yugioh/simulator-fx.js', './js/games/yugioh/simulator-fx-events.js', './js/games/yugioh/simulator-arena.js', './js/games/yugioh/simulator-auto-ui.js', './js/games/yugioh/simulator-lobby-view.js', './js/games/yugioh/simulator-multiplayer.js', './js/games/yugioh/simulator-engine.js', './js/games/yugioh/simulator-orientation.js', './js/games/yugioh/simulator-practice.js', './js/games/yugioh/simulator-touch.js', './js/games/yugioh/simulator-card-actions.js', './js/games/yugioh/simulator-chain.js', './js/games/yugioh/simulator-summoning.js', './js/games/yugioh/simulator-rules-ui.js', './js/games/yugioh/simulator-reveal.js', './js/games/yugioh/simulator-turn-rules.js', './js/games/yugioh/simulator-battle.js');
 FILES.push('./css/app-launch.css');
 MEDIA_FILES.push('./assets/loading/blattaman-arcane.webp','./assets/loading/yugioh-card-back.jpg');
-MEDIA_FILES.push('./assets/backgrounds/yugioh-duel-arena.jpg', './assets/backgrounds/yugioh-duel-card-back.jpg', './assets/game-logos/yugioh.png');
+MEDIA_FILES.push('./assets/backgrounds/yugioh-duel-arena.jpg', './assets/backgrounds/duel-arena-patto.jpg', './assets/backgrounds/yugioh-duel-card-back.jpg', './assets/game-logos/yugioh.png');
 async function ensureMediaCache() {
   const cache = await caches.open(MEDIA_CACHE);
   const missing = [];

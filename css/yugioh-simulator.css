@@ -634,3 +634,17 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-pick-card.is-focused .ygo-pick-choose,.ygo-pick-card.is-selected .ygo-pick-choose,.ygo-pick-choose:focus-visible { visibility:visible; }
 .ygo-pick-sheet footer { display:flex;align-items:center;gap:8px;justify-content:flex-end; }
 .ygo-pick-sheet .ygo-pick-count { margin-right:auto;font-size:.66rem;color:#d8bf86; }
+
+/* Terreno "Pietra e oro" + sfondo FPT "Arena del Patto" (2026-11-18, scelta B + sfondo 1).
+   Avversario in alto sul lato rosso, tu in basso sul lato blu; zone incise con
+   angoli d'oro, fasi superate con ✓. Statico: nessun costo GPU in più. */
+.ygo-playmat { border-color:#e8b85c70;background:linear-gradient(180deg,#0a070c99,#0a070c33 44%,#0a070c33 56%,#0a070c99),url('../assets/backgrounds/duel-arena-patto.jpg') 18% 50%/cover;box-shadow:0 8px 26px #000a,inset 0 0 70px #000c; }
+.ygo-playmat:before { border-color:#e8b85c1f; }
+.ygo-mat-atmosphere { opacity:.2; }
+.ygo-playmat .ygo-zone,.ygo-playmat .ygo-zone.ygo-zone-spells { border-color:#0000008c!important;background:linear-gradient(#e8b85cb3,#e8b85cb3) top 3px left 3px/9px 1px no-repeat,linear-gradient(#e8b85cb3,#e8b85cb3) top 3px left 3px/1px 9px no-repeat,linear-gradient(#e8b85cb3,#e8b85cb3) bottom 3px right 3px/9px 1px no-repeat,linear-gradient(#e8b85cb3,#e8b85cb3) bottom 3px right 3px/1px 9px no-repeat,#0a070c66!important;box-shadow:inset 0 1px 0 #ffffff12,inset 0 0 12px #000a; }
+.ygo-playmat .ygo-zone.ygo-zone-spells { background-color:#0c0a1466!important; }
+.ygo-phase-panel li { border-color:#3a3226;background:linear-gradient(#211c15e6,#16130fe6);color:#8a7d66; }
+.ygo-phase-panel li.is-done { color:#9fc48a;border-color:#3d4a2e; }
+.ygo-phase-panel li.is-done::after { content:'✓';position:absolute;right:5px;top:50%;transform:translateY(-50%);font-size:.6em;pointer-events:none; }
+.ygo-phase-panel li.is-current { color:#1a140b;border-color:#f3d79b;background:linear-gradient(#f3d79b,#c4923d);box-shadow:0 0 14px #e8b85c66; }
+.ygo-phase-panel li.is-current>button,.ygo-phase-panel li.is-current>span { color:#1a140b; }
