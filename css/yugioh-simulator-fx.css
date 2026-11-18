@@ -78,3 +78,6 @@
 .dfx-go:hover:not(:disabled) { color:#1a1205; filter:brightness(1.08); }
 @media (max-width:620px) { .dfx-choice { inset:4%; grid-template-columns:24% minmax(0,1fr); } }
 @media (prefers-reduced-motion:reduce) { .dfx-layer *, .dfx-layer *::before, .dfx-layer *::after { animation-duration:.01s !important; animation-delay:0s !important; } }
+
+/* Livello fisso usato dal simulatore (fuori dall'HTML ridisegnato). */
+.dfx-stage { position:fixed; inset:0; z-index:640; pointer-events:none; }

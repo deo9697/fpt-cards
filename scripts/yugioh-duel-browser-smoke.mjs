@@ -557,6 +557,8 @@ async function run(){
     const otherGuest=await putInHand(guest,1,'15025844');await rejectedTurnAction(1,{type:'move',cardId:otherGuest,to:'monsters',slot:1,position:'attack',faceUp:true,intent:'normal'},'Normal Set consuma la quota');
     assert(await guest.evaluate('document.querySelector("[data-ygo-action=setPhase][data-phase=main2]").disabled'),'Main2 disponibile senza Battle Phase');
     for(const phase of['battle','main2','end']){await guest.tap('[data-ygo-action="setPhase"][data-phase="'+phase+'"]');await both('window.__sim.session.phase==='+JSON.stringify(phase),'Avanzamento fasi '+phase);}
+    // Effetti del duello (simulator-fx.js): il cambio di fase mostra la fascia su entrambi i telefoni, senza bloccare i tocchi.
+    await both("Boolean(document.querySelector('.dfx-stage'))&&getComputedStyle(document.querySelector('.dfx-stage')).pointerEvents==='none'",'Effetti di fase non mostrati o livello che blocca i tocchi');
     await finishTurn(guest);await both('window.__sim.session.turn===3&&window.__sim.session.activePlayer===0','Ritorno al primo giocatore');await drawAndMain(host);await both('window.__sim.session.phase==="main1"','Main1 terzo turno');
     assert.equal(rows.get(duelId).state.turnState.normalUsed,0,'La quota non si ripristina al turno seguente');
     await host.tap('[data-ygo-card="'+level6+'"][data-player="0"]');await waitDropMenu(host,'Cambio posizione al turno seguente');await host.tap('.ygo-drop-menu [data-ygo-drop-action="position"]');await both('window.__sim.session.players[0].monsters.some(card=>card.id==='+JSON.stringify(level6)+'&&card.position==="defense")','Cambio posizione manuale consentito');
@@ -986,7 +988,7 @@ async function run(){
     await assertArena(host,`Smartphone ${width}×${height}`);await assertPhoneCardFit(host,`Smartphone ${width}×${height}`);await host.screenshot(`landscape-${width}`,false);
   }
   console.log('PASS two-seat privacy/conflicts, phases, remote reload, portrait gate, consistent Main/Extra card sizing and native touch on three landscape phones');
-  fs.writeFileSync(path.join(root,'artifacts','yugioh-duel','card-size-verification.json'),JSON.stringify(cardSizeVerification,null,2)+'\n');console.log('PASS larger phone cards: '+JSON.stringify(cardSizeVerification));
+  fs.mkdirSync(path.join(root,'artifacts','yugioh-duel'),{recursive:true});fs.writeFileSync(path.join(root,'artifacts','yugioh-duel','card-size-verification.json'),JSON.stringify(cardSizeVerification,null,2)+'\n');console.log('PASS larger phone cards: '+JSON.stringify(cardSizeVerification));
 
   await openMenu(host);await host.fill('[data-ygo-finish] [name=winner]',0);await host.fill('[data-ygo-finish] [name=notes]','Duello di prova manuale completato.');await host.submit('[data-ygo-finish]');
   await both('window.__sim.session.result?.winner===0','Risultato finale condiviso');

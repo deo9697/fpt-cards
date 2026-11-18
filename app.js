@@ -185,6 +185,7 @@ function yugiohSimulatorView() {
   if (!canUseYugiohSimulator()) return `<section class="page-stack"><div class="surface empty-state"><h1>Simulatore Yu-Gi-Oh!</h1><p>Il tavolo privato è disponibile ai membri del team nella sezione Yu-Gi-Oh!.</p></div></section>`;
   if (!document.querySelector('link[data-yugioh-simulator]')) {
     const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'css/yugioh-simulator.css'; link.dataset.yugiohSimulator = 'true'; document.head.append(link);
+    const fxLink = document.createElement('link'); fxLink.rel = 'stylesheet'; fxLink.href = 'css/yugioh-simulator-fx.css'; fxLink.dataset.yugiohSimulator = 'true'; document.head.append(fxLink);
   }
   const module = lazyPageModule('yugioh-simulator', 'simulator', () => import('./js/games/yugioh/simulator-multiplayer.js'));
   if (!module) return lazyLoadingView('Simulatore Yu-Gi-Oh!');

@@ -11,6 +11,8 @@ import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,pos
 import {attackError} from './simulator-battle.js';
 import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket, historyTicket, deckRecords, sampleHand, arenaStats } from './simulator-lobby-view.js';
 import { autoIsMulti, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
+import { createDuelFx } from './simulator-fx.js';
+import { duelFxEvents } from './simulator-fx-events.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const scope = context => `${context?.team || ''}:${context?.member || ''}`;
@@ -78,9 +80,9 @@ export class YugiohMultiplayer {
     if(!this.pile&&!this.selected&&!this.inspectedCard)for(const node of arena.querySelectorAll('.ygo-zone-dialog,.ygo-card-dialog,.ygo-overlay'))node.remove();
     return true;
   }
-  reset(){this.autoArena=null;this.activationReveals.dispose();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
+  reset(){this.disposeDuelFx();this.autoArena=null;this.activationReveals.dispose();this.rulesDialog=null;this.attackSelection=null;this.navigationGeneration++;this.inspectionGeneration++;clearTimeout(this.timer);this.cardGestures.dispose();this.orientation.dispose();this.disposed=true;this.ready=false;this.duel=null;this.session=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.dropMenu=null;this.practice=false;this.practiceTable=null;this.metadata.clear();}
   close(){this.reset();}
-  suspend(){this.autoArena=null;this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
+  suspend(){this.disposeDuelFx();this.autoArena=null;this.activationReveals.clear();this.rulesDialog=null;this.attackSelection=null;this.selected=null;this.inspectedCard=null;this.placing=null;this.cardGestures.cancel();this.dropMenu=null;this.orientation.exit();}
   async initialize(){
     if(this.loading||this.ready||!this.allowed())return;
     const generation=this.navigationGeneration;this.loading=true;this.error='';
@@ -255,11 +257,26 @@ export class YugiohMultiplayer {
     const selected=this.decks.find(deck=>deck.id===this.practiceDraft.deckId),hand=sampleHand(selected,this.handSeed),automatic=this.practiceDraft.mode!=='manual';
     return`<div class="ygo-arena-sec">Campo di prova <em>solo per te</em></div><form data-ygo-practice class="ygo-composer"><label class="ygo-arena-field"><span class="ygo-step">Modalità di prova</span><select name="mode"><option value="auto" ${automatic?'selected':''}>Automatico · Regole TCG</option><option value="manual" ${automatic?'':'selected'}>Manuale · Tavolo locale</option></select></label><select name="deckId" class="ygo-native" tabindex="-1" aria-hidden="true" required>${this.deckOptions(this.practiceDraft.deckId)}</select><span class="ygo-step">Scegli il mazzo</span>${deckTiles(this.decks,this.practiceDraft.deckId,'deckId')}${automatic?'<p class="ygo-arena-hint">Il motore verifica il mazzo e gestisce regole, costi ed effetti.</p>':deckIssues(selected)}${hand.length?`<span class="ygo-step">Anteprima carte</span><div class="ygo-sample-hand" data-hand-seed="${this.handSeed}">${hand.map((src,index)=>`<img src="${esc(src)}" alt="" style="--i:${index}">`).join('')}</div><button type="button" class="ygo-ticket-action is-ghost" data-ygo-redeal>Rimescola anteprima</button>`:''}<ul class="ygo-arena-points"><li>Pescate, evocazioni e combo senza un altro giocatore.</li><li>Nessun invito e nessun risultato registrato.</li><li>${automatic?'Prova personale automatica con un avversario passivo.':'Il turno avversario viene saltato: gli effetti li gestisci tu.'}</li></ul><button type="submit" class="ygo-primary ygo-cta" ${this.pending||!selected?'disabled':''}>${this.pending?'Preparazione…':'Apri il campo'}</button>${automatic?commandButton('practice-resume','Riprendi ultima prova',this.pending):''}</form>`;
   }
+  // Il livello degli effetti vive FUORI dall'HTML che il simulatore ridisegna
+  // (un ridisegno a metà animazione lo cancellerebbe): un div fisso nel body,
+  // creato alla prima animazione e tolto quando si esce dal simulatore.
+  queueDuelFx(events){if(!Array.isArray(events)||!events.length)return;this.fxQueue=[...(this.fxQueue||[]),...events].slice(-4);}
+  async playDuelFx(){
+    if(this.fxRunning||!this.fxQueue?.length||typeof document==='undefined')return;
+    if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage);}
+    this.fxRunning=true;
+    try{while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}}
+    finally{this.fxRunning=false;}
+  }
+  disposeDuelFx(){this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
     this.activationReveals.observe(duel);
+    const previousSession=this.session;
     this.duel=duel;this.viewer=duel.viewer;this.session=['setup','playing','finished'].includes(duel.status)?duel.state||null:null;
+    // Effetti visivi (simulator-fx.js): solo presentazione di ciò che il motore ha già deciso.
+    if(changed&&!newTable&&this.session?.players&&duel.status==='playing')this.queueDuelFx(duelFxEvents(previousSession,this.session,this.viewer));
     this.practice=duel.practice===true||Boolean(this.practiceTable);
     if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
     if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
@@ -363,6 +380,9 @@ export class YugiohMultiplayer {
   rulesView(){return`<section class="ygo-rules ygo-arena-rules"><div class="ygo-arena-sec">Come funziona il tavolo</div><details open><summary><b>AUTO</b>Duello automatico TCG</summary><p>Scegli Automatico quando inviti un compagno. Il motore gestisce effetti, costi, evocazioni, materiali, combattimento e timing TCG. Tocca le carte illuminate per le mosse consentite; scegli i bersagli e conferma le selezioni richieste. Per leggere una carta tienila premuta. La banlist e la disponibilità delle carte sono controllate dal server. Entrambi confermano la mano iniziale per cominciare.</p><p><a href="/assets/licenses/yugioh-auto.html" target="_blank" rel="noopener noreferrer">Versioni, licenze e codice sorgente</a></p></details><h3>Modalità manuale guidata</h3><p>Le nuove partite controllano turni, pescate, Evocazioni Normali/Set, tributi e cambi posizione. Effetti, timing e costi non guidati restano manuali. Il combattimento standard controlla attacchi, danni e distruzione. Catene e materiali Synchro/Xyz hanno controlli dedicati.</p><details open><summary><b>01</b>Preparazione e turno</summary><p>Entrambi iniziano con cinque carte. Chi inizia salta la prima pescata; nel primo turno non si svolge la Battle Phase. Le fasi avanzano in ordine. Esegui la pescata dovuta prima di continuare; a fine turno scegli le carte da scartare se ne hai più di sei. Gli effetti restano da dichiarare. I tavoli già iniziati prima di questi controlli mantengono i comandi manuali: avvia una nuova partita per usare le regole guidate.</p></details><details><summary><b>02</b>Carte e zone</summary><p>Tocca una carta per il menu rapido oppure tienila premuta e trascinala in una zona libera. Scegli la giocata. Tenendo premuta la carta senza spostarla ne leggi la descrizione. Normal Summon e Set condividono la quota del turno. I Mostri di Livello 5–6 richiedono un tributo, dal Livello 7 ne richiedono due. Puoi offrire anche i tuoi Mostri coperti. Il cambio posizione normale è disponibile dalla propria Main Phase, una volta per turno, dopo il turno di ingresso. I comandi per effetto sono fra quelli avanzati. Puoi anche mandare al Cimitero o bandire. Le carte coperte dell’avversario restano private.</p></details><details><summary><b>03</b>Extra Deck e materiali Xyz</summary><p>Le due Zone Mostri Extra sono condivise. Per Synchro e Xyz scegli i tuoi materiali scoperti e una casella: vengono controllati Tuner, Livelli e Rango della procedura standard. I materiali Xyz restano attaccati al mostro. Rispetta anche i requisiti specifici della carta e le frecce Link.</p></details><details><summary><b>04</b>Combattimento</summary><p>Durante la tua Battle Phase, tocca un Mostro scoperto in Attacco e scegli Attacca. Tocca un bersaglio illuminato oppure Attacco diretto se il campo avversario è vuoto. Entrambi possono rispondere: due passaggi aprono il Damage Step e scoprono il difensore; altri due applicano i danni e la distruzione standard. Le catene vanno completate prima di proseguire. Se cambiano i Mostri avversari prima del Damage Step, scegli di nuovo il bersaglio o rinuncia. Nel Damage Step, per protezioni o effetti particolari, proponi Esito manuale: serve l’accordo dell’altro giocatore. Poi applicate l’effetto con i comandi manuali.</p></details><details><summary><b>05</b>Attivazioni e catene</summary><p>Activate registra un anello numerato, anche per effetti dalla mano. Entrambi scelgono Non rispondo per iniziare la risoluzione, dall’anello maggiore al minore. Gli effetti restano manuali. Per uno Xyz scegli i materiali richiesti dal costo; sposta Magie e Trappole al Cimitero quando previsto.</p></details><p class="ygo-arena-hint"><a href="https://www.yugioh-card.com/eu/it/play/" target="_blank" rel="noopener noreferrer">Regole ufficiali Yu-Gi-Oh! ↗</a></p></section>`;}
   bind(root){
     this.syncOrientation();
+    // Un ridisegno che riscrive il body stacca il livello degli effetti: lo riattacca.
+    if(this.fxStage&&!this.fxStage.isConnected&&typeof document!=='undefined')document.body.appendChild(this.fxStage);
+    if(root.querySelector('.ygo-arena'))this.playDuelFx();
     const arena=root.querySelector('.ygo-arena');
     this.autoArena=arena?.classList.contains('is-auto')?arena:null;
     if(this.pending)this.syncAutoBusy();
