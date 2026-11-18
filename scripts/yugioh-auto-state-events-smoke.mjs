@@ -226,7 +226,8 @@ const immutableSnapshot = JSON.stringify(state);
 await assert.rejects(() => runAutoOperation('apply',{ state,viewer:prompt.player,promptId:prompt.id,choice },{ timeoutMs:1 }),error => error.code === 'auto_timeout' && error.status === 503);
 assert.equal(JSON.stringify(state),immutableSnapshot);
 const recovered = await runAutoOperation('apply',{ state,viewer:prompt.player,promptId:prompt.id,choice });
-assert.equal(recovered.inputs.length,state.inputs.length + 1); assert.equal(JSON.stringify(state),immutableSnapshot);
+// The move is recorded first; any extra inputs are automatic "Non rispondere" passes (2026-11-18).
+assert.deepEqual(recovered.inputs[state.inputs.length].choice,choice); assert(recovered.inputs.slice(state.inputs.length + 1).every(input => input.choice.optionId === 'pass')); assert.equal(JSON.stringify(state),immutableSnapshot);
 console.log('PASS hard worker timeout leaves the snapshot intact and a fresh-worker retry succeeds');
 
 // Simulate one corrupt byte only inside an isolated process's read boundary.

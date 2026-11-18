@@ -312,6 +312,15 @@ async function replay(state) {
         const choice=choosePassiveChoice(pending,{resources,cards:resources.cards,strings:resources.strings});
         state.inputs.push({viewer:pending.player,promptId:id,choice});
       }
+      // Lentezza 2026-11-18: metà delle richieste al giocatore erano «Vuoi
+      // rispondere alla catena?» senza nulla da attivare (solo «Non rispondere»),
+      // ognuna un tocco e un giro col server. Come in Master Duel, la si passa da
+      // sola. La risposta viene registrata negli input: la ricostruzione resta
+      // identica e le partite già salvate (con i passaggi manuali) non cambiano.
+      else if (sequence === state.inputs.length && prompt.kind === 'chain' && !pending.forced && prompt.options.length === 1 && prompt.options[0].id === 'pass') {
+        if (state.inputs.length >= MAX_INPUTS) failure('replay_limit','La partita ha raggiunto il limite di azioni.',409);
+        state.inputs.push({viewer:pending.player,promptId:id,choice:{optionId:'pass'}});
+      }
       if (sequence === state.inputs.length) {
         state.pendingMessage=copy(pending); state.pendingPromptId=id;
         const publicBase = {mode:'auto',format:'tcg',status:events.result?'finished':'playing',turn:events.turn,phase:events.phase,activePlayer:events.activePlayer,chain:events.chain,battle:events.battle,log:events.log,result:events.result,startingPlayer:state.firstPlayer,firstPlayer:state.firstPlayer};

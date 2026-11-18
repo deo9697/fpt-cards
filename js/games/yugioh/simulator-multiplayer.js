@@ -10,7 +10,7 @@ import { cardDropActions, cardTapActions, specialSummonPositions } from './simul
 import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
 import {attackError} from './simulator-battle.js';
 import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket, historyTicket, deckRecords, sampleHand, arenaStats } from './simulator-lobby-view.js';
-import { autoIsMulti, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
+import { autoIsMulti, autoIsPick, autoIsSinglePick, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
 import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 
@@ -78,6 +78,27 @@ export class YugiohMultiplayer {
       this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;
     }
     if(prompt.kind!=='counter')await this.respondAuto({optionId:id});
+  }
+  // Pannello di scelta carte (simulator-auto-ui.js pickSheetView). Un tocco
+  // evidenzia e centra la carta; due tocchi entro 400 ms la scelgono. Niente
+  // ridisegno del campo: la posizione dello scorrimento resta dov'è.
+  async tapPickCard(button,id){
+    const now=globalThis.performance?.now?.()??Date.now(),last=this.lastPickTap;
+    if(last?.id===id&&now-last.at<400){this.lastPickTap=null;await this.pickCard(id);return;}
+    this.lastPickTap={id,at:now};
+    const sheet=button.closest('.ygo-pick-sheet');
+    sheet?.querySelectorAll('.ygo-pick-card').forEach(card=>card.classList.toggle('is-focused',card.dataset.pickId===id));
+    button.closest('.ygo-pick-card')?.scrollIntoView?.({behavior:'smooth',inline:'center',block:'nearest'});
+  }
+  async pickCard(id){
+    const prompt=this.autoPrompt();if(!prompt||this.pending||!autoIsPick(prompt)||!prompt.options.some(option=>option.id===id))return;
+    if(autoIsSinglePick(prompt)){await this.respondAuto({optionIds:[id]});return;}
+    this.autoSelected=this.autoSelected.includes(id)?this.autoSelected.filter(value=>value!==id):[...this.autoSelected,id];
+    const sheet=typeof document!=='undefined'?document.querySelector('.ygo-pick-sheet'):null;
+    if(!sheet){this.render();return;}
+    for(const card of sheet.querySelectorAll('.ygo-pick-card')){const on=this.autoSelected.includes(card.dataset.pickId);card.classList.toggle('is-selected',on);const face=card.querySelector('[data-ygo-pick]');face?.setAttribute('aria-pressed',String(on));const choose=card.querySelector('[data-ygo-pick-choose]');if(choose)choose.textContent=on?'Togli':'Scegli';}
+    const need=prompt.min===prompt.max?`${prompt.min}`:`${prompt.min}–${prompt.max}`,count=sheet.querySelector('[data-ygo-pick-count]');if(count)count.textContent=`${this.autoSelected.length} di ${need} scelte`;
+    const confirm=sheet.querySelector('[data-ygo-command="auto-confirm"]');if(confirm)confirm.disabled=this.autoSelected.length<prompt.min||this.autoSelected.length>prompt.max;
   }
   render(){if(this.allowed())this.options.onRender();}
   syncAutoBusy(){
@@ -501,6 +522,8 @@ export class YugiohMultiplayer {
       const player=card.controller===0||card.controller===1?card.controller:this.viewer;
       this.dropMenu=null;this.pile=null;this.menu=false;this.selected={player,cardId:card.id};this.inspectedCard={card,zone:'hand',player,version:this.duel.version};this.render();return;
     }
+    if(data.ygoPick!==undefined){await this.tapPickCard(button,data.ygoPick);return;}
+    if(data.ygoPickChoose!==undefined){await this.pickCard(data.ygoPickChoose);return;}
     if(data.ygoAutoOption!==undefined){await this.chooseAutoOption(data.ygoAutoOption);return;}
     if(command==='auto-confirm'){await this.respondAuto({optionIds:this.autoSelected});return;}
     if(command==='auto-counters'){await this.respondAuto({counts:this.autoCounts});return;}

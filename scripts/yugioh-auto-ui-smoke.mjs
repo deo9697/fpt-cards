@@ -73,7 +73,7 @@ try {
   await tap(host, {ygoDropAction: 'card-0'}); eq(host.autoSelected, ['card-0']);
   await tap(host, {ygoCommand: 'auto-confirm'}); eq(reply, {type: R.SELECT_CARD, indicies: [0]});
   present({...target, selects: [rawCard({controller: 1, location: 4, sequence: 2, position: 8})]}, state => {state.players[1].monsters = [viewCard({id: 'covered', controller: 1, location: 4, sequence: 2, slot: 2, hidden: true, code: 0, cardName: 'Carta coperta'})];});
-  ok(autoPromptView(host).includes('data-ygo-auto-option="card-0"'), 'Generic chooser always allows legal covered targets');
+  ok(autoPromptView(host).includes('data-ygo-pick="card-0"'), 'Generic chooser always allows legal covered targets (pannello di scelta)');
   ok(!autoPromptView(host).includes('Blue-Eyes'), 'Covered target chooser never reveals the identity');
   await choose(host, 'card-0'); await tap(host, {ygoCommand: 'auto-confirm'}); eq(reply.indicies, [0]);
 

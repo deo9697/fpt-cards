@@ -88,7 +88,7 @@ const input={state:initial,viewer:prompt.player,promptId:prompt.id,choice:{optio
 // identical, with no game or native pointer shared between them.
 const [advanced,replay]=await Promise.all([runAutoOperation('apply',input),runAutoOperation('apply',JSON.parse(JSON.stringify(input)))]);
 assert.deepEqual(advanced,replay);
-assert.equal(advanced.inputs.length,1);
+assert.equal(advanced.inputs[0].choice.optionId,'to_ep');assert(advanced.inputs.slice(1).every(input=>input.choice.optionId==='pass'),'solo passaggi automatici «Non rispondere» dopo la mossa');
 const practice=await runAutoOperation('createPractice',setup);
 assert.equal(practice.passivePolicy,'passive-v1');
 assert.equal(practice.publicViews[0].auto.prompt.player,0);
