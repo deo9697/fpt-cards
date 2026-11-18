@@ -49,7 +49,38 @@ export const autoIsSinglePick = prompt => autoIsPick(prompt) && prompt.min === 1
 const visibleLocations = new Set([2, 4, 8]);
 export const autoPicksOnBoard = prompt => autoIsPick(prompt) && prompt.options.every(option => visibleLocations.has(option.card?.location) && !Number.isInteger(option.card?.overlay_sequence) && Number(option.card?.code) > 0); // le carte coperte restano nel pannello
 export const autoIsSinglePlace = prompt => prompt?.kind === 'place' && prompt.min === 1 && prompt.max === 1;
+// Materiali di un'evocazione (2026-11-18): una carta per volta (toggle: Link,
+// Fusion…), a somma di Livelli (sum: Synchro) o a numero fisso (select/tribute:
+// Xyz, tributi). Quando sono tutti visibili sul campo si scelgono toccandoli.
+const materialKinds = new Set(['toggle', 'sum', 'select', 'tribute']);
+export const autoIsMaterialPrompt = prompt => materialKinds.has(prompt?.kind) && Boolean(prompt.options?.some(option => option.card));
+export const autoMaterialsOnBoard = prompt => materialKinds.has(prompt?.kind) && prompt.options?.length > 0 && prompt.options.every(option => visibleLocations.has(option.card?.location) && !Number.isInteger(option.card?.overlay_sequence) && Number(option.card?.code) > 0);
+// La selezione basta per l'evocazione? (il server resta l'unico giudice)
+export function autoSelectionComplete(prompt, selectedIds = []) {
+  const chosen = (prompt?.options || []).filter(option => selectedIds.includes(option.id));
+  if (prompt?.kind === 'tribute') return chosen.length >= prompt.min && chosen.reduce((sum, option) => sum + (option.contribution || 1), 0) >= (prompt.requiredContribution || 1);
+  if (prompt?.kind === 'sum') {
+    let sums = new Set([0]);
+    for (const values of [...(prompt.mandatory || []), ...chosen].map(option => option.contributions?.length ? option.contributions : [0])) { const next = new Set(); for (const sum of sums) for (const value of values) next.add(sum + value); sums = next; }
+    return chosen.length > 0 && (prompt.sumMode === 'exact' ? sums.has(prompt.amount) : [...sums].some(sum => sum >= prompt.amount));
+  }
+  return chosen.length > 0 && chosen.length === prompt?.max;
+}
+// Il pulsante «Copri» della mano diventa «Conferma» quando l'evocazione può
+// chiudersi con i materiali scelti (Link e simili con materiali variabili).
+export function autoConfirmCommand(controller) {
+  const prompt = controller.autoPrompt?.();
+  if (!prompt || !autoIsMaterialPrompt(prompt) || (prompt.kind !== 'toggle' && !autoMaterialsOnBoard(prompt) && !autoPicksOnBoard(prompt))) return null;
+  if (prompt.kind === 'toggle') return prompt.canFinish ? {command: 'auto-finish', ready: true} : null;
+  if (prompt.min === prompt.max && prompt.kind === 'select') return null;
+  const selected = controller.autoSelected || [];
+  return {command: 'auto-confirm', ready: selected.length >= prompt.min && selected.length <= prompt.max && (prompt.kind !== 'sum' || autoSelectionComplete(prompt, selected))};
+}
 function boardHintView(controller, prompt, text) {
+  if (prompt.kind === 'toggle' || prompt.kind === 'sum') {
+    const picked = prompt.kind === 'toggle' ? prompt.options.filter(option => option.selected).length : (controller.autoSelected || []).length;
+    return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-compact is-board-hint" role="status" aria-live="polite"><strong>${esc(prompt.title)}</strong><small>${esc(text)} · ${picked} ${picked === 1 ? 'scelto' : 'scelti'}</small>${prompt.mandatory?.length ? `<small>Materiali obbligatori: ${prompt.mandatory.map(row => esc(row.label)).join(', ')}</small>` : ''}<div class="ygo-auto-controls">${prompt.canFinish ? `<button type="button" class="ygo-primary" data-ygo-command="auto-finish" ${controller.pending ? 'disabled' : ''}>Conferma</button>` : ''}${prompt.cancelable ? `<button type="button" data-ygo-command="auto-cancel" ${controller.pending ? 'disabled' : ''}>Annulla</button>` : ''}</div></section>`;
+  }
   const selected = controller.autoSelected || [], single = prompt.kind === 'place' ? autoIsSinglePlace(prompt) : autoIsSinglePick(prompt);
   const need = prompt.min === prompt.max ? `${prompt.min}` : `${prompt.min}–${prompt.max}`;
   return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-compact is-board-hint" role="status" aria-live="polite"><strong>${esc(prompt.title)}</strong><small>${esc(text)}${single ? '' : ` · ${selected.length} di ${need}`}</small><div class="ygo-auto-controls">${single ? '' : `<button type="button" class="ygo-primary" data-ygo-command="auto-confirm" ${controller.pending || selected.length < prompt.min || selected.length > prompt.max ? 'disabled' : ''}>Conferma</button>`}${prompt.cancelable ? `<button type="button" data-ygo-command="auto-cancel" ${controller.pending ? 'disabled' : ''}>Annulla</button>` : ''}</div></section>`;
@@ -71,6 +102,7 @@ export function autoPromptView(controller) {
   const cardOptions = prompt.options.filter(option => option.card), otherOptions = prompt.options.filter(option => !option.card);
   if (compact && !controller.autoExpanded) return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-compact" aria-label="Comandi automatici"><strong>${esc(prompt.title)}</strong><small>Tocca una carta per le azioni consentite.</small><div class="ygo-auto-controls"><button type="button" data-ygo-command="auto-expand" ${controller.pending ? 'disabled' : ''} aria-label="Mostra tutte le mosse consentite">Azioni - ${prompt.options.length}</button></div></section>`;
   if (prompt.kind === 'place') return boardHintView(controller, prompt, 'Tocca una zona illuminata sul campo');
+  if ((prompt.kind === 'toggle' || prompt.kind === 'sum') && autoMaterialsOnBoard(prompt)) return boardHintView(controller, prompt, 'Tocca i materiali che pulsano sul campo');
   if (autoPicksOnBoard(prompt)) return boardHintView(controller, prompt, 'Tocca la carta illuminata in mano o sul campo');
   if (autoIsPick(prompt)) return pickSheetView(controller, prompt);
   const multi = autoIsMulti(prompt), options = prompt.kind === 'announce-card' ? (controller.autoSearchResults || []).map(row => ({id: `announce-${row.code}`, label: row.name, card: {code: row.code}})) : prompt.options;

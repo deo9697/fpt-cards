@@ -10,7 +10,7 @@ import { cardDropActions, cardTapActions, specialSummonPositions } from './simul
 import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
 import {attackError} from './simulator-battle.js';
 import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket, historyTicket, deckRecords, sampleHand, arenaStats } from './simulator-lobby-view.js';
-import { autoIsMulti, autoIsPick, autoIsSinglePick, autoIsSinglePlace, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
+import { autoIsMulti, autoIsPick, autoIsSinglePick, autoIsSinglePlace, autoSelectionComplete, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
 import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 
@@ -99,9 +99,11 @@ export class YugiohMultiplayer {
     button.closest('.ygo-pick-card')?.scrollIntoView?.({behavior:'smooth',inline:'center',block:'nearest'});
   }
   async pickCard(id){
-    const prompt=this.autoPrompt();if(!prompt||this.pending||!autoIsPick(prompt)||!prompt.options.some(option=>option.id===id))return;
+    const prompt=this.autoPrompt();if(!prompt||this.pending||!(autoIsPick(prompt)||prompt.kind==='sum')||!prompt.options.some(option=>option.id===id))return;
     if(autoIsSinglePick(prompt)){await this.respondAuto({optionIds:[id]});return;}
     this.autoSelected=this.autoSelected.includes(id)?this.autoSelected.filter(value=>value!==id):[...this.autoSelected,id];
+    // Raggiunto il necessario (numero fisso, tributi o somma dei Livelli) si evoca.
+    if(autoSelectionComplete(prompt,this.autoSelected)){await this.respondAuto({optionIds:this.autoSelected});return;}
     const sheet=typeof document!=='undefined'?document.querySelector('.ygo-pick-sheet'):null;
     if(!sheet){this.render();return;}
     for(const card of sheet.querySelectorAll('.ygo-pick-card')){const on=this.autoSelected.includes(card.dataset.pickId);card.classList.toggle('is-selected',on);const face=card.querySelector('[data-ygo-pick]');face?.setAttribute('aria-pressed',String(on));const choose=card.querySelector('[data-ygo-pick-choose]');if(choose)choose.textContent=on?'Togli':'Scegli';}
@@ -391,6 +393,13 @@ export class YugiohMultiplayer {
       const options=autoOptionsForCard(this.autoPrompt(),selected.card);
       // Carta da scegliere per effetto (rivelare, bersagliare…): il tocco la sceglie, senza menu.
       if(options.length===1&&this.duel.status==='playing'&&autoIsPick(this.autoPrompt())){this.selected=null;this.inspectedCard=null;void this.pickCard(options[0].id);return;}
+      // Materiali (2026-11-18): a una carta per volta il tocco è la risposta;
+      // a somma di Livelli si accumula e si evoca appena la somma è raggiunta.
+      const promptKind=this.autoPrompt()?.kind;
+      if(options.length===1&&this.duel.status==='playing'&&promptKind==='toggle'){this.selected=null;this.inspectedCard=null;void this.respondAuto({optionId:options[0].id});return;}
+      if(options.length===1&&this.duel.status==='playing'&&promptKind==='sum'){this.selected=null;this.inspectedCard=null;void this.pickCard(options[0].id);return;}
+      // Extra Deck: toccare la carta evocabile avvia subito l'Evocazione Speciale.
+      if(options.length===1&&this.duel.status==='playing'&&/^special_summons-/.test(options[0].id)){this.selected=null;this.inspectedCard=null;void this.respondAuto({optionId:options[0].id});return;}
       if(options.length&&this.duel.status==='playing')this.dropMenu={mode:'auto',cardId,player,to:selected.zone,actions:options.map(option=>({id:option.id,label:option.effect?`${option.label} · ${option.effect}`:option.label})),version:this.duel.version,duelId:this.duel.id,promptId:this.autoPrompt().id,x,y,anchor,cardName:selected.card.cardName};
       else{this.selected=null;this.inspectedCard=null;}
     }

@@ -662,3 +662,36 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 /* Scelte sul campo (2026-11-18): carta già scelta in una selezione multipla; avviso compatto. */
 .ygo-card.is-auto-picked { outline:2px solid #7fe0a0;outline-offset:2px;box-shadow:0 0 14px #5cf2a666; }
 .ygo-auto-prompt.is-board-hint { border-color:#e8b85c; }
+
+/* Evocazione Speciale (2026-11-18): cerchio esoterico rotante sull'Extra Deck quando
+   c'è un mostro evocabile; materiali che pulsano; «Conferma» luminoso al posto di «Copri».
+   Solo transform/opacity animati; con movimento ridotto restano fermi ma visibili. */
+.ygo-pile.can-special { position:relative;isolation:isolate;overflow:visible; }
+.ygo-esoteric { position:absolute;z-index:-1;left:50%;top:50%;width:150%;aspect-ratio:1;transform:translate(-50%,-50%);pointer-events:none; }
+.ygo-esoteric svg { display:block;width:100%;height:100%;fill:none;stroke:#f3d79b;stroke-width:1.6;filter:drop-shadow(0 0 4px #e8b85c); }
+.ygo-esoteric svg path { stroke:#c9a6ff;stroke-width:1.2; }
+.ygo-pile.can-special .ygo-pile-art { box-shadow:0 0 16px #e8b85c99; }
+@media (prefers-reduced-motion:no-preference){
+  .ygo-esoteric svg { animation:ygo-esoteric-spin 9s linear infinite; }
+  .ygo-esoteric::after { content:'';position:absolute;inset:18%;border-radius:50%;border:1px solid #c9a6ff;opacity:.6;animation:ygo-esoteric-pulse 1.6s ease-in-out infinite; }
+  .ygo-card.is-material-target::after { animation:ygo-material-pulse 1.1s ease-in-out infinite; }
+  .ygo-confirm-glow.is-ready::after { animation:ygo-material-pulse 1.1s ease-in-out infinite; }
+}
+@keyframes ygo-esoteric-spin { to { transform:rotate(360deg); } }
+@keyframes ygo-esoteric-pulse { 50% { opacity:.1;transform:scale(1.12); } }
+@keyframes ygo-material-pulse { 50% { opacity:.15; } }
+.ygo-card.is-material-target { position:relative; }
+.ygo-card.is-material-target::after { content:'';position:absolute;inset:-3px;border-radius:6px;border:2px solid #f3d79b;box-shadow:0 0 12px #e8b85c,inset 0 0 8px #e8b85c88;pointer-events:none; }
+.ygo-confirm-glow { position:relative;color:#1a140b!important;background:linear-gradient(#f3d79b,#c4923d)!important;border:1px solid #f3d79b!important;font-weight:800; }
+.ygo-confirm-glow:disabled { opacity:.55; }
+.ygo-confirm-glow.is-ready::after { content:'';position:absolute;inset:-4px;border-radius:inherit;box-shadow:0 0 16px #f3d79b,0 0 4px #fff;pointer-events:none; }
+
+/* Cimitero/Bandite (2026-11-18): «qui puoi attivare qualcosa». Stesso cerchio
+   dell'Extra Deck ma viola, per distinguerlo dall'evocazione (dorata). */
+.ygo-pile.can-activate { position:relative;isolation:isolate;overflow:visible; }
+.ygo-pile.can-activate .ygo-esoteric svg { stroke:#c9a6ff;filter:drop-shadow(0 0 4px #9b5cff); }
+.ygo-pile.can-activate .ygo-esoteric svg path { stroke:#7fe0ff; }
+.ygo-pile.can-activate .ygo-pile-art { box-shadow:0 0 16px #9b5cffaa; }
+.ygo-banish-count.can-activate { position:relative;border-color:#c9a6ff!important;color:#efe4ff!important;box-shadow:0 0 12px #9b5cff88; }
+.ygo-banish-count.can-activate::after { content:'';position:absolute;inset:-3px;border-radius:inherit;border:1px solid #c9a6ff;pointer-events:none; }
+@media (prefers-reduced-motion:no-preference){ .ygo-banish-count.can-activate::after { animation:ygo-material-pulse 1.1s ease-in-out infinite; } }

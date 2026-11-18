@@ -56,8 +56,17 @@ try {
 
   // Extra Deck cards use their own public core coordinates in the small menu.
   present(idle, state => {state.players[0].extra = [viewCard({id: 'extra-own', location: 64})];});
-  await tap(host, {ygoPile: 'extra', player: '0'}); ok(host.view().includes('extra-own'));
-  await tap(host, {ygoCard: 'extra-own', player: '0'}); eq(host.dropMenu.actions.map(action => action.id), ['special_summons-0']);
+  // 2026-11-18: cerchio esoterico sull'Extra Deck, nella pila solo le carte evocabili,
+  // e il tocco sulla carta avvia subito l'Evocazione Speciale (niente menu).
+  ok(host.view().includes('ygo-pile-extra has-auto-action can-special') && host.view().includes('ygo-esoteric'), 'Extra Deck con mostro evocabile: cerchio esoterico');
+  state.players[0].extra.push(viewCard({id: 'extra-other', location: 64, sequence: 1}));
+  await tap(host, {ygoPile: 'extra', player: '0'}); ok(host.view().includes('extra-own')); ok(!host.view().includes('extra-other'), 'nella pila solo le carte evocabili ora'); ok(host.view().includes('Evocabili ora'));
+  state.players[0].extra.pop();
+  reply = null; await tap(host, {ygoCard: 'extra-own', player: '0'}); for (let i = 0; i < 20 && !reply; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  eq(host.dropMenu, null); eq(reply, {type: R.SELECT_IDLECMD, action: 1, index: 0}, 'tocco sulla carta → Evocazione Speciale');
+  present(idle, state => {state.players[0].extra = [viewCard({id: 'extra-own', location: 64})];});
+  await tap(host, {ygoPile: 'extra', player: '0'});
+  host.dropMenu = {mode: 'auto', cardId: 'extra-own', player: 0, to: 'extra', actions: [{id: 'special_summons-0', label: 'Special Summon'}], version: host.duel.version, duelId: host.duel.id, promptId: host.autoPrompt().id};
   const beforeDescription = calls.length;
   host.showCardDescription({player: 0, cardId: 'extra-own'});
   ok(host.view().includes('ygo-card-dialog')); ok(host.view().includes('Description fixture'));
@@ -110,6 +119,23 @@ try {
   const sum = {type: M.SELECT_SUM, player: 0, select_max: 0, amount: 6, min: 1, max: 1, selects_must: [rawCard({amount: 2})], selects: [rawCard({amount: 4})]};
   present(sum); ok(autoPromptView(host).includes('Materiali obbligatori'));
   await choose(host, 'card-0'); await tap(host, {ygoCommand: 'auto-confirm'}); eq(reply, {type: R.SELECT_SUM, indicies: [0]});
+  // 2026-11-18: materiali sul campo che pulsano; un tocco li sceglie, raggiunta la somma si evoca.
+  const synchro = {type: M.SELECT_SUM, player: 0, select_max: 0, amount: 7, min: 2, max: 2, selects_must: [], selects: [rawCard({location: 4, sequence: 0, amount: 3}), rawCard({location: 4, sequence: 1, amount: 4})]};
+  present(synchro, state => {state.players[0].monsters = [viewCard({id: 'tuner', location: 4, sequence: 0, slot: 0}), viewCard({id: 'other', location: 4, sequence: 1, slot: 1})];});
+  ok(autoPromptView(host).includes('is-board-hint'), 'materiali sul campo: solo avviso compatto');
+  ok(host.view().includes('is-material-target'), 'i materiali validi pulsano');
+  reply = null; await tap(host, {ygoCard: 'tuner', player: '0'}); eq(reply, null, 'un materiale solo non basta'); eq(host.autoSelected, ['card-0']);
+  ok(host.view().includes('is-auto-picked'), 'il materiale scelto resta segnato');
+  await tap(host, {ygoCard: 'other', player: '0'}); for (let i = 0; i < 20 && !reply; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  eq(reply, {type: R.SELECT_SUM, indicies: [0, 1]}, 'somma 3 + 4 = 7 raggiunta: evocazione inviata da sola');
+  // Link (materiali variabili, una carta per volta): il tocco è la risposta; «Copri» diventa «Conferma».
+  const link = {type: M.SELECT_UNSELECT_CARD, player: 0, can_finish: true, can_cancel: false, min: 2, max: 3, select_cards: [rawCard({location: 4, sequence: 1})], unselect_cards: [rawCard({location: 4, sequence: 0})]};
+  present(link, state => {state.players[0].monsters = [viewCard({id: 'first', location: 4, sequence: 0, slot: 0}), viewCard({id: 'second', location: 4, sequence: 1, slot: 1})];});
+  const linkView = host.view();
+  ok(linkView.includes('ygo-confirm-glow is-ready') && linkView.includes('data-ygo-command="auto-finish"'), '«Copri» diventa «Conferma» luminoso');
+  ok(!linkView.includes('data-ygo-command="cover-hand"'), 'niente «Copri» durante la scelta dei materiali');
+  reply = null; await tap(host, {ygoCard: 'second', player: '0'}); for (let i = 0; i < 20 && !reply; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  ok(reply, 'il tocco sul materiale Link invia subito la scelta');
   const sort = {type: M.SORT_CARD, player: 0, cards: [rawCard(), rawCard({sequence: 1}), rawCard({sequence: 2})]};
   present(sort); for (const id of ['sort-2', 'sort-0', 'sort-1']) await choose(host, id);
   ok(autoPromptView(host).includes('<b>1</b>')); await tap(host, {ygoCommand: 'auto-confirm'}); eq(reply.order, [1, 2, 0]);
