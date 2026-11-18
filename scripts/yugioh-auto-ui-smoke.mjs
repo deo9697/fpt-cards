@@ -69,9 +69,9 @@ try {
   present(target, state => {state.players[1].monsters = [viewCard({id: 'enemy', controller: 1, location: 4, sequence: 2, slot: 2})];});
   eq(autoOptionsForCard(host.autoPrompt(), state.players[1].monsters[0]).map(row => row.id), ['card-0']);
   eq(autoOptionsForCard(host.autoPrompt(), viewCard({controller: 0, location: 4, sequence: 2})), []);
-  await tap(host, {ygoCard: 'enemy', player: '1'}); eq(host.dropMenu.actions.map(action => action.id), ['card-0']);
-  await tap(host, {ygoDropAction: 'card-0'}); eq(host.autoSelected, ['card-0']);
-  await tap(host, {ygoCommand: 'auto-confirm'}); eq(reply, {type: R.SELECT_CARD, indicies: [0]});
+  ok(autoPromptView(host).includes('is-board-hint'), 'carta visibile sul campo: solo avviso compatto, nessun pannello');
+  reply = null; await tap(host, {ygoCard: 'enemy', player: '1'}); for (let i = 0; i < 20 && !reply; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  eq(host.dropMenu, null); eq(reply, {type: R.SELECT_CARD, indicies: [0]}, 'il tocco sulla carta è già la scelta (2026-11-18)');
   present({...target, selects: [rawCard({controller: 1, location: 4, sequence: 2, position: 8})]}, state => {state.players[1].monsters = [viewCard({id: 'covered', controller: 1, location: 4, sequence: 2, slot: 2, hidden: true, code: 0, cardName: 'Carta coperta'})];});
   ok(autoPromptView(host).includes('data-ygo-pick="card-0"'), 'Generic chooser always allows legal covered targets (pannello di scelta)');
   ok(!autoPromptView(host).includes('Blue-Eyes'), 'Covered target chooser never reveals the identity');
@@ -81,8 +81,9 @@ try {
   const place = {type: M.SELECT_PLACE, player: 1, count: 1, field_mask: (0xffffffff ^ (1 << 5)) >>> 0};
   present(place); eq(autoPlaceOption(guest.autoPrompt(), 1, 'extraMonsters', 1)?.id, 'place-1-4-5');
   eq(autoPlaceOption(guest.autoPrompt(), 1, 'extraMonsters', 0), undefined);
-  await guest.place(1, 'extraMonsters', 1); eq(guest.autoSelected, ['place-1-4-5']);
-  await tap(guest, {ygoCommand: 'auto-confirm'}); eq(reply, {type: R.SELECT_PLACE, places: [{player: 1, location: 4, sequence: 5}]});
+  // 2026-11-18: una sola zona richiesta → il tocco sul campo è già la mossa, senza «Conferma».
+  ok(autoPromptView(guest).includes('is-board-hint') && !autoPromptView(guest).includes('auto-confirm'), 'zona: solo avviso compatto');
+  reply = null; await guest.place(1, 'extraMonsters', 1); eq(reply, {type: R.SELECT_PLACE, places: [{player: 1, location: 4, sequence: 5}]});
 
   const messages = [
     {type: M.SELECT_BATTLECMD, player: 0, chains: [], attacks: [rawCard({location: 4})], to_m2: true, to_ep: true},

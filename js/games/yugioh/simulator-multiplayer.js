@@ -10,7 +10,7 @@ import { cardDropActions, cardTapActions, specialSummonPositions } from './simul
 import {getTurnState,normalPlayError,requiredTributes,validateNormalTributes,positionChangeError} from './simulator-turn-rules.js';
 import {attackError} from './simulator-battle.js';
 import { arenaHeader, deckTiles, deckIssues, memberChips, segmented, duelTicket, historyTicket, deckRecords, sampleHand, arenaStats } from './simulator-lobby-view.js';
-import { autoIsMulti, autoIsPick, autoIsSinglePick, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
+import { autoIsMulti, autoIsPick, autoIsSinglePick, autoIsSinglePlace, autoOptionsForCard, autoPlaceOption } from './simulator-auto-ui.js';
 import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 
@@ -73,6 +73,14 @@ export class YugiohMultiplayer {
     const prompt=this.autoPrompt();if(!prompt||this.pending||this.orientation.isPortraitBlocked())return;
     if(prompt.kind==='announce-card'){const row=this.autoSearchResults.find(row=>`announce-${row.code}`===id);if(row)await this.respondAuto({value:row.code});return;}
     if(!prompt.options.some(option=>option.id===id))return;
+    // Zona: con una sola casella da scegliere il tocco sul campo è già la mossa;
+    // con più caselle si invia appena raggiunto il numero richiesto.
+    if(prompt.kind==='place'){
+      if(autoIsSinglePlace(prompt)){await this.respondAuto({optionIds:[id]});return;}
+      this.autoSelected=this.autoSelected.includes(id)?this.autoSelected.filter(value=>value!==id):[...this.autoSelected,id];
+      if(this.autoSelected.length===prompt.max){await this.respondAuto({optionIds:this.autoSelected});return;}
+      this.render();return;
+    }
     if(autoIsMulti(prompt)){
       this.autoSelected=this.autoSelected.includes(id)?this.autoSelected.filter(value=>value!==id):[...this.autoSelected,id];
       this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.render();return;
@@ -378,6 +386,8 @@ export class YugiohMultiplayer {
     if(!selected)this.selected=null;
     else if(quick&&this.isAuto()){
       const options=autoOptionsForCard(this.autoPrompt(),selected.card);
+      // Carta da scegliere per effetto (rivelare, bersagliare…): il tocco la sceglie, senza menu.
+      if(options.length===1&&this.duel.status==='playing'&&autoIsPick(this.autoPrompt())){this.selected=null;this.inspectedCard=null;void this.pickCard(options[0].id);return;}
       if(options.length&&this.duel.status==='playing')this.dropMenu={mode:'auto',cardId,player,to:selected.zone,actions:options.map(option=>({id:option.id,label:option.effect?`${option.label} · ${option.effect}`:option.label})),version:this.duel.version,duelId:this.duel.id,promptId:this.autoPrompt().id,x,y,anchor,cardName:selected.card.cardName};
       else{this.selected=null;this.inspectedCard=null;}
     }

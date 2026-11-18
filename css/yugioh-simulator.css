@@ -658,3 +658,7 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-auto-prompt.ygo-pick-sheet .ygo-pile-more { min-height:30px;padding:4px 10px;border:1px solid #5d4a2a;border-radius:999px;background:#1d1812;color:#f3e6c6;font-size:.6rem;font-weight:750;visibility:hidden; }
 .ygo-pick-card.is-focused .ygo-pile-more,.ygo-pile-more:focus-visible { visibility:visible; }
 .ygo-pile-sheet .ygo-auto-controls button { min-height:36px; }
+
+/* Scelte sul campo (2026-11-18): carta già scelta in una selezione multipla; avviso compatto. */
+.ygo-card.is-auto-picked { outline:2px solid #7fe0a0;outline-offset:2px;box-shadow:0 0 14px #5cf2a666; }
+.ygo-auto-prompt.is-board-hint { border-color:#e8b85c; }
