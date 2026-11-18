@@ -1,0 +1,80 @@
+/* Effetti visivi del duello — stile "Neon FPT" (2026-11-18).
+   Usato da js/games/yugioh/simulator-fx.js. Tutte le classi hanno il
+   prefisso dfx- per non toccare gli stili del simulatore. Solo transform,
+   opacity e gradienti; nessun backdrop-filter. */
+.dfx-host { position:relative; }
+.dfx-layer { --a1:#9b5cff; --a2:#ff4fd8; --a3:#e8b84f; --ink:#ece6ff; --cut:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+  position:absolute; inset:0; z-index:650; overflow:hidden; pointer-events:none; contain:layout paint; }
+.dfx-layer.is-interactive { pointer-events:auto; background:#07060d8c; }
+/* ---------- fasce di fase ---------- */
+.dfx-banner { position:absolute; left:-10%; right:-10%; top:50%; display:grid; place-items:center; height:22%; transform:translateY(-50%) skewY(-4deg); background:linear-gradient(90deg,transparent,#3d1d8a 20%,#7a1e6a 80%,transparent); animation:dfx-bn 1.6s cubic-bezier(.2,.8,.2,1) forwards; }
+.dfx-banner::before, .dfx-banner::after { content:''; position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--a3),transparent); }
+.dfx-banner::before { top:0; } .dfx-banner::after { bottom:0; }
+.dfx-banner b { font:900 clamp(1rem,4.4vw,2rem)/1 'Cinzel FPT','Cinzel',Georgia,serif; letter-spacing:.24em; color:var(--ink); text-transform:uppercase; text-shadow:0 0 14px var(--a2); transform:skewY(4deg); white-space:nowrap; animation:dfx-bnt 1.6s ease forwards; }
+.dfx-banner small { position:absolute; bottom:8%; font:800 .5rem ui-monospace,'Cascadia Mono',Consolas,monospace; letter-spacing:.3em; text-transform:uppercase; color:var(--a3); transform:skewY(4deg); }
+@keyframes dfx-bn { 0% { clip-path:inset(0 100% 0 0); } 18%,78% { clip-path:inset(0 0 0 0); opacity:1; } 100% { clip-path:inset(0 0 0 100%); opacity:0; } }
+@keyframes dfx-bnt { 0% { letter-spacing:.9em; opacity:0; } 25%,80% { letter-spacing:.24em; opacity:1; } 100% { opacity:0; letter-spacing:.5em; } }
+/* ---------- carta evocata, lampo, didascalia ---------- */
+.dfx-card { position:absolute; left:50%; top:50%; width:min(16%,120px); aspect-ratio:59/86; transform:translate(-50%,-50%) scale(.2); opacity:0; animation:dfx-card-in .7s cubic-bezier(.2,1.4,.3,1) forwards; animation-delay:var(--d,1.4s); box-shadow:0 0 30px var(--glow,#fff); background:#0b0815; }
+.dfx-card img { width:100%; height:100%; object-fit:cover; display:block; border:1px solid #fff8; }
+@keyframes dfx-card-in { to { transform:translate(-50%,-50%) scale(1); opacity:1; } }
+.dfx-flash { position:absolute; inset:0; background:radial-gradient(circle at 50% 50%,#fff,transparent 60%); opacity:0; animation:dfx-flash .6s ease-out forwards; animation-delay:var(--d,1.3s); }
+@keyframes dfx-flash { 30% { opacity:.9; } 100% { opacity:0; } }
+.dfx-caption { position:absolute; left:50%; bottom:6%; transform:translateX(-50%); padding:5px 14px; font:900 .68rem ui-monospace,'Cascadia Mono',Consolas,monospace; letter-spacing:.3em; text-transform:uppercase; color:var(--ink); background:#000a; border:1px solid var(--a3); clip-path:var(--cut); opacity:0; white-space:nowrap; animation:dfx-cap 2.4s ease forwards; animation-delay:var(--d,1.4s); }
+@keyframes dfx-cap { 10%,80% { opacity:1; } 100% { opacity:0; } }
+/* ---------- Normale / Tributo / Speciale ---------- */
+.dfx-shock { position:absolute; left:50%; top:50%; width:30%; aspect-ratio:1; margin:-15% 0 0 -15%; border:2px solid var(--a3); border-radius:50%; opacity:0; animation:dfx-shock .9s ease-out .25s forwards; }
+@keyframes dfx-shock { 0% { opacity:.9; transform:scale(.2); } 100% { opacity:0; transform:scale(2.2); } }
+/* ---------- Synchro ---------- */
+.dfx-ring { position:absolute; left:50%; top:50%; width:10%; aspect-ratio:1; margin:-5% 0 0 -5%; border:2px solid #fff; border-radius:50%; box-shadow:0 0 10px #bfe9ff,inset 0 0 8px #bfe9ff; opacity:0; animation:dfx-ring 1.3s cubic-bezier(.3,.7,.2,1) forwards; }
+@keyframes dfx-ring { 0% { opacity:0; transform:translate(var(--x),var(--y)) scale(.3); } 30% { opacity:1; } 70% { opacity:1; transform:translate(0,var(--ty)) scale(1.4,.35); } 100% { opacity:0; transform:translate(0,var(--ty)) scale(2,.2); } }
+.dfx-beam { position:absolute; left:50%; top:-10%; bottom:-10%; width:6%; margin-left:-3%; background:linear-gradient(90deg,transparent,#fff,transparent); opacity:0; animation:dfx-beam .7s ease-out 1s forwards; }
+@keyframes dfx-beam { 30% { opacity:1; } 100% { opacity:0; transform:scaleX(3); } }
+.dfx-star { position:absolute; width:8px; height:8px; left:var(--sx); top:var(--sy); background:#fff1c4; clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%); opacity:0; animation:dfx-star 1.1s ease forwards; animation-delay:var(--sd); }
+@keyframes dfx-star { 30% { opacity:1; transform:scale(1.4); } 100% { opacity:0; transform:translateY(60px) scale(.4); } }
+/* ---------- Xyz ---------- */
+.dfx-vortex { position:absolute; left:50%; top:50%; width:40%; aspect-ratio:1; margin:-20% 0 0 -20%; border-radius:50%; background:conic-gradient(from 0deg,#000,#2a1150,#000,#3b0d4a,#000); box-shadow:0 0 40px #9b5cff88,inset 0 0 30px #000; opacity:0; animation:dfx-vortex 2.6s ease forwards; }
+@keyframes dfx-vortex { 0% { opacity:0; transform:scale(.2) rotate(0); } 25% { opacity:1; } 70% { opacity:1; transform:scale(1) rotate(540deg); } 100% { opacity:0; transform:scale(.6) rotate(720deg); } }
+.dfx-orb { position:absolute; left:50%; top:50%; width:4%; aspect-ratio:1; margin:-2% 0 0 -2%; border-radius:50%; background:radial-gradient(circle,#fff,var(--oc) 50%,transparent 70%); animation:dfx-orbit 1.4s linear .2s forwards; }
+@keyframes dfx-orbit { 0% { transform:rotate(var(--o0)) translateX(140%); } 100% { transform:rotate(calc(var(--o0) + 540deg)) translateX(10%) scale(.2); opacity:0; } }
+.dfx-unit { position:absolute; left:50%; top:50%; width:2.6%; aspect-ratio:1; margin:-1.3% 0 0 -1.3%; border-radius:50%; background:radial-gradient(circle,#fff,#c8a8ff 50%,transparent 72%); opacity:0; animation:dfx-unit 2s linear 1.6s forwards; }
+@keyframes dfx-unit { 0% { opacity:0; transform:rotate(var(--u0)) translateX(260%); } 15%,85% { opacity:1; } 100% { opacity:0; transform:rotate(calc(var(--u0) + 360deg)) translateX(260%); } }
+/* ---------- Link ---------- */
+.dfx-arrow { position:absolute; left:50%; top:50%; width:6%; aspect-ratio:1; margin:-3% 0 0 -3%; background:#2a1d3d; clip-path:polygon(50% 0,100% 100%,0 100%); transform:rotate(var(--r)) translateY(-210%); opacity:.3; }
+.dfx-arrow.is-lit { animation:dfx-lit .4s ease forwards; animation-delay:var(--ld); }
+@keyframes dfx-lit { to { opacity:1; background:#ff6b5a; } }
+.dfx-link-num { position:absolute; left:50%; top:20%; transform:translateX(-50%); font:900 1.4rem ui-monospace,'Cascadia Mono',Consolas,monospace; color:#ff6b5a; text-shadow:0 0 10px #ff6b5a; opacity:0; animation:dfx-cap 2s ease .9s forwards; }
+/* ---------- Fusione ---------- */
+.dfx-swirl { position:absolute; left:50%; top:50%; width:16%; aspect-ratio:1; margin:-8% 0 0 -8%; border-radius:50%; background:conic-gradient(var(--sc),transparent 60%); animation:dfx-swirl 1.4s ease-in forwards; }
+@keyframes dfx-swirl { 0% { transform:rotate(var(--s0)) translateX(160%); opacity:.9; } 100% { transform:rotate(calc(var(--s0) + 540deg)) translateX(0) rotate(720deg) scale(.4); opacity:1; } }
+.dfx-burst { position:absolute; left:50%; top:50%; width:40%; aspect-ratio:1; margin:-20% 0 0 -20%; border-radius:50%; background:radial-gradient(circle,#fff 0,#ffb15a 25%,#9b5cff 45%,transparent 65%); opacity:0; animation:dfx-burst .9s ease-out 1.3s forwards; }
+@keyframes dfx-burst { 0% { opacity:0; transform:scale(.2); } 40% { opacity:1; } 100% { opacity:0; transform:scale(1.6); } }
+/* ---------- Rituale / Pendulum ---------- */
+.dfx-rune-circle { position:absolute; left:50%; top:50%; width:44%; aspect-ratio:1; margin:-22% 0 0 -22%; border-radius:50%; border:2px dashed #7ad1ff; box-shadow:0 0 20px #7ad1ff66,inset 0 0 20px #7ad1ff44; opacity:0; animation:dfx-rune 2.2s ease forwards; }
+@keyframes dfx-rune { 0% { opacity:0; transform:scale(.4) rotate(0); } 30%,75% { opacity:1; } 100% { opacity:0; transform:scale(1.1) rotate(180deg); } }
+.dfx-scale { position:absolute; top:20%; width:10%; height:60%; border:1px solid #48d98b; background:linear-gradient(180deg,#48d98b33,transparent); opacity:0; animation:dfx-scale 1.6s ease forwards; }
+.dfx-scale.is-left { left:20%; } .dfx-scale.is-right { right:20%; animation-delay:.15s; }
+@keyframes dfx-scale { 0% { opacity:0; transform:translateY(-20%); } 30%,80% { opacity:1; transform:translateY(0); } 100% { opacity:0; } }
+/* ---------- menu azioni e scelta evocazione ---------- */
+.dfx-btn { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:36px; padding:8px 10px; border:1px solid #9b5cff66; background:#140d24; color:var(--ink); font:800 .62rem ui-monospace,'Cascadia Mono',Consolas,monospace; letter-spacing:.1em; text-transform:uppercase; text-align:left; clip-path:var(--cut); cursor:pointer; }
+.dfx-btn:hover:not(:disabled), .dfx-btn:focus-visible { border-color:var(--a3); color:var(--a3); outline:none; }
+.dfx-btn:disabled { opacity:.45; cursor:not-allowed; }
+.dfx-btn kbd { font:700 .5rem ui-monospace,monospace; color:var(--a2); letter-spacing:.06em; }
+.dfx-btn[aria-pressed="true"] { border-color:var(--a3); color:var(--a3); background:#2a1d0a; }
+.dfx-menu { position:absolute; display:grid; gap:4px; min-width:200px; padding:6px; background:#0b0815f2; border:1px solid var(--a1); clip-path:var(--cut); animation:dfx-pop .18s ease-out; }
+@keyframes dfx-pop { from { transform:scale(.92); opacity:0; } }
+.dfx-choice { position:absolute; inset:6% 8%; display:grid; grid-template-columns:minmax(80px,26%) minmax(0,1fr); gap:4%; padding:3%; background:#0b0815f5; border:1px solid var(--a1); clip-path:var(--cut); animation:dfx-pop .2s ease-out; }
+.dfx-choice figure { margin:0; display:grid; gap:6px; align-content:start; }
+.dfx-choice figure img { width:100%; aspect-ratio:59/86; object-fit:cover; border:1px solid var(--a3); box-shadow:0 0 18px #e8b84f66; }
+.dfx-choice figcaption { font:800 .58rem ui-monospace,monospace; color:var(--a3); letter-spacing:.06em; }
+.dfx-choice-body { display:grid; gap:5px; align-content:start; min-width:0; overflow:auto; scrollbar-width:thin; }
+.dfx-choice-body h3 { margin:0; font:900 clamp(.85rem,2.6vw,1.15rem)/1.1 'Cinzel FPT','Cinzel',Georgia,serif; color:var(--ink); }
+.dfx-choice-body p { margin:0; font-size:.64rem; line-height:1.35; color:#b8aed4; }
+.dfx-option { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 8px; padding:6px 9px; }
+.dfx-option small { grid-column:1 / -1; font:600 .52rem system-ui,sans-serif; letter-spacing:0; text-transform:none; color:#9a8fb8; }
+.dfx-pos, .dfx-choice-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.dfx-pos .dfx-btn, .dfx-choice-actions .dfx-btn { justify-content:center; }
+.dfx-go { border:0; background:linear-gradient(180deg,#f3d58a,#c99a35); color:#1a1205; }
+.dfx-go:hover:not(:disabled) { color:#1a1205; filter:brightness(1.08); }
+@media (max-width:620px) { .dfx-choice { inset:4%; grid-template-columns:24% minmax(0,1fr); } }
+@media (prefers-reduced-motion:reduce) { .dfx-layer *, .dfx-layer *::before, .dfx-layer *::after { animation-duration:.01s !important; animation-delay:0s !important; } }
