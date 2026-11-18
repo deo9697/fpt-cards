@@ -13,6 +13,7 @@ export function projectAutoStateSafe(state, viewer) {
   return JSON.parse(JSON.stringify({...(state.id ? {id:state.id} : {}),...Object.fromEntries(publicKeys.filter(key => Object.hasOwn(view, key)).map(key => [key, view[key]]))}));
 }
 
+export function prewarmAutoEngine() { return pool.prewarm(); }
 export async function runAutoOperation(operation, payload, { timeoutMs = 20000 } = {}) {
   if (!operations.has(operation)) throw new Error('Operazione automatica non valida.');
   if (Buffer.byteLength(JSON.stringify(payload)) > 4000000) throw Object.assign(new Error('Il duello ha raggiunto il limite di elaborazione.'), { status: 422, code: 'auto_limit' });

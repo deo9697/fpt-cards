@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 import { createDuelService, DuelError } from './_yugioh-duel-service.js';
 import { createPracticeService } from './_yugioh-practice-service.js';
-import { runAutoOperation, projectAutoStateSafe } from './_yugioh-auto-executor.js';
+import { runAutoOperation, projectAutoStateSafe, prewarmAutoEngine } from './_yugioh-auto-executor.js';
 import { createRequestTimings, timeDatabase } from './_yugioh-timing.js';
 import { createPracticeStore } from './_yugioh-practice-store.js';
 
@@ -186,6 +186,9 @@ export function createDuelHandler({ env = process.env, databaseFactory = createD
       }
       // Restrict slug syntax before composing the participant filter in PostgREST.
       if (!actor?.slug || !/^[a-z0-9_-]{1,100}$/i.test(actor.slug)) throw new DuelError(401, 'unauthorized', 'Profilo del team non valido.');
+      // Il motore si scalda mentre la richiesta interroga il database (anche
+      // all'apertura della lobby, così "Avvia test" trova il worker pronto).
+      if(!autoRuntime)prewarmAutoEngine();
       const engine=autoRuntime||{run:runAutoOperation,project:projectAutoStateSafe};
       const measuredRuntime={project:(...args)=>engine.project(...args),run:(...args)=>timings.measure('engine',()=>engine.run(...args))};
       if (['practiceStart','practiceState','practiceAction','practiceSearch'].includes(body.op)) {

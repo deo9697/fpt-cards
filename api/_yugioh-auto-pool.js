@@ -52,6 +52,14 @@ export function createAutoWorkerPool({maxWorkers=2,maxJobs=128,idleMs=120000,max
     }
   }
   return{
+    // Avvio a freddo (2026-11-18): un worker nuovo deve caricare 15.000 carte e
+    // 27.000 script prima del primo duello. prewarm() lo avvia in anticipo (il
+    // worker carica le risorse appena nasce), in parallelo alle query al
+    // database della richiesta; se un worker c'è già non fa nulla.
+    prewarm(){
+      if(closed||[...slots].some(slot=>!slot.dead)||slots.size>=maxWorkers)return false;
+      try{const slot=makeSlot();slot.idleTimer=setTimeout(()=>{if(!slot.job){retire(slot);drain();}},idleMs);slot.idleTimer.unref?.();return true;}catch{return false;}
+    },
     run(operation,payload,{timeoutMs=20000}={}){
       if(closed)return Promise.reject(unavailable());
       if(queue.length>=maxQueue)return Promise.reject(Object.assign(new Error('Il motore sta elaborando altre mosse. Riprova tra poco.'),{status:503,code:'auto_busy'}));

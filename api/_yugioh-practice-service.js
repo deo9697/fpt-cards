@@ -40,6 +40,10 @@ export function createPracticeService({store,practices,autoRuntime={run:runAutoO
     if(!['practiceStart','practiceState','practiceAction','practiceSearch'].includes(payload.op))fail(400,'invalid_operation','Operazione non disponibile nella prova.');
     // Both reads use the authenticated scope. Still check current membership on
     // every request, before handling state or a read error from the private row.
+    // practiceStart: il mazzo (del solo actor.slug) si legge in parallelo, ma si
+    // usa solo dopo i controlli di appartenenza qui sotto.
+    const deckRead=payload.op==='practiceStart'&&UUID.test(payload.deckId||'')?Promise.resolve().then(()=>store.deck(payload.deckId,actor.slug,{mode:'auto'})):null;
+    deckRead?.catch(()=>{});
     const [membership,current]=await Promise.allSettled([store.members(actor.teamId),practices?practices.get(actor.teamId,actor.slug):Promise.resolve(null)]);
     if(membership.status==='rejected')throw membership.reason;
     const member=membership.value.find(member=>member.slug===actor.slug);
@@ -50,7 +54,7 @@ export function createPracticeService({store,practices,autoRuntime={run:runAutoO
     if(payload.op==='practiceStart'){
       const requestId=needId(payload.requestId);
       if(row?.start_request_ids?.includes(requestId)||row?.start_request_id===requestId||row?.last_action_id===requestId)return{duel:view(row),replayed:true};
-      const deck=await store.deck(needId(payload.deckId),actor.slug,{mode:'auto'});
+      const deckId=needId(payload.deckId),deck=await (deckRead||store.deck(deckId,actor.slug,{mode:'auto'}));
       if(!deck||deck.ownerSlug!==actor.slug||deck.game!=='yugioh')fail(404,'deck_not_found','Scegli un tuo mazzo Yu-Gi-Oh! salvato.');
       const state=await automatic('createPractice',{decks:[deck,deck],names:[member.name,'Campo di prova'],firstPlayer:0,lp:[8000,8000]});
       const id=randomUUID();state.id=id;

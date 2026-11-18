@@ -7,6 +7,9 @@ import { validateAutoDeck } from './_yugioh-auto-deck-rules.js';
 // Serialized jobs share only checked immutable card/script resources. The core
 // creates/destroys a fresh native duel for each persisted replay, so no user
 // game or failed move can contaminate another job on a warm instance.
+// Carica carte e script appena il worker nasce (anche se avviato da prewarm):
+// il primo lavoro trova il catalogo già pronto o in arrivo.
+void loadAutoResources().catch(()=>{});
 parentPort.on('message',async ({id,operation,payload})=>{
 try {
   let value;
