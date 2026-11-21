@@ -787,3 +787,26 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 @keyframes ygo-loading-step { from { color:#7d7264; } to { color:#efe6d6; } }
 @keyframes ygo-loading-step-dot { from { border-color:#5d4a2a;background:transparent;color:#efe6d6; } to { border-color:#e8b85c;background:#e8b85c;color:#1a140b;box-shadow:0 0 8px #e8b85c; } }
 @keyframes ygo-loading-sweep { from { transform:translateX(-100%); } to { transform:translateX(260%); } }
+
+/* Scelta Attacco/Difesa al centro (2026-11-21). */
+.ygo-auto-prompt.ygo-position-pick { position:fixed;z-index:615;inset:0;display:grid;place-items:center;width:auto;max-width:none;height:auto;max-height:none;margin:0;padding:max(12px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));border:0;border-radius:0;background:#07050a8c;box-shadow:none;transform:none; }
+.ygo-position-box { display:grid;gap:10px;justify-items:center;padding:14px 18px 12px;border:1px solid #e8b85c80;border-radius:12px;background:linear-gradient(#1d1812f2,#120e0bf2);box-shadow:0 12px 40px #000c,0 0 24px #e8b85c22;max-width:100%; }
+.ygo-position-box>header { display:grid;gap:2px;text-align:center; }
+.ygo-position-box>header>small { font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:#a89a86; }
+.ygo-position-box>header>strong { font:800 clamp(.85rem,2.4vw,1.1rem)/1.2 Cinzel,Georgia,serif;color:#f3d79b;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.ygo-position-choices { display:flex;gap:clamp(12px,3vw,28px);align-items:stretch; }
+.ygo-arena .ygo-position-choice,.ygo-position-choice { --ch:clamp(96px,34dvh,150px);display:grid;grid-template-rows:var(--ch) auto;justify-items:center;align-items:center;gap:8px;min-width:calc(var(--ch)*1.05);margin:0;padding:10px 12px 8px;border:1px solid #5d4a2a;border-radius:10px;background:#1a140ecc;color:#efe6d6;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s; }
+.ygo-position-choice:hover,.ygo-position-choice:focus-visible { border-color:#f3d79b;box-shadow:0 0 16px #e8b85c66;transform:translateY(-2px);outline:none; }
+.ygo-position-choice:active { transform:scale(.97); }
+.ygo-position-choice:disabled { opacity:.5;cursor:default; }
+.ygo-position-card { display:block;height:var(--ch);aspect-ratio:59/86;border-radius:4px;overflow:hidden;box-shadow:0 6px 16px #000b;border:1px solid #c5b995; }
+.ygo-position-card>img { display:block;width:100%;height:100%;object-fit:cover; }
+.ygo-position-choice:is(.is-defense,.is-set) .ygo-position-card { height:var(--ch);transform:rotate(90deg) scale(.85); }
+.ygo-position-choice>b { font:800 .82rem Cinzel,Georgia,serif;letter-spacing:.06em;color:#f3d79b; }
+.ygo-position-choice.is-attack>b { color:#ffcf8a; }
+.ygo-position-choice:is(.is-defense,.is-set)>b { color:#8bd9f4; }
+.ygo-arena .ygo-position-cancel,.ygo-position-cancel { min-height:32px;padding:5px 16px;border:1px solid #5d4a2a;border-radius:999px;background:transparent;color:#d8c9b0;font-size:.7rem;font-weight:700; }
+@media (prefers-reduced-motion:no-preference){ .ygo-position-box { animation:ygo-position-in .16s ease-out; } }
+@keyframes ygo-position-in { from { opacity:0;transform:scale(.94); } }
+.ygo-auto-prompt.ygo-position-pick .ygo-position-choice { background:linear-gradient(#241c13,#15100b);border-color:#5d4a2a; }
+.ygo-auto-prompt.ygo-position-pick .ygo-position-choice:is(:hover,:focus-visible) { border-color:#f3d79b; }

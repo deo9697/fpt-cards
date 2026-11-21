@@ -85,7 +85,7 @@ export class YugiohMultiplayer {
     if(!zone)return null;
     const used=new Set((this.session.players[this.viewer][zone]||[]).map(item=>item.slot)),free=zone==='field'?(used.size?[]:[0]):[0,1,2,3,4].filter(slot=>!used.has(slot));
     if(!free.length)return null;
-    return{optionId:option.id,promptId:prompt.id,zone,position,free,cardName:card?.cardName||option.label};
+    return{optionId:option.id,promptId:prompt.id,zone,position,free,cardName:card?.cardName||option.label,code:card?.code??option.card?.code};
   }
   async sendPlan(slot,position){
     const plan=this.autoPlan;if(!plan||this.autoPrompt()?.id!==plan.promptId||!plan.free.includes(slot))return;
