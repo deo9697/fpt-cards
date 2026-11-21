@@ -38,7 +38,7 @@ export const api = {
     }
     let response;
     try {
-      response = await fetch('/api/yugioh-duel', {method:'POST',cache:'no-store',credentials:'same-origin',headers,body:JSON.stringify({...payload,token:token()}),signal:AbortSignal.timeout(20000)});
+      response = await fetch('/api/yugioh-duel', {method:'POST',cache:'no-store',credentials:'same-origin',headers,body:JSON.stringify({...payload,token:token()}),signal:AbortSignal.timeout(['action','practiceAction','practiceStart'].includes(payload?.op)?55000:20000)});
     } catch { throw new Error('Il tavolo non è raggiungibile. Controlla la connessione e riprova.'); }
     const data = await response.json().catch(()=>null);
     if(!response.ok)throw Object.assign(new Error(data?.message || 'Il tavolo multiplayer non è disponibile. Riprova tra poco.'),{status:response.status,data});

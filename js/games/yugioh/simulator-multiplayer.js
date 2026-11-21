@@ -416,7 +416,9 @@ export class YugiohMultiplayer {
     const generation=this.navigationGeneration;this.pending=true;this.error='';
     if(payload.action?.type!=='autoRespond'||!this.syncAutoBusy())this.render();
     try{const response=await this.call(payload);if(!this.allowed()||generation!==this.navigationGeneration)return null;if(response.duel)this.receive(response.duel);this.connected=true;return response;}
-    catch(error){if(this.allowed()&&generation===this.navigationGeneration){if(error.data?.duel)this.receive(error.data.duel);this.error=error.message||'Operazione non riuscita. Riprova.';if([401,403].includes(error.status))this.connected=false;}return null;}
+    catch(error){if(this.allowed()&&generation===this.navigationGeneration){if(error.data?.duel)this.receive(error.data.duel);this.error=error.message||'Operazione non riuscita. Riprova.';if([401,403].includes(error.status))this.connected=false;
+      // Al tavolo l'errore sta in un riquadro piccolo che i fogli di scelta coprono: anche un avviso (2026-11-21).
+      if(this.session&&this.tab==='table')this.options.onToast?.(this.error,'error');}return null;}
     finally{this.pending=false;this.render();this.schedule();}
   }
   async open(id){if(this.pending||!UUID.test(id))return;this.attackSelection=null;this.activationReveals.clear();this.navigationGeneration++;this.inspectionGeneration++;this.practice=false;this.practiceTable=null;this.selected=null;this.pile=null;this.inspectedCard=null;this.placing=null;this.menu=false;this.tab='table';await this.perform({op:'state',duelId:id});}
