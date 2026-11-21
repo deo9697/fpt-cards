@@ -46,8 +46,10 @@ assert.match(last(state), /Standby Phase superata/);
 console.log('PASS carta coperta: pausa in Draw Phase senza rivelarla; "Fase successiva" salta la Standby vuota');
 
 // A face-up card whose text cites the Standby Phase pauses there.
-const standbyCard = { ...state.players[0].hand[0], text: 'Once per turn, during your Standby Phase: gain 500 LP.' };
-state.players[0].hand[0] = standbyCard;
+// The hand is shuffled: pick a monster (the Trap may be drawn first).
+const handIndex = state.players[0].hand.findIndex(card => /Monster/.test(card.type));
+const standbyCard = { ...state.players[0].hand[handIndex], text: 'Once per turn, during your Standby Phase: gain 500 LP.' };
+state.players[0].hand[handIndex] = standbyCard;
 state = act(state, 'move', { cardId: standbyCard.id, to: 'monsters', slot: 0, faceUp: true, position: 'attack' });
 assert.deepEqual(phaseStopReasons(state, 'standby').map(reason => reason.cardName), [standbyCard.cardName]);
 // Remove the set card so only the Standby cue remains.

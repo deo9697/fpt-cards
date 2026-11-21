@@ -722,3 +722,23 @@ body[data-page='simulator']:has(.ygo-arena) .page-stage { width:100%;max-width:n
 .ygo-zone-dialog .ygo-zone-cards .ygo-card.has-auto-action::before { content:'Attiva';position:absolute;z-index:2;left:50%;top:-4px;transform:translate(-50%,-100%);padding:1px 7px;border-radius:4px;background:#f3d79b;color:#1a140b;font-size:.55rem;font-weight:800;letter-spacing:.04em;pointer-events:none; }
 @media (prefers-reduced-motion:no-preference){ .ygo-zone-dialog .ygo-zone-cards .ygo-card.has-auto-action { animation:ygo-pile-glow 1.2s ease-in-out infinite; } }
 @keyframes ygo-pile-glow { 50% { outline-color:#f3d79b66; } }
+
+/* Pile stile B «Ventaglio» (2026-11-21): Deck/Extra a ventaglio (Extra viola),
+   Cimitero e Bandite affiancati nella stessa colonna. Sfondo e caselle invariati. */
+.ygo-pile-art.is-fan:before,.ygo-pile-art.is-fan:after { display:none; }
+.ygo-pile-art.is-fan>.ygo-card-back { position:absolute;inset:0;width:100%;height:100%;box-shadow:0 2px 6px #000a;transform-origin:50% 90%; }
+.ygo-pile-art.is-fan>.ygo-card-back:nth-child(1):not(:last-child) { transform:rotate(-9deg) translateX(-6%); }
+.ygo-pile-art.is-fan>.ygo-card-back:nth-child(2):not(:last-child) { transform:rotate(-3deg); }
+.ygo-pile-art.is-fan>.ygo-card-back:nth-child(2):last-child { transform:rotate(4deg) translateX(4%); }
+.ygo-pile-art.is-fan>.ygo-card-back:nth-child(3) { transform:rotate(5deg) translateX(6%); }
+.ygo-pile-extra .ygo-pile-art>.ygo-card-back { border-color:#7b4fc0;box-shadow:0 2px 6px #000a,0 0 6px #a974ff55; }
+.ygo-pile-extra .ygo-pile-art>.ygo-card-back>img { filter:hue-rotate(235deg) saturate(.85) brightness(.95); }
+.ygo-arena .ygo-pile-deck .ygo-pile-art,.ygo-arena .ygo-pile-extra .ygo-pile-art { width:calc(var(--slot-h)*.8*63/88);height:calc(var(--slot-h)*.8); }
+.ygo-arena .ygo-grave-piles { flex-direction:row;gap:2px;align-items:stretch; }
+.ygo-arena .ygo-grave-piles .ygo-pile { flex:1 1 0;width:auto;min-width:0;height:var(--slot-h);padding:2px; }
+.ygo-arena .ygo-grave-piles .ygo-pile-art { width:min(100%,calc(var(--slot-h)*.62*63/88));height:auto;aspect-ratio:63/88; }
+.ygo-arena .ygo-grave-piles .ygo-pile>small { font-size:clamp(.2rem,.38vw,.34rem);letter-spacing:.02em; }
+.ygo-arena .ygo-grave-piles .ygo-pile-symbol>.icon { width:60%;height:auto;max-width:18px; }
+.ygo-arena .ygo-pile-banished .ygo-pile-art>img { outline:1px solid #a974ff;box-shadow:0 0 8px #7a3ad8; }
+.ygo-arena .ygo-pile-banished .ygo-pile-symbol { color:#b38cff;text-shadow:0 0 7px #7a3ad8; }
+.ygo-arena .ygo-pile-banished { border-color:#8f6cc670; }
