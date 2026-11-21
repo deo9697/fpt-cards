@@ -80,11 +80,19 @@ export async function searchCards(query, game = 'yugioh') {
   const key = `yugioh:${normalizeName(value)}`;
   if (cache.has(key)) return cache.get(key);
 
-  const [italianCards, englishCards] = await Promise.all([
+  const [italianCards, englishCards, translated] = await Promise.all([
     requestCards({ fname:value, language:'it' }),
-    requestCards({ fname:value })
+    requestCards({ fname:value }),
+    localizedNameMatches(value)
   ]);
-  let cards = [...italianCards, ...englishCards];
+  // Nomi italiani ufficiali (YGOResources via /api/card-names, 2026-11-21):
+  // YGOPRODeck non ha l'italiano di molte carte recenti (MAMS: 40 su 124).
+  // Le carte trovate così si chiedono a YGOPRODeck per nome inglese esatto.
+  const localizedByEnglish = new Map(translated.map(row => [row.english, row.name]));
+  const known = new Set([...italianCards, ...englishCards].map(card => card.name));
+  const missingEnglish = translated.map(row => row.english).filter(name => !known.has(name)).slice(0, 25);
+  const translatedCards = missingEnglish.length ? await requestCards({ name:missingEnglish.join('|') }) : [];
+  let cards = [...italianCards, ...englishCards, ...translatedCards];
 
   // L'API richiede spesso la punteggiatura ufficiale (es. dell'Incubo).
   // Se la frase non produce risultati, cerchiamo la parola più distintiva e
@@ -107,11 +115,14 @@ export async function searchCards(query, game = 'yugioh') {
   }
 
   const ranked = cards
-    .map(mapCard)
-    .map(card => ({ card, score:matchScore(card.name, value) }))
-    .sort((a, b) => b.score - a.score || a.card.name.localeCompare(b.card.name, 'it'));
+    .map(raw => ({ card:mapCard(raw), italian:italianCards.includes(raw) }))
+    .map(({ card, italian }) => ({ card, italian, score:Math.max(matchScore(card.name, value), localizedByEnglish.has(card.name) ? matchScore(localizedByEnglish.get(card.name), value) : 0) }))
+    .sort((a, b) => b.score - a.score || Number(b.italian) - Number(a.italian) || a.card.name.localeCompare(b.card.name, 'it'));
+  // Stessa carta da due fonti (nome italiano e inglese, a volte con l'id di un
+  // artwork alternativo): una sola voce, quella in cima (a parità, l'italiana).
+  const identity = card => [...(card.imageIds || []), String(card.id)].filter(Boolean).sort()[0];
   const unique = new Map();
-  ranked.forEach(({ card }) => { if (!unique.has(String(card.id))) unique.set(String(card.id), card); });
+  ranked.forEach(({ card }) => { const key = identity(card); if (!unique.has(key)) unique.set(key, card); });
   // Niente più tetto a 12: il pannello di ricerca mostra tutte le carte
   // trovate (fino a SEARCH_RESULT_LIMIT, per non appesantire il telefono).
   const results = [...unique.values()].slice(0, SEARCH_RESULT_LIMIT);
@@ -475,6 +486,16 @@ async function cardsById(id) {
   return candidates;
 }
 
+async function localizedNameMatches(query, lang = 'it') {
+  if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return [];
+  try {
+    const response = await fetch(`/api/card-names?lang=${lang}&q=${encodeURIComponent(query)}`, { signal:AbortSignal.timeout(8000) });
+    if (!response.ok) return [];
+    const rows = (await response.json())?.results;
+    return Array.isArray(rows) ? rows.filter(row => row?.name && row?.english).slice(0, 40) : [];
+  } catch { return []; }
+}
+
 async function requestCards(parameters) {
   try {
     const query = new URLSearchParams(parameters);
@@ -634,7 +655,7 @@ function matchScore(name, query) {
   const candidate = normalizeName(name);
   const wanted = normalizeName(query);
   if (!candidate || !wanted) return 0;
-  if (candidate === wanted) return 10000;
+  if (candidate === wanted) return 100000; // sopra qualunque somma dei casi sotto (max ~10.500)
   let score = 0;
   if (candidate.startsWith(wanted)) score += 5000;
   if (candidate.includes(wanted)) score += 3000;

@@ -16,7 +16,7 @@
     "test:fast-scan-performance": "node scripts/fast-scan-performance-benchmark.mjs",
     "test:fast-scan-ocr-pipeline": "node scripts/fast-scan-ocr-pipeline-smoke.mjs",
     "test:fast-scan-p0": "node scripts/fast-scan-p0-smoke.mjs",
-    "test:decks": "node scripts/decks-milestone-smoke.mjs",
+    "test:decks": "node scripts/card-names-smoke.mjs && node scripts/decks-milestone-smoke.mjs",
     "test:market": "node scripts/market-watch-core-smoke.mjs",
     "test:market-browser": "node scripts/market-watch-browser-smoke.mjs",
     "test:dashboard-vetrina": "node scripts/dashboard-vetrina-smoke.mjs",
