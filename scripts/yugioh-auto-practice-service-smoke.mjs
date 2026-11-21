@@ -30,6 +30,9 @@ member=false;await rejects(actor,{op:'practiceState'},403);member=true;
 clock=new Date('2026-11-20T08:00:00Z');await rejects(actor,{op:'practiceState'},410);clock=new Date('2026-11-18T08:00:00Z');
 console.log('PASS personal practice ownership, safe projection, CAS/idempotency/restart history, expiry, search and engine-only actions.');
 
+// 2026-11-21: la parte HTTP usa l'orologio vero (il gestore non riceve `now`):
+// la prova creata con l'orologio finto del 18/11 risultava già scaduta.
+if(row)row.expires_at=new Date(Date.now()+86400000).toISOString();
 // The HTTP route shares authentication/no-store with PvP, but never dispatches
 // through the PvP service and never calls an invitation/push/statistics method.
 const handler=createDuelHandler({env:{SUPABASE_URL:'https://test.invalid',SUPABASE_SERVICE_ROLE_KEY:'synthetic'},databaseFactory:()=>({authenticate:async token=>{if(token!=='own-token')throw Error('Unauthorized');return actor;},store,practices}),autoRuntime:runtime,notify:async()=>{throw Error('Practice must not send notifications');}});

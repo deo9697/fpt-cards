@@ -103,6 +103,11 @@ export function autoPromptView(controller) {
   const session = controller.session, prompt = session.auto?.prompt;
   if (controller.duel.status === 'setup' || session.result) return '';
   if (!prompt) return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-waiting" role="status"><strong>Attesa avversario</strong><small>${esc(session.players[session.auto?.waitingPlayer ?? 1 - controller.viewer]?.name || 'Il compagno')} sta scegliendo.</small></section>`;
+  const plan = controller.autoPlan;
+  if (plan && plan.promptId === prompt.id) {
+    const asking = plan.position && plan.slot !== undefined;
+    return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-compact is-board-hint" role="status" aria-live="polite"><strong>${esc(plan.cardName)}</strong><small>${asking ? 'Scegli la posizione' : 'Tocca una casella illuminata'}</small><div class="ygo-auto-controls">${asking ? `<button type="button" class="ygo-primary" data-ygo-command="plan-attack" ${controller.pending ? 'disabled' : ''}>Attacco</button><button type="button" class="ygo-primary" data-ygo-command="plan-defense" ${controller.pending ? 'disabled' : ''}>Difesa</button>` : ''}<button type="button" data-ygo-command="plan-cancel" ${controller.pending ? 'disabled' : ''}>Annulla</button></div></section>`;
+  }
   const compact = ['idle', 'battle'].includes(prompt.kind), selected = controller.autoSelected || [];
   const cardOptions = prompt.options.filter(option => option.card), otherOptions = prompt.options.filter(option => !option.card);
   if (compact && !controller.autoExpanded) return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-compact" aria-label="Comandi automatici"><strong>${esc(prompt.title)}</strong><small>Tocca una carta per le azioni consentite.</small><div class="ygo-auto-controls"><button type="button" data-ygo-command="auto-expand" ${controller.pending ? 'disabled' : ''} aria-label="Mostra tutte le mosse consentite">Azioni - ${prompt.options.length}</button></div></section>`;

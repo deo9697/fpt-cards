@@ -2,6 +2,7 @@
 import {randomUUID} from 'node:crypto';
 import {DuelError} from './_yugioh-duel-service.js';
 import {runAutoOperation,projectAutoStateSafe} from './_yugioh-auto-executor.js';
+import {normalizeQueue,applyQueue} from './_yugioh-auto-queue.js';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail=(status,code,message,duel)=>{throw new DuelError(status,code,message,duel);};
@@ -91,7 +92,10 @@ export function createPracticeService({store,practices,autoRuntime={run:runAutoO
       for(const visible of state.publicViews){visible.status='finished';visible.result=state.result;visible.auto.prompt=null;visible.auto.waitingFor=null;visible.auto.waitingPlayer=null;visible.auto.actor=null;}
     }else if(action.type==='autoRespond'){
       if(typeof action.promptId!=='string'||action.promptId.length>160||!action.choice||typeof action.choice!=='object'||Array.isArray(action.choice))fail(400,'invalid_choice','Scelta non valida.');
+      const steps=normalizeQueue(action.then);if(steps===null)fail(400,'invalid_queue','Scelte in coda non valide.');
       state=await automatic('apply',{state:row.state,viewer:0,promptId:action.promptId,choice:action.choice});
+      // Zona/posizione già scelte sul campo: stesso giro, un solo salvataggio.
+      state=await applyQueue(state,steps,0,(current,prompt,choice)=>automatic('apply',{state:current,viewer:0,promptId:prompt.id,choice}));
     }else fail(400,'auto_action_only','Scegli una delle azioni richieste dal motore automatico.');
     if(Buffer.byteLength(JSON.stringify(state))>3900000)fail(422,'practice_limit','La prova ha raggiunto il limite di azioni. Avvia un nuovo test.');
     return save(row,{state,status:state.result?'finished':'playing'},actor,requestId);

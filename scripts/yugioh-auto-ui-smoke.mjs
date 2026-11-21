@@ -52,7 +52,12 @@ try {
   await tap(host, {ygoCommand: 'close-menu'});
   await tap(host, {ygoCard: 'card-own', player: '0'});
   eq(host.dropMenu.actions.map(action => action.id), ['summons-0']);
-  await tap(host, {ygoDropAction: 'summons-0'}); eq(reply, {type: R.SELECT_IDLECMD, action: 0, index: 0});
+  // 2026-11-21: azione dalla mano → prima si sceglie la casella sul campo, poi un solo invio con la zona in coda.
+  reply = null; const beforePlan = calls.length;
+  await tap(host, {ygoDropAction: 'summons-0'}); eq(calls.length, beforePlan, 'scegliere l\'azione non invia ancora nulla');
+  ok(host.autoPlan && host.autoPlan.zone === 'monsters' && host.view().includes('data-ygo-plan-slot="2"'), 'le caselle libere si illuminano');
+  await tap(host, {ygoPlanSlot: '2'}); eq(reply, {type: R.SELECT_IDLECMD, action: 0, index: 0});
+  eq(calls.at(-1).payload.action.then, [{kind: 'place', zone: 'monsters', slot: 2}], 'azione e zona nello stesso giro');
   const beforeForged = calls.length; await choose(host, 'forged-command'); eq(calls.length, beforeForged);
 
   // Mark the offered copy by its position in hand, including duplicate passcodes.

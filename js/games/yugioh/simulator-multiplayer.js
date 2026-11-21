@@ -69,11 +69,38 @@ export class YugiohMultiplayer {
     if(!frame)return true;
     return frame.dataset.ygoAutoPrompt===(this.autoPrompt()?.id||'')&&Number(frame.dataset.ygoAutoVersion)===this.duel?.version&&(!frame.dataset.ygoAutoDuel||frame.dataset.ygoAutoDuel===this.duel?.id);
   }
-  async respondAuto(choice){const prompt=this.autoPrompt();if(!this.isAuto()||this.duel?.status!=='playing'||!prompt||this.pending)return;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;await this.act({type:'autoRespond',promptId:prompt.id,choice});}
+  async respondAuto(choice,then){const prompt=this.autoPrompt();if(!this.isAuto()||this.duel?.status!=='playing'||!prompt||this.pending)return;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.autoPlan=null;await this.act({type:'autoRespond',promptId:prompt.id,choice,...(then?.length?{then}:{})});}
+  // Scelte in un giro solo (2026-11-21): per Evoca / Posiziona / Attiva dalla mano
+  // la casella si sceglie sul campo PRIMA di inviare; il server applica azione,
+  // zona (e posizione) insieme. Se il motore chiede altro, la richiesta torna come prima.
+  planForOption(prompt,option){
+    if(prompt?.kind!=='idle'||option?.card?.location!==2||option.card.controller!==this.viewer)return null;
+    const card=this.session.players[this.viewer].hand.find(item=>item.location===2&&item.sequence===option.card.sequence&&!item.hidden),type=String(card?.type||'');
+    let zone=null,position=false;
+    if(['summon','monster-set'].includes(option.action))zone='monsters';
+    else if(option.action==='special-summon'){zone='monsters';position=true;}
+    else if(['spell-set','activate'].includes(option.action)&&/spell|trap/i.test(type)&&!/monster/i.test(type))zone=/field/i.test(type)&&/spell/i.test(type)?'field':'spells';
+    if(!zone)return null;
+    const used=new Set((this.session.players[this.viewer][zone]||[]).map(item=>item.slot)),free=zone==='field'?(used.size?[]:[0]):[0,1,2,3,4].filter(slot=>!used.has(slot));
+    if(!free.length)return null;
+    return{optionId:option.id,promptId:prompt.id,zone,position,free,cardName:card?.cardName||option.label};
+  }
+  async sendPlan(slot,position){
+    const plan=this.autoPlan;if(!plan||this.autoPrompt()?.id!==plan.promptId||!plan.free.includes(slot))return;
+    if(plan.position&&!position){this.autoPlan={...plan,slot};this.render();return;}
+    await this.respondAuto({optionId:plan.optionId},[{kind:'place',zone:plan.zone,slot},...(plan.position?[{kind:'position',position}]:[])]);
+  }
   async chooseAutoOption(id){
     const prompt=this.autoPrompt();if(!prompt||this.pending||this.orientation.isPortraitBlocked())return;
     if(prompt.kind==='announce-card'){const row=this.autoSearchResults.find(row=>`announce-${row.code}`===id);if(row)await this.respondAuto({value:row.code});return;}
     if(!prompt.options.some(option=>option.id===id))return;
+    const plan=this.planForOption(prompt,prompt.options.find(option=>option.id===id));
+    if(plan){
+      this.dropMenu=null;this.selected=null;this.inspectedCard=null;
+      // Una sola casella possibile e niente posizione da scegliere: si parte subito.
+      if(plan.free.length===1&&!plan.position){this.autoPlan=plan;await this.sendPlan(plan.free[0]);return;}
+      this.autoPlan=plan;this.render();return;
+    }
     // Zona: con una sola casella da scegliere il tocco sul campo è già la mossa;
     // con più caselle si invia appena raggiunto il numero richiesto.
     if(prompt.kind==='place'){
@@ -353,7 +380,7 @@ export class YugiohMultiplayer {
     // Movimenti delle carte (simulator-card-motion.js): partenze misurate ora, sul campo ancora vecchio.
     if(changed&&!newTable&&this.session?.players&&duel.status==='playing'&&typeof document!=='undefined'){this.cardMotion||=createCardMotion({speed:1});this.cardMotion.prepare(previousSession,this.session,{mode:this.isAuto()?'auto':'manual',root:document});this.ensureFxSkip();}
     this.practice=duel.practice===true||Boolean(this.practiceTable);
-    if(changed){this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
+    if(changed){this.autoPlan=null;this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
     if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
     return changed;
   }
@@ -573,6 +600,9 @@ export class YugiohMultiplayer {
     if(command==='auto-counters'){await this.respondAuto({counts:this.autoCounts});return;}
     if(command==='auto-finish'){await this.respondAuto({optionId:'finish'});return;}
     if(command==='auto-cancel'){await this.respondAuto({optionId:'cancel'});return;}
+    if(command==='plan-cancel'){this.autoPlan=null;this.render();return;}
+    if(command==='plan-attack'||command==='plan-defense'){if(this.autoPlan?.slot!==undefined)await this.sendPlan(this.autoPlan.slot,command==='plan-attack'?'attack':'defense');return;}
+    if(data.ygoPlanSlot!==undefined){await this.sendPlan(Number(data.ygoPlanSlot));return;}
     if(command==='auto-expand'||command==='auto-collapse'){this.autoExpanded=command==='auto-expand';this.render();return;}
     if(command==='auto-surrender'){if(await this.options.confirm('Vuoi arrenderti e assegnare la vittoria al compagno?'))await this.act({type:'surrender'});return;}
     if(command==='cancel-attack-selection'){this.attackSelection=null;this.render();return;}

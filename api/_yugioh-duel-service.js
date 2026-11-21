@@ -1,5 +1,6 @@
 import { createSession, applyAction, validateSimulatorDeck } from '../js/games/yugioh/simulator-engine.js';
 import { runAutoOperation, projectAutoStateSafe } from './_yugioh-auto-executor.js';
+import { normalizeQueue, applyQueue } from './_yugioh-auto-queue.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const terminal = new Set(['finished', 'declined', 'cancelled']);
@@ -251,7 +252,10 @@ export function createDuelService({ store, notify = async () => ({ push:'unavail
           }
         } else if (action.type === 'autoRespond') {
           if (typeof action.promptId !== 'string' || action.promptId.length > 160 || !action.choice || typeof action.choice !== 'object' || Array.isArray(action.choice)) fail(400, 'invalid_choice', 'Scelta non valida.');
+          const steps = normalizeQueue(action.then); if (steps === null) fail(400, 'invalid_queue', 'Scelte in coda non valide.');
           state = await automatic('apply', { state:row.state, viewer:people.viewer, promptId:action.promptId, choice:action.choice });
+          // Zona/posizione già scelte sul campo: stesso giro, un solo salvataggio.
+          state = await applyQueue(state, steps, people.viewer, (current, prompt, choice) => automatic('apply', { state:current, viewer:people.viewer, promptId:prompt.id, choice }));
         } else fail(400, 'auto_action_only', 'Questo tavolo accetta soltanto le scelte richieste dal motore automatico.');
         return cas(row, { state, status:state.result ? 'finished' : 'playing', previous_state:null }, actor, people, payload.requestId);
       }
