@@ -81,7 +81,7 @@ async function run(){
     const sim=window.__sim, card=sim.session.players[sim.viewer].hand.find(card=>card.code===${code});
     const node=card&&document.querySelector('[data-ygo-card="'+card.id+'"][data-player="'+sim.viewer+'"]');
     if(!node)return null;
-    const rect=node.getBoundingClientRect(),style=getComputedStyle(node);
+    node.getAnimations().forEach(animation=>animation.finish());const rect=node.getBoundingClientRect(),style=getComputedStyle(node);
     const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
     return{highlighted:node.classList.contains('has-hand-activation'),outline:style.outlineColor,reachable:hit?.closest('.ygo-card')===node};
   })()`;

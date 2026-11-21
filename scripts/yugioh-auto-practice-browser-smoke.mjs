@@ -105,7 +105,7 @@ async function run(){
   await cdp.call('Page.navigate',{url:origin+'/scripts/fixtures/yugioh-duel-harness.html?member='+member.slug});await openPractice();
   assert.equal(await evaluate('document.querySelector("[data-ygo-practice] [name=mode]").value'),'auto','Automatic is the personal-test default');
   assert(await evaluate('Boolean(document.querySelector("[data-ygo-practice] [name=mode] option[value=manual]"))'),'Manual remains explicit');
-  await screenshot('phone-844-composer');await fill('[data-ygo-practice] [name="deckId"]',deckId);await tap('[data-ygo-practice] button[type="submit"]');
+  await screenshot('phone-844-composer');await fill('[data-ygo-practice] [name="deckId"]',deckId);await tap('[data-ygo-practice] button[type="submit"]');if(await evaluate('window.__sim.practiceStarting')){assert(await evaluate('Boolean(document.querySelector(".ygo-practice-loading img[src*=blattaman]"))'),'Schermata di caricamento con Blattaman');await screenshot('phone-844-loading');}
   await wait('window.__sim.practice&&window.__sim.session?.mode==="auto"&&window.__sim.duel?.status==="playing"&&!window.__sim.pending','real automatic practice start');await settle();
   let session=await evaluate('window.__sim.session');assert.equal(await evaluate('window.__sim.duel.practice'),true);assert.equal(session.activePlayer,0);assert(session.players[1].hand.every(card=>card.hidden));
   const activeHandCards=await evaluate('Array.from(document.querySelectorAll(".ygo-hand.is-self .has-hand-activation"),node=>node.dataset.ygoCard)');

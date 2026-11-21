@@ -415,7 +415,7 @@ async function run(){
   async function closeCard(page){if(await page.evaluate('Boolean(document.querySelector(".ygo-card-dialog"))'))await page.click('.ygo-card-dialog [data-ygo-command="deselect"]');}
   async function closeMenu(page){if(await page.evaluate('Boolean(document.querySelector("[data-ygo-command=close-menu]"))'))await page.click('[data-ygo-command="close-menu"]');}
   async function closePile(page){if(await page.evaluate('Boolean(document.querySelector("[data-ygo-command=close-pile]"))'))await page.click('[data-ygo-command="close-pile"]');}
-  async function openMenu(page){await closeCard(page);await closePile(page);if(!await page.evaluate('window.__sim.menu'))await page.click('[data-ygo-command="menu"]');}
+  async function openMenu(page){await idle(page);await closeCard(page);await closePile(page);if(!await page.evaluate('window.__sim.menu'))await page.click('[data-ygo-command="menu"]');}
   async function openDetails(page,selector,label='Carta'){
     await page.hold(selector);
     await page.wait('Boolean(document.querySelector(".ygo-card-dialog"))',label+': dettagli opzionali assenti');
@@ -429,7 +429,7 @@ async function run(){
     assert(zone,'Carta di prova assente dalle proprie pile disponibili: '+code);
     const card=player[zone].find(card=>card.catalogCardId===code);
     if(zone!=='hand'){
-      if(zone==='deck'){await openMenu(page);await page.click('[data-ygo-command="inspect-deck"]');await page.wait(`window.__sim.pile?.cards?.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca nel mazzo non mostra la carta');}
+      if(zone==='deck'){await openMenu(page);await idle(page);await page.click('[data-ygo-command="inspect-deck"]');await page.wait(`window.__sim.pile?.cards?.some(card=>card.id===${JSON.stringify(card.id)})`,'Ricerca nel mazzo non mostra la carta');}
       else{await closeCard(page);await closeMenu(page);await closePile(page);await page.click('[data-ygo-pile="'+zone+'"][data-player="'+viewer+'"]');await page.wait('Boolean(document.querySelector(".ygo-pile-sheet"))','Pila pubblica di preparazione assente');}
       // Pannello delle pile (2026-11-18): un tocco evidenzia, «In mano» porta la carta in mano.
       await page.tap(`[data-ygo-pile-pick="${card.id}"]`);await page.tap(`[data-ygo-pile-hand="${card.id}"]`);

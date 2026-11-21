@@ -14,6 +14,7 @@ import { autoIsMulti, autoIsPick, autoIsSinglePick, autoIsSinglePlace, autoSelec
 import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 import { createCardMotion } from './simulator-card-motion.js';
+import { patchElement } from './simulator-dom-patch.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Foglio di stile degli effetti: lo carica app.js col simulatore; qui ci si
@@ -154,7 +155,17 @@ export class YugiohMultiplayer {
     // Una ricerca nel mazzo si chiude sempre mescolando, come da regolamento.
     if(moved&&fromSearch&&this.session?.players?.[this.viewer]?.deck?.length)await this.act({type:'shuffle',player:this.viewer,zone:'deck'});
   }
-  render(){if(this.allowed())this.options.onRender();}
+  render(){if(!this.allowed())return;if(this.patchTable())return;this.options.onRender();}
+  // Al tavolo aggiorna in place solo ciò che cambia (immagini, scroll e listener
+  // restano): niente ridisegno dell'intera pagina a ogni risposta del server.
+  patchTable(){
+    if(typeof document==='undefined'||!this.session||this.tab!=='table')return false;
+    const root=document.querySelector('.ygo-simulator.is-playing');
+    if(!root?.isConnected||root.dataset.bound!=='true')return false;
+    const html=this.view();if(!html.startsWith('<section class="ygo-simulator is-playing">'))return false;
+    if(!patchElement(root,html,{keepAttributes:['data-bound']}))return false;
+    this.bind(root.parentElement||document);return true;
+  }
   syncAutoBusy(){
     const arena=this.autoArena;
     if(!this.pending||!this.isAuto()||!arena||arena.isConnected===false||!this.autoFrameCurrent(arena))return false;
@@ -178,11 +189,14 @@ export class YugiohMultiplayer {
     if(this.loading||this.ready||!this.allowed())return;
     const generation=this.navigationGeneration;this.loading=true;this.error='';
     try{
+      // In parallelo (2026-11-21): verifica team, mazzi e lobby non dipendono l'uno
+      // dall'altro; il server autentica comunque la lobby. Il tavolo resta chiuso
+      // finché la verifica non risponde.
+      const decks=Promise.resolve().then(()=>this.options.loadDecks()),lobby=Promise.resolve().then(()=>this.options.call({op:'lobby'}));
+      decks.catch(()=>{});lobby.catch(()=>{});
       if(!await this.options.verifyAccess())throw new Error('Accedi con il tuo profilo del team.');
       if(!this.allowed()||generation!==this.navigationGeneration)return;
-      await this.options.loadDecks();
-      if(!this.allowed()||generation!==this.navigationGeneration)return;
-      const response=await this.options.call({op:'lobby'});
+      const[,response]=await Promise.all([decks,lobby]);
       if(!this.allowed()||generation!==this.navigationGeneration)return;
       this.lobby=response;this.lastLobby=Date.now();this.ready=true;this.connected=true;await this.openRequested();
     }catch(error){if(this.allowed()&&generation===this.navigationGeneration){this.error=error.message||'Il tavolo non è disponibile. Riprova.';this.connected=false;}}
@@ -321,7 +335,7 @@ export class YugiohMultiplayer {
     if(this.pending||!this.ready||!this.allowed())return;
     const deck=this.decks.find(item=>item.id===deckId);
     if(!deck){this.error='Scegli uno dei tuoi mazzi salvati.';this.render();return;}
-    const automatic=mode!=='manual';
+    const automatic=mode!=='manual';this.practiceResuming=false;
     if(!automatic){const checked=validateSimulatorDeck(deck);if(!deck.dirty&&!checked.valid){this.error=checked.errors.join(' ');this.render();return;}}
     const generation=++this.navigationGeneration;this.pending=true;this.practiceStarting=true;this.error='';
     void this.orientation.enter({userGesture:true});this.render();
@@ -337,11 +351,21 @@ export class YugiohMultiplayer {
   }
   async resumePractice(){
     if(this.pending||!this.ready||!this.allowed())return;
+    this.practiceResuming=true;
     const generation=++this.navigationGeneration;this.pending=true;this.practiceStarting=true;this.error='';
     void this.orientation.enter({userGesture:true});this.render();
     try{const response=await this.options.call({op:'practiceState'});if(this.allowed()&&generation===this.navigationGeneration)this.acceptPracticeDuel(response.duel);}
     catch(error){if(this.allowed()&&generation===this.navigationGeneration)this.error=error.message||'Non ci sono prove personali da riprendere.';}
     finally{this.pending=false;this.practiceStarting=false;this.render();this.syncOrientation();this.schedule();}
+  }
+  // Caricamento di «Testa mazzo» (2026-11-21, stile A «Rituale»): Blattaman nel
+  // cerchio esoterico mentre il server prepara il duello. Solo CSS: i ridisegni
+  // durante l'attesa non fanno ripartire le animazioni da capo.
+  practiceLoadingView(){
+    const deck=this.decks.find(item=>item.id===this.practiceDraft.deckId),resuming=Boolean(this.practiceResuming);
+    const lines=resuming?['Ritrovo il tuo duello…','Rimetto le carte dove le avevi lasciate.','Ricontrollo i Life Points.','Un attimo, siediti al tavolo.']:['Mischio il mazzo… onestamente, giuro.','Ti preparo la mano: cinque carte, niente trucchi.','Sveglio il Campo di prova…','Lucido gli anelli, un attimo.'];
+    const steps=resuming?['Ritrovo il duello','Sistemo il campo','Tocca a te']:['Mischio il mazzo','Peschi la mano','Il Campo di prova si siede'];
+    return`<section class="ygo-simulator ygo-practice-loading" role="status" aria-live="polite" aria-busy="true"><div class="ygo-loading-ritual" aria-hidden="true"><span class="ygo-loading-circle"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="47"/><circle cx="50" cy="50" r="40" stroke-dasharray="2 3"/><path d="M50 6 L88 72 L12 72 Z M50 94 L12 28 L88 28 Z"/><circle cx="50" cy="50" r="22"/></svg></span><span class="ygo-loading-orbit"><i></i><i></i><i></i></span><img src="assets/loading/blattaman-arcane.webp" alt="" width="640" height="498" decoding="async"></div><div class="ygo-loading-copy"><strong>${resuming?'Riprendo il duello':'Preparo il duello'}</strong>${deck&&!resuming?`<small>${esc(deck.name)}</small>`:''}<p class="ygo-loading-lines" style="--lines:${lines.length}">${lines.map((line,index)=>`<span style="--i:${index}">${esc(line)}</span>`).join('')}</p><ol class="ygo-loading-steps">${steps.map((step,index)=>`<li style="--i:${index}"><i>${index+1}</i>${esc(step)}</li>`).join('')}</ol><span class="ygo-loading-bar"><span></span></span></div></section>`;
   }
   practiceView(){
     if(!this.practiceDraft.deckId)this.practiceDraft.deckId=this.decks[0]?.id||'';
@@ -457,6 +481,7 @@ export class YugiohMultiplayer {
   view(){
     if(!this.allowed())return'<section class="ygo-simulator"><div class="surface">Il simulatore Yu-Gi-Oh! è riservato ai membri del team.</div></section>';
     if(this.session&&this.tab==='table')return`<section class="ygo-simulator is-playing">${arenaView(this)}</section>`;
+    if(this.practiceStarting)return this.practiceLoadingView();
     return`<section class="ygo-simulator ygo-arena-page">${arenaHeader(this)}<div class="ygo-arena-body">${this.error?`<p class="ygo-error" role="alert">${esc(this.error)}</p>`:''}${!this.ready?`<section class="surface ygo-lobby" aria-busy="${this.loading}"><p>${this.loading?'Caricamento del team e dei mazzi…':'Entra nell’arena privata del team.'}</p>${commandButton('reload',this.error?'Riprova':'Carica tavolo',this.loading)}</section>`:this.tab==='practice'?this.practiceView():this.tab==='rules'?this.rulesView():this.tab==='history'?this.historyView():this.duel?this.waitingView():this.lobbyView()}</div></section>`;
   }
   lobbyView(){
@@ -498,11 +523,13 @@ export class YugiohMultiplayer {
     this.autoArena=arena?.classList.contains('is-auto')?arena:null;
     if(this.pending)this.syncAutoBusy();
     if(arena){const blocked=this.orientation.isPortraitBlocked();for(const child of arena.children)if(!child.classList.contains('ygo-orientation-gate'))child.inert=blocked;arena.querySelector('.ygo-orientation-gate')?.classList.toggle('is-required',blocked);}
-    if(!this.allowed())return;const element=root.querySelector('.ygo-simulator');if(!element||element.dataset.bound)return;element.dataset.bound='true';if(!this.ready&&!this.error)void this.initialize();
-    this.cardGestures.bind(element);
+    if(!this.allowed())return;const element=root.querySelector('.ygo-simulator');if(!element)return;
+    // Listener solo la prima volta; posizionamenti e animazioni a ogni render (anche in place).
+    const fresh=!element.dataset.bound;if(fresh){element.dataset.bound='true';if(!this.ready&&!this.error)void this.initialize();this.cardGestures.bind(element);}
     const reveal=element.querySelector('.ygo-activation-reveal');if(reveal&&reveal.dataset.revealKey!==this.lastAnimatedRevealKey){this.lastAnimatedRevealKey=reveal.dataset.revealKey;reveal.classList.add('is-entering');}
     const chainLinks=element.querySelector('.ygo-chain-links');if(chainLinks)chainLinks.scrollLeft=chainLinks.scrollWidth;
     const drop=element.querySelector('.ygo-drop-menu');if(drop){const box=drop.getBoundingClientRect(),anchor=this.dropMenu.anchor;const left=anchor?(anchor.right+6+box.width<=innerWidth-8?anchor.right+6:anchor.left-box.width-6):this.dropMenu.x,top=anchor?anchor.top:this.dropMenu.y;drop.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';drop.style.top=Math.max(8,Math.min(top,innerHeight-box.height-8))+'px';drop.querySelector('button')?.focus({preventScroll:true});}
+    if(!fresh)return;
     element.addEventListener('input',event=>this.updateDraft(event.target));
     element.addEventListener('change',event=>{this.updateDraft(event.target);const form=event.target.closest('[data-ygo-summon],[data-ygo-xyz-cost],[data-ygo-tribute],[data-ygo-discard]');if(form)this.updateRulesDraft(form);if(['deckId','opponentSlug','mode'].includes(event.target.name))this.render();});
     element.addEventListener('submit',event=>{event.preventDefault();if(this.allowed())void this.submit(event.target);});
