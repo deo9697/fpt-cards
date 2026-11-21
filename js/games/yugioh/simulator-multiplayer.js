@@ -15,6 +15,7 @@ import { createDuelFx } from './simulator-fx.js';
 import { duelFxEvents } from './simulator-fx-events.js';
 import { createCardMotion } from './simulator-card-motion.js';
 import { patchElement } from './simulator-dom-patch.js';
+import { battleFxEvents, createAttackFx } from './simulator-attack-fx.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Foglio di stile degli effetti: lo carica app.js col simulatore; qui ci si
@@ -48,7 +49,7 @@ export class YugiohMultiplayer {
     this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];
     this.practice=false;this.practiceTable=null;this.practiceStarting=false;this.practiceDraft={deckId:'',mode:'auto'};this.handSeed=1;
     this.dropMenu=null;this.dragBackup=null;this.rulesDialog=null;this.attackSelection=null;
-    this.activationReveals=createActivationReveals({durationMs:1100,onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();}});
+    this.activationReveals=createActivationReveals({durationMs:1100,onHide:key=>{for(const node of globalThis.document?.querySelectorAll?.('.ygo-activation-reveal')||[])if(node.dataset.revealKey===key)node.remove();const prompt=this.session?.auto?.prompt;if(this.isAuto?.()&&prompt&&prompt.kind!=='idle')this.render();}});
     this.orientation=createDuelOrientation({onChange:()=>{if(this.orientation.isPortraitBlocked()){this.cardGestures?.cancel();this.dropMenu=null;this.rulesDialog=null;this.attackSelection=null;this.placing=null;this.selected=null;this.inspectedCard=null;}this.render();}});
     this.cardGestures=createDuelCardGestures({
       canStart:element=>!this.isAuto()&&this.allowed()&&!this.pending&&!this.dropMenu&&!this.rulesDialog&&!this.attackSelection&&!this.orientation.isPortraitBlocked()&&this.session?.phase!=='setup'&&this.canControl(this.viewer)&&Number(element.dataset.player)===this.viewer&&element.getAttribute('draggable')==='true',
@@ -379,7 +380,7 @@ export class YugiohMultiplayer {
   // Un tocco ovunque salta l'effetto in corso e la carta attivata: il tocco
   // arriva comunque al controllo premuto (ascolto passivo, in cattura).
   ensureFxSkip(){if(this.fxSkipListener||typeof document==='undefined')return;this.fxSkipListener=()=>this.skipDuelFx();document.addEventListener('pointerdown',this.fxSkipListener,{capture:true,passive:true});}
-  skipDuelFx(){this.cardMotion?.skip();if(!this.fxRunning&&!this.activationReveals.get())return;this.fxQueue=[];this.fx?.cancel();this.activationReveals.hide?.();}
+  skipDuelFx(){this.cardMotion?.skip();this.attackFx?.skip();if(!this.fxRunning&&!this.activationReveals.get())return;this.fxQueue=[];this.fx?.cancel();this.activationReveals.hide?.();}
   async playDuelFx(){
     if(this.fxRunning||!this.fxQueue?.length||typeof document==='undefined')return;
     if(!this.fxStage){this.fxStage=document.createElement('div');this.fxStage.className='dfx-stage';this.fxStage.style.cssText='position:fixed;inset:0;z-index:640;pointer-events:none';this.fxStage.setAttribute('aria-hidden','true');document.body.appendChild(this.fxStage);this.fx=createDuelFx(this.fxStage,{speed:2.2});this.ensureFxSkip();}
@@ -392,7 +393,7 @@ export class YugiohMultiplayer {
       while(this.fxQueue.length&&this.fx){const event=this.fxQueue.shift();if(event.kind==='phase')await this.fx.phase(event.name,{turn:event.turn,player:event.player});else if(event.kind==='summon')await this.fx.summon(event);}
     }finally{this.fxRunning=false;}
   }
-  disposeDuelFx(){this.cardMotion?.dispose();this.cardMotion=null;if(this.fxSkipListener){globalThis.document?.removeEventListener?.('pointerdown',this.fxSkipListener,{capture:true});this.fxSkipListener=null;}this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
+  disposeDuelFx(){this.cardMotion?.dispose();this.cardMotion=null;this.attackFx?.dispose();this.attackFx=null;this.pendingBattleFx=null;if(this.fxSkipListener){globalThis.document?.removeEventListener?.('pointerdown',this.fxSkipListener,{capture:true});this.fxSkipListener=null;}this.fxQueue=[];this.fx?.destroy();this.fx=null;this.fxStage?.remove();this.fxStage=null;this.fxRunning=false;}
   receive(duel){
     if(!duel||!this.allowed()||(this.duel?.id===duel.id&&duel.version<this.duel.version))return false;
     const newTable=this.duel?.id!==duel.id||!this.session,changed=!this.duel||this.duel.id!==duel.id||this.duel.version!==duel.version;
@@ -402,7 +403,9 @@ export class YugiohMultiplayer {
     // Effetti visivi (simulator-fx.js): solo presentazione di ciò che il motore ha già deciso.
     if(changed&&!newTable&&this.session?.players&&duel.status==='playing')this.queueDuelFx(duelFxEvents(previousSession,this.session,this.viewer));
     // Movimenti delle carte (simulator-card-motion.js): partenze misurate ora, sul campo ancora vecchio.
-    if(changed&&!newTable&&this.session?.players&&duel.status==='playing'&&typeof document!=='undefined'){this.cardMotion||=createCardMotion({speed:1});this.cardMotion.prepare(previousSession,this.session,{mode:this.isAuto()?'auto':'manual',root:document});this.ensureFxSkip();}
+    if(changed&&!newTable&&this.session?.players&&duel.status==='playing'&&typeof document!=='undefined'){this.cardMotion||=createCardMotion({speed:1});this.cardMotion.prepare(previousSession,this.session,{mode:this.isAuto()?'auto':'manual',root:document});this.ensureFxSkip();
+      // Attacchi e Life Points (simulator-attack-fx.js), avviati dopo il disegno in bind().
+      const battle=battleFxEvents(previousSession,this.session,{auto:this.isAuto()});if(battle)this.pendingBattleFx=battle;}
     this.practice=duel.practice===true||Boolean(this.practiceTable);
     if(changed){this.autoPlan=null;this.attackSelection=null;this.rulesDialog=null;this.dropMenu=null;this.selected=null;this.inspectedCard=null;this.pile=null;this.placing=null;this.autoSelected=[];this.autoCounts={};this.autoExpanded=false;this.autoSearchResults=[];}
     if(newTable){this.autoDismissedReveal='';this.menu=false;this.revealHand=true;this.finishDraft={winner:String(this.viewer),notes:''};}
@@ -518,7 +521,7 @@ export class YugiohMultiplayer {
     this.syncOrientation();
     // Un ridisegno che riscrive il body stacca il livello degli effetti: lo riattacca.
     if(this.fxStage&&!this.fxStage.isConnected&&typeof document!=='undefined')document.body.appendChild(this.fxStage);
-    if(root.querySelector('.ygo-arena')){void this.cardMotion?.play(document);this.playDuelFx();}
+    if(root.querySelector('.ygo-arena')){void this.cardMotion?.play(document);this.playDuelFx();if(this.pendingBattleFx){const events=this.pendingBattleFx;this.pendingBattleFx=null;this.attackFx||=createAttackFx();void this.attackFx.play(events,{root:document,session:this.session,viewer:this.viewer});}}
     const arena=root.querySelector('.ygo-arena');
     this.autoArena=arena?.classList.contains('is-auto')?arena:null;
     if(this.pending)this.syncAutoBusy();

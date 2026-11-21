@@ -103,6 +103,9 @@ export function autoPromptView(controller) {
   const session = controller.session, prompt = session.auto?.prompt;
   if (controller.duel.status === 'setup' || session.result) return '';
   if (!prompt) return `<section ${autoPromptAttributes(controller)} class="ygo-auto-prompt is-waiting" role="status"><strong>Attesa avversario</strong><small>${esc(session.players[session.auto?.waitingPlayer ?? 1 - controller.viewer]?.name || 'Il compagno')} sta scegliendo.</small></section>`;
+  // Prima la carta attivata al centro, poi la scelta (2026-11-21): finché l'immagine
+  // è a schermo la richiesta resta nascosta; alla sua scomparsa il controller ridisegna.
+  if (prompt.kind !== 'idle' && controller.activationReveals?.get?.()) return '';
   const plan = controller.autoPlan;
   if (plan && plan.promptId === prompt.id) {
     const asking = plan.position && plan.slot !== undefined;
