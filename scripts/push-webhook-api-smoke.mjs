@@ -62,7 +62,7 @@ await test('push-public-key: 200 con la chiave, 503 senza, 405 non-GET', async (
   const r = res(); await handlers['push-public-key']({ method: 'POST' }, r); assert.equal(r.code, 405);
 });
 await test('nessun secret nel repo: nessun valore hex/base64 lungo in api/, trigger template con placeholder', async () => {
-  for (const f of fs.readdirSync('api').filter(x => x.endsWith('.js'))) assert.ok(!/['"`][0-9a-f]{40,}['"`]/i.test(fs.readFileSync(`api/${f}`, 'utf8')), `${f}: possibile secret`);
+  for (const f of fs.readdirSync('api').filter(x => x.endsWith('.js'))) assert.ok(!/['"`][0-9a-f]{40,}['"`]/i.test(fs.readFileSync(`api/${f}`, 'utf8').split(String.fromCharCode(10)).filter(line => !/^ *source(Revision|Sha256|Url):/.test(line)).join(String.fromCharCode(10))), `${f}: possibile secret`); // pin pubblici della banlist (commit + sha256) non sono segreti
   const sql = fs.readFileSync('supabase/manual/rotate-push-webhook-secret.sql', 'utf8');
   assert.ok(sql.includes(':NEW_SECRET') && !/[0-9a-f]{48,}/i.test(sql), 'lo script deve usare un placeholder');
 });

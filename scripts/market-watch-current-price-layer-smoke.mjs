@@ -161,7 +161,7 @@ function simulate(events) {
 // --- Verifiche statiche sulla migration ----------------------------------
 {
   const root = path.dirname(fileURLToPath(import.meta.url));
-  const migration = await readFile(path.join(root, '..', 'supabase', 'migrations', '20260914200000_market_current_price_layer.sql'), 'utf8');
+  const migration = await readFile(path.join(root, '..', 'supabase', 'migrations', '20260914200000_market_current_price_layer.sql'), 'utf8').then(text => text.split(String.fromCharCode(13)).join('')); // checkout Windows (CRLF)
   const sqlNoComments = migration.split('\n').filter(line => !line.trim().startsWith('--')).join('\n');
   function test(name, fn) { try { fn(); console.log(`PASS ${name}`); } catch (err) { console.error(`FAIL ${name}`); console.error(err); process.exitCode = 1; } }
 

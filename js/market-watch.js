@@ -122,8 +122,6 @@ export class MarketWatchController {
         else this.extraSummaryError=isStatementTimeout(error)?timeoutMessage:/market_watch/i.test(error.message||'')?'Applica la migration Market Watch per attivare i dati.':(error.message||'Market Watch non disponibile');
       }
       if(current()){this.syncError();this.refreshAfterLoad();}
-      // Admin: la coda di tutto il team può avere carte anche se la sua raccolta non ne ha.
-      if(current()&&this.isAdmin()&&!this.confirmQueueLoaded)void this.loadConfirmQueue().then(()=>{if(current())this.refreshTabs();});
     })();
     // Pannelli accessori per ultimi: non devono contendersi il database con la lista.
     void request.then(()=>Promise.all([
@@ -366,7 +364,7 @@ export class MarketWatchController {
   // la pagina. refreshBoardSection() ricostruisce solo questo blocco.
   renderBoardSection({items,marketDecks,hasSnapshots,confirmQueue,aggregatePending,anomalyQueue}){
     return `<div class="market-board-tools">
-        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.isAdmin()&&(this.summary.confirmCount||this.confirmQueue.length)?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
+        <nav class="market-tabs" aria-label="Filtri Market Watch">${TABS.map(tab=>`<button data-market-tab="${tab}" class="${this.tab===tab?'active':''}">${LABELS[tab]} <span>${countFor(this,tab,marketDecks.length)}</span></button>`).join('')}${this.isAdmin()?`<button data-market-tab="confirm" class="warn ${this.tab==='confirm'?'active':''}">Conferma rarità <span>${this.confirmQueueLoaded?confirmQueue.length:this.summary.confirmCount}</span></button>`:''}${anomalyQueue.length?`<button data-market-tab="anomaly" class="warn ${this.tab==='anomaly'?'active':''}">Prezzi insoliti <span>${anomalyQueue.length}</span></button>`:''}</nav>
         <div class="market-board-controls">
           ${this.tab!=='deck'&&this.tab!=='confirm'&&this.tab!=='anomaly'?`<label class="filter-search market-search">${icon('search')}<input type="search" data-market-query placeholder="Cerca per nome o set…" value="${esc(this.query)}" aria-label="Cerca in Market Watch"></label>`:''}
           <label class="market-sort"><span class="sr-only">Ordina</span><select data-market-sort aria-label="Ordina"><option value="value" ${this.sort==='value'?'selected':''}>Valore</option><option value="price" ${this.sort==='price'?'selected':''}>Prezzo</option><option value="change" ${this.sort==='change'?'selected':''}>Var. 24h</option><option value="name" ${this.sort==='name'?'selected':''}>Nome</option></select></label>

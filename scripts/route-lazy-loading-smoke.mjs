@@ -75,7 +75,7 @@ try {
   await waitFor(`performance.getEntriesByType('resource').some(e=>e.name.includes('/js/fast-scan.js'))`, 'Prefetch inattivo di fast-scan.js non avvenuto', 150);
   console.log('PASS dopo il login: alias caricati con la raccolta, Team/Admin ancora no, fast-scan.js prefetchato a browser inattivo');
 
-  assert(await evaluate(`Boolean(document.querySelector('.mm-dashboard .market-featured-carousel, .mm-dashboard .featured-empty'))`), 'Dashboard senza pannello Market dopo il login');
+  assert(await evaluate(`Boolean(document.querySelector('.mm-dashboard.hv-home'))`), 'Home (Vetrina compatta) non renderizzata dopo il login');
   for (const [pageId, selector, label] of [['decks', '.deck-page', 'Mazzi'], ['market', '.market-hero', 'Market Watch'], ['stats', '.stats-page', 'Statistiche']]) {
     await evaluate(`document.querySelector('.sidebar [data-page="${pageId}"]').click()`);
     await waitFor(`Boolean(document.querySelector('${selector}'))`, `Pagina ${label} non renderizzata`);
